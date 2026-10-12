@@ -374,6 +374,10 @@
 #                               advocate's proposal found what the advocate reported
 #                      The case and the drive are the two reports of that fork among the
 #                      stage's; this cell is what a later invocation reads them by.
+#                      A FORK IS WHOLE OR IT IS NONE HERE: an entry says no fork without its
+#                      case and its drive (bad-value). The verdict a verifier contests
+#                      WITH NO CASE — a run with a queue, where no advocate is launched —
+#                      is said by its filing, with its basis, and by no entry (verdict).
 #       NOTHING ELSE IS TAKEN. Whether the finding is INSIDE the round's test set is
 #       computed here — its ledger row's door is one of the round's included doors, as
 #       scope-set wrote them — and is never supplied; a round with no scope is refused
@@ -381,7 +385,10 @@
 #       | outside: unlisted, triage's grade, the verdict — with the word it says beside
 #       itself, where it says one — the regression, the
 #       disposition the ledger row carried when the round recorded it ("found with"),
-#       and the fork (`<kind>: <case>, <drive>`, or `-`).
+#       and the fork (`<kind>: <case>, <drive>`, or `-` — or, in a run with a queue,
+#       `contested` alone: THE MARK OF A VERDICT ITS VERIFIER CONTESTED, the kind with no
+#       case and no drive, which the record's take writes from the filed verdict that says
+#       so (verdict; apply) and no entry of a caller's says).
 #       An entry recorded again replaces its row — that is how a verdict arrives later,
 #       and how a round says that it found a finding again: only then is it re-recorded.
 #       IN A RUN WITH A QUEUE A CELL OF THAT ROW HAS ONE OWNER, because two writers write
@@ -393,7 +400,8 @@
 #       entry recorded again without a verdict writes triage's grade and leaves the three
 #       as the row holds them: a verdict is filed once per finding and round (verdict), so
 #       nothing takes one off its row — a later attempt's triage that finds the finding
-#       again, in the batch that takes the file or after it, grades it and no more. A
+#       again, in the batch that takes the file or after it, grades it and no more: THE
+#       MARK OF A CONTESTED VERDICT stands with the verdict it was filed beside. A
 #       verdict is replaced only by a verdict: an entry that says one replaces all three,
 #       as it always did. In a run without an order nothing is filed, one caller says the
 #       whole row, and an entry replaces it whole, as it always did.
@@ -441,6 +449,13 @@
 #         regression   beside confirmed: true | false, or not said where the verifier does
 #                      not know
 #         previous     the sha256 of the previous release's binary, where it drove one
+#         contested    ONLY WHERE THE VERIFIER FOUND THE FINDING TO CONTEST A SETTLED
+#                      DECISION — beside whichever verdict it reached: THE BASIS, what is
+#                      contested and why, in the verifier's own words. The member IS the
+#                      basis — a text that says something: `true`, a blank text, anything
+#                      that is no text is refused (bad-value), because it says THAT a
+#                      finding is contested and not what or why. Absent, null or false,
+#                      nobody contests the finding. (A CONTESTED VERDICT, below.)
 #         hands_on     WHAT IT HANDS ON, an array, in the verifier's own order — each
 #                      {key: what the item's key is MINTED from, doctype, door, clause,
 #                      repro, kind — required — and route or commands, code, site, as a
@@ -515,13 +530,33 @@
 #                    NOTHING IS HANDED ON TO THE QUEUE: every item is beyond it — the
 #                    number is what bounds a verifier, and a run without one never
 #                    multiplies by default.
+#       A CONTESTED VERDICT IS THE HUMAN'S, WITH ITS VERIFIER'S BASIS AND NO CASE (the build
+#       plan of the reshaped `test` stage, §2.9 and §6, ruled: "a contested finding found in
+#       `test` reaches the human with its verifier's basis and no advocate's case"). A
+#       `test` stage of a run with a queue launches no advocate and no independent drive, so
+#       the fork a triage entry takes — {kind, case, drive}, all three — has nothing to be
+#       made of; what the verifier knows is what it contests and why, and it says so here.
+#       From the moment it is filed the finding is routed human (contested), whatever the
+#       verdict and wherever it was found — never a fixer's on the verifier's word — and
+#       holds the close until the human rules it: admitted, bound or later, a disposition
+#       of its row (ledger-set), as every ruling is. The state says who contests it and
+#       the basis on the row's entry and on the human's list, and a stop's view lists it by
+#       its key (state). THE BASIS HAS ONE HOME, THIS FILE: the record that takes the
+#       filing writes THE MARK — `contested`, the kind alone — into the verifier's own cell
+#       of the round's row (triage-set: the fork's), and the file stays; a mark with no
+#       verdict filed in the round with its basis behind it — and one beside no verdict —
+#       is refused by `state` (corrupt), in a run without an order too, which files
+#       nothing. The mark is the verifier's cell: no entry that says no verdict takes it
+#       off, and an entry that says one replaces it with what it says — nothing, or a fork
+#       with its case and its drive (triage-set).
 #       WHO NAMED A CODE OR A SITE IS KEPT: the filed file says its reporter, and each
 #       item its code and its site — and the file stays where it is once a record took it.
 #       The file is the record of what was handed on, by whom and in which place (state: a
 #       row's `handed_on`); it is what a stop's view counts the verifier of such a row from
 #       (state: view, `named`), and nothing is ranked, promoted or merged on it.
 #       THE FILE is JSON, its members in one order — key, reporter, round, attempt,
-#       verdict, refutation, reason, regression, candidate, previous, report: {file,
+#       verdict, refutation, reason, regression, contested: the basis as a cell would hold
+#       it, or null, candidate, previous, report: {file,
 #       sha256}, hand_on: the opening's number as the filing found it, handed_on: [{key,
 #       proposed, place, beyond, doctype, source, door, clause, repro, kind, given, origin,
 #       code, site, evidence}] — and, last, sha256: THE SEAL, the hash of the text without
@@ -529,8 +564,9 @@
 #       verdict (vet; state: filed).
 #       Prints {"verdict": the path, "sha256": the hash of the file's bytes, "key", "word":
 #       the verdict, "regression": true | false | null, "unknown": why a regression that
-#       was said is not kept, or null, "handed_on": [{key, proposed, kind, origin,
-#       beyond}], "leads": the keys of the items entered as a lead}.
+#       was said is not kept, or null, "contested": whether the filing says a basis,
+#       "handed_on": [{key, proposed, kind, origin, beyond}], "leads": the keys of the
+#       items entered as a lead}.
 #
 #   dev/stabilize-record triage --run R --round N --reporter S --attempt A
 #                        [--scratch DIR]... [--] SOURCE=COUNT... <entries.json
@@ -879,7 +915,12 @@
 #                                file would leave — the verdict and its word, `grade`
 #                                null on a row nobody graded — and says `filed`: the
 #                                file; and the row's own `grade` and `graded_by` are
-#                                the verifier's, as a recorded verdict leaves them
+#                                the verifier's, as a recorded verdict leaves them.
+#                                AND ONLY WHERE ITS VERIFIER CONTESTED THE VERDICT WITH NO
+#                                CASE (verdict: contested; a run with a queue): `contested`,
+#                                {by: the reporter that says so, basis: its own words} —
+#                                beside `fork: null`, filed or recorded alike, read from
+#                                the filed file
 #                        reopened  whether its fix did not hold: it is open again
 #                        route   fix | human | triage | recorded, and `why` — and, IN A
 #                                RUN WITH A QUEUE only, verify | listed (the second table)
@@ -925,7 +966,8 @@
 #                      nobody established. The missing fact forbids `close` no longer
 #                      than the finding itself does: it is an attribute of a finding,
 #                      not a missing verdict.
-#         human_list   [{key, why}] — the findings routed human
+#         human_list   [{key, why}] — the findings routed human; and with `why:
+#                      contested`, `basis`: the verifier's own words, which the human reads
 #         human_stages [{stage, round, cycle, at, attempt, attempts, why}] — the stage
 #                      whose attempts are spent, when the step is that stage's: `attempt`
 #                      is the one a grant would allow, `attempts` how many left no record
@@ -1023,6 +1065,15 @@
 #                        confirmed     {inside, outside}: each [{key, regression: true |
 #                                      false | null}] — the findings confirmed in this
 #                                      round, by whether the door is in its test set
+#                        contested     [{key, verdict: as the record's cell says it, with
+#                                      its word, inside, by, basis}] — THE FINDINGS A
+#                                      VERIFIER CONTESTED AND NOBODY RULED, routed human
+#                                      (contested): what waits for the human's ruling with
+#                                      a verifier's basis and no case. Such a row is in this
+#                                      list AND IN NO OTHER — not among the confirmed, where
+#                                      a fixer's findings stand — and its verdict counts in
+#                                      the rates as any does. Ruled, it is where its verdict
+#                                      and its ruling put it.
 #                        unreached     [{key, kind, origin}] — the queue, ROUTE ITEMS FIRST,
 #                                      within each kind in the queue's rank
 #                        outside       FOR EVERY WORD THAT KEEPS A ROW OUT OF THE QUEUE (THE
@@ -1107,7 +1158,13 @@
 #                                recorded A FORK on its entry (triage-set: fork) — whatever
 #                                the verdict, wherever it was found: a contested fix is
 #                                never a fixer's unasked. The human's ruling on it is one
-#                                of the three above. Without a fork,
+#                                of the three above.
+#                                human (contested) while that round's record, or a
+#                                verdict filed in it, says THE VERDICT IS CONTESTED WITH
+#                                NO CASE (verdict: contested) — a run with a queue only,
+#                                on the same ground and ruled the same way: the basis is
+#                                the verifier's, and nobody argued or drove a proposal.
+#                                Without a fork and uncontested,
 #                                by the grade — no-action is neither a fix nor a ruling:
 #           ungraded             triage (ungraded)   — the round's triage is not
 #           breaks, unclear      triage (unverified)   finished: never a fixer's, and
@@ -1176,6 +1233,9 @@
 #       VERDICT ALONE: a filing is no triage entry, and needs no grade beside it —
 #       confirmed, it is routed by whether its door is inside the round's test set;
 #       refuted, recorded; undrivable, the human's at once (undrivable), never queued again.
+#       AND A VERDICT FILED AS CONTESTED IS THE HUMAN'S FROM THAT MOMENT (contested), whatever
+#       it says and whoever graded the row — the first table's row, which a filing reaches
+#       in a run with a queue and nothing reaches in any other (verdict).
 #       THE ROUTE of a row that AWAITS A VERDICT — triage sent it on (breaks, unclear) and
 #       no verdict is on record, or a verifier handed it on and nobody graded it — which
 #       the first table routes `triage`. Every other row is routed by the first table:
@@ -1542,6 +1602,9 @@
 #       the disk again where the batch is committed. A batch that is taken back took
 #       nothing: the files are filed, and no record holds them, as before it. In a run
 #       without an order nothing is read, and the call prints what it always printed.
+#       A VERDICT FILED AS CONTESTED is taken with its mark: the row's last cell says
+#       `contested`, and the basis stays in the filed file (verdict). No word of a batch
+#       and no word of a composed record says it (compose).
 #       AND THE RECORD WRITES WHAT A STOP SHOWS (the plan's T4) — in a run with a queue, and
 #       last: once every call of the batch ran, the latest round's view (state: view) is
 #       rendered from ONE read of the state as the batch leaves it, and r<N>/view.md is
@@ -2208,7 +2271,7 @@ HELD = "held-"
 # it hands on, in the order the file holds them: a file is the one this script wrote, to
 # the byte, or it is none.
 VERDICT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
-FILED_FIELDS = ("key", "reporter", "round", "attempt", "verdict", "refutation", "reason", "regression", "candidate", "previous", "report", "hand_on", "handed_on")
+FILED_FIELDS = ("key", "reporter", "round", "attempt", "verdict", "refutation", "reason", "regression", "contested", "candidate", "previous", "report", "hand_on", "handed_on")
 HANDED_FIELDS = ("key", "proposed", "place", "beyond", "doctype", "source", "door", "clause", "repro", "kind", "given", "origin", "code", "site", "evidence")
 # What a verifier says of an item it hands on: what its ledger row needs, and its kind —
 # with the kind's evidence, the refusal's code and the site, as a row's class has them.
@@ -2324,6 +2387,22 @@ THE_VERIFIERS = tuple(TRIAGE_COLUMNS.index(name) for name in ("verdict", "regres
 # drive of the advocate's proposal found what the advocate reported.
 FORK_FIELDS = {"kind": ("contested",), "case": ("robust-now", "cheap-cut-is-correct"), "drive": ("holds", "differs")}
 FORK = re.compile(r"(%s): (%s), (%s)" % tuple("|".join(FORK_FIELDS[name]) for name in ("kind", "case", "drive")))
+# A CONTESTED VERDICT WITH NO CASE (the build plan of the reshaped `test` stage, §2.9 and §6,
+# ruled: "a contested finding found in `test` reaches the human with its verifier's basis
+# and no advocate's case") — in a run with a queue, where the verifier files its verdict
+# itself and no advocate and no independent drive is launched. THE WORD IS ONE, in four
+# places: the member of a filing that holds THE BASIS (verdict); the mark the record's take
+# writes into the fork's cell of the round's row — the kind alone, with no case and no
+# drive, which no entry of a caller's may say (triage_entry) and which stands only with a
+# verdict filed in that round for the finding, and saying a basis, behind it (read_state);
+# what the row's entry says of it in the state; and WHY its finding is the human's
+# (route_of). THE BASIS HAS ONE HOME, the filed file: the table holds the mark, a closed
+# word, as it holds a fork's three.
+# (A choice of the builder's — rejected: the basis as free text in the fork's cell, which
+# every entry that keeps the verifier's cells would copy and no vocabulary would hold; a
+# column of its own, which would change the bytes of every run's triage record; a verdict
+# of its own, which would take the finding out of the hit rate its verdict belongs to.)
+CONTESTED = "contested"
 ITEM_COLUMNS = ("item", "kind", "clause", "runs", "doors", "registries", "brief")
 # When an item runs: on every candidate, or only in a round whose test set reaches it.
 ITEM_RUNS = ("every-candidate", "in-scope")
@@ -4552,7 +4631,7 @@ def verdict(args):
     given = json_stdin()
     if not isinstance(given, dict):
         refuse("bad-value", "stdin must be one filing as a JSON object: the finding's key, the verifier's verdict, the hash of the binary it drove, and what it hands on")
-    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", "previous", "hands_on"), "a filing")
+    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", CONTESTED, "previous", "hands_on"), "a filing")
     key = slug(given["key"], "key")
     what = "the filing of %s" % key
     word = one_of(given["verdict"], VERDICTS + (UNDRIVABLE,), what + ": verdict")
@@ -4565,6 +4644,19 @@ def verdict(args):
     regression = given.get("regression")
     if regression is not None and (word != "confirmed" or not isinstance(regression, bool)):
         refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, or not said — not %s beside `%s`" % (what, shown(regression), word))
+    # CONTESTED, WITH ITS BASIS (the header: verdict): what the finding contests, and why, in
+    # the verifier's own words — beside whichever verdict it reached. The member IS the
+    # basis: `true` says that a finding is contested and not what or why, and is refused.
+    # Absent, null or false, nobody contests the finding. It is stored as a cell would hold
+    # it, like every text of a filing.
+    basis = given.get(CONTESTED)
+    if basis is None or basis is False:
+        basis = None
+    else:
+        if isinstance(basis, str) and basis.strip():
+            basis = as_data(cell(public(basis, scratch)))
+        if not isinstance(basis, str) or not basis.strip():
+            refuse("bad-value", "%s: `%s` is THE BASIS — what the finding contests, and why, in the verifier's own words: a text that says something, not %s. A filing that says a finding is contested and gives no basis is taken by nothing; where nobody contests the finding the member is left out; nothing was written" % (what, CONTESTED, shown(given[CONTESTED])))
     candidate, previous = given["candidate"], given.get("previous")
     for name, value in (("candidate", candidate), ("previous", previous)):
         if not (isinstance(value, str) and SHA256.fullmatch(value)) and not (name == "previous" and value is None):
@@ -4657,10 +4749,10 @@ def verdict(args):
         places += item["kind"] != "lead"
         item.update(place=n, beyond=item["kind"] != "lead" and places > (allowed or 0), source=as_data(cell("handed on by `%s`, the verifier of `%s`, in round %s (attempt %s)" % (reporter, key, round_number, attempt))))
         handed.append({name: item[name] for name in HANDED_FIELDS})
-    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)))
+    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, basis, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)))
     text = filed_text(record)
     rel = publish(run_dir, filed_parts + ["%s.a%s.json" % (reporter, attempt)], text, replace=False, taken="a verdict is filed once per finding and round")
-    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
+    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, CONTESTED: basis is not None, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
 
 
 # --- the entries a triage hands over ------------------------------------------------------
@@ -5022,6 +5114,11 @@ def route_of(finding, triage, listed):
     # wherever it was found — never a fixer's unasked, and never recorded as no break.
     if triage is not None and triage["fork"] is not None:
         return "human", "fork"
+    # … AND A VERDICT ITS VERIFIER CONTESTED, WITH NO CASE AND NO DRIVE (a run with a queue):
+    # the human's on the same ground, under its own word — the filing's basis is what he
+    # reads, and his ruling is one of the three above. Never a fixer's on the verifier's word.
+    if triage is not None and triage.get(CONTESTED) is not None:
+        return "human", CONTESTED
     if grade == "ungraded":
         return "triage", "ungraded"
     if grade in SENT_ON:
@@ -5322,6 +5419,7 @@ def sealed(text):
             and (record["verdict"] == "refuted") == (isinstance(record["refutation"], str) and record["refutation"] in REFUTATIONS)
             and (record["verdict"] == UNDRIVABLE) == isinstance(record["reason"], str)
             and (record["regression"] is None or (isinstance(record["regression"], bool) and record["verdict"] == "confirmed"))
+            and (record[CONTESTED] is None or (isinstance(record[CONTESTED], str) and bool(record[CONTESTED].strip())))
             and isinstance(record["candidate"], str)
             and bool(SHA256.fullmatch(record["candidate"]))
             and isinstance(report, dict)
@@ -5513,6 +5611,10 @@ def stop_view(findings, number_, order, queue, reporters):
                  the round, or a row of the queue, is of
       confirmed  the findings confirmed in this round, inside the round's test set and
                  outside it
+      contested  THE FINDINGS A VERIFIER CONTESTED AND NOBODY RULED — routed human, by that
+                 word: each with its verdict as the record's cell says it, the side of its
+                 door, who says so and the basis. Such a row is in this list and in no
+                 other: not among the confirmed, where a fixer's findings stand
       unreached  the queue, route items first — within each, the queue's rank
       outside    FOR EVERY ROW OF THE TABLE `OUTSIDE`, in the table's order: the rows it
                  keeps out of the queue, and whether the human may put one in. Driven by the
@@ -5522,7 +5624,7 @@ def stop_view(findings, number_, order, queue, reporters):
                  class, the distinct agents that reported a row carrying it (named_by), the
                  rows, and the rows of them no agent is named for. In the order of the
                  names, never of the numbers: NOTHING RANKS, PROMOTES, MERGES OR ORDERS ON IT.
-    Every row of the ledger is in exactly one of the three lists and the table's rows, or
+    Every row of the ledger is in exactly one of the four lists and the table's rows, or
     counted in `other`."""
     word_of = lambda finding: "%s %s" % (finding["class"]["kind"], finding["class"]["origin"])
     in_round = lambda finding: finding["triage"] is not None and finding["triage"]["round"] == number_
@@ -5543,8 +5645,13 @@ def stop_view(findings, number_, order, queue, reporters):
         })
     ranked = {entry["key"] for entry in queue["ranked"]}
     confirmed, kept, other, named = {"inside": [], "outside": []}, {word: [] for word, _, _ in OUTSIDE}, {}, {"code": {}, "site": {}}
+    contested = []
     for finding in findings:
-        if in_round(finding) and finding["triage"]["verdict"] == "confirmed":
+        if (finding["route"], finding["why"]) == ("human", CONTESTED):
+            said_ = finding["triage"]
+            word = said_.get("refutation") or said_.get("reason")
+            contested.append({"key": finding["key"], "verdict": said_["verdict"] + (": " + word if word else ""), "inside": said_["inside"], **said_[CONTESTED]})
+        elif in_round(finding) and finding["triage"]["verdict"] == "confirmed":
             confirmed["inside" if finding["triage"]["inside"] else "outside"].append({"key": finding["key"], "regression": finding["triage"]["regression"]})
         elif finding["key"] in ranked:
             pass
@@ -5566,6 +5673,7 @@ def stop_view(findings, number_, order, queue, reporters):
         "round": number_,
         "rates": rates,
         "confirmed": confirmed,
+        "contested": contested,
         # ROUTE ITEMS FIRST: a queued route item nobody reached holds the close.
         "unreached": sorted(queue["ranked"], key=lambda entry: entry["kind"] != "route"),
         "outside": [{"why": word, "may": may, "rows": kept[word]} for word, _, may in OUTSIDE],
@@ -5622,6 +5730,15 @@ def view_text(read):
     for side, title in (("inside", "Confirmed inside the round's test set"), ("outside", "Confirmed outside it")):
         lines += ["", "## %s — %d" % (title, len(shown["confirmed"][side])), ""]
         lines += ["- %s — %s" % (tick(row["key"]), regression[row["regression"]]) for row in shown["confirmed"][side]] or ["None."]
+    # WHAT A VERIFIER CONTESTED, AND NOBODY RULED: by key, with the verifier's own basis — the
+    # text stands behind the list's mark, the key and the verifier's name, and opens no line.
+    lines += [
+        "",
+        "## Contested by its verifier, and the human's to rule — %d" % len(shown["contested"]),
+        "",
+        "A verifier found each of these to argue against a settled decision, and says why in its own words: no advocate argued a case, and nobody drove a proposal. None is a fixer's on that word. Each holds the close until the human rules it — `admitted`, `bound` or `later`, the disposition of its row, as `dev/stabilize-record ledger-set` writes it.",
+        "",
+    ] + (["- %s — %s, %s the round's test set — %s: %s" % (tick(row["key"]), row["verdict"], "inside" if row["inside"] else "outside", tick(row["by"]), row["basis"]) for row in shown["contested"]] or ["None."])
     lines += [
         "",
         "## In the queue, and no verdict yet — %s" % counted_(shown["unreached"]),
@@ -6173,11 +6290,17 @@ def read_state(run_dir, run):
             # else `-` is no grade this script writes.
             grade, bound = (None, None) if row[2] == "-" and row[3] != "-" and facts.get("order") is not None else grade_read(rel, key, row[2])
             fork = FORK.fullmatch(row[6])
+            # THE MARK OF A CONTESTED VERDICT (CONTESTED): the kind alone, with no case and no
+            # drive — the cell a record wrote from a filed verdict that says so, beside that
+            # verdict. Whose it is, and its basis, are read from the filed file (below): a
+            # mark that no such file is behind — and in a run without an order none is — is
+            # refused there.
+            marked = row[6] == CONTESTED and row[3] != "-"
             # The verdict, and the word it may say beside itself: which of three a
             # refutation is, why nobody here can drive the finding.
             verdict, _, word = row[3].partition(": ")
             known = row[3] == "-" or (verdict in VERDICTS and not word) or (verdict == "refuted" and word in REFUTATIONS) or (verdict == UNDRIVABLE and bool(SLUG.fullmatch(word)))
-            if row[1] != inside_cell(side) or (grade is not None and grade not in TRIAGE_GRADES) or not known or row[4] not in ("yes", "no", "-") or (fork is None) != (row[6] == "-") or (fork is not None and row[3] == "-"):
+            if row[1] != inside_cell(side) or (grade is not None and grade not in TRIAGE_GRADES) or not known or row[4] not in ("yes", "no", "-") or (not marked and (fork is None) != (row[6] == "-")) or (fork is not None and row[3] == "-"):
                 spoiled(rel, "holds a row for %s that does not follow from the round's doors and the triage vocabulary" % key)
             triage[key] = {
                 "round": number_,
@@ -6192,6 +6315,9 @@ def read_state(run_dir, run):
             }
             if word:
                 triage[key]["refutation" if verdict == "refuted" else "reason"] = word
+            if marked:
+                # Until the filed files are read: the record that says so.
+                triage[key][CONTESTED] = rel
             if row[3] != "-":
                 on_record.setdefault(number_, set()).add(key)
             # Found again with a fix on its row, and standing: that fix did not hold.
@@ -6276,6 +6402,17 @@ def read_state(run_dir, run):
     for number_, reporter, attempt in sorted(took):
         if not any(entry["record"] is not None and (entry["round"], entry["reporter"], entry["attempt"]) == (number_, reporter, attempt) for entry in filings):
             spoiled("/".join(ARTIFACTS + (run, "r%d" % number_, "round.md")), "says that a record took the filed verdict %s (`%s`: `%s a%d`), and that file is gone, or is no longer the text its writer left there — it is the record of what the verifier handed on, and in which place: what is deleted is missed. Take the file back from the commit that holds it" % ("/".join(ARTIFACTS + (run, "r%d" % number_, "verdicts", "%s.a%d.json" % (reporter, attempt))), TOOK, reporter, attempt))
+    # … AND THE BASIS OF A CONTESTED VERDICT A RECORD HOLDS IS IN ITS FILED FILE, and nowhere
+    # else: the round's row holds the mark, and the verdict filed in that round for the
+    # finding says who contests it and why. A mark with no such file behind it — a hand wrote
+    # the cell, or the run files nothing — is no cell this script wrote. (A taken file that
+    # is gone is missed above, before this is asked.)
+    for key, entry in triage.items():
+        if CONTESTED in entry:
+            said_ = next((filing["record"] for filing in filings if filing["record"] is not None and (filing["round"], filing["record"]["key"]) == (entry["round"], key) and filing["record"][CONTESTED] is not None), None)
+            if said_ is None:
+                spoiled(entry[CONTESTED], "says that the verdict of %s is contested, and no verdict filed in round %d says so with its basis — the mark is written by the record that takes such a filing, and by no caller and no hand: the filed file is the home of the verifier's basis" % (key, entry["round"]))
+            entry[CONTESTED] = {"by": said_["reporter"], "basis": said_[CONTESTED]}
     scopes = {held["round"]: held["doors"] for held in grounded}
     judged, verified, marks, handed = dict(triage), {}, {}, []
     for entry in filings:
@@ -6316,6 +6453,9 @@ def read_state(run_dir, run):
             "fork": None,
             **({"refutation": record["refutation"]} if record["refutation"] else {}),
             **({"reason": record["reason"]} if record["reason"] else {}),
+            # CONTESTED BY ITS VERIFIER, with the basis — as the record that takes the file
+            # leaves the entry: under no fork, which is an advocate's case and a drive.
+            **({CONTESTED: {"by": record["reporter"], "basis": record[CONTESTED]}} if record[CONTESTED] is not None else {}),
             "filed": entry["file"],
         }
     # … AND WHO REPORTED A ROW, AS DATA (the plan's K2): the entries a triage handed over name
@@ -6482,7 +6622,7 @@ def read_state(run_dir, run):
         # Confirmed, and nobody knows whether it is a regression: named for as long as the
         # finding is not recorded, so that the missing fact is never read as `no`.
         "regression_unknown": [finding["key"] for finding in findings if finding["route"] != "recorded" and finding["triage"] is not None and finding["triage"]["verdict"] == "confirmed" and finding["triage"]["regression"] is None],
-        "human_list": [{"key": finding["key"], "why": finding["why"]} for finding in findings if finding["route"] == "human"],
+        "human_list": [{"key": finding["key"], "why": finding["why"], **({"basis": finding["triage"][CONTESTED]["basis"]} if finding["why"] == CONTESTED else {})} for finding in findings if finding["route"] == "human"],
         "human_stages": human_stages,
         **following,
         "position": position,
@@ -6572,7 +6712,9 @@ def take_filed(run_dir, run):
                 judged["verdict"] + (": " + word if word else ""),
                 "-" if judged["regression"] is None else "yes" if judged["regression"] else "no",
                 cell(judged["found_with"]),
-                "-",
+                # THE VERIFIER'S OWN CELL: the mark where its filing says the verdict is
+                # contested — the kind alone — and the basis stays in the file.
+                CONTESTED if CONTESTED in judged else "-",
             ]
             if key in triaged:
                 held[triaged.index(key)] = row

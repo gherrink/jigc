@@ -2,6 +2,101 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — A verdict its verifier contests is the human's by the verifier's own filing: the basis in the filed file, a mark in the round's row, a word of its own on the human's list and in the stop's view — with no case and no drive, and nothing moved for a fork that has both (what `T5b`'s builder found owed before `T6a`; a task the plan did not cut; the builder's choices inside it)
+
+**What.** [`dev/stabilize-record`](dev/stabilize-record) takes, in a run with a queue, a verifier's word that its finding is **contested** — and routes the finding to the human on that word, with no advocate's case and no independent drive ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §2.9, item 9, and §6: *a contested finding found in `test` reaches the human with its verifier's basis and no advocate's case* — ruled, and told to the human with the questions; the top of the entry below: *a filed verdict has no field for it … owed before `T6a` takes a verifier's return*). Phase A: a writer's word nobody types yet. The script's header is the contract — *A CONTESTED VERDICT IS THE HUMAN'S, WITH ITS VERIFIER'S BASIS AND NO CASE*, under `verdict`. In one place:
+
+- **A filing may say `contested`, and the member is the basis**: what the finding contests and why, in the verifier's own words, beside whichever verdict it reached. It is a text of the filing like any other — host paths replaced, the hygiene scan hard, stored as a cell would hold it. Absent, null or `false`, nobody contests the finding. **A filing that says it and gives no basis is refused** (`bad-value`, naming the basis): `true`, a blank text, anything that is no text.
+- **The filed file gains one member**, `contested` — the basis, or null — after `regression`; the call's line says `"contested": true | false`.
+- **The finding is the human's from the moment it is filed**: routed `human` with its own word, `contested` — whatever the verdict and wherever it was found, a regression and an item nobody graded among them. It is no blocker, the step is `rule`, and it holds the close until its row carries a ruling.
+- **The ruling is a disposition of the row** — `admitted`, `bound`, `later`, by `ledger-set`: the road every ruling takes, which fits as it stands. `no-action` is no ruling.
+- **Where it is shown**: the row's entry in the state says `contested: {by, basis}` beside `fork: null`; `human_list` names it with `why: contested` **and `basis`**; the round's view has one more list, *Contested by its verifier, and the human's to rule*, each finding by its key with its verdict, the side of its door, who says so and the basis — and such a finding is in that list and in no other.
+- **The record takes it with its mark.** The take writes `contested` — the kind alone — into the fork's cell of the round's row, and **the filed file stays the one home of the basis**. A record's batch and a composed record say no word for it.
+- **One owner a cell**: the mark is in one of the verifier's three cells (`THE_VERIFIERS`), so an entry that says no verdict leaves it — before any record, in the batch that takes the file, and after it — and an entry that says a verdict replaces it with what that entry says: nothing, or a fork with its case and its drive.
+- **A fork with `{kind, case, drive}` is taken and read as before**, in either kind of run. No entry of a caller's says the bare mark — a fork without its case and its drive is refused as ever.
+- **A mark with nothing behind it is no cell this script wrote** (`corrupt`): no verdict filed in that round for the finding says a basis, or the mark stands beside no verdict. In a run without an order, which files nothing, that is every mark.
+
+**The rows, as they then stand** — `r-in` confirmed inside the round's test set and contested, after the record took its filing:
+
+```text
+r1/verdicts/verify-r-in.a1.json   "contested": "<the verifier's basis>"
+r1/triage.md                      | `r-in` | inside | breaks | confirmed | - | open | contested |
+state: the row                    route human · why contested · triage.fork null · triage.contested {by: verify-r-in, basis}
+state: human_list                 {key: r-in, why: contested, basis}
+r1/view.md                        - `r-in` — confirmed, inside the round's test set — `verify-r-in`: <the basis>
+```
+
+**Chosen where the gap left it open — and what was rejected.**
+
+- **One word, `contested`, in four places**: the filing's member, the mark in the cell, the entry's field in the state, the reason on the human's list. *Rejected:* a route word of its own beside `human` — the table has the word for what stops for a ruling, and a second one would need every reader of `human_list`, `next` and the close taught it; `fork` as the reason — a reader of `triage.fork` expects a case and a drive, and the two must be told apart at the stop.
+- **The member is the basis.** *Rejected:* a flag and a basis as two members — the state *contested with no basis* would then be sayable, and held only by a rule.
+- **Beside any verdict**, as a fork is today (*with a verdict and only with one*) — `undrivable` too, where the route says `contested` and the verdict cell still says that nobody could drive it. *Rejected:* refusing it beside `undrivable` on the ground that such a verifier established nothing — a refusal there costs the verifier's one filing, for a row that is the human's either way.
+- **`false` is taken as *nobody*.** The return a verifier has always given holds `contested` as a boolean; a filing that copies `false` is refused for nothing otherwise. `true` is refused: it is the one that loses the basis.
+- **The mark in the fork's cell, the basis in the filed file.** The cell keeps a closed vocabulary, as it has for a fork's three words; the file is sealed, vetted, committed with the record, and missed when gone. *Rejected:* the basis as free text in the cell — every entry that keeps the verifier's cells would copy it, and no vocabulary would hold the cell; a column of its own — the bytes of every run's triage record would move, which Phase A forbids; a verdict of its own — the finding would leave the hit rate its verdict belongs to; the mark held in the file alone — a later verdict said by an entry could not take it off, and a row could read *contested* under a verdict that replaced the contested one.
+- **The basis is read from any verdict filed in the round for the finding that says one** — not only from a file the round's record names as taken. A taken file that is gone is already refused, before this is asked; the second condition was one no arm could tell from the first.
+- **A contested finding is in the view's own list and not among the confirmed**, while its verdict counts in the hit rate as any does. The confirmed lists are where a fixer's findings stand; ruled, the finding is where its verdict and its ruling put it. *Rejected:* in both lists — a stop would count it twice.
+- **The view's section is always printed**, with *None.* where there is none, as every section of it is. So the suite's one golden view moved by that section.
+- **`human_list` carries the basis** on a contested entry, and on no other. *Rejected:* the key and the word alone — the list is what the orchestrator brings to the human, and the basis would be one more read away.
+- **Nothing is added to what `apply` prints of a taken file.** The state after the record says it.
+
+**What records the human's ruling, and what is missing.** Nothing in this script: `ledger-set` takes the three dispositions on any row, and the harness's ruling step writes exactly that (`rulings: [{ key, ruling }]`). A contested finding without a case needs no other road.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**. In a run without an order no verdict is filed, so none says the word; a triage record of such a run holds a byte it did not hold only if a hand wrote the mark, and that is refused; the state's document has no new field there — `contested` on an entry and `basis` on the human's list exist only where a filing said so. `in_a_run_without_an_order_nothing_is_contested_by_a_filing` holds it.
+
+**Red first.** Nine arms, one more row of the suite's table of writers and the golden view were written before the script changed, and run on the parent's: **13 red, 5 green.**
+
+| Arm | On the parent |
+|---|---|
+| `a_verifier_files_that_its_finding_is_contested_with_its_basis` · `a_contested_finding_is_the_humans_and_never_a_fixers_on_its_verifiers_word` · `a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling` · `the_record_takes_a_contested_verdict_and_nothing_the_state_says_of_it_moves` · `a_stop_shows_a_contested_finding_by_its_key_with_its_verifiers_basis` · `an_entry_that_says_no_verdict_leaves_the_contested_mark_on_its_row` | red at the first filing that says the word: *a filing has no field "contested"* |
+| `a_filing_that_says_contested_and_gives_no_basis_is_refused` | red where the refusal is asked to name the basis: the parent refuses the member, not its emptiness |
+| the writers' axes, by the new row — host path, denylist, secret, scanner, killed write: five arms | red at the same refusal |
+| `the_stops_view_is_a_function_of_the_record` | red at the golden: no such section |
+| `a_fork_with_a_case_and_a_drive_is_taken_and_read_as_it_was` · `in_a_run_without_an_order_nothing_is_contested_by_a_filing` | **green, and so pins and no red** — each holds what did not move; two mutants below kill them |
+| `a_run_without_an_order_holds_the_bytes_it_held`, and the two kill arms that iterate no writer | green, unmodified |
+
+Every expected value was written before the first green run, and the eighteen were green at it. **What followed its code, and says so:** two cases, added after that run where a mutant about to be run would have survived — a mark written by hand on the row of a recorded verdict whose filing says no basis, and a mark beside no verdict; and with them two conditions of the first draft were removed as ones no arm could tell from the code beside them (the mark read only in a run with an order; the basis read only from a file the round's record names).
+
+**Mutants of the finished script** — nineteen, each one edit, the nine arms, the two arms of *a cell has one owner* and the Phase A arm run on each. All died.
+
+| The edit | Arms that went red — the one that names it first |
+|---|---|
+| a contested verdict is routed by its grade | `a_contested_finding_is_the_humans_…` · five more |
+| the take writes no mark | `the_record_takes_a_contested_verdict_…` · three more |
+| a mark is read with any filing of the finding behind it, a basis or none | `the_record_takes_a_contested_verdict_…` |
+| a mark beside no verdict is read | `a_filing_that_says_contested_and_gives_no_basis_is_refused` |
+| the state reads no mark off a round's row | `the_record_takes_a_contested_verdict_…` · five more, both pins among them |
+| a filing says contested and gives no basis · a filed file's basis is held to no shape | `a_filing_that_says_contested_and_gives_no_basis_is_refused` |
+| `false` is not *nobody* · a host path in the basis is not replaced · the call does not say that the filing is contested | `a_verifier_files_that_its_finding_is_contested_with_its_basis` |
+| a filing keeps no basis · a filed verdict no record holds is contested by nobody | that arm · six more |
+| contested is read only beside `confirmed` | that arm · four more |
+| the human's list names it without its basis | `a_contested_finding_is_the_humans_…` · one more |
+| it stands among the confirmed too · the view says its verdict without its word | `a_stop_shows_a_contested_finding_…` |
+| the view's text lists none | that arm · one more |
+| the fork's cell is not the verifier's | `an_entry_that_says_no_verdict_leaves_the_contested_mark_on_its_row` · `a_verdict_on_a_rounds_row_is_replaced_only_by_a_verdict` |
+| the verifier's cells are kept where the entry says a verdict too | those two · `a_fork_with_a_case_and_a_drive_is_taken_and_read_as_it_was` |
+
+**The assertions this task carried.** None outside its own suite: the whole `g_tooling` target ran on the changed script — 545 of 545, the simulation, the fence, the step suite, the canary's and the probe's among them. In its own suite, two: the golden of `the_stops_view_is_a_function_of_the_record` (`A_STOPS_VIEW`) gained the section, with *None.*; and the table of writers gained a row, so the host-path, hygiene, scanner and killed-write axes drive the basis. The suite's module doc says so in one line. **`dev/stabilize-step` is not touched**: no act of it relays a filing — a verifier calls the record script itself.
+
+**What the next tasks owe because of this.**
+
+- `T6a`, the verify phase: **nothing is launched and nothing is typed for a contested verdict.** The verifier writes `contested` into the file it files; the harness's one call for it is the filing's, as for any verdict. The line that call prints says `contested`, so a return can be held to it beside the word and the path. A verifier whose return says *contested* and whose filing's line says `false` filed no basis, and cannot file again — the finding is then routed by its verdict; what the stage says of that is `T6a`'s.
+- `T6a`, the second record: **`compose` needs no word.** The take writes the mark. After the record the state's `next` is `rule` where nothing awaits a triage or a verifier, and `human_list` counts the finding.
+- `T7`, the return: the step tool's digest holds `human_list` as a count and nothing of `contested`; a return that names the contested findings, or counts them apart, needs a field of the digest (`STEP`), or the document's file.
+- `O3`, the verifier's definition: where it finds the finding to argue against a settled decision, the filing carries `contested` — what is contested and why, in its own words — beside its verdict, and never `true`.
+- `T10`: [stabilization-workflow.md](implementation/stabilization-workflow.md) gained one paragraph, under *A contested fix is on record*; the document says nothing else of a filing yet.
+- The `fix` half's repair: an advocate's case and a drive arrive as an entry that says a verdict with its fork, which replaces the mark; nothing here launches either.
+
+**What is not established.**
+
+- **Nothing of a stage files one.** No harness path, no scenario of the simulation, no agent's definition says the word; the plan's scenario `a_contested_verdict_is_the_humans_and_no_advocate_is_launched_on_the_new_path` is still unwritten, and is `T6a`'s to write once a verifier is launched.
+- **Whether a verifier writes a basis a human can rule on**, and how often it says `true`: the first supervised run's.
+- **A contested finding in a round that is not the latest** — found in round 1 and unruled in round 2: read from round 1's row and file by the same code, and driven by no arm.
+- **A ruling by grade** (`ledger-set` with a grade) on a contested row: the route still reads the mark, and only a disposition lifts it. Not driven.
+- **Two filed files for one finding in a round**, one with a basis: the second is written by no writer, and the basis is then read from whichever says one.
+- **The real scanners over a basis**, as for every filed text: the suite stands in for gitleaks.
+- **What the stop's view says of a row that reads a grade the verifier is not sent under beside a contested verdict** (`no-break` beside `confirmed`, contested): the tables and the route are driven; the view's line for it was not looked at.
+- **Not read whole for this task**: the record script beyond its header's sections on `triage-set`, `verdict`, `apply`, `compose` and the state, and the code of the filing, the take, the state's read, the routes, the view and the position; the record suite beyond its rig, its tables and the arms of `T3a`, `T3b`, `T4`, `K3` and *a cell has one owner*; the step tool beyond its digest of the state; the harness beyond how it reads a fork and records a ruling; [dev-workflow.md](implementation/dev-workflow.md), [public-hygiene.md](implementation/public-hygiene.md) and [decisions-pending.md](implementation/decisions-pending.md) beyond what the project's instructions, the plan and the fences carry of them; the plan beyond its top, §2, §3, §4 through `T7` and §6.
+
 ## 2026-10-12 — The harness: the record before verification, and nothing built twice — a stage of a run with a queue records its findings by a batch the tool composes from plain words held to a hash, returns `hunted`, and refuses a continuation as not built; what a stage holds is named by its commit, and a job that stands is the answer only while it runs or where it is green (the plan's `T5b`; the builder's choices inside it, and one clause of the paragraph that is not built)
 
 **What.** [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) records a `test` stage's findings before anything is verified, where the run has a queue ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T5b`, Phase B; ruling 1 of *2026-10-11 — The reshaped `test` stage's three open questions, ruled*: a stage records twice; the harness half of `K3`; the review's `S12`). The script's header holds it as two paragraphs — *THEN THE STAGE'S FIRST RECORD* and *WHAT A STAGE HOLDS IS NAMED BY ITS COMMIT*. In one place:

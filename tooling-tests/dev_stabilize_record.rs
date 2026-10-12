@@ -53,7 +53,8 @@
 //!   caller's free text into it: a report's body, a ledger row's cells as it is added and
 //!   as it is set, a void run's reason, a bound's, a door's derivation, a test-set item's
 //!   brief, a failing test's name in a gate's output, what a verifier files of an item it
-//!   hands on, what a triage says of an entry it hands over, a record's batch — and the
+//!   hands on and of why it contests its finding (a row of the list each), what a triage
+//!   says of an entry it hands over, a record's batch — and the
 //!   evidence of a row's kind, as the row is added and
 //!   as its kind is set (two rows of the list). The scanner that could not run and the killed write are
 //!   driven through all of them; the host-path replacement and the hygiene stop through
@@ -1340,6 +1341,34 @@ const WRITERS: &[Writer] = &[
             args.extend_from_slice(extra);
             (
                 rig.run(&args, &given.to_string()),
+                filed_path("verify-audit-f3", "1"),
+            )
+        },
+    },
+    Writer {
+        // A filed verdict: what its verifier says the finding contests, and why.
+        name: "verdict (the basis of a verdict its verifier contests)",
+        free_text: true,
+        prepare: |rig| {
+            ordered(rig, &ORDER);
+            scoped(rig);
+            rig.run(
+                &round_set(RUN, "1"),
+                &json!({"candidate": sha('a'), "binary": driven()}).to_string(),
+            )
+            .must(OK, "the round's candidate, and the binary it was driven as");
+            hunted(rig, &[("audit-f3", "route")]);
+            begun_attempt(rig, "1");
+            reported(rig, "audit-f3", "1");
+        },
+        call: |rig, text, extra| {
+            let mut args = verdict_args(RUN, "1", "verify-audit-f3", "1");
+            args.extend_from_slice(extra);
+            (
+                rig.run(
+                    &args,
+                    &contesting("audit-f3", "confirmed", text).to_string(),
+                ),
                 filed_path("verify-audit-f3", "1"),
             )
         },
@@ -20898,6 +20927,12 @@ The round's `test` stage has spent 8 of its budget of 9 verdicts: 1 is left. A v
 
 - `r-out` — whether it is a regression is not known
 
+## Contested by its verifier, and the human's to rule — 0
+
+A verifier found each of these to argue against a settled decision, and says why in its own words: no advocate argued a case, and nobody drove a proposal. None is a fixer's on that word. Each holds the close until the human rules it — `admitted`, `bound` or `later`, the disposition of its row, as `dev/stabilize-record ledger-set` writes it.
+
+None.
+
 ## In the queue, and no verdict yet — 3: route 2, behaviour 1
 
 Ranked by the run's order, route items first. Once the budget is spent, a route item nobody reached holds the close until it is verified or ruled; a behaviour item holds nothing.
@@ -24912,6 +24947,1007 @@ fn a_verdict_on_a_rounds_row_is_replaced_only_by_a_verdict() {
         json!(["unclear", "-", "-", "-", "unclear", "triage"]),
         "in a run without an order the row is the entry's, whole, as it always was"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A contested verdict is the human's, with its verifier's basis and no case (what the
+// builder of the plan's `T5b` found owed: a filing had no word for it, and the one cell
+// that routes a finding to the human as contested asks for a case and a drive, which no
+// `test` stage of a run with a queue launches)
+// ---------------------------------------------------------------------------
+
+/// What a verifier says its finding contests, and why — its basis, in its own words.
+const BASIS: &str = "The finding asks that the hook be removed, and the hook is kept by a settled decision. It reproduces as written; what it argues against is the decision.";
+
+/// A filing whose verifier says that its finding is CONTESTED, with `basis`.
+fn contesting(key: &str, word: &str, basis: &str) -> Value {
+    let mut given = filing(key, word);
+    given["contested"] = json!(basis);
+    given
+}
+
+/// What a row's entry says of a contested verdict: who says so, and the basis.
+fn contested_by(key: &str, basis: &str) -> Value {
+    json!({"by": format!("verify-{key}"), "basis": basis})
+}
+
+/// The human's list, as a state document has it.
+fn the_humans(read: &Value) -> Value {
+    read["human_list"].clone()
+}
+
+/// A filed verdict's text with `was` rewritten to `now` BY A HAND THAT SEALS IT AGAIN: the
+/// last member is the sha256 of the text without it, and who wrote a file is not holdable.
+fn resealed(text: &str, was: &str, now: &str) -> String {
+    assert!(text.contains(was), "the filed file says `{was}`: {text}");
+    let changed = text.replacen(was, now, 1);
+    let seal = ",\n \"sha256\": \"";
+    let at = changed.rfind(seal).expect("the seal is the last member");
+    let body = format!("{}\n}}", &changed[..at]);
+    format!("{}{seal}{}\"\n}}\n", &changed[..at], sha256_of(&body))
+}
+
+/// The line of round 1's triage record that holds `key`, with its last cell — the fork's —
+/// written BY HAND as `cell`.
+fn fork_cell_by_hand(rig: &Rig, key: &str, cell: &str) {
+    let text = rig.read(&triage_path("1"));
+    let opens = format!("| `{key}` |");
+    let written: Vec<String> = text
+        .lines()
+        .map(|line| {
+            if !line.starts_with(&opens) {
+                return line.to_owned();
+            }
+            let kept = line
+                .strip_suffix("| - |")
+                .unwrap_or_else(|| panic!("the row of `{key}` holds no fork: {line}"));
+            format!("{kept}| {cell} |")
+        })
+        .collect();
+    fs::write(rig.root.join(triage_path("1")), written.join("\n") + "\n")
+        .expect("a cell written by a hand");
+    assert_ne!(
+        rig.read(&triage_path("1")),
+        text,
+        "the hand changed the row of `{key}`"
+    );
+}
+
+/// **A verifier files that its finding is contested, with its basis** (the plan's §2.9 and
+/// §6, ruled: *a contested finding found in `test` reaches the human with its verifier's
+/// basis and no advocate's case*; `T5b`'s entry: *a filed verdict has no field for it … owed
+/// before `T6a` takes a verifier's return*). A filing may say `contested` — WHAT is
+/// contested and why, in the verifier's own words, beside whichever verdict it reached. It
+/// is a text of the filing like any other: it goes through the one write, is kept in the
+/// filed file — after the regression — and the call says that the filing is contested. The
+/// state reads it on the row's entry, beside the verdict and under no fork: who says so, and
+/// the basis. A filing that says nothing of it — the member absent, null, or `false` — is
+/// contested by nobody, and its file says null. NOTHING OF A TABLE MOVES at the filing.
+#[test]
+fn a_verifier_files_that_its_finding_is_contested_with_its_basis() {
+    let rig = a_filing_run("contested-filed", Some(9), Some(2));
+    hunted(
+        &rig,
+        &[
+            ("r-1", "route"),
+            ("r-2", "route"),
+            ("r-3", "route"),
+            ("r-4", "route"),
+            ("r-5", "route"),
+            ("r-6", "route"),
+        ],
+    );
+    begun_attempt(&rig, "1");
+    let tables = [
+        ledger_path(),
+        classes_path(),
+        triage_path("1"),
+        round_path("1"),
+        run_path(),
+    ];
+    let as_recorded: Vec<String> = tables.iter().map(|rel| rig.read(rel)).collect();
+
+    // THE BASIS IS A TEXT OF THE FILING: a host path in it is replaced, a line break and a
+    // pipe are kept as a cell would hold them.
+    let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
+    let basis = format!("{BASIS}\nDriven under {scratch}/rig | and read against the decision.");
+    let said = format!("{BASIS}<br>Driven under <scratch>/rig | and read against the decision.");
+    reported(&rig, "r-1", "1");
+    let mut given = contesting("r-1", "confirmed", &basis);
+    given["regression"] = json!(false);
+    given["previous"] = json!(sha256('d'));
+    let mut args = verdict_args(RUN, "1", "verify-r-1", "1");
+    args.push(format!("--scratch={scratch}"));
+    let seen = rig.run(&args, &given.to_string());
+    seen.must(
+        OK,
+        "a filing that says its finding is contested, with its basis",
+    );
+    let path = filed_path("verify-r-1", "1");
+    let printed = seen.json();
+    assert_eq!(
+        json!([printed["word"], printed["contested"]]),
+        json!(["confirmed", true]),
+        "the call says the verdict, and that it is contested: {printed}"
+    );
+    let text = rig.read(&path);
+    let kept: Value = serde_json::from_str(&text).expect("the filed file is JSON");
+    assert_eq!(
+        kept["contested"],
+        json!(said),
+        "the filed file keeps the basis: {text}"
+    );
+    let member = |name: &str| {
+        text.find(&format!("\n \"{name}\": "))
+            .unwrap_or_else(|| panic!("the filed file has the member `{name}`: {text}"))
+    };
+    assert!(
+        member("regression") < member("contested") && member("contested") < member("candidate"),
+        "its members in one order, the basis after the regression: {text}"
+    );
+    let read = rig.state();
+    assert_eq!(
+        finding(&read, "r-1")["triage"],
+        json!({"round": 1, "inside": true, "door": "included", "grade": "breaks", "bound": null,
+               "verdict": "confirmed", "regression": false, "found_with": "open", "fork": null,
+               "contested": {"by": "verify-r-1", "basis": said}, "filed": path}),
+        "the row's entry says who contests it and why, beside the verdict and under no fork: {read}"
+    );
+
+    // BESIDE WHICHEVER VERDICT THE VERIFIER REACHED.
+    verified(&rig, "1", &contesting("r-2", "refuted", BASIS));
+    verified(&rig, "1", &contesting("r-3", "undrivable", BASIS));
+    let read = rig.state();
+    for (key, word) in [("r-2", "refuted"), ("r-3", "undrivable")] {
+        assert_eq!(
+            json!([
+                finding(&read, key)["triage"]["verdict"],
+                finding(&read, key)["triage"]["contested"]
+            ]),
+            json!([word, contested_by(key, BASIS)]),
+            "{key}: {read}"
+        );
+    }
+
+    // SAID BY NOBODY: the member absent, null, or `false`.
+    let mut null = filing("r-5", "confirmed");
+    null["contested"] = Value::Null;
+    let mut no = filing("r-6", "refuted");
+    no["contested"] = json!(false);
+    for given in [filing("r-4", "confirmed"), null, no] {
+        let key = given["key"].as_str().expect("a key").to_owned();
+        let printed = verified(&rig, "1", &given).json();
+        assert_eq!(printed["contested"], false, "{key}: {printed}");
+        let kept: Value =
+            serde_json::from_str(&rig.read(&filed_path(&format!("verify-{key}"), "1")))
+                .expect("the filed file is JSON");
+        assert_eq!(kept["contested"], Value::Null, "{key}: {kept}");
+        let read = rig.state();
+        assert_eq!(
+            finding(&read, &key)["triage"].get("contested"),
+            None,
+            "{key}: nobody contests it, and its entry says nothing of it — {read}"
+        );
+    }
+
+    // NO RECORD HOLDS ANY OF IT: every table of the run is the table it was.
+    let now: Vec<String> = tables.iter().map(|rel| rig.read(rel)).collect();
+    assert_eq!(
+        now, as_recorded,
+        "a filing writes its own file, and no table"
+    );
+}
+
+/// **A contested finding is the human's, and never a fixer's on its verifier's word** (the
+/// plan's §3, the flow's `rule`: *budget spent with route items unreached · undrivable ·
+/// contested · needs-bound*; §2.9, ruled: *with its verifier's basis and no case*). On a run
+/// with a queue a finding whose filed verdict says `contested` is routed `human` with its
+/// own word — whatever the verdict and wherever it was found: confirmed inside the round's
+/// test set, where the same verdict uncontested is a fixer's unasked; a regression;
+/// confirmed outside; refuted, where it would be recorded; one nobody could drive; and an
+/// item a verifier handed on, which nobody graded. The step is the human's, the human's list
+/// names each by its key WITH ITS BASIS, and NO CASE AND NO DRIVE IS ASKED FOR: the filing
+/// is taken without either, and the row holds no fork.
+#[test]
+fn a_contested_finding_is_the_humans_and_never_a_fixers_on_its_verifiers_word() {
+    let rig = a_filing_run("contested-route", Some(9), Some(2));
+    let mut outside = evident("r-out", "route", "hunt");
+    outside["door"] = json!(EXCLUDED);
+    let keys = ["r-plain", "r-in", "r-reg", "r-out", "r-meant", "r-far"];
+    let mut found: Vec<Value> = ["r-plain", "r-in", "r-reg"]
+        .iter()
+        .map(|key| evident(key, "route", "hunt"))
+        .collect();
+    found.push(outside);
+    found.extend(
+        ["r-meant", "r-far"]
+            .iter()
+            .map(|key| evident(key, "route", "hunt")),
+    );
+    rig.run(&ledger_add(RUN), &json!(found).to_string())
+        .must(OK, "what the hunt found");
+    let sent: Vec<Value> = keys.iter().map(|key| sent_on(key)).collect();
+    rig.run(&triage_set(RUN, "1"), &json!(sent).to_string())
+        .must(OK, "the one triage");
+    begun_attempt(&rig, "1");
+
+    // THE CONTROL: confirmed inside the round's test set, and contested by nobody — a
+    // fixer's, without asking.
+    verified(&rig, "1", &filing("r-plain", "confirmed"));
+    assert_eq!(routed(&rig.state(), "r-plain"), at("fix", "inside"));
+
+    // THE SAME VERDICT, CONTESTED: the human's.
+    let mut inside = contesting("r-in", "confirmed", BASIS);
+    inside["hands_on"] = json!([noticed("hop", "route")]);
+    verified(&rig, "1", &inside);
+    let mut regression = contesting("r-reg", "confirmed", BASIS);
+    regression["regression"] = json!(true);
+    regression["previous"] = json!(sha256('d'));
+    verified(&rig, "1", &regression);
+    verified(&rig, "1", &contesting("r-out", "confirmed", BASIS));
+    verified(&rig, "1", &contesting("r-meant", "refuted", BASIS));
+    verified(&rig, "1", &contesting("r-far", "undrivable", BASIS));
+    // … and an item a verifier handed on, which nobody graded, contested by its own.
+    verified(&rig, "1", &contesting("hop", "confirmed", BASIS));
+
+    let read = rig.state();
+    let contested = ["r-in", "r-reg", "r-out", "r-meant", "r-far", "hop"];
+    for key in contested {
+        assert_eq!(
+            json!([
+                routed(&read, key),
+                finding(&read, key)["triage"]["fork"],
+                finding(&read, key)["triage"]["contested"]
+            ]),
+            json!([at("human", "contested"), null, contested_by(key, BASIS)]),
+            "{key}: the human's, by its own word, under no fork — {read}"
+        );
+    }
+    assert_eq!(
+        json!([
+            finding(&read, "r-reg")["grade"],
+            finding(&read, "hop")["triage"]["grade"]
+        ]),
+        json!(["regression", null]),
+        "the verdict stands as it was filed — a regression, and a row nobody graded: {read}"
+    );
+    assert_eq!(
+        json!([
+            routed(&read, "r-plain"),
+            read["blockers"],
+            read["next"],
+            the_humans(&read)
+        ]),
+        json!([
+            at("fix", "inside"),
+            ["r-plain"],
+            "rule",
+            contested
+                .iter()
+                .map(|key| json!({"key": key, "why": "contested", "basis": BASIS}))
+                .collect::<Vec<_>>()
+        ]),
+        "no contested finding is a blocker; each is on the human's list with its basis, and the step is his: {read}"
+    );
+}
+
+/// **A contested finding holds the close until it carries the human's ruling** — as any
+/// finding the human must rule on does, and by the road that exists for a ruling: a
+/// disposition of its row (`ledger-set`). Refuted and contested, it forbids the close where
+/// the same verdict uncontested closes; `no-action` is no ruling; the record that takes the
+/// filing moves nothing of it; `later` and `bound` record it and release the close;
+/// `admitted` makes it a fixer's — before any record holds the verdict, too.
+#[test]
+fn a_contested_finding_holds_the_close_until_it_carries_the_humans_ruling() {
+    let stand = |label: &str, given: fn(&str) -> Value| {
+        let rig = a_filing_run(label, Some(9), Some(2));
+        hunted(&rig, &[("r-1", "route")]);
+        begun_attempt(&rig, "1");
+        verified(&rig, "1", &given("r-1"));
+        rig
+    };
+    let refuted_and_contested = |key: &str| contesting(key, "refuted", BASIS);
+    let held = json!([
+        at("human", "contested"),
+        "rule",
+        [{"finding": "r-1", "route": "human"}],
+        {"refused": "round-open", "round": 1}
+    ]);
+    let stands = |rig: &Rig| {
+        let read = rig.state();
+        json!([
+            routed(&read, "r-1"),
+            read["next"],
+            read["forbids_close"],
+            read["position"]["test"]
+        ])
+    };
+
+    // THE CONTROL: the same verdict, contested by nobody, closes.
+    let plain = stand("contested-close-plain", |key| filing(key, "refuted"));
+    let read = plain.state();
+    assert_eq!(
+        json!([routed(&read, "r-1"), read["next"], read["forbids_close"]]),
+        json!([at("recorded", "not-a-break"), "close", []]),
+        "{read}"
+    );
+
+    let rig = stand("contested-close", refuted_and_contested);
+    assert_eq!(stands(&rig), held, "contested, it holds the close");
+    // `no-action` is neither a fix nor a ruling.
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "r-1", "disposition": "no-action"}).to_string(),
+    )
+    .must(OK, "no ruling");
+    assert_eq!(stands(&rig), held, "`no-action` rules nothing");
+    // The record takes the filing, and the finding is still his.
+    recorded(&rig, &["r-1"]).must(OK, "the record that takes the filing");
+    settled(&rig);
+    assert_eq!(stands(&rig), held, "on record, it still holds the close");
+    // THE RULING, by the road every ruling takes.
+    rig.run(
+        &ledger_set(RUN),
+        &json!({"key": "r-1", "disposition": "later"}).to_string(),
+    )
+    .must(OK, "the human's ruling");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            routed(&read, "r-1"),
+            read["next"],
+            read["forbids_close"],
+            the_humans(&read)
+        ]),
+        json!([at("recorded", "ruled"), "close", [], []]),
+        "ruled, it releases the close: {read}"
+    );
+
+    let bound = stand("contested-close-bound", refuted_and_contested);
+    bound
+        .run(
+            &ledger_set(RUN),
+            &json!({"key": "r-1", "disposition": "bound", "detail": "a planted state"}).to_string(),
+        )
+        .must(OK, "the human's ruling: a bound");
+    let read = bound.state();
+    assert_eq!(
+        json!([routed(&read, "r-1"), read["next"]]),
+        json!([at("recorded", "ruled"), "close"]),
+        "{read}"
+    );
+
+    // ADMITTED — and before any record holds the verdict: a fixer's, by the human's word.
+    let admitted = stand("contested-close-admitted", refuted_and_contested);
+    admitted
+        .run(
+            &ledger_set(RUN),
+            &json!({"key": "r-1", "disposition": "admitted"}).to_string(),
+        )
+        .must(OK, "the human's ruling: admitted");
+    let read = admitted.state();
+    assert_eq!(
+        json!([
+            routed(&read, "r-1"),
+            read["blockers"],
+            read["next"],
+            the_humans(&read)
+        ]),
+        json!([at("fix", "admitted"), ["r-1"], "fix", []]),
+        "{read}"
+    );
+}
+
+/// **The record takes a contested verdict, and nothing the state says of it moves** (`T3b`:
+/// *the record takes what was filed … nothing the state says of a row moves at the record but
+/// where the verdict and the row are held*; `K3`: *both records are composed*). The stage's
+/// second record is composed of the reporters and of NO WORD FOR A CONTESTED VERDICT: the
+/// take writes the mark into the verifier's own cell of the round's row — `contested`, with
+/// no case and no drive — and the filed file stays the home of the basis. The row is read
+/// after the record as it was before it; the round's view is written with the finding in it.
+/// AND WHAT IS DELETED IS MISSED: with the filed file gone the state is refused, never read
+/// as a mark without its basis.
+#[test]
+fn the_record_takes_a_contested_verdict_and_nothing_the_state_says_of_it_moves() {
+    let stage = a_stage_before_its_first_record("contested-recorded", true);
+    let rig = &stage.rig;
+    stage
+        .compose("1", &stage.first_words())
+        .must(OK, "the first record");
+    settled(rig);
+    let mut contested = contesting("review-f1", "confirmed", BASIS);
+    contested["hands_on"] = json!([noticed("beside-f1", "route")]);
+    verified(rig, "1", &contested);
+    verified(rig, "1", &filing("review-f2", "refuted"));
+    let before = rig.state();
+    assert_eq!(
+        json!([
+            routed(&before, "review-f1"),
+            finding(&before, "review-f1")["triage"]["filed"]
+        ]),
+        json!([
+            at("human", "contested"),
+            filed_path("verify-review-f1", "1")
+        ]),
+        "the control: filed, and no record holds it — {before}"
+    );
+
+    let second = stage.compose("1", &Composing::later_words(&["review-f1", "review-f2"]));
+    second.must(OK, "the second record, composed");
+    let said = second.json();
+    assert_eq!(
+        json!([said["composed"]["record"], said["composed"]["calls"]]),
+        json!(["later", ["check-reports"]]),
+        "the reporters, and no word for what is contested: {said}"
+    );
+    settled(rig);
+    assert_eq!(
+        json!([held_of(rig, "review-f1"), held_of(rig, "review-f2")]),
+        json!([
+            [
+                "breaks",
+                "confirmed",
+                "-",
+                "contested",
+                "confirmed",
+                "verify-real"
+            ],
+            [
+                "unclear",
+                "refuted: intended",
+                "-",
+                "-",
+                "refuted",
+                "verify-real"
+            ]
+        ]),
+        "the mark is in the verifier's own cell of the row, with no case and no drive"
+    );
+    let after = rig.state();
+    assert_eq!(
+        rows_said(&after),
+        rows_said(&before),
+        "nothing the state says of a row moved at the record"
+    );
+    assert_eq!(follows(&after), follows(&before));
+    assert_eq!(
+        json!([
+            routed(&after, "review-f1"),
+            finding(&after, "review-f1")["triage"]["contested"],
+            finding(&after, "review-f1")["triage"].get("filed"),
+            the_humans(&after)
+        ]),
+        json!([
+            at("human", "contested"),
+            contested_by("review-f1", BASIS),
+            null,
+            [{"key": "review-f1", "why": "contested", "basis": BASIS}]
+        ]),
+        "the record holds the verdict, and the finding is the human's with its basis: {after}"
+    );
+    let view = rig.read(&view_path("1"));
+    assert!(
+        view.lines().any(|line| line
+            == format!(
+                "- `review-f1` — confirmed, inside the round's test set — `verify-review-f1`: {BASIS}"
+            )),
+        "the round's view, as that record wrote it:\n{view}"
+    );
+
+    // THE MARK IS THE TAKE'S, AND STANDS ONLY WITH A BASIS BEHIND IT: written by a hand on the
+    // row of a verdict the record took too, whose filing says no basis, it is no cell this
+    // script wrote.
+    let as_recorded = rig.read(&triage_path("1"));
+    fork_cell_by_hand(rig, "review-f2", "contested");
+    rig.run(&state(RUN), "").refused(
+        CORRUPT,
+        "a contested mark on a verdict whose filing says no basis",
+    );
+    fs::write(rig.root.join(triage_path("1")), as_recorded).expect("the record, as it was");
+    rig.run(&state(RUN), "").must(OK, "the record as it was");
+
+    // WHAT IS DELETED IS MISSED: the filed file is the home of the basis.
+    fs::remove_file(rig.root.join(filed_path("verify-review-f1", "1")))
+        .expect("the filed file, deleted");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "a contested mark whose filed verdict is gone");
+}
+
+/// **A stop shows a contested finding by its key, with its verifier's basis** — told apart
+/// from every other reason a finding waits for the human (the plan's §2.9, ruled: *reaches
+/// the human with its verifier's basis and no advocate's case*; `T4`: *what a stop shows*).
+/// The round's view has one more list: the findings a verifier contested and nobody ruled,
+/// each with its verdict, the side of its door, who says so and why. Such a finding is in
+/// that list AND IN NO OTHER — not among the confirmed, where a fixer's findings stand, and
+/// not counted with the rest — while its verdict counts in the hit rate as any does. Ruled,
+/// it leaves the list for the place its verdict and its ruling give it.
+#[test]
+fn a_stop_shows_a_contested_finding_by_its_key_with_its_verifiers_basis() {
+    let rig = a_stop_run("contested-view", Some(9), Some(2));
+    let mut outside = evident("r-out", "route", "hunt");
+    outside["door"] = json!(EXCLUDED);
+    rig.run(
+        &ledger_add(RUN),
+        &json!([
+            evident("r-in", "route", "hunt"),
+            evident("r-meant", "route", "hunt"),
+            evident("r-plain", "route", "hunt"),
+            outside,
+        ])
+        .to_string(),
+    )
+    .must(OK, "what the hunt found");
+    let keys = ["r-in", "r-meant", "r-plain", "r-out"];
+    let sent: Vec<Value> = keys.iter().map(|key| sent_on(key)).collect();
+    rig.run(&triage_set(RUN, "1"), &json!(sent).to_string())
+        .must(OK, "the one triage");
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &contesting("r-in", "confirmed", BASIS));
+    verified(&rig, "1", &contesting("r-meant", "refuted", BASIS));
+    verified(&rig, "1", &filing("r-plain", "confirmed"));
+    verified(&rig, "1", &contesting("r-out", "confirmed", BASIS));
+    recorded(&rig, &["r-in"]).must(OK, "the record that takes the filings");
+    settled(&rig);
+
+    let entry = |key: &str, verdict: &str, inside: bool| {
+        json!({"key": key, "verdict": verdict, "inside": inside,
+               "by": format!("verify-{key}"), "basis": BASIS})
+    };
+    let read = rig.state();
+    let view = &read["view"];
+    assert_eq!(
+        json!([view["contested"], view["confirmed"], view["other"]]),
+        json!([
+            [
+                entry("r-in", "confirmed", true),
+                entry("r-meant", "refuted: intended", true),
+                entry("r-out", "confirmed", false)
+            ],
+            {"inside": [{"key": "r-plain", "regression": null}], "outside": []},
+            []
+        ]),
+        "contested, and in no other list; the uncontested one where a fixer's findings stand: {read}"
+    );
+    assert_eq!(
+        json!([
+            view["rates"][1]["kind"],
+            view["rates"][1]["origin"],
+            view["rates"][1]["verified"],
+            view["rates"][1]["confirmed"]
+        ]),
+        json!(["route", "hunt", 4, 3]),
+        "a contested verdict is a verdict, and counts in the hit rate: {read}"
+    );
+    let text = rig.read(&view_path("1"));
+    assert_eq!(view["on_disk"], "written", "{read}");
+    for line in [
+        "## Confirmed inside the round's test set — 1".to_owned(),
+        "- `r-plain` — whether it is a regression is not known".to_owned(),
+        "## Confirmed outside it — 0".to_owned(),
+        "## Contested by its verifier, and the human's to rule — 3".to_owned(),
+        format!("- `r-in` — confirmed, inside the round's test set — `verify-r-in`: {BASIS}"),
+        format!(
+            "- `r-meant` — refuted: intended, inside the round's test set — `verify-r-meant`: {BASIS}"
+        ),
+        format!("- `r-out` — confirmed, outside the round's test set — `verify-r-out`: {BASIS}"),
+        "## Every other row, and why it is in none of the lists — 0 of the ledger's 4 rows"
+            .to_owned(),
+    ] {
+        assert!(
+            text.lines().any(|said| said == line),
+            "the view has the line `{line}`:\n{text}"
+        );
+    }
+    for key in keys {
+        assert_eq!(
+            text.matches(&format!("- `{key}` — ")).count(),
+            1,
+            "`{key}` stands in one list of the view, once:\n{text}"
+        );
+    }
+
+    // RULED, a finding is no longer what waits for the human: it is where its verdict and
+    // its ruling put it.
+    rig.run(
+        &ledger_set(RUN),
+        &json!([
+            {"key": "r-in", "disposition": "admitted"},
+            {"key": "r-meant", "disposition": "later"},
+        ])
+        .to_string(),
+    )
+    .must(OK, "the human's rulings");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            keys_of(&read["view"]["contested"]),
+            keys_of(&read["view"]["confirmed"]["inside"]),
+            read["view"]["other"],
+            read["view"]["on_disk"]
+        ]),
+        json!([
+            ["r-out"],
+            ["r-in", "r-plain"],
+            [{"route": "recorded", "why": "ruled", "rows": 1}],
+            "behind"
+        ]),
+        "{read}"
+    );
+}
+
+/// **An entry that says no verdict leaves the contested mark on its row** — the class the
+/// entry *a cell of a round's triage record has one owner* closed, held for the new cell:
+/// the mark is the verifier's, written from its filed file by the record, and a triage's
+/// entry that grades the finding again takes nothing of it — before any record holds the
+/// verdict, in the batch that takes the file, and after it. A VERDICT IS REPLACED ONLY BY A
+/// VERDICT: an entry that says one replaces the verifier's cells, the mark among them — with
+/// a fork that has its case and its drive, where the entry brings one.
+#[test]
+fn an_entry_that_says_no_verdict_leaves_the_contested_mark_on_its_row() {
+    let rig = a_filing_run("contested-kept", Some(9), Some(2));
+    hunted(
+        &rig,
+        &[("r-1", "route"), ("r-2", "route"), ("r-3", "route")],
+    );
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &contesting("r-1", "confirmed", BASIS));
+    verified(&rig, "1", &contesting("r-2", "refuted", BASIS));
+    verified(&rig, "1", &contesting("r-3", "confirmed", BASIS));
+    let entry = |entry: Value| rig.run(&triage_set(RUN, "1"), &entry.to_string());
+    let his = |key: &str| {
+        let read = rig.state();
+        json!([
+            routed(&read, key),
+            finding(&read, key)["triage"]["contested"]
+        ])
+    };
+    let contested = |key: &str| json!([at("human", "contested"), contested_by(key, BASIS)]);
+
+    // 1. BEFORE ANY RECORD HOLDS THE VERDICT: the state reads the mark from the file.
+    entry(json!({"key": "r-1", "grade": "unclear"})).must(OK, "graded again, no verdict said");
+    assert_eq!(his("r-1"), contested("r-1"));
+
+    // 2. IN THE BATCH THAT TAKES THE FILE.
+    rig.run(
+        &apply(RUN, Some("1")),
+        &json!([
+            call(
+                triage_set(RUN, "1"),
+                &json!([{"key": "r-2", "grade": "no-break"}]).to_string()
+            ),
+            call(check_ledger(RUN, &["r-1", "r-2", "r-3"]), ""),
+        ])
+        .to_string(),
+    )
+    .must(
+        OK,
+        "the record that takes the files and grades a finding again",
+    );
+    settled(&rig);
+    assert_eq!(
+        json!(["r-1", "r-2", "r-3"].map(|key| held_of(&rig, key))),
+        json!([
+            [
+                "unclear",
+                "confirmed",
+                "-",
+                "contested",
+                "confirmed",
+                "verify-real"
+            ],
+            [
+                "no-break",
+                "refuted: intended",
+                "-",
+                "contested",
+                "refuted",
+                "verify-real"
+            ],
+            [
+                "breaks",
+                "confirmed",
+                "-",
+                "contested",
+                "confirmed",
+                "verify-real"
+            ],
+        ]),
+        "the batch that takes a mark from its file does not take it off again"
+    );
+    assert_eq!(his("r-2"), contested("r-2"));
+
+    // 3. AFTER THE RECORD: every one of them again, and none says a verdict.
+    entry(json!([
+        {"key": "r-1", "grade": "breaks"},
+        {"key": "r-2", "grade": "unclear"},
+        {"key": "r-3", "grade": "no-break"},
+    ]))
+    .must(OK, "the three, recorded again without a verdict");
+    assert_eq!(
+        json!(["r-1", "r-2", "r-3"].map(|key| held_of(&rig, key))),
+        json!([
+            [
+                "breaks",
+                "confirmed",
+                "-",
+                "contested",
+                "confirmed",
+                "verify-real"
+            ],
+            [
+                "unclear",
+                "refuted: intended",
+                "-",
+                "contested",
+                "refuted",
+                "verify-real"
+            ],
+            [
+                "no-break",
+                "confirmed",
+                "-",
+                "contested",
+                "confirmed",
+                "verify-real"
+            ],
+        ]),
+        "triage's grade is the entry's, and the verifier's three stand — the mark among them"
+    );
+    for key in ["r-1", "r-2", "r-3"] {
+        assert_eq!(his(key), contested(key), "{key}");
+    }
+
+    // A VERDICT IS REPLACED ONLY BY A VERDICT — and then the mark goes with it.
+    entry(
+        json!({"key": "r-3", "grade": "breaks", "verdict": "refuted",
+               "refutation": "does-not-reproduce"}),
+    )
+    .must(OK, "a verdict, said again");
+    assert_eq!(
+        held_of(&rig, "r-3"),
+        json!([
+            "breaks",
+            "refuted: does-not-reproduce",
+            "-",
+            "-",
+            "refuted",
+            "verify-real"
+        ])
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            routed(&read, "r-3"),
+            finding(&read, "r-3")["triage"].get("contested")
+        ]),
+        json!([at("recorded", "not-a-break"), null]),
+        "{read}"
+    );
+    // … and a verdict said again WITH A FORK that has its case and its drive is that fork.
+    entry(
+        json!({"key": "r-2", "grade": "breaks", "verdict": "confirmed", "regression": false,
+               "fork": {"kind": "contested", "case": "robust-now", "drive": "holds"}}),
+    )
+    .must(
+        OK,
+        "a verdict said again, with an advocate's case and a drive",
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            held_of(&rig, "r-2")[3],
+            routed(&read, "r-2"),
+            finding(&read, "r-2")["triage"]["fork"],
+            finding(&read, "r-2")["triage"].get("contested")
+        ]),
+        json!([
+            "contested: robust-now, holds",
+            at("human", "fork"),
+            {"kind": "contested", "case": "robust-now", "drive": "holds"},
+            null
+        ]),
+        "{read}"
+    );
+}
+
+/// **A filing that says contested and gives no basis is refused** — by `bad-value`, naming
+/// the basis, and nothing is written: `true` says THAT a finding is contested and not what
+/// or why, and a blank text says nothing. Nor is a basis taken under another name, or a case
+/// and a drive: a filing carries no fork. AND A FILE A HAND SEALED that says so is no filing.
+#[test]
+fn a_filing_that_says_contested_and_gives_no_basis_is_refused() {
+    let rig = a_filing_run("contested-no-basis", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    begun_attempt(&rig, "1");
+    reported(&rig, "r-1", "1");
+    let before = rig.snapshot();
+    for (what, said) in [
+        ("`true`, and no basis", json!(true)),
+        ("an empty text", json!("")),
+        ("a blank text", json!(" \n\t ")),
+        ("a number", json!(1)),
+        ("a list", json!([BASIS])),
+        ("an object", json!({"basis": BASIS})),
+    ] {
+        let mut given = filing("r-1", "confirmed");
+        given["contested"] = said;
+        let seen = file(&rig, "1", &given);
+        seen.refused(BAD_VALUE, what);
+        assert!(
+            seen.stderr.contains("basis"),
+            "{what}: the refusal names what is lacking: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+    for (what, field, said) in [
+        ("a basis under a name of its own", "basis", json!(BASIS)),
+        (
+            "a fork",
+            "fork",
+            json!({"kind": "contested", "case": "robust-now", "drive": "holds"}),
+        ),
+    ] {
+        let mut given = filing("r-1", "confirmed");
+        given[field] = said;
+        file(&rig, "1", &given).refused(BAD_VALUE, what);
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+    assert_eq!(routed(&rig.state(), "r-1"), at("verify", "queued"));
+
+    // THE CONTROL: with its basis, the same filing is taken.
+    file(&rig, "1", &contesting("r-1", "confirmed", BASIS)).must(OK, "the filing, with its basis");
+    assert_eq!(routed(&rig.state(), "r-1"), at("human", "contested"));
+
+    // THE MARK BESIDE NO VERDICT is no cell this script wrote, whatever is filed: the record
+    // that takes a filing writes the verdict and the mark together.
+    let as_recorded = rig.read(&triage_path("1"));
+    fork_cell_by_hand(&rig, "r-1", "contested");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "the mark beside no verdict, written by a hand");
+    fs::write(rig.root.join(triage_path("1")), as_recorded).expect("the record, as it was");
+
+    // A FILE A HAND SEALED AGAIN, and that says contested with no basis, is no filed verdict.
+    let path = filed_path("verify-r-1", "1");
+    let text = rig.read(&path);
+    let basis = format!("\"contested\": {}", json!(BASIS));
+    for (now, counts) in [
+        (format!("\"contested\": {}", json!("another basis")), true),
+        ("\"contested\": true".to_owned(), false),
+        ("\"contested\": \"\"".to_owned(), false),
+    ] {
+        fs::write(rig.root.join(&path), resealed(&text, &basis, &now))
+            .expect("a filed verdict, sealed again by a hand");
+        assert_eq!(
+            filed(&rig.state()),
+            if counts {
+                vec![json!(["r-1", true, null])]
+            } else {
+                vec![json!([null, false, "not-a-filing"])]
+            },
+            "`{now}`, under its own seal"
+        );
+    }
+}
+
+/// **A fork with a case and a drive is taken and read as it was** — in a run with a queue
+/// too: the entry that says a verdict with `{kind, case, drive}` is the old path's, and the
+/// `fix` half's once it is repaired, and nothing of it moved. The finding is the human's
+/// under the word it had, its entry says the fork and nothing of a basis, and the human's
+/// list names it as it did. AND NO CALLER SAYS THE MARK A FILING LEAVES: a fork without its
+/// case and its drive is refused as ever, and a mark written into the record by hand — no
+/// filed verdict the round's record took is behind it — is no cell this script wrote.
+#[test]
+fn a_fork_with_a_case_and_a_drive_is_taken_and_read_as_it_was() {
+    let rig = a_queue_run("fork-as-it-was", &ORDER, Some(9));
+    hunted(&rig, &[("r-fork", "route"), ("r-bare", "route")]);
+    let entry = |entry: Value| rig.run(&triage_set(RUN, "1"), &entry.to_string());
+    let fork = json!({"kind": "contested", "case": "robust-now", "drive": "holds"});
+    entry(
+        json!({"key": "r-fork", "grade": "breaks", "verdict": "confirmed", "regression": false,
+               "fork": fork}),
+    )
+    .must(OK, "a verdict with its fork, as a caller says it");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            held_of(&rig, "r-fork")[3],
+            routed(&read, "r-fork"),
+            finding(&read, "r-fork")["triage"]["fork"],
+            finding(&read, "r-fork")["triage"].get("contested"),
+            the_humans(&read)
+        ]),
+        json!([
+            "contested: robust-now, holds",
+            at("human", "fork"),
+            fork,
+            null,
+            [{"key": "r-fork", "why": "fork"}]
+        ]),
+        "{read}"
+    );
+
+    // NO CALLER SAYS THE BARE MARK: a fork is one object, all three named.
+    let before = rig.snapshot();
+    for (what, bare) in [
+        (
+            "a fork with no case and no drive",
+            json!({"kind": "contested"}),
+        ),
+        ("the mark, as a word", json!("contested")),
+        (
+            "a fork with a basis for its case and its drive",
+            json!({"kind": "contested", "basis": BASIS}),
+        ),
+    ] {
+        entry(
+            json!({"key": "r-bare", "grade": "breaks", "verdict": "confirmed",
+                   "regression": false, "fork": bare}),
+        )
+        .refused(BAD_VALUE, what);
+        assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+    }
+
+    // A MARK NO FILED VERDICT IS BEHIND is no cell this script wrote.
+    entry(json!({"key": "r-bare", "grade": "breaks", "verdict": "confirmed", "regression": false}))
+        .must(OK, "a verdict, as a caller says it");
+    fork_cell_by_hand(&rig, "r-bare", "contested");
+    rig.run(&state(RUN), "").refused(
+        CORRUPT,
+        "a contested mark that no filed verdict the record took is behind",
+    );
+}
+
+/// **In a run without an order nothing is contested by a filing** (the migration order's
+/// Phase A: *a run whose opening holds no `order` answers every call as it does today*). No
+/// verdict is filed there, so none says it; the fork of an entry is read as it was, and the
+/// human's list holds a key and a word and nothing else; and the mark a record of a run with
+/// a queue writes is, in such a run, no cell this script wrote.
+#[test]
+fn in_a_run_without_an_order_nothing_is_contested_by_a_filing() {
+    let rig = triaged_once("contested-plain");
+    let before = rig.snapshot();
+    rig.run(
+        &verdict_args(RUN, "1", "verify-audit-f3", "1"),
+        &contesting("audit-f3", "confirmed", BASIS).to_string(),
+    )
+    .refused(BAD_VALUE, "a filing in a run without an order");
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+
+    rig.run(
+        &triage_set(RUN, "1"),
+        &forked(
+            json!({"key": "audit-f3", "grade": "breaks", "verdict": "confirmed",
+                       "regression": false}),
+        )
+        .to_string(),
+    )
+    .must(OK, "a verdict with its fork");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            routed(&read, "audit-f3"),
+            finding(&read, "audit-f3")["triage"],
+            the_humans(&read),
+            read.get("view")
+        ]),
+        json!([
+            at("human", "fork"),
+            {"round": 1, "inside": true, "door": "included", "grade": "breaks", "bound": null,
+             "verdict": "confirmed", "regression": false, "found_with": "open",
+             "fork": {"kind": "contested", "case": "cheap-cut-is-correct", "drive": "holds"}},
+            [{"key": "audit-f3", "why": "fork"}],
+            null
+        ]),
+        "the row, the list and the document say what they said: {read}"
+    );
+
+    // The mark alone, in the fork's cell: no cell of a run without an order.
+    let plain = triaged_once("contested-plain-by-hand");
+    fork_cell_by_hand(&plain, "audit-f3", "contested");
+    plain
+        .run(&state(RUN), "")
+        .refused(CORRUPT, "the mark, in a run that files nothing");
 }
 
 // ---------------------------------------------------------------------------
