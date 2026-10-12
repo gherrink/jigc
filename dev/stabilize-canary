@@ -28,6 +28,8 @@
 #   ROOT/results       where the session that invokes the stage writes what each
 #                      invocation returned (`returns`, below) — whoever starts it
 #   ROOT/canary.json   the line this setup printed, kept: what `check` reads the run from
+#   ROOT/prompts       under --parts only: ONE PROMPT FILE FOR EACH ACT of a run in parts
+#                      (THE ACTS OF A RUN IN PARTS, below)
 #
 # Usage — every act prints ONE line of JSON on stdout, whatever it exits with:
 #
@@ -69,8 +71,12 @@
 #       class}], condition, budget, hand_on, order; and, after `state`: queue — the keys
 #       the run's queue ranks, first to last — and listed: {WHY: [key]}, every row that
 #       is in no queue under the word that keeps it out, as the run's own state says
-#       both. It names where the session stands and the harness by its path, and PRINTS
-#       NO ARGUMENTS: what each act of the parts is invoked with is not built here.
+#       both; and, after `script_path`: prompts — the directory of the prompt files —
+#       acts: [{act, args, prompt, return, expect [, human] [, verdicts]}], one for each
+#       act of the parts, in the order they are made (THE ACTS OF A RUN IN PARTS) — and
+#       tool: {sha256, as_committed}: the sha256 of THE FILE THAT RAN, which is the
+#       working tree's, and whether it is the file the commit named holds at this
+#       tool's path — the one the clone holds, whose header an agent there can read.
 #
 #   dev/stabilize-canary check --root ROOT
 #       THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — asserted, before the session
@@ -90,6 +96,33 @@
 #       `pushed` whether the bare repository stands at the clone's head, `state` what
 #       the run's own state says a `test` stage would work on, `returned` whether each
 #       file of `returns` is there.
+#       A WRITE OF THE RUN THAT WAS KILLED BETWEEN ITS FILES IS A STATE, AND IS READ AS
+#       ONE: the record script does not read the run's state across it (its refusal
+#       `interrupted`), and `check` then exits 0 all the same — `state` is {next: null,
+#       round: null, attempt: null, refused: interrupted}, after it stands interrupted:
+#       {said: that script's own line, then: what follows — the next invocation of the
+#       stage finishes the write by itself}, and what the state alone could say is
+#       empty or null. NO REFUSAL OF A TOOL `check` CALLS — git, the clone's record
+#       script — IS EVER TURNED INTO *the root holds no canary*: such a refusal is
+#       `tool`, and its recommendation says that the canary stands as it stood and
+#       that no setup is asked for. Only a root with no canary.json holds none (missing).
+#       FOR A ROOT OF THE PARTS — one a setup under --parts made — the line holds no
+#       `returned`, whose two files no act of the parts writes, and holds instead, after
+#       `ledger`: budget: {limit, spent, left} · queue: the keys the queue ranks ·
+#       listed: {WHY: [key]} · human: [{key, why}], the human's list · filed: [{file,
+#       key, verdict, attempt, sha256, counts, why, recorded, handed_on}] — EVERY FILED
+#       VERDICT, with the sha256 of its bytes, whether it counts and whether a record
+#       took it: the same file is printed with the same hash before and after that
+#       record · view: {file, sha256, on_disk}, the stop's view · attempts: {begun,
+#       unrecorded} · held: [{name, kind, state, verdict}] — THE HELD COMMANDS under the
+#       scratch root, as their own files say (judged: its verdict is kept; ended: the
+#       command has ended and no step has asked after it since, so no verdict is kept;
+#       no-exit: it runs, or its supervisor is gone) · trail: [{commit, subject,
+#       attempts}] — THE RECORDS MADE, every commit on the opening with the attempts
+#       whose marker it took · pending_paths: what `git status` shows, by its path ·
+#       acts: [{act, returned, status, next, shows, stands}] (below) · tool: {wrote,
+#       reads, same} — the tool that wrote the opening and the one that reads it now,
+#       by sha256 · sheet: [{plan, key, class, returns}] — THE ANSWER SHEET · to_answer.
 #
 # WHAT THE ORCHESTRATOR INVOKES — the line of `setup`, with nothing to interpret:
 #
@@ -215,16 +248,38 @@
 #                row the rig's ROOT, the repository being `<rig>/repo`; in every other
 #                row that repository itself. No row says which way its claim falls.
 #
-#                key                             class            what a verifier should return
-#                plant-install-hook-regression   route seed       confirmed, a regression
-#                plant-false-route-claim         route seed       refuted: does not reproduce
-#                plant-linux-root-claim          route seed       undrivable, on a host that
-#                                                                 is no Linux or for a
-#                                                                 caller that is not root
-#                plant-prose-lead                lead seed        nothing: it is in no queue
-#                plant-reserve-1 ... -10         behaviour seed   refuted, each of the ten:
-#                                                                 small false claims that
-#                                                                 only fill the queue
+#                A PLANTED ROW'S KEY SAYS NEITHER HOW ITS CLAIM FALLS NOR THAT IT IS A
+#                PLANT: a verifier is handed its key. Each key names the door and the
+#                subject of its claim, as a hunter's finding would be keyed; the row's
+#                source says where it comes from — the opening — and no more. THE
+#                PLAN'S OWN NAME FOR EACH ROW, AND WHAT A VERIFIER SHOULD RETURN, is the
+#                table below, the `plan` and `returns` of PLANTS — and `check` prints
+#                it (`sheet`), to the human's terminal. It stands in nothing a setup
+#                writes: no row, no prompt file, not the line, not the file kept.
+#                IT CANNOT BE HIDDEN FROM AN AGENT THAT GOES LOOKING — this header, the
+#                plan and the log's entry are in the commit the clone holds, and a held
+#                build unpacks that commit under the scratch root — ONLY KEPT OUT OF
+#                WHAT AN AGENT IS HANDED. Whether a verifier went and read them is a
+#                question a part's reading answers (`check`: to_answer).
+#
+#                the plan's name                 the key that is planted                    class            what a verifier should return
+#                plant-install-hook-regression   setup-hook-link-route-deletes-the-script   route seed       confirmed, a regression
+#                plant-false-route-claim         setup-hooks-mode-555-route-refuses-again   route seed       refuted: does-not-reproduce
+#                plant-linux-root-claim          setup-hooks-immutable-route-as-root        route seed       undrivable, on a host that is no
+#                                                                                                            Linux or for a caller that is not root
+#                plant-prose-lead                setup-several-worktrees                    lead seed        no verdict: it is in no queue
+#                plant-reserve-1                 setup-exits-1-in-a-fresh-repository        behaviour seed   refuted, each of the ten: small
+#                plant-reserve-2                 setup-makes-no-commit                      behaviour seed   false claims that only fill the
+#                plant-reserve-3                 setup-leaves-the-status-not-empty          behaviour seed   queue
+#                plant-reserve-4                 setup-makes-two-commits                    behaviour seed
+#                plant-reserve-5                 setup-removes-an-untracked-file            behaviour seed
+#                plant-reserve-6                 setup-second-run-exits-1                   behaviour seed
+#                plant-reserve-7                 setup-second-run-commits-again             behaviour seed
+#                plant-reserve-8                 setup-leaves-another-branch-checked-out    behaviour seed
+#                plant-reserve-9                 setup-adds-a-remote                        behaviour seed
+#                plant-reserve-10                setup-leaves-a-stash-entry                 behaviour seed
+#                THE QUEUE RANKS A CLASS'S ROWS IN THE LEDGER'S ORDER — the order of this
+#                table — and by nothing of a key: the plan's waves hold what they held.
 #
 #                THE PLANTS' WORDS ARE DATA, AND NONE IS THIS TOOL'S TO REWORD: the
 #                plan's table as its step `P0` drove it on both binaries on 2026-10-12
@@ -233,9 +288,112 @@
 #                switch drove it once more the same day: the first plant refused twice
 #                on the candidate and exited 0 on the previous release; the second
 #                exited 1, then 0, on both; every reserve claim was false on both; the
-#                third and the lead were driven by nobody. `plant-reserve-2` is a
-#                conjunction whose first half is true (`exits 0`): its right verdict
-#                needs both halves read.
+#                third and the lead were driven by nobody. The plan's
+#                `plant-reserve-2` is a conjunction whose first half is true (`exits
+#                0`): its right verdict needs both halves read.
+#
+# THE ACTS OF A RUN IN PARTS — what the human invokes, act by act (the plan's section 5;
+# `SC3` of its section 10; DECISIONS.md -> 2026-10-13, "The canary's setup writes the
+# parts' prompts"). A PART is one or more ACTS; an act is ONE invocation of the harness,
+# made by the human in a session that stands in the clone. FOR EACH ACT THE SETUP WRITES
+# ONE PROMPT FILE, ROOT/prompts/ACT.md, and names it in its line (`acts`) beside:
+#
+#   args      the act's argument object, as the prompt file holds it
+#   return    ROOT/results/ACT.json: where the prompt has the session write what the
+#             invocation returned, as JSON. An act the human ends writes none.
+#   expect    {agents, tool_steps}: how many agents the act launches WHERE EVERY AGENT
+#             ENDS WELL, and how many of them are one-command steps of dev/stabilize-step
+#             — counted, and held to the clone's own harness by this tool's suite, act by
+#             act, for the opening as it is written where no flag says otherwise; null
+#             for a root opened with another item, budget or order, which nobody counted
+#             (but for part-4-act-3 and part-4-act-5, whose count no opening moves).
+#             `ended`: what is launched by the time the human ends the act. `verifiers:
+#             budget.left`: `agents` is the act's steps, and one verifier more is
+#             launched for each verdict the budget has left when the act starts, which
+#             `check` prints. `note`: on what else the count rests. NO TIME IS PRINTED:
+#             nobody has measured one.
+#   human     what the human does around the act beside pasting its prompt — in words
+#   verdicts  part-4-act-2 only: the directory a verifier's verdict is filed in
+#
+# THE PROMPT FILE'S TEXT IS PASTED AS THE SESSION'S ONE MESSAGE. It says one thing: invoke
+# the Workflow tool once, by `scriptPath`, with these arguments; write what it returned to
+# this file; do nothing else. It holds nothing a shell reads — the harness's path, the
+# return file and the ONE argument object stand each on a line of its own, the object as
+# one line of JSON with no escape in it — and it names no planted row.
+#
+#   part-1         the stage, with the tuning stop `preflight`: the two builds, the
+#                  candidate's gate, two held regression sets, the scope step — to a stop
+#                  that makes no record
+#   part-2         the stage: the review row, ONE triage, the first record — and its own
+#                  return, as it hunted: the opening's order leaves the queue empty
+#   part-3-act-1   the order is ruled — route under-confirmed, route seed, behaviour
+#                  under-confirmed, behaviour seed: recorded, and nothing started
+#   part-3-act-2   the stage, which CONTINUES: a wave of eight, a wave of one, the budget
+#                  spent, the second record
+#   part-4-act-1   the budget is raised by four, alone: recorded, nothing started
+#   part-4-act-2   the stage, which continues with ONE wave of four — AND THE HUMAN ENDS IT
+#                  while the wave runs (`human`, `verdicts`). It writes no return.
+#   part-4-act-3   a look (`stopAfter: state`): two reads, and nobody launched
+#   part-4-act-4   the stage, which continues: a verifier only for what has no verdict,
+#                  and the record of both attempts
+#   part-4-act-5   OPTIONAL: where act 4 was ended by the human while its record's gate
+#                  was held, the same arguments once more — that invocation finds the
+#                  batch applied and in no commit, gates it under a name of its own,
+#                  commits it, pushes it and starts nothing. BEFORE IT THE HUMAN WAITS
+#                  UNTIL `check` SAYS, UNDER `held`, THAT THE RECORD'S JOB HAS `ended`: a
+#                  held command outlives the session, its supervisor writes how it ended
+#                  (`exit.json`), and NO `verdict.json` APPEARS WHILE NOBODY ASKS AFTER
+#                  THE JOB — a verdict is written by the step that asks, and NONE IS
+#                  WAITED FOR: this invocation asks nothing of that job, and gates the
+#                  batch again under a name of its own. The wait is only so that two
+#                  gates do not run on one machine at once, and nothing is looked up in
+#                  the scratch root by hand.
+#
+# THE STEPS OF A RUN IN PARTS, each one plain invocation, from this repository's root:
+#
+#   1. A root, outside the repository:
+#        mktemp -d /ABSOLUTE/SCRATCH/canary.XXXXXX
+#   2. The setup, with the path step 1 printed and the commit that holds this tool:
+#        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts
+#   3. The clone is trusted: one interactive session is started in `session_cwd`, its
+#      trust dialog accepted, and the session left.
+#   4. FOR EVERY ACT, in the line's order: `check`; a session in the clone, the act's
+#      prompt file opened and its text pasted as the one message; when the session says
+#      the return is written, the session is left; `check` again, and the reading.
+#        dev/stabilize-canary check --root ROOT
+#   A ROOT IS OPENED AFRESH AFTER A REPAIR BETWEEN TWO PARTS — the clone holds the commit
+#   it was made of — with fewer items, as the plan's section 9 has it, under another ROOT:
+#   for part 2, without the two regression sets; for part 3, the gate alone; for part 4,
+#   the gate alone, the order part 3 rules and a budget of four:
+#        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts --items row-setup,gate
+#        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts --items gate
+#        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts --items gate --budget 4 --order route:under-confirmed,route:seed,behaviour:under-confirmed,behaviour:seed
+#
+# WHAT `check` SAYS OF EACH ACT (`acts`), so that a part is read from the run and from no
+# memory of a session. TWO THINGS ARE ASKED OF AN ACT. `returned`: its return file is
+# there — with the `status` and the `next` it holds, where it holds one JSON object.
+# `shows`: THE RUN ITSELF SHOWS THE ACT — by what that act alone leaves, as the parts are
+# run in their order from one root: part-1, an attempt that reached no record before the
+# stage's first record; part-2, that record; part-3-act-1, another order than the
+# opening's; part-3-act-2, a record of filed verdicts; part-4-act-1, a budget above the
+# opening's; part-4-act-2, after the record that raised it, an attempt that reached no
+# record; part-4-act-4, after it, a record that took an attempt's marker. A LOOK LEAVES
+# NOTHING, and the record an ended act left is finished by an invocation that begins no
+# attempt: of part-4-act-3 and part-4-act-5 the run shows nothing either way (null). In a
+# root opened afresh for a later part, read `trail` and `attempts` — the acts' words are
+# the main line's. `stands` is the one word the two make:
+#
+#   returned          the file is there, and the run shows the act — or cannot show one
+#   not-written       the run shows the act and no file is there: IT RAN, AND ITS RETURN
+#                     WAS NOT WRITTEN DOWN — or the human ended it, which is right for
+#                     part-4-act-2
+#   never-ran         neither
+#   returned-unshown  a file is there, and the run shows nothing of the act: a refusal, a
+#                     halt before anything was left — or a file somebody wrote
+#   cannot-tell       no file is there, and the act is one the run cannot show
+#
+# `to_answer` names what a part's reading — of the transcripts, which no tool here reads —
+# has to answer beside the plan's own table: whether a verifier read the answers.
 #
 # WHAT IT SHOWS (the plan's list): that a stage reaches its record and pushes it with
 # real agents — the attempt's marker, the scope, the instruments, triage, a verifier, the
@@ -302,10 +460,11 @@
 #    8  unfit         the commit named lacks a script of a run, or the harness — or,
 #                     under --parts, its log does not hold exactly one entry that states
 #                     the exit rule
-#    9  tool          a command the setup runs failed: git, or the clone's own
+#    9  tool          a command the act runs failed: git, or the clone's own
 #                     dev/stabilize-record or dev/stabilize-step — a scanner that could
 #                     not run among them — or the file system refused a directory or a
-#                     file; the root then holds no canary
+#                     file. Of a setup: the root then holds no canary. Of a `check`:
+#                     the canary stands as it stood, and no setup is asked for
 #   10  not-isolated  the clone could reach something that is not its bare remote
 #   11  not-fresh     the run the setup opened is not in the state a fresh run has —
 #                     or, under --parts, a row of it is left for a triage
@@ -588,10 +747,21 @@ CODE = "setup.install-hook"
 BARE = "`dev/jigc-rig bare`"
 IN_THE_REPOSITORY = "The state: `<rig>` is a fresh repository with one commit that `jigc setup` never ran in - the directory `repo` of what " + BARE + " mints, with the binary under test named to it (`--binary`). Every command is run in that repository, and `jigc` is the binary under test."
 VR1 = "completions/artifacts/M55/stabilization-build/canary-one/run/r1/reports/test/verify-p2-r1-setup-install-hook-route-other-causes-unexamined.a1.md"
-PLANTED = "seeded at the opening by dev/stabilize-canary - a claim, graded there so that its first reader is a verifier"
+# WHERE A PLANTED ROW SAYS IT COMES FROM — the tool's words, and they name neither the tool
+# nor what the row is: a verifier reads its row whole, and is to drive the claim as a claim.
+PLANTED = "known at the opening - a claim, graded there, that nobody has driven for this run"
+# THE ANSWER SHEET'S WORDS: what a verifier should return for a planted row. They, and the
+# plan's own name for a row (`plan`), stand in no row and in nothing a setup writes: `check`
+# prints them, to whoever reads a part.
+CONFIRMED_REGRESSION = "confirmed, a regression"
+REFUTED = "refuted: does-not-reproduce"
+UNDRIVABLE = "undrivable: on a host that is no Linux, or for a caller that is not root"
+NO_VERDICT = "no verdict: it is a lead, and in no queue"
 PLANTS = (
     {
-        "key": "plant-install-hook-regression",
+        "key": "setup-hook-link-route-deletes-the-script",
+        "plan": "plant-install-hook-regression",
+        "returns": CONFIRMED_REGRESSION,
         "kind": "route",
         "claim": "where `.git/hooks/pre-commit` is a link to an existing script outside the repository, `jigc setup` refuses at `setup.install-hook` and its route names the script as the link; done as printed, the script is deleted and the re-run exits 1 again; the previous release exits 0",
         "route": ROUTE_LINK,
@@ -599,7 +769,9 @@ PLANTS = (
         "state": "The state: `<rig>` is the root " + BARE + " mints, with the binary under test named to it (`--binary`); the repository is `<rig>/repo`, with one commit, and `jigc setup` never ran in it. Write a script to `<rig>/outside/shared-hook` - beside the repository and in none - with mode 755; make `.git/hooks/pre-commit` of the repository a symbolic link to it, by its absolute path; run `jigc setup` in the repository; remove what the route it prints names after `remove the link at`; run `jigc setup` again. Then the same on the previous release's binary, in a rig of its own. This drive is the block `Repro VR-1` of " + VR1 + ".",
     },
     {
-        "key": "plant-false-route-claim",
+        "key": "setup-hooks-mode-555-route-refuses-again",
+        "plan": "plant-false-route-claim",
+        "returns": REFUTED,
         "kind": "route",
         "claim": "where the default hooks directory is of mode 555, `jigc setup` refuses at `setup.install-hook`; done as its route prints — the directory made writable — the re-run exits 1 again",
         "route": ROUTE_WRITABLE,
@@ -607,26 +779,122 @@ PLANTS = (
         "state": IN_THE_REPOSITORY + " Give its hooks directory the mode 555 (`chmod 555 .git/hooks`); run `jigc setup`; do what the route it prints says (`chmod u+w .git/hooks`); run `jigc setup` again.",
     },
     {
-        "key": "plant-linux-root-claim",
+        "key": "setup-hooks-immutable-route-as-root",
+        "plan": "plant-linux-root-claim",
+        "returns": UNDRIVABLE,
         "kind": "route",
         "claim": "on a Linux host, for a caller that is root, a hooks directory carrying the immutable attribute draws the same refusal; the route as printed changes nothing for root, and the re-run exits 1 again",
         "route": ROUTE_WRITABLE,
         "code": CODE,
         "state": IN_THE_REPOSITORY + " The refusal the claim means is the one this row's route line and code name.",
     },
-    {"key": "plant-prose-lead", "kind": "lead", "claim": "`jigc setup` may behave otherwise in a repository with several worktrees; nobody looked"},
-    {"key": "plant-reserve-1", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 1", "commands": "`jigc setup`; the exit status"},
-    {"key": "plant-reserve-2", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 0 and makes no commit", "commands": "`git rev-parse HEAD` · `jigc setup` · `git rev-parse HEAD`"},
-    {"key": "plant-reserve-3", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` leaves `git status --porcelain` not empty", "commands": "`jigc setup` · `git status --porcelain`"},
-    {"key": "plant-reserve-4", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` makes two commits", "commands": "`git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
-    {"key": "plant-reserve-5", "kind": "behaviour", "clause": "no-lost-files", "claim": "an untracked file `notes.md` at the root of `<rig>` is gone after `jigc setup`", "commands": "`printf 'my notes\\n' > notes.md` · `jigc setup` · `cat notes.md`"},
-    {"key": "plant-reserve-6", "kind": "behaviour", "claim": "a second `jigc setup`, right after the first, exits 1", "commands": "`jigc setup` · `jigc setup`; the second exit status"},
-    {"key": "plant-reserve-7", "kind": "behaviour", "claim": "a second `jigc setup` makes a second commit", "commands": "`jigc setup` · `git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
-    {"key": "plant-reserve-8", "kind": "behaviour", "claim": "`jigc setup` leaves another branch checked out", "commands": "`git branch --show-current` · `jigc setup` · `git branch --show-current`"},
-    {"key": "plant-reserve-9", "kind": "behaviour", "claim": "`jigc setup` adds a remote", "commands": "`git remote` · `jigc setup` · `git remote`"},
-    {"key": "plant-reserve-10", "kind": "behaviour", "claim": "`jigc setup` leaves a stash entry", "commands": "`jigc setup` · `git stash list`"},
+    {"key": "setup-several-worktrees", "plan": "plant-prose-lead", "returns": NO_VERDICT, "kind": "lead", "claim": "`jigc setup` may behave otherwise in a repository with several worktrees; nobody looked"},
+    {"key": "setup-exits-1-in-a-fresh-repository", "plan": "plant-reserve-1", "returns": REFUTED, "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 1", "commands": "`jigc setup`; the exit status"},
+    {"key": "setup-makes-no-commit", "plan": "plant-reserve-2", "returns": REFUTED, "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 0 and makes no commit", "commands": "`git rev-parse HEAD` · `jigc setup` · `git rev-parse HEAD`"},
+    {"key": "setup-leaves-the-status-not-empty", "plan": "plant-reserve-3", "returns": REFUTED, "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` leaves `git status --porcelain` not empty", "commands": "`jigc setup` · `git status --porcelain`"},
+    {"key": "setup-makes-two-commits", "plan": "plant-reserve-4", "returns": REFUTED, "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` makes two commits", "commands": "`git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
+    {"key": "setup-removes-an-untracked-file", "plan": "plant-reserve-5", "returns": REFUTED, "kind": "behaviour", "clause": "no-lost-files", "claim": "an untracked file `notes.md` at the root of `<rig>` is gone after `jigc setup`", "commands": "`printf 'my notes\\n' > notes.md` · `jigc setup` · `cat notes.md`"},
+    {"key": "setup-second-run-exits-1", "plan": "plant-reserve-6", "returns": REFUTED, "kind": "behaviour", "claim": "a second `jigc setup`, right after the first, exits 1", "commands": "`jigc setup` · `jigc setup`; the second exit status"},
+    {"key": "setup-second-run-commits-again", "plan": "plant-reserve-7", "returns": REFUTED, "kind": "behaviour", "claim": "a second `jigc setup` makes a second commit", "commands": "`jigc setup` · `git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
+    {"key": "setup-leaves-another-branch-checked-out", "plan": "plant-reserve-8", "returns": REFUTED, "kind": "behaviour", "claim": "`jigc setup` leaves another branch checked out", "commands": "`git branch --show-current` · `jigc setup` · `git branch --show-current`"},
+    {"key": "setup-adds-a-remote", "plan": "plant-reserve-9", "returns": REFUTED, "kind": "behaviour", "claim": "`jigc setup` adds a remote", "commands": "`git remote` · `jigc setup` · `git remote`"},
+    {"key": "setup-leaves-a-stash-entry", "plan": "plant-reserve-10", "returns": REFUTED, "kind": "behaviour", "claim": "`jigc setup` leaves a stash entry", "commands": "`jigc setup` · `git stash list`"},
 )
 SUBJECT_PARTS = "docs(record): %s - the synthetic opening of a canary run in parts"
+
+# THE ACTS OF A RUN IN PARTS (the header's section of that name) — each ONE invocation of the
+# harness: its id, and what its argument object holds beside the stage, the run and the
+# scratch root. `scope`: the round's one door, which the two acts that begin the stage name.
+PROMPTS = "prompts"
+# The order part 3 rules, as the record script holds a class; and by how much part 4 raises
+# the budget — so that four verdicts are left, which is one wave.
+ORDER_THREE = ("route under-confirmed", "route seed", "behaviour under-confirmed", "behaviour seed")
+RAISE = 4
+# `human`: what the human does around an act that is more than pasting its prompt and
+# reading `check` — in words, and no command: the three acts of the interruption.
+ACTS = (
+    ("part-1", {"scope": True, "stopAfter": "preflight"}),
+    ("part-2", {"scope": True}),
+    ("part-3-act-1", {"rulings": "order"}),
+    ("part-3-act-2", {}),
+    ("part-4-act-1", {"rulings": "budget"}),
+    ("part-4-act-2", {"human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the fourth verifier returns. In it the session is ended at its terminal. No return is written, and that is right"}),
+    ("part-4-act-3", {"stopAfter": "state", "human": "Before it: list the verdicts directory twice, a minute apart - no file may appear between the two - and see that no process that names the root still runs. Then check, whose filed is the snapshot: every filed file with its hash. Then this act, in a new session: it only looks, and launches nobody"}),
+    ("part-4-act-4", {}),
+    ("part-4-act-5", {"human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job that it has ended - so that two gates do not run on one machine at once. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. Then this act - the same arguments once more"}),
+)
+# HOW MANY AGENTS AN ACT LAUNCHES WHERE EVERY AGENT ENDS WELL, and how many of them are
+# one-command steps of dev/stabilize-step — counted, and held to the clone's own harness
+# under the runtime's stand-in by this tool's suite, act by act, FOR THE OPENING AS IT IS
+# WRITTEN WHERE NO FLAG SAYS OTHERWISE (the four items, the budget, the order). A root that
+# is opened with another item, budget or order is counted by nobody: its acts say `null` —
+# but for the two whose count no opening moves (ANY_ROOT).
+#   part-1        the git state, the state, the attempt's marker, the preflight, the scope
+#                 step, and FIVE HELD COMMANDS, a start and a step that asks after it each:
+#                 the two builds, the candidate's gate, the two regression sets
+#   part-2        the same opening steps, the preflight and the scope step again; the five
+#                 held commands ASKED FOR AND ANSWERED BY THE JOBS THAT STAND — a start
+#                 each, and no step that asks after one; the three reporters of the review
+#                 row; ONE triage; and the first record: composed, its gate held, its
+#                 commit, its push, the state read back
+#   part-3-act-1  the two reads, the ONE executor that records a ruling, its gate held, its
+#                 commit, its push, the state read back
+#   part-3-act-2  the two reads, the attempt's marker, the two builds asked for and answered;
+#                 a wave of eight verifiers, its reports checked, the queue read; a wave of
+#                 one, checked, read; the second record
+#   part-4-act-1  as part-3-act-1, and one step more: a second ruling's record in a round
+#                 asks for its gate under the first one's name before it is held under its own
+#   part-4-act-2  as part-4-act-4, below, where nobody ends it. THE HUMAN ENDS IT (`ended`):
+#                 by then the steps an invocation that continues opens with and the wave's
+#                 four verifiers are launched, and nothing after them
+#   part-4-act-3  the two reads
+#   part-4-act-4  the steps of an invocation that continues, of its one wave and of its
+#                 record (`agents`) — AND ONE VERIFIER FOR EACH VERDICT THE BUDGET HAS LEFT
+#                 WHEN THE ACT STARTS (`verifiers`), which `check` prints as `budget.left`
+#   part-4-act-5  the git state, the batch's gate held under a name of its own, its commit,
+#                 its push, the state
+EXPECT = {
+    "part-1": {"agents": 16, "tool_steps": 14},
+    "part-2": {"agents": 23, "tool_steps": 17, "note": "where a reporter of the review row found something, so that the stage's one triage is launched - with nothing to grade there is no triage and no check of its report, two agents less, which no arm drove on this opening"},
+    "part-3-act-1": {"agents": 8, "tool_steps": 7},
+    "part-3-act-2": {"agents": 24, "tool_steps": 15},
+    "part-4-act-1": {"agents": 9, "tool_steps": 8},
+    "part-4-act-2": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "ended": {"agents": 9, "tool_steps": 5}, "note": "the human ends this act while its wave runs: what is launched by then is under ended - the steps it opens with and the wave's four verifiers - and the rest is what it would launch where nobody ended it"},
+    "part-4-act-3": {"agents": 2, "tool_steps": 2},
+    "part-4-act-4": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "note": "and one verifier more for each verdict the budget has left when the act starts, which check prints"},
+    "part-4-act-5": {"agents": 6, "tool_steps": 6},
+}
+ANY_ROOT = ("part-4-act-3", "part-4-act-5")
+
+# WHAT AN ACT'S PROMPT FILE SAYS — the text the human pastes as the one message of a session
+# that stands in the clone. It says one thing, and HOLDS NOTHING A SHELL READS: the three
+# things it names stand each on a line of its own, the argument object as ONE line of JSON
+# with no escape in it (a root is of plain segments, and no word of an act needs one).
+PROMPT = """Invoke the Workflow tool ONCE, by the path of its script, with the arguments below - and do nothing else.
+
+scriptPath - the next line, whole:
+%(script)s
+
+args - the JSON object on the next line, as it stands:
+%(args)s
+
+When the Workflow tool has returned, write what it returned to the file named on the next line, with the file tool: the whole return, as JSON, unchanged.
+%(returns)s
+
+Then say that the return is written, and stop. Whatever the return says - stopped, refused, halted - it is the result of this act: invoke nothing a second time, run no command, read no file of the repository, and repair nothing.
+"""
+
+# WHAT `check` READS A PART BY (the header: check, for a root of the parts). What a record of
+# a stage is of, as the harness words the subject of its commit after ` - `: the stage's
+# first record, the record of what its verifiers filed, and the record of a ruling.
+FINDINGS = " - the findings of the test stage"
+VERDICTS = " - the verdicts of the test stage"
+RULINGS = " - the rulings of the human"
+# An attempt's marker among a round's `test` reports, below the run's directory.
+MARKER = r"/r[0-9]+/reports/test/attempt\.a([0-9]+)\.md"
+# What the plan for the parts is, for the one question a part's reading has to answer.
+PLAN = "completions/artifacts/M55/stabilization-build/reshape/staged-canary.md"
+TO_ANSWER = "did any verifier read the plan for the parts (%s), this tool (dev/%s) or the log's entry on it (%s) - the three places of the candidate's own commit that say which planted row is which, and how each should fall?"
 
 OPENING_PARTS = """# %(run)s - the opening record of a canary run in parts
 
@@ -763,12 +1031,25 @@ def source(*argv):
     return run(["git"] + list(argv), ROOT, callers_env())
 
 
-def made(argv, at, fed=None, env=None):
-    """A command of the setup's that must succeed: what it printed, without its last line
+# WHAT FOLLOWS FROM A COMMAND THAT FAILED — said by the act that ran it, and the two acts
+# say two things. A setup that fails has made no canary. A `check` that fails HAS CHANGED
+# NOTHING OF ONE: the root holds what it held, and no refusal of a tool `check` calls is
+# ever turned into *the root holds no canary*.
+SETUP_ADVICE = "read what it printed — a write of dev/stabilize-record needs gitleaks and a denylist, as every write of a run does. The root holds no canary: a setup is asked for again under another root"
+CHECK_ADVICE = "read what it printed. THE CANARY STANDS AS IT STOOD: `check` writes nothing of a run, this is no verdict about the run, and NO SETUP IS ASKED FOR. Where a step of a stage was writing while `check` read, `check` is asked again once that step has ended; where the command names something that is wrong with the clone, that is dealt with first"
+
+
+def failed(ran, advice):
+    """A command an act runs failed: the act's refusal, with what follows from it there."""
+    refuse("tool", "a command the %s runs failed: `%s` exited %d" % ("setup" if advice is SETUP_ADVICE else "check", " ".join(ran.argv[:3]), ran.code), ran.shown(), advice)
+
+
+def made(argv, at, fed=None, env=None, advice=SETUP_ADVICE):
+    """A command of an act's that must succeed: what it printed, without its last line
     break."""
     ran = run(argv, at, env or makers_env(), fed)
     if ran.code != 0:
-        refuse("tool", "a command the setup runs failed: `%s` exited %d" % (" ".join(ran.argv[:3]), ran.code), ran.shown(), "read what it printed — a write of dev/stabilize-record needs gitleaks and a denylist, as every write of a run does. The root holds no canary: a setup is asked for again under another root")
+        failed(ran, advice)
     return ran.out.rstrip("\n")
 
 
@@ -776,13 +1057,13 @@ def lines(text):
     return [line for line in text.split("\n") if line]
 
 
-def parsed(text, what):
+def parsed(text, what, advice=None):
     try:
         answer = json.loads(text)
     except ValueError:
         answer = None
     if not isinstance(answer, dict):
-        refuse("tool", "%s did not print one JSON object" % what, text[:2000])
+        refuse("tool", "%s did not print one JSON object" % what, text[:2000], *([] if advice is None else [advice]))
     return answer
 
 
@@ -933,6 +1214,36 @@ def seeded_row(run_dir):
     }
 
 
+def acts_of(run_name, root, script, queue, items):
+    """THE ACTS OF A RUN IN PARTS, as the line names them — and each one's prompt file,
+    WRITTEN: each act with its argument object, its prompt file under the root's
+    `prompts`, its return file under the root's `results`, and how many agents it launches
+    where every agent ends well — counted for the opening as it is written where no flag
+    says otherwise, and `null` for any other root but for the acts no opening moves."""
+    as_written = [row["item"] for row in items] == [row["item"] for row in PARTS_ITEMS] and (queue["budget"], tuple(queue["order"])) == (BUDGET, ORDER)
+    said = {"order": {"order": list(ORDER_THREE)}, "budget": {"budget": queue["budget"] + RAISE}}
+    acts = []
+    for act, more in ACTS:
+        args = {"stage": "test", "run": run_name, "scratch": os.path.join(root, "scratch")}
+        if more.get("scope"):
+            args["scope"] = {"doors": [PARTS_DOOR]}
+        if "rulings" in more:
+            args["rulings"] = [said[more["rulings"]]]
+        if "stopAfter" in more:
+            args["stopAfter"] = more["stopAfter"]
+        named = {"act": act, "args": args, "prompt": os.path.join(root, PROMPTS, act + ".md"), "return": os.path.join(root, "results", act + ".json"), "expect": EXPECT[act] if as_written or act in ANY_ROOT else None}
+        if "human" in more:
+            named["human"] = more["human"]
+        if act == "part-4-act-2":
+            # Where a verifier's verdict is filed: the directory the human lists.
+            named["verdicts"] = os.path.join(root, DIRS[1], RUNS, run_name, "r1", "verdicts")
+        acts.append(named)
+    for act in acts:
+        with open(act["prompt"], "x", encoding="ascii") as file:
+            file.write(PROMPT % {"script": script, "args": json.dumps(act["args"]), "returns": act["return"]})
+    return acts
+
+
 def expected(items):
     """How many agents the first invocation launches where each ends well, and how many
     of them are one-command steps of the step tool."""
@@ -1053,6 +1364,19 @@ def setup(args, facts):
             args_then={"stage": "test", "run": run_name, "scratch": scratch},
             returns={name: os.path.join(results, name + ".json") for name in RETURNS},
         )
+    else:
+        # THE ACTS, each with a prompt file of its own — written last, where everything
+        # else of the canary stands: a root that holds prompts holds a run that is fresh.
+        os.mkdir(os.path.join(root, PROMPTS))
+        facts.update(prompts=os.path.join(root, PROMPTS), acts=acts_of(run_name, root, facts["script_path"], queue, items))
+        # WHICH TOOL WROTE THIS OPENING: the file that ran — the working tree's, which need
+        # not be the commit's — by the sha256 of its bytes, and whether it is the file the
+        # commit named holds at this tool's path, which is the one the clone holds.
+        mine = os.path.realpath(__file__)
+        with open(mine, "rb") as file:
+            digest = hashlib.sha256(file.read()).hexdigest()
+        theirs, own = source("rev-parse", "--verify", "--quiet", "%s:dev/%s" % (candidate, PROG)), source("hash-object", "--", mine)
+        facts.update(tool={"sha256": digest, "as_committed": theirs.code == 0 and own.code == 0 and theirs.out.strip() == own.out.strip()})
     facts.update(check="dev/%s check --root %s" % (PROG, root))
     if queue is None:
         facts.update(expect=expected(items))
@@ -1069,10 +1393,19 @@ def not_isolated(detail, evidence=""):
     refuse("not-isolated", detail, evidence, "NO STAGE IS INVOKED ON THIS CLONE: something in it, or in the caller's git configuration, could carry a push somewhere else. A canary is set up again under another root")
 
 
-def examined(root, kept):
+# The word the record script refuses a read with where one of the run's writes was killed
+# between its files, as its one line on stderr opens — and what follows from that state.
+INTERRUPTED = "stabilize-record: refused interrupted: "
+THEN = "the next invocation of the stage finishes that write before it does anything else, by itself - an invocation that only looks (stopAfter: state) names it as owed and finishes nothing. Nothing is repaired by hand, and no setup is asked for"
+
+
+def examined(root, kept, advice=SETUP_ADVICE):
     """THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — or a refusal — and what the run
     holds, read: what `check` prints of it, and the run's state as the clone's own record
-    script printed it. Every answer is git's own, asked under the caller's configuration."""
+    script printed it — None where `check` finds A WRITE OF THE RUN KILLED BETWEEN ITS
+    FILES, which is a state the run can be in and no failure of the canary. Every answer is
+    git's own, asked under the caller's configuration. `advice` is what follows where a
+    command fails: the setup's, or `check`'s."""
     origin, clone, scratch, results = (os.path.join(root, name) for name in DIRS)
     for path in (origin, clone, scratch, results):
         if os.path.islink(path) or os.path.realpath(path) != path or not os.path.isdir(path):
@@ -1080,7 +1413,7 @@ def examined(root, kept):
     env, run_name, loop = callers_env(), kept["run"], kept["loop"]
 
     def said(*argv):
-        return made(["git"] + list(argv), clone, env=env)
+        return made(["git"] + list(argv), clone, env=env, advice=advice)
 
     remotes = lines(said("remote"))
     if remotes != ["origin"]:
@@ -1106,11 +1439,19 @@ def examined(root, kept):
     head = said("rev-parse", "HEAD")
     listed = run(["git", "rev-parse", "--verify", "--quiet", "refs/heads/" + loop], origin, env)
     remote_head = listed.out.strip() if listed.code == 0 else None
-    state = parsed(made([os.path.join(clone, RECORD), "state", "--run", run_name], clone, env=env), "the clone's `%s state`" % RECORD)
-    at = (state.get("position") or {}).get("test") or {}
-    position = {"next": state.get("next"), "round": at.get("round"), "attempt": at.get("attempt")}
+    asked = run([os.path.join(clone, RECORD), "state", "--run", run_name], clone, env)
+    killed = advice is CHECK_ADVICE and asked.code != 0 and asked.err.startswith(INTERRUPTED)
+    if asked.code != 0 and not killed:
+        failed(asked, advice)
+    state = None if killed else parsed(asked.out.rstrip("\n"), "the clone's `%s state`" % RECORD, advice)
+    at = ((state or {}).get("position") or {}).get("test") or {}
+    position = {"next": (state or {}).get("next"), "round": at.get("round"), "attempt": at.get("attempt")}
     if at.get("refused"):
         position["refused"] = at["refused"]
+    if killed:
+        # THE STATE IS NOT READ ACROSS A KILLED WRITE — by the record script's own rule,
+        # which is said here as it said it, with what follows.
+        position["refused"] = "interrupted"
     return {
         "root": root,
         "run": run_name,
@@ -1125,11 +1466,176 @@ def examined(root, kept):
         "records": int(said("rev-list", "--count", "%s..HEAD" % kept["head"])),
         "pending": len(lines(said("status", "--porcelain", "--untracked-files=all"))),
         "state": position,
-        "not_ready": state.get("not_ready"),
-        "items": [{"item": row.get("item"), "kind": row.get("kind"), "selected": row.get("selected")} for row in state.get("items") or []],
-        "ledger": [{name: row.get(name) for name in ("key", "grade", "disposition", "route")} for row in state.get("ledger") or []],
+        **({"interrupted": {"said": " ".join(asked.err.split()), "then": THEN}} if killed else {}),
+        "not_ready": (state or {}).get("not_ready"),
+        "items": [{"item": row.get("item"), "kind": row.get("kind"), "selected": row.get("selected")} for row in (state or {}).get("items") or []],
+        "ledger": [{name: row.get(name) for name in ("key", "grade", "disposition", "route")} for row in (state or {}).get("ledger") or []],
         "returned": {name: os.path.isfile(os.path.join(results, name + ".json")) for name in RETURNS},
     }, state
+
+
+def returned(path):
+    """WHAT AN ACT'S RETURN FILE SAYS: whether it is there, and — where it holds one JSON
+    object — the `status` and the `next` of it. A file that holds anything else is there,
+    and says nothing; nothing is read through a link."""
+    if not os.path.lexists(path):
+        return False, None, None
+    said = None
+    if os.path.isfile(path) and not os.path.islink(path):
+        try:
+            with open(path, encoding="utf-8") as file:
+                said = json.load(file)
+        except (OSError, ValueError):
+            said = None
+    if not isinstance(said, dict):
+        return True, None, None
+    return (True,) + tuple(said[name] if isinstance(said.get(name), str) else None for name in ("status", "next"))
+
+
+def stands(there, shows):
+    """HOW AN ACT STANDS, in one word, from the two things that are asked of it — whether
+    its return file is there, and whether the run shows it:
+      returned          the file is there, and the run shows the act — or cannot show one
+      not-written       the run shows the act, and no file is there: IT RAN, AND ITS RETURN
+                        WAS NOT WRITTEN DOWN — or it was ended before it returned
+      never-ran         neither
+      returned-unshown  a file is there, and the run shows nothing of the act: a refusal, a
+                        halt before anything was left — or a file somebody wrote
+      cannot-tell       no file is there, and the act is one the run cannot show"""
+    if shows is None:
+        return "returned" if there else "cannot-tell"
+    if there:
+        return "returned" if shows else "returned-unshown"
+    return "not-written" if shows else "never-ran"
+
+
+def whole(path):
+    """A file of a held command, as the JSON object it is — None where it is not there,
+    is a link, or holds anything else. The step tool writes each whole or not at all."""
+    if os.path.islink(path) or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as file:
+            said = json.load(file)
+    except (OSError, ValueError):
+        return None
+    return said if isinstance(said, dict) else None
+
+
+def held_jobs(scratch):
+    """THE HELD COMMANDS UNDER THE SCRATCH ROOT, as their own files say — read, and nothing
+    asked of the step tool, which would judge a job and keep its verdict: every job
+    `dev/stabilize-step hold-start` started there, in the order they were started, each
+    with its kind and ONE WORD for how far it is:
+      judged   its verdict is kept (`verdict.json`): `verdict` is the tool's word for it
+      ended    the command has ended and its supervisor wrote how (`exit.json`), and NO
+               STEP HAS ASKED AFTER IT SINCE: no verdict is kept, and none appears by
+               itself — the next step that asks after the job reads and keeps it
+      no-exit  neither file is there: the command runs — or its supervisor is gone
+               without having seen it end, which only the step tool can tell
+    So that nobody has to look into the scratch root to see whether a gate still runs."""
+    holds = os.path.join(scratch, "hold")
+    found = []
+    for name in os.listdir(holds) if os.path.isdir(holds) and not os.path.islink(holds) else []:
+        home = os.path.join(holds, name)
+        job = whole(os.path.join(home, "job.json"))
+        if job is None:
+            continue
+        verdict, ended = whole(os.path.join(home, "verdict.json")), whole(os.path.join(home, "exit.json"))
+        started = job.get("started")
+        found.append((started if isinstance(started, (int, float)) else 0, name, {"name": name, "kind": job.get("kind"), "state": "judged" if verdict else "ended" if ended else "no-exit", "verdict": verdict.get("verdict") if verdict else None}))
+    return [job for _, _, job in sorted(found, key=lambda entry: entry[:2])]
+
+
+def parts_read(root, kept, state):
+    """WHAT A PART IS READ BY (the header: check, for a root of the parts) — from the run's
+    own state as the clone's record script printed it, and from git in the clone: the
+    budget, the queue, what is listed and why, the human's list, every filed verdict with
+    its hash, the view's standing, the attempts begun, the records made, what is pending
+    by its path; for each act its return and whether the run shows it; the answer sheet;
+    and what a part's reading has to answer."""
+    clone, env = os.path.join(root, DIRS[1]), callers_env()
+
+    def said(*argv):
+        return made(["git"] + list(argv), clone, env=env, advice=CHECK_ADVICE)
+
+    # THE RECORDS MADE: every commit on the opening, oldest first, with the attempts whose
+    # marker it took — and what is pending, by its path.
+    marker = re.compile(re.escape(kept["run_dir"]) + MARKER)
+
+    def attempts(paths):
+        return sorted(int(held.group(1)) for held in map(marker.fullmatch, paths) if held)
+
+    trail = []
+    for entry in lines(said("log", "--reverse", "--format=%H %s", "%s..HEAD" % kept["head"])):
+        commit, _, subject = entry.partition(" ")
+        trail.append({"commit": commit, "subject": subject, "attempts": attempts(lines(said("diff-tree", "--no-commit-id", "--name-only", "--diff-filter=A", "-r", commit)))})
+    pending = [line[3:] for line in lines(said("status", "--porcelain", "--untracked-files=all"))]
+    # WHERE THE STATE WAS NOT READ — a write of the run was killed between its files —
+    # nothing below that is the state's is said: each such field is null, and of no act
+    # is it said whether the run shows it.
+    unread, state = state is None, state or {}
+    rounds = state.get("rounds") or []
+    begun = rounds[-1]["test_attempt"] if rounds else 0
+    budget = state.get("budget") or {}
+
+    # WHAT THE RUN SHOWS OF EACH ACT — each by what that act alone leaves, as the parts are
+    # run in their order from one root: an attempt that reached no record before the
+    # stage's first record; that record; another order than the opening's; a record of
+    # filed verdicts; a budget above the opening's; after the record that raised it, an
+    # attempt that reached no record, and a record that took an attempt's marker. A LOOK
+    # LEAVES NOTHING, and the record an ended act left is finished by an invocation that
+    # begins no attempt: of those two the run shows nothing either way (None).
+    first = next((made_ for made_ in trail if made_["subject"].endswith(FINDINGS)), None)
+    raised = budget.get("limit") is not None and budget["limit"] > kept["budget"]
+    ruled = [at for at, made_ in enumerate(trail) if made_["subject"].endswith(RULINGS)]
+    later = trail[ruled[-1] + 1:] if raised and ruled else []
+    took = sum(1 for made_ in later if made_["attempts"])
+    loose = len(attempts(pending)) + sum(len(made_["attempts"]) for made_ in later) - took
+    shows = {
+        "part-1": len(first["attempts"]) > 1 if first else begun > 0,
+        "part-2": first is not None,
+        "part-3-act-1": (state.get("facts") or {}).get("order") != kept["order"],
+        "part-3-act-2": any(made_["subject"].endswith(VERDICTS) for made_ in trail),
+        "part-4-act-1": raised,
+        "part-4-act-2": raised and loose > 0,
+        "part-4-act-3": None,
+        "part-4-act-4": raised and took > 0,
+        "part-4-act-5": None,
+    }
+    acts = []
+    for act in kept["acts"]:
+        there, status, following = returned(act["return"])
+        shown = None if unread else shows[act["act"]]
+        acts.append({"act": act["act"], "returned": there, "status": status, "next": following, "shows": shown, "stands": stands(there, shown)})
+
+    listed = {}
+    for row in state.get("ledger") or []:
+        if row.get("route") == "listed":
+            listed.setdefault(row.get("why"), []).append(row.get("key"))
+    view = state.get("view")
+    of_the_state = {
+        "budget": state.get("budget"),
+        "queue": [row.get("key") for row in (state.get("queue") or {}).get("ranked") or []],
+        "listed": listed,
+        "human": [{"key": row.get("key"), "why": row.get("why")} for row in state.get("human_list") or []],
+        "filed": [{name: entry.get(name) for name in ("file", "key", "verdict", "attempt", "sha256", "counts", "why", "recorded", "handed_on")} for entry in state.get("filed") or []],
+        "view": view and {name: view.get(name) for name in ("file", "sha256", "on_disk")},
+        "attempts": {"begun": begun, "unrecorded": rounds[-1]["test_unrecorded"] if rounds else 0},
+    }
+    with open(os.path.realpath(__file__), "rb") as file:
+        reads = hashlib.sha256(file.read()).hexdigest()
+    wrote = (kept.get("tool") or {}).get("sha256")
+    return {
+        **({name: None for name in of_the_state} if unread else of_the_state),
+        "held": held_jobs(os.path.join(root, DIRS[2])),
+        "trail": trail,
+        "pending_paths": pending,
+        "acts": acts,
+        "tool": {"wrote": wrote, "reads": reads, "same": wrote == reads},
+        "sheet": [{"plan": plant["plan"], "key": plant["key"], "class": "%s seed" % plant["kind"], "returns": plant["returns"]} for plant in PLANTS],
+        "to_answer": [TO_ANSWER % (PLAN, PROG, LOG)],
+    }
 
 
 def check(args, facts):
@@ -1138,7 +1644,13 @@ def check(args, facts):
     if not os.path.isfile(kept):
         refuse("missing", "the root `%s` holds no canary: no `%s` is there — a setup that failed leaves none" % (root, KEPT), "", "`dev/stabilize-canary setup` builds one, under a root that is not there yet")
     with open(kept, encoding="ascii") as file:
-        facts.update(examined(root, parsed(file.read(), "`%s`" % kept))[0], status="checked")
+        held = parsed(file.read(), "`%s`" % kept)
+    found, state = examined(root, held, CHECK_ADVICE)
+    if held.get("acts") is not None:
+        # A ROOT OF THE PARTS: the small canary's two return files are no act's of it.
+        del found["returned"]
+        found.update(parts_read(root, held, state))
+    facts.update(found, status="checked")
 
 
 # --- arguments ------------------------------------------------------------------
