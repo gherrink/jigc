@@ -2,6 +2,75 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The stage names the kept baseline: a held regression set is started with one more flag, a path below the scratch root that is the previous release's commit's and nothing else's — so every stage against one previous release under one scratch root hands the regression tool one directory, which is no job's (the plan's `K8b`; the builder's choices inside it)
+
+**What.** A `test` stage's held regression set is started with `--baseline`, and so what the previous release's commit alone decides — its tree, its built tests, their run on their own binary — is built once under a scratch root and used again ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K8b`, Phase B; the tool's half is the entry *2026-10-11 — The regression set's baseline is kept*, which left *where DIR lies, and that a second stage names the same one* to this task). In one place:
+
+- **The step tool** ([`dev/stabilize-step`](dev/stabilize-step), `hold-start`, its header's *A KEPT BASELINE*): a held `regression` **may** take `--baseline PATH`. PATH is a path **below the scratch root**, of plain segments — the grammar `--to` has — and the tool hands `dev/regression-set` the directory `<scratch>/PATH`. Without the flag the command is the one it was. The directories on the way are made, and a link on the way or at the path is refused (`usage`) before anything is started; the directory itself is the regression tool's to make. The path is part of what a job was asked: the same name with another path, or with none, is refused (`taken`).
+- **The harness** ([`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js), its header's *AND WHAT THE PREVIOUS RELEASE'S COMMIT ALONE DECIDES IS BUILT ONCE*): the stage names the directory — `baselineOf(previous)`, `baseline/previous-<the first twelve digits of the previous release's commit>` — and starts every held regression set with it (`regressionFlags`). No candidate, no round, no attempt, no run and no job is in the name.
+- **For both kinds of run.** The held checks are started before the two paths part, so a run without an order gets the flag too: the plan's table has it (*the regression set's stand-in is handed one more flag — carried in `SIM`*), and the one scenario of that path that pins the command is carried, below.
+- **What is on record of it** is what the record script already takes of a held check: `asked`, which now holds the path as it was asked — below the root, so no path of a machine — and the regression tool's own line, whole, in which `baseline: {dir, used, refused, detail, key}` says what became of the directory, `dir` under the placeholder `<scratch>`. **No step reads it**: the verdict, its facts and the digest are what they were, and a baseline that was refused or locked is no void — the tool's half ruled that a refused baseline is built afresh in the same run, with the same verdict.
+
+**Where the directory lies — the choice the plan and the tool's entry left open, and what was rejected.** `<scratch>/baseline/previous-<12>`: beside `hold/`, `bin/` and `state/`, named as the previous release's build and binary are (`build-previous-<12>`, `bin/previous-<12>/jigc`), and named by the harness, which mints every other name under the root.
+
+- *Rejected: an absolute directory as the flag's value.* The tool builds every command from its own argument list and takes no directory of a caller's but the root; and the job's record, which reaches the run's record as `asked`, would hold a host path.
+- *Rejected: the tool derives the directory from `--previous`, and the flag is a switch.* Then no stage names anything, the kinds' table — flags with values, required or admitted — would gain a second form, and the tool's half says the caller names the directory. The cost of the choice taken is that a harness could name another path stage by stage; the self-test and the scenario hold that it does not, and by the regression tool's key it would cost a build and never a wrong baseline.
+- *Rejected: under the job's own directory* (`hold/<name>/…`). A job is one candidate's and one run's of an item: nothing kept there is ever named twice.
+- *Rejected: the whole commit in the name.* The twelve digits are a name and no identity — the regression tool holds what is kept to the whole commit (`previous`, the first member of its key) — and every name under the root has twelve.
+- *Rejected: a directory outside the scratch root*, which would be one for every root on a machine. Every record names the scratch root by its placeholder, and that is what makes the directory public; and a stage writes nowhere else.
+
+**Chosen besides.**
+
+- **One function composes the flags** (`regressionFlags`), and the stage, the self-test and the fence's row for arm (s) all call it — the row had been the flags typed a second time.
+- **The stand-in's line says what the real one says.** Where a start names a baseline, the simulation's regression set prints `baseline: {dir, used, refused, detail, key}` with the directory as an absolute path of the machine — so that what the record script does with that path is driven, not assumed — and a scenario may say what was used and kept.
+- **No scenario of its own for a stage that is killed and started again.** `T5b`'s `a_stage_killed_before_its_first_record_holds_its_green_gate_and_its_regression_set_once` runs with the flag since this commit and is green: asked again under the commit's name with the same path, the job that stands answers.
+
+**Red first.** The step tool's arm, the new scenario, the carried scenario and the two fence lines were written before either tool changed, and run on the parent: four red — the fence's arm (r) was not in that run, by a filter that matched nothing. The fence's two lines were moved once more while the harness was written, to the function the stage calls. **The arms as committed were then run against the parent's two tools: five red.**
+
+| Arm | On the parent |
+|---|---|
+| `dev_stabilize_step::the_regression_hold_passes_the_kept_baseline` | `hold-start` refuses the call: `usage: unrecognized arguments: --baseline baseline/previous-…` |
+| `stabilize_simulation::a_second_stage_against_one_previous_release_names_the_same_baseline` | both stages run to their records; the command the stage tells its step to run names no baseline |
+| `stabilize_simulation::a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candidate_and_no_gate_is` (carried) | the same, for a run without an order |
+| fence (s) | `holdStartPrompt (the regression set): the script composes none — regressionFlags is not defined` |
+| fence (r) | ``the `test` stage holds `flags: regressionFlags(previousOf(state).commit, sha),` `` — it does not |
+
+**What followed its code, and says so:** the self-test's one check; and the arm's last part, (9) — the real `dev/regression-set` in the stand-in's place, started by the hold with the same flags, which refuses the call for its commits (`commit`, exit 4) and so has taken every flag. It was written because every other command of the two suites runs a stand-in that takes whatever it is handed. Its mutant is the last row below.
+
+**Mutants** — sixteen, each one edit, each run on the arms named, the tool put back and its hash compared after. All died.
+
+| The edit | What went red |
+|---|---|
+| the hold does not pass the baseline · passes the path as asked, not under the root · puts it in the job's own directory | the step tool's arm; the new scenario |
+| the path is not held to lie under the root · any text is a path · every regression set must name one · a gate may name one · the table's command does not say it · the path is no part of what a job was asked | the step tool's arm |
+| the stage names no baseline · names it by the candidate · puts it under `hold/` · names it by the whole commit | the self-test; the new scenario; the carried scenario |
+| the stage starts the regression set with the flags it had | fence (r); the new scenario; the carried scenario |
+| the stage hands the two commits the other way round | the same three, and the canary suite's `a_stage_over_the_default_opening_starts_its_held_checks_and_records_the_tools_verdicts` |
+| `dev/regression-set` calls its flag something else (a mutant of that tool, run and put back) | the step tool's arm, at (9): `usage`, exit 2 |
+
+**The assertions this task carried.**
+
+- *The simulation:* `a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candidate_and_no_gate_is` — the `hold-start` command it pins names the baseline.
+- *The fence:* arm (r), part (8) — the `flags:` line of the `test` stage; arm (s) — the row *the regression set* of the prompts' table, composed through `regressionFlags`.
+- *Nothing in the canary's suite, the probe's or the record script's.*
+
+**What the next tasks owe because of this.**
+
+- `K7b`, `K6`: a new held kind is a row of the step tool's `HOLDS` and of its suite's `HELD_KINDS`, named by its commit and `stands`. **A flag added to a kind whose jobs stand is refused `taken` under every name that stands without it** — so is this one: a scratch root that holds a regression job of the harness before this commit, for the same candidate and the same run of the item, voids the check by that word. What is kept across candidates is named by what it depends on alone, lies beside `hold/`, and is held by the same line as `--to` and `--baseline` (`under`). The arm's part (8) pins what a held `regression` takes and may take, whole. And a stand-in takes any flag: a kind whose command is another tool's is owed a part like (9).
+- `T9`: the canary's scratch root is `ROOT/scratch`, so a canary under a new root builds a baseline that nothing uses unless its own stage runs the regression set twice — the saving the tool's half measured is not seen in a canary of one stage. The canary's suite pins the regression set's command by its commits and its list only, and was not moved.
+- `T10`: the workflow doc says a held regression set is started *over the previous release's commit, the round's candidate and the list's path*; the directory, and that a scratch root kept from stage to stage is what makes it one, is not there.
+- The first supervised run reads the saving from the check's file on record — `r<N>/checks/<item>.a<n>.json`, `evidence.line.baseline` and `evidence.line.seconds`. Nothing prints it.
+
+**What is not established.**
+
+- **No real regression set was held with the flag.** The three real runs of the tool's half were of the tool alone. Here the real tool's parser took the command the hold composes, and refused it for commits the rig does not hold; no previous release was built through a stage.
+- **That a scratch root is the same from stage to stage and from run to run.** It is the orchestrator's argument, and nothing holds it. A stage handed another root builds the baseline again.
+- **What the directory weighs, and who removes it.** It holds the previous release's tree and its whole target directory, under the scratch root; the regression tool removes a baseline it refuses, and nothing removes the one that stands when a run is over.
+- **Two runs at once under one root** — the regression tool's `locked` — and **a file at the directory's place** — that tool's refusal `scratch`, a void by `refused`: neither is driven through a stage.
+- **Two previous releases whose commits share twelve digits** name one directory, and each run of one after the other builds afresh.
+- **A baseline the tool refuses, as a stage meets it**: the scenario's stand-in says `used` and `key`; none of the tool's refusal words is driven through a record, and a refusal's sentence names what the member is now — a path among them, which the record's sanitizer is handed like any text.
+- **Not read whole for this task**: the harness beyond its header's paragraphs on what a stage holds, `hold`, the held checks of `runTest` and the self-test's checks of a held command; the step tool beyond its hold, its tables and its arguments; the three suites beyond the arms named, their rigs and the scenarios of a held check; the record script beyond `held_result` and `public`; [stabilization-workflow.md](implementation/stabilization-workflow.md) beyond *The regression set*; [dev-workflow.md](implementation/dev-workflow.md) and [public-hygiene.md](implementation/public-hygiene.md) beyond what the project's instructions carry of them.
+
 ## 2026-10-12 — A verdict its verifier contests is the human's by the verifier's own filing: the basis in the filed file, a mark in the round's row, a word of its own on the human's list and in the stop's view — with no case and no drive, and nothing moved for a fork that has both (what `T5b`'s builder found owed before `T6a`; a task the plan did not cut; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) takes, in a run with a queue, a verifier's word that its finding is **contested** — and routes the finding to the human on that word, with no advocate's case and no independent drive ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §2.9, item 9, and §6: *a contested finding found in `test` reaches the human with its verifier's basis and no advocate's case* — ruled, and told to the human with the questions; the top of the entry below: *a filed verdict has no field for it … owed before `T6a` takes a verifier's return*). Phase A: a writer's word nobody types yet. The script's header is the contract — *A CONTESTED VERDICT IS THE HUMAN'S, WITH ITS VERIFIER'S BASIS AND NO CASE*, under `verdict`. In one place:

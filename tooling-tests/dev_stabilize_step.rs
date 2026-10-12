@@ -10752,6 +10752,218 @@ fn the_verdict_of_a_held_command_is_read_by_the_tool() {
     );
 }
 
+/// **The regression hold passes the kept baseline** (the build plan of the reshaped `test`
+/// stage, §5, `K8b`; `dev/regression-set`: *A KEPT BASELINE*). A held `regression` MAY take
+/// `--baseline PATH`, a path BELOW THE SCRATCH ROOT — never a caller's absolute directory —
+/// and the tool hands `dev/regression-set` that directory under the root it was given:
+/// what the previous release's commit alone decides is then built there once and used
+/// again. WITHOUT THE FLAG THE COMMAND IS WHAT IT WAS. The directory is no job's: a second
+/// held command, under another name, names the same one — and it lies in no job's
+/// directory. What is asked is part of the job's record like every flag: asked again with
+/// the same path the job that is there answers, and with another path, or with none, the
+/// name is taken. A link on the way to the directory, or at it, is refused before anything
+/// is started. And what the regression tool says became of the baseline is in the tool's
+/// verdict file, in that tool's own line — the facts of the verdict are what they were.
+#[test]
+fn the_regression_hold_passes_the_kept_baseline() {
+    let held = Held::new("hold-baseline");
+    let scratch = held.scratch.clone();
+    let (ran, plain_line) = regression_line("run-3-result.json");
+    let sha = |whose: &str| ran[whose]["commit"].as_str().expect("a sha").to_owned();
+    let (previous, candidate) = (sha("previous"), sha("candidate"));
+    let kept_in = format!("baseline/previous-{}", &previous[..12]);
+    let with = |baseline: &str| -> Vec<String> {
+        regression_kind(&previous, &candidate)
+            .into_iter()
+            .chain(["--baseline", baseline])
+            .map(str::to_owned)
+            .collect()
+    };
+    let start = |name: &str, owned: &[String], prints: &str| {
+        let asked: Vec<&str> = owned.iter().map(String::as_str).collect();
+        held.start(name, &asked, prints, 0)
+    };
+    // The regression tool's line of a run that names a baseline: the committed line of a
+    // real run, and what that tool says of the baseline beside it.
+    let mut said = ran.clone();
+    said["baseline"] = json!({"dir": format!("{scratch}/{kept_in}"), "used": true,
+                              "refused": null, "detail": null, "key": "7".repeat(64)});
+    let kept_line = format!("{said}\n");
+    held.released(true);
+
+    // (1) THE COMMAND: the tool's own, and the directory is under the scratch root.
+    start("regression-kept-a1", &with(&kept_in), &kept_line).done("hold-start", "started");
+    let seen = held.wait("regression-kept-a1", Some(60));
+    let done = seen.done("hold-wait", "done").clone();
+    let first = held.runs().last().expect("the command ran").clone();
+    assert!(
+        first.ends_with(&format!(
+            " run --previous {previous} --candidate {candidate} --list {REGRESSION_LIST} --scratch {scratch}/hold/regression-kept-a1/work --baseline {scratch}/{kept_in}"
+        )),
+        "the regression tool is handed the baseline's directory, under the scratch root: {first}"
+    );
+    // (2) THE VERDICT is what it is without the flag — and the line, whole, is in the file.
+    assert_eq!(
+        json!([done["verdict"], done["why"], done["facts"]]),
+        json!(["green", null,
+               {"status": "green", "reason": null, "previous": previous, "candidate": candidate,
+                "list_sha256": ran["list"]["sha256"], "differences": 22,
+                "not_on_list": 0, "excluded": 11, "excluded_by_no_row": 0}]),
+        "{done}"
+    );
+    let on_file = held.verdict_of(&done);
+    assert_eq!(
+        json!([
+            on_file["asked"]["baseline"],
+            on_file["evidence"]["line"]["baseline"]
+        ]),
+        json!([kept_in, said["baseline"]]),
+        "what was asked is the path below the root, and what became of the baseline is the regression tool's own word, in the file: {on_file}"
+    );
+    // (3) THE TOOL MADE THE WAY TO IT, and no more: the directory itself is the regression
+    // tool's to make.
+    assert!(
+        held.rig.scratch.join("baseline").is_dir() && !held.rig.scratch.join(&kept_in).exists(),
+        "the directory on the way is made, and the baseline's own is left to the tool that keeps it"
+    );
+
+    // (4) A SECOND HELD COMMAND NAMES THE SAME BASELINE: it is no job's.
+    start("regression-kept-a2", &with(&kept_in), &kept_line).done("hold-start", "started");
+    held.wait("regression-kept-a2", Some(60))
+        .done("hold-wait", "done");
+    let second = held.runs().last().expect("the command ran").clone();
+    let named = |ran: &str| {
+        ran.split(" --baseline ")
+            .nth(1)
+            .unwrap_or_else(|| panic!("the command names a baseline: {ran}"))
+            .to_owned()
+    };
+    assert_eq!(
+        named(&second),
+        named(&first),
+        "two held commands, one baseline"
+    );
+    assert!(
+        second.contains(&format!(
+            " --scratch {scratch}/hold/regression-kept-a2/work "
+        )) && !named(&second).starts_with(&format!("{scratch}/hold/")),
+        "each has a work directory of its own, and the baseline lies in neither: {second}"
+    );
+
+    // (5) WHAT IS ASKED IS THE JOB'S: again with the same path, the job that is there; with
+    // another path, or with none, the name is taken — and nothing is started.
+    let ran_so_far = held.runs().len();
+    start("regression-kept-a1", &with(&kept_in), &kept_line).done("hold-start", "done");
+    start(
+        "regression-kept-a1",
+        &with("baseline/previous-000000000000"),
+        &kept_line,
+    )
+    .refused("taken");
+    let without: Vec<String> = regression_kind(&previous, &candidate)
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    start("regression-kept-a1", &without, &plain_line).refused("taken");
+
+    // (6) NO PATH BUT ONE BELOW THE ROOT, and no link on the way to it or at it.
+    let elsewhere = held.rig.dir().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("a directory that is not the scratch root");
+    for hostile in [
+        elsewhere.display().to_string(),
+        "../elsewhere".to_owned(),
+        "baseline/../../elsewhere".to_owned(),
+        String::new(),
+    ] {
+        start("regression-hostile", &with(&hostile), &kept_line).refused("usage");
+    }
+    std::os::unix::fs::symlink(&elsewhere, held.rig.scratch.join("baseline/linked"))
+        .expect("plant a link");
+    start("regression-linked", &with("baseline/linked"), &kept_line).refused("usage");
+    start(
+        "regression-behind",
+        &with("baseline/linked/previous"),
+        &kept_line,
+    )
+    .refused("usage");
+    assert_eq!(
+        fs::read_dir(&elsewhere).expect("elsewhere").count(),
+        0,
+        "nothing was written where the link leads"
+    );
+    // … and no other kind takes one.
+    let gate: Vec<String> = GATE_KIND
+        .iter()
+        .copied()
+        .chain(["--baseline", kept_in.as_str()])
+        .map(str::to_owned)
+        .collect();
+    start("gate-kept", &gate, &as_recorded("gate-green.txt")).refused("usage");
+    assert_eq!(
+        held.runs().len(),
+        ran_so_far,
+        "nothing was started by a call that was refused, or answered by the job that was there: {:?}",
+        held.runs()
+    );
+
+    // (7) WITHOUT THE FLAG THE COMMAND IS WHAT IT WAS: it names no baseline.
+    start("regression-unkept", &without, &plain_line).done("hold-start", "started");
+    held.wait("regression-unkept", Some(60))
+        .done("hold-wait", "done");
+    let unkept = held.runs().last().expect("the command ran").clone();
+    assert!(
+        unkept.ends_with(&format!(
+            " run --previous {previous} --candidate {candidate} --list {REGRESSION_LIST} --scratch {scratch}/hold/regression-unkept/work"
+        )),
+        "a held regression set that names no baseline is the command it was: {unkept}"
+    );
+
+    // (8) THE TABLE says it: the one flag a held `regression` may take, and where it leads.
+    let table = held.rig.step(&["table"]);
+    let row = table.done("table", "listed")["holds"]
+        .as_array()
+        .expect("the kinds")
+        .iter()
+        .find(|kind| kind["kind"] == "regression")
+        .expect("the regression set's row")
+        .clone();
+    assert_eq!(
+        json!([row["takes"], row["may"]]),
+        json!([["previous", "candidate", "list"], ["baseline"]]),
+        "{row}"
+    );
+    assert!(
+        row["command"]
+            .as_str()
+            .is_some_and(|command| command.ends_with(" [--baseline <scratch>/<baseline>]")),
+        "the command the table prints names the directory under the root: {row}"
+    );
+
+    // (9) AND THE FLAG IS THE REGRESSION TOOL'S OWN. Every command above ran a stand-in,
+    // which takes whatever it is handed. Here THE REAL `dev/regression-set` stands in its
+    // place, and the tool starts it with the same flags: this repository's two commits are
+    // none the rig holds, so the real tool refuses the call FOR ITS COMMITS (`commit`) —
+    // which it does only once its own parser has taken every flag of the command. A flag
+    // that tool does not have is its refusal `usage`, before it looks at a commit.
+    placed_executable::copy(
+        &repo_root().join("dev/regression-set"),
+        &held.rig.root.join("dev/regression-set"),
+    );
+    start("regression-real", &with(&kept_in), "").done("hold-start", "started");
+    let seen = held.wait("regression-real", Some(60));
+    let real = held.verdict_of(seen.done("hold-wait", "done"));
+    assert_eq!(
+        json!([
+            real["verdict"],
+            real["why"],
+            real["exit"],
+            real["evidence"]["line"]["refused"]
+        ]),
+        json!(["void", "refused", 4, "commit"]),
+        "the real regression tool takes the command the hold composes, flag for flag: {real}"
+    );
+}
+
 /// **The exit statuses a regression verdict is held to are the regression tool's own**: the
 /// tool's table (`table`: `holds`) names, per status of that tool's line, the exit status
 /// that goes with it, and this arm reads the same table out of the header of

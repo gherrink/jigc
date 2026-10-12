@@ -13,7 +13,10 @@
 // PRINTS is the scenario's too, and nothing else of one is: `gate` — what the candidate's
 // gate shows red ({ steps, tests }), or { void: true } for an output that holds no verdict;
 // `record.gate` — the same of a record's gate; `held` — by a held check's item, what the
-// regression tool's ONE line says ({ status: green | red | void, reason }); `builds` —
+// regression tool's ONE line says ({ status: green | red | void, reason, baseline }) — and
+// where the start names a kept baseline (`--baseline`), the line says of it what that tool's
+// does, `baseline: { dir, used, refused, detail, key }`: the directory under the scratch root
+// the start names, nothing used and nothing kept unless the scenario says so; `builds` —
 // { fails: [candidate | previous] }; `unreleased` — the names of the held commands that do
 // not end until the suite releases them. `wrongBinary` names the
 // reporters that return another hash than the one they were handed: a driver that drove
@@ -248,6 +251,9 @@ function heldEnv(command) {
     const line = { tool: 'regression-set', status: said.status }
     if (said.status === 'void') Object.assign(line, { reason: said.reason, detail: 'scripted by the simulation: no test ran' })
     else Object.assign(line, { previous: { commit: flag('previous') }, candidate: { commit: flag('candidate') }, list: { path: flag('list'), commit: flag('candidate'), sha256: 'c'.repeat(64) }, counts: { differences: said.status === 'red' ? 1 : 0, not_on_list: said.status === 'red' ? 1 : 0, excluded: 0, excluded_by_no_row: 0 } })
+    // A run that names a kept baseline says what became of it, void or not — as that tool's
+    // line does, with the directory as an absolute path of this machine.
+    if (flag('baseline')) line.baseline = Object.assign({ dir: flag('scratch') + '/' + flag('baseline'), used: false, refused: null, detail: null, key: null }, said.baseline || {})
     prints = JSON.stringify(line) + '\n'
     exit = said.status === 'green' ? 0 : said.status === 'red' ? 1 : REGRESSION_VOID[said.reason]
     if (exit == null) fail('the scenario scripts a regression set that is void for `' + said.reason + '`, which is no reason of that tool')

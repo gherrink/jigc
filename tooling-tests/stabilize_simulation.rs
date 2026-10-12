@@ -6023,8 +6023,9 @@ fn a_held_regression_that_was_void_is_run_again_in_a_rerun_on_the_rounds_candida
     let previous = sim.rig.rev("main");
     assert!(
         again.commands.contains(&format!(
-            "dev/stabilize-step hold-start --scratch {scratch} --name {} --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --digest {scratch}",
-            held_check("regression-set", &candidate, 2)
+            "dev/stabilize-step hold-start --scratch {scratch} --name {} --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --baseline baseline/previous-{} --digest {scratch}",
+            held_check("regression-set", &candidate, 2),
+            &previous[..12]
         )),
         "the regression set is held again, over the round's candidate: {:?}",
         again.commands
@@ -7554,6 +7555,131 @@ fn a_held_check_that_left_no_verdict_is_started_under_its_next_name_in_its_rerun
             .count(),
         2,
         "the regression set ran once a run of its item"
+    );
+}
+
+/// **A second stage against one previous release names the same baseline** (the reshape's
+/// plan, §5, `K8b`; `dev/regression-set`: *A KEPT BASELINE* — what the previous release's
+/// commit alone decides is built once in a directory the caller names, and used again while
+/// that tool's own key holds). THE STAGE NAMES THE DIRECTORY, and names it by the previous
+/// release's commit and by nothing else: `baseline/previous-<12>` below the scratch root it
+/// was given — no candidate, no round, no attempt and no job in it. So the regression set of
+/// a stage and the one of the stage that follows — here the item's re-run, a held command
+/// under ITS OWN NAME, as the names of what a stage holds have it — are handed ONE directory,
+/// which lies in neither one's own. What is on record of each is the path below the root as
+/// it was asked and the regression tool's own word of what became of the baseline — its
+/// directory under the public placeholder, never under this machine's path.
+#[test]
+fn a_second_stage_against_one_previous_release_names_the_same_baseline() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-baseline", &with_held_checks(&["regression-set"]));
+    let candidate = sim.rig.rev("HEAD");
+    let previous = sim.rig.rev("main");
+    let scratch = sim.rig.scratch.display().to_string();
+    let kept_in = format!("baseline/previous-{}", &previous[..12]);
+    let key = "7".repeat(64);
+    let (first, second) = (
+        held_check("regression-set", &candidate, 1),
+        held_check("regression-set", &candidate, 2),
+    );
+    // THE FIRST STAGE: the previous release's baseline is built and kept, and the candidate
+    // does not build — a void run of the item, which is due again.
+    let voided = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"held": {"regression-set": {
+            "status": "void", "reason": "build-candidate", "baseline": {"key": key}}}})),
+    );
+    let words = ends_at_its_first_record(&sim, &voided, &candidate, 1, "stop");
+    assert!(
+        words.contains(&format!("item=regression-set:held:{first}")),
+        "{words:?}"
+    );
+    let go = sim.invoke(
+        sim.args("test", json!({"rulings": [{"go": true}]})),
+        json!({}),
+    );
+    assert_eq!(
+        json!([go.result["status"], go.result["next"]]),
+        json!(["ruled", "retest"]),
+        "{}",
+        go.result
+    );
+    // THE STAGE THAT FOLLOWS: the item's second run, on the round's candidate — a held
+    // command of its own, which uses what the first one kept.
+    let again = sim.invoke(
+        sim.args("test", json!({"clause": "working-product"})),
+        json!({"held": {"regression-set": {
+            "status": "green", "baseline": {"used": true, "key": key}}}}),
+    );
+    assert_eq!(
+        json!([again.result["status"], again.result["halted"]]),
+        json!(["hunted", null]),
+        "{}",
+        again.result
+    );
+
+    // (1) WHAT EACH STAGE TOLD ITS STEP TO RUN: the command of the prompt, as it was typed —
+    // the same path below the root, under the name of each run of the item.
+    for (ran, name) in [(&voided, &first), (&again, &second)] {
+        assert!(
+            ran.commands.contains(&format!(
+                "dev/stabilize-step hold-start --scratch {scratch} --name {name} --kind regression --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --baseline {kept_in} --digest {scratch}"
+            )),
+            "the stage names the kept baseline of the previous release: {:?}",
+            ran.commands
+        );
+    }
+    // (2) WHAT THE REGRESSION SET WAS HANDED, both times: ONE directory, under the scratch
+    // root — and a work directory of each job's own, in which the baseline does not lie.
+    let runs: Vec<String> = sim
+        .long_commands()
+        .into_iter()
+        .filter(|c| c.starts_with("regression-set run "))
+        .collect();
+    assert_eq!(
+        runs,
+        [&first, &second].map(|name| format!(
+            "regression-set run --previous {previous} --candidate {candidate} --list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv --scratch {scratch}/hold/{name}/work --baseline {scratch}/{kept_in}"
+        )),
+        "two runs of the regression set, one kept baseline"
+    );
+    assert!(
+        !kept_in.contains(&candidate[..12]) && !kept_in.starts_with("hold/"),
+        "the baseline is the previous release's, and lies in no job's directory: {kept_in}"
+    );
+
+    // (3) WHAT IS ON RECORD of each run: the path as it was asked, and the regression tool's
+    // own word of what became of the baseline — and no path of this machine.
+    let real = fs::canonicalize(&sim.rig.scratch)
+        .expect("the scratch root")
+        .display()
+        .to_string();
+    for (run, used) in [(1, false), (2, true)] {
+        let text = sim
+            .rig
+            .read(&format!("{RUN_DIR}/r1/checks/regression-set.a{run}.json"));
+        let kept: Value = serde_json::from_str(text.trim_end()).expect("the verdict on record");
+        assert_eq!(
+            json!([
+                kept["asked"]["baseline"],
+                kept["evidence"]["line"]["baseline"]
+            ]),
+            json!([kept_in, {"dir": format!("<scratch>/{kept_in}"), "used": used,
+                             "refused": null, "detail": null, "key": key}]),
+            "run {run}: {kept}"
+        );
+        assert!(
+            !text.contains(&scratch) && !text.contains(&real),
+            "run {run}: the record names the scratch root by its placeholder only:\n{text}"
+        );
+    }
+    let state = sim.state();
+    assert_eq!(
+        json!([standing(&state, "regression-set"), state["retest"]]),
+        json!([["green", null], []]),
+        "{state}"
     );
 }
 

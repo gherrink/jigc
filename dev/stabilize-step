@@ -271,14 +271,30 @@
 #       takes and never from a caller's text:
 #         gate        --run R                the full gate on the tree as it stands,
 #                                            `dev/gate --keep-going`
-#         regression  --previous SHA --candidate SHA --list PATH
+#         regression  --previous SHA --candidate SHA --list PATH [--baseline PATH]
 #                                            the regression set: `dev/regression-set run`
-#                                            over those two commits and that list
+#                                            over those two commits and that list — on
+#                                            the previous release's KEPT BASELINE, where
+#                                            one is named (below)
 #         build       --commit SHA --to PATH [--version V]
 #                                            the `jigc` binary of that commit, at PATH
 #                                            below DIR: this tool's own `build`
 #         probe       --seconds N            the hold probe's long command,
 #                                            `dev/stabilize-probe hold`
+#       A KEPT BASELINE (the build plan of the reshaped `test` stage, K8b). --baseline
+#       names a path BELOW DIR, of plain segments — never a directory of the caller's —
+#       and the regression set is handed DIR/PATH as the directory its tool keeps the
+#       previous release's baseline in (dev/regression-set: A KEPT BASELINE): what that
+#       release's commit alone decides is built there once, and used again by every later
+#       command that names the same path. THE DIRECTORY IS NO JOB'S: it lies under no
+#       `hold/S/`, and two commands may name it, one after the other. AND NAMING IT IS NO
+#       KEY: that tool uses what is kept there only while its own key holds, and says what
+#       became of it in its line (`baseline: {dir, used, refused, detail, key}`), which is
+#       in the verdict's file, whole — this tool reads none of it, and a verdict is what
+#       it is without the flag. The path is part of what a job was asked, like every flag:
+#       the same name with another path, or with none, is refused (taken). The directories
+#       on the way to it are made; a link on the way, or at it, is refused (usage) before
+#       anything is started; the directory itself is that tool's to make.
 #       The command runs in a session of its own, under a supervisor that is this tool,
 #       with its whole output — both streams — in DIR/hold/S/output: a file THE TOOL
 #       NAMES, and no redirect of anybody's. A START IS IDEMPOTENT BY NAME: asked again
@@ -317,7 +333,8 @@
 #                     facts: {passed, failed, binaries, steps, tests}.
 #         regression  the tool's ONE line, by its `status`: green, red, or void with its
 #                     `reason`; a refusal of that tool is void (refused). The line is
-#                     held to the two commits and the list that were asked (not-asked).
+#                     held to the two commits and the list that were asked (not-asked);
+#                     what it says of a kept baseline is not read, and is in the file.
 #                     facts: {status, reason, previous, candidate, list_sha256,
 #                     differences, not_on_list, excluded, excluded_by_no_row}.
 #         build       the `build` act's own line, and THE DISK AGAIN: green when the file
@@ -652,7 +669,9 @@
 # by a link once every byte is in it, so whoever finds one finds all of it, at whatever
 # moment and after whatever was killed; the writer's own name stays, the same file twice
 # named. (The `output` is the command's stream and is whole when the supervisor has
-# recorded the command's end; the `lock` is empty.)
+# recorded the command's end; the `lock` is empty.) ONE THING A JOB LEAVES IS NOT UNDER
+# ITS NAME, and is not the tool's: what a regression set that names a baseline keeps in
+# DIR/<baseline>, for the command that names it next (`hold-start`, above).
 # EVERY PATH THE TOOL WRITES IS RESOLVED: DIR by its real path — which lies
 # outside the repository (usage) — and every directory beneath it on the way to a file
 # is a directory and no link (usage), before anything is started or written. Nothing is
@@ -888,12 +907,12 @@ REGRESSION_VOID = {"did-not-run": 10, "build-previous": 11, "build-candidate": 1
 REGRESSION_REFUSED = {"usage": 2, "list": 3, "commit": 4, "scratch": 5}
 HOLDS = (
     {"kind": "gate", "takes": ["run"], "may": [], "command": "dev/gate --keep-going", "judged": "`dev/stabilize-record gate-check --run <run> --summary <output>`: the record script's reader of ONE full gate's verdict line and totals line", "exits": {"green": 0}},
-    {"kind": "regression", "takes": ["previous", "candidate", "list"], "may": [], "command": "dev/regression-set run --previous <previous> --candidate <candidate> --list <list> --scratch <scratch>/hold/<name>/work", "judged": "the ONE line of that tool in the output, by its `status`, held to the two commits and the list asked", "exits": dict({"green": 0, "red": 1}, **REGRESSION_VOID, **REGRESSION_REFUSED)},
+    {"kind": "regression", "takes": ["previous", "candidate", "list"], "may": ["baseline"], "command": "dev/regression-set run --previous <previous> --candidate <candidate> --list <list> --scratch <scratch>/hold/<name>/work [--baseline <scratch>/<baseline>]", "judged": "the ONE line of that tool in the output, by its `status`, held to the two commits and the list asked", "exits": dict({"green": 0, "red": 1}, **REGRESSION_VOID, **REGRESSION_REFUSED)},
     {"kind": "build", "takes": ["commit", "to"], "may": ["version"], "command": "dev/stabilize-step build --scratch <scratch> --commit <commit> --work hold/<name>/work --to <to> [--version <version>]", "judged": "the last line of the output, a line of this tool's `build` — and the file at <to>, hashed again", "exits": {"green": 0, "red": STATUS["build"]}},
     {"kind": "probe", "takes": ["seconds"], "may": [], "command": "dev/stabilize-probe hold --scratch <scratch> --name <name> --seconds <seconds>", "judged": "the last line of the output, the probe tool's own, of the name and the seconds asked", "exits": {"green": 0}},
 )
 # The flags a kind can take, in the order a job's record names them.
-HOLD_FLAGS = ("run", "previous", "candidate", "list", "commit", "to", "version", "seconds")
+HOLD_FLAGS = ("run", "previous", "candidate", "list", "baseline", "commit", "to", "version", "seconds")
 # ARRIVALS: every state an act can be found in on arrival, in the order they are looked
 # for. `act` and `phase` key it: the open act, and the first phase of it that is not done
 # (`*`: whatever act is asked, open or not). `answer` is what the tool does — `finished`
@@ -1990,7 +2009,9 @@ def held_command(kind, name, asked, scratch):
     if kind == "gate":
         return [GATE, "--keep-going"]
     if kind == "regression":
-        return [REGRESSION, "run", "--previous", asked["previous"], "--candidate", asked["candidate"], "--list", asked["list"], "--scratch", os.path.join(scratch, "hold", name, "work")]
+        # … and, where one is named, the directory the previous release's baseline is KEPT
+        # in: below the scratch root, and no job's (the header: A KEPT BASELINE).
+        return [REGRESSION, "run", "--previous", asked["previous"], "--candidate", asked["candidate"], "--list", asked["list"], "--scratch", os.path.join(scratch, "hold", name, "work")] + (["--baseline", os.path.join(scratch, asked["baseline"])] if "baseline" in asked else [])
     if kind == "build":
         return [BUILD, "build", "--scratch", scratch, "--commit", asked["commit"], "--work", "hold/%s/work" % name, "--to", asked["to"]] + (["--version", asked["version"]] if "version" in asked else [])
     return [PROBE, "hold", "--scratch", scratch, "--name", name, "--seconds", asked["seconds"]]
@@ -2101,8 +2122,11 @@ def hold_start(args, facts):
             refuse("usage", "--%s is no argument of a held `%s` — see dev/stabilize-step --help" % (flag, args.kind))
         if value is not None:
             asked[flag] = value
-    if "to" in asked:
-        under(root, asked["to"])
+    # Where a build's binary lands, and where a regression set's baseline is kept: each
+    # lies under the root, behind no link — and the way to it is made.
+    for flag in ("to", "baseline"):
+        if flag in asked:
+            under(root, asked[flag])
     holds = os.path.dirname(under(root, "hold/" + args.name))
     home = os.path.join(holds, args.name)
     facts.update(name=args.name, kind=args.kind, slice=SLICE)
@@ -2621,6 +2645,7 @@ FLAGS = {
     "candidate": full_sha,
     "list": path_in_repository,
     "to": path_below,
+    "baseline": path_below,
     "work": path_below,
     "file": path_below,
     "version": grammar(re.compile(r"[0-9A-Za-z.+-]{1,64}"), "a version"),

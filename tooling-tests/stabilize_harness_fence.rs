@@ -2878,7 +2878,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         "const binaries = await buildBoth(label, sha, previousOf(state), 'Preflight and scope')",
         "const unbegun = await beginAttempt(ctx, launch, sha)",
         "gate: pre.gate ? { commit: sha, file: pre.gate.output } : null, results: { commit: sha, rows: resultRows(unitStatus) }",
-        "flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST,",
+        "flags: regressionFlags(previousOf(state).commit, sha),",
         "const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }",
         "const c = offTree ? null : checks.find((x) => x.check === item.item)",
     ] {
@@ -3463,7 +3463,7 @@ const PROMPTS: &[(&str, &str, &str)] = &[
     (
         "holdStartPrompt",
         "the regression set",
-        "holdStartPrompt(V, 'regression-set-c1-a1', 'regression', '--previous ' + SHA + ' --candidate ' + SHA + ' --list ' + REGRESSION_LIST, 'the regression set')",
+        "holdStartPrompt(V, 'regression-set-c1-a1', 'regression', regressionFlags(SHA, SHA), 'the regression set')",
     ),
     (
         "holdStartPrompt",

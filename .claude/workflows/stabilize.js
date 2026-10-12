@@ -137,6 +137,19 @@
 // commit names: the gate reads the working tree, and the tool's own check of that is owed
 // (the row `wf-held-gate-tree`).
 //
+// AND WHAT THE PREVIOUS RELEASE'S COMMIT ALONE DECIDES IS BUILT ONCE (that plan's K8b — for
+// BOTH kinds of run). About half of a regression set is the previous release's: its tree, its
+// built tests, their run on their own binary. The regression tool keeps those in a directory
+// its caller names (dev/regression-set: A KEPT BASELINE), and THE STAGE NAMES IT: a held
+// regression set is started with `--baseline`, a path below the scratch root that is the
+// previous release's commit's and nothing else's (`baselineOf`) — no candidate, no round, no
+// attempt, no run and no job is in it. So a stage started again, an item's re-run, the next
+// round's candidate and another run under the same scratch root all name ONE directory, and
+// it lies in no job's own. NAMING IT IS NO KEY: that tool uses what is kept there only while
+// its own key holds — eight members, held one by one — and builds afresh otherwise, in the
+// same run and with the same verdict. What became of the baseline is in that tool's line —
+// in the verdict's file, and on record with the check — and no step of this script reads it.
+//
 // A STAGE THAT IS NOT FIT FOR USE REFUSES TO START (the human's ruling of 2026-10-06 on the
 // order of the repair: the `test` half first). The build was reviewed red, and the `fix`
 // stage is named in NOT_FIT: an invocation of it returns `refused` before any agent runs,
@@ -609,6 +622,19 @@ function typed(tool, words) {
 // reads the list out of the commit it tests (dev/regression-set) — and what a held
 // `regression` is started with. The fence holds it to the file the commit holds.
 const REGRESSION_LIST = 'completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv'
+// baselineOf — WHERE THE PREVIOUS RELEASE'S BASELINE IS KEPT, below the scratch root (the
+// header: AND WHAT THE PREVIOUS RELEASE'S COMMIT ALONE DECIDES IS BUILT ONCE): named by that
+// release's commit as its build and its binary are (`build-previous-<12>`, `bin/previous-<12>`)
+// and by nothing else, beside `hold/` and in no job's directory. The twelve digits are a
+// name and no identity: the regression tool holds what is kept there to the whole commit.
+function baselineOf(previous) {
+  return 'baseline/previous-' + previous.slice(0, 12)
+}
+// regressionFlags — what a held `regression` is started with (dev/stabilize-step: HOLDS):
+// the two commits it compares, the list, and the previous release's kept baseline.
+function regressionFlags(previous, candidate) {
+  return '--previous ' + previous + ' --candidate ' + candidate + ' --list ' + REGRESSION_LIST + ' --baseline ' + baselineOf(previous)
+}
 // A HELD COMMAND IS ASKED AFTER BY ONE AGENT AT A TIME, which asks again for as long as its
 // turn lasts (observed 2026-10-07: one agent held thirty-five minutes inside its turn, and a
 // read per agent cost 26 agents). Where a turn ends on `running`, the next agent takes the
@@ -2897,6 +2923,8 @@ function selfTest() {
   const job = { act: 'hold-wait', name: 'gate-c1-a1', kind: 'gate', output: 'hold/gate-c1-a1/output' }
   const doneAs = (verdict, why) => heldOf(Object.assign({ status: 'done', verdict, why: why || null, verdict_file: 'hold/gate-c1-a1/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1')
   check('a held check is an item whose kind names a held command of the tool', heldKind('held-regression') === 'regression' && heldKind('held-gate') === 'gate' && heldKind('held-build') === null && heldKind('held-') === null && heldKind('check') === null && heldKind('regression') === null && heldKind(null) === null && HELD_CHECKS.every((id) => !CHAINS[HELD_PREFIX + id] && HELD_PREFIX + id !== CHECK_KIND))
+  const startedWith = (previous, candidate) => holdStartPrompt(base, 'regression-set-' + candidate.slice(0, 12) + '-a1', 'regression', regressionFlags(previous, candidate), 'the regression set')
+  check('a held regression set is started with the two commits, the list and the previous release\'s kept baseline — a path below the scratch root named by that release\'s commit and by nothing else: two candidates name one, two previous releases two, and it lies in no job\'s directory', startedWith('c'.repeat(40), 'd'.repeat(40)).includes('\n1. `dev/stabilize-step hold-start --scratch /tmp/scratch-1 --name regression-set-dddddddddddd-a1 --kind regression --previous ' + 'c'.repeat(40) + ' --candidate ' + 'd'.repeat(40) + ' --list ' + REGRESSION_LIST + ' --baseline baseline/previous-cccccccccccc --digest /tmp/scratch-1`\n') && startedWith('c'.repeat(40), 'e'.repeat(40)).includes(' --baseline baseline/previous-cccccccccccc ') && startedWith('f'.repeat(40), 'd'.repeat(40)).includes(' --baseline baseline/previous-ffffffffffff ') && baselineOf.length === 1 && !baselineOf('c'.repeat(40)).startsWith('hold/') && !baselineOf('c'.repeat(40)).startsWith('/') && baselineOf('c'.repeat(40)).split('/').every((part) => /^[A-Za-z0-9_][A-Za-z0-9._-]*$/.test(part)))
   check('a held command that still runs is asked for again', heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'started' }, job, { act: 'hold-start' }), '/tmp/scratch-1').ends === 'running' && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').output === '/tmp/scratch-1/hold/gate-c1-a1/output' && heldOf(Object.assign({ status: 'started' }, job), '/tmp/scratch-1').fresh === true && heldOf(Object.assign({ status: 'running' }, job), '/tmp/scratch-1').fresh === false && doneAs('green').fresh === false)
   check('a held command that ran to its end is the tool\'s verdict, by the file the tool kept it in', ['green', 'red', 'void'].every((verdict) => doneAs(verdict).ends === verdict && doneAs(verdict).verdict === '/tmp/scratch-1/hold/gate-c1-a1/verdict.json' && doneAs(verdict).verdict_sha256 === 'e'.repeat(64)) && doneAs('void', 'no-verdict').why === 'no-verdict' && doneAs('green').why === null)
   check('a held command that is dead has no verdict, and one that is done without the tool\'s verdict is not read', heldOf(Object.assign({ status: 'dead', why: 'no-exit' }, job), '/tmp/scratch-1').ends === 'dead' && heldOf(Object.assign({ status: 'dead', why: 'killed', verdict: 'green', verdict_file: 'hold/x/verdict.json', verdict_sha256: 'e'.repeat(64) }, job), '/tmp/scratch-1').verdict === undefined && doneAs('passed').ends === 'unread' && heldOf(Object.assign({ status: 'done', verdict: 'green' }, job), '/tmp/scratch-1').ends === 'unread' && heldOf(null, '/tmp/scratch-1').ends === 'unread' && heldOf({ status: 'halted', refused: 'missing' }, '/tmp/scratch-1').refused === 'missing' && heldOf({ status: 'halted', relay: 'altered' }, '/tmp/scratch-1').why === 'altered')
@@ -3868,7 +3896,7 @@ async function runTest() {
       heldRan.push(Object.assign({ item: i.item }, pre.gate || { ends: 'not-run', kind, why: 'off-tree' }))
       continue
     }
-    heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + sha.slice(0, 12) + '-a' + runOf(i), stands: true, kind, flags: '--previous ' + previousOf(state).commit + ' --candidate ' + sha + ' --list ' + REGRESSION_LIST, what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
+    heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + sha.slice(0, 12) + '-a' + runOf(i), stands: true, kind, flags: regressionFlags(previousOf(state).commit, sha), what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
   }
   for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('VOID BY A WORD: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It left no verdict, and is recorded void — `' + heldVoid(h) + '` — a run that counts')
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
