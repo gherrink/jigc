@@ -2,6 +2,8 @@
 
 *Written 2026-10-11 with the plan's step `P5` ([plan.md](plan.md) → Stream P), on the branch `fix/rc24-route-catalog`. A record: it counts what the pilot built and what it cost, and it **decides nothing** — not whether another family is catalogued ([decisions-pending.md](../../../../../implementation/decisions-pending.md) → `wf-route-catalog`, the human's, on these numbers), not what *works as printed* means for a route that prints no operand (§6), and not what a difference between two releases is (§8). What the mechanism is stands in [pinning.md](../../../../../implementation/pinning.md) → §6; why each piece is as it is stands in [DECISIONS.md](../../../../../DECISIONS.md), under the entries named *The route catalog's …*.*
 
+**[2026-10-12 — the two tables committed beside this file were printed again.** [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the frame of the commit that carries this line — the run was made before that commit's last edits, which are to prose (the variable naming `rc.24`'s binary of §8; 274.1 s; no gate beside it): 415 lines of cases and 68 of sites under a header each. They hold what the arm prints now — the six cases of §7's first question as they were followed again, **and the cases and readings of a third file, the gate's** (`route_catalog/task_finalize.rs`, 62 cases over 12 sites with a reading and 2 with a reason; [DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-12 — Which families the route catalog takes in*, and the two entries above it). Every count of this record is `P5`'s, over the pilot's two commands, as counted then; where a cell of §3 quoted a line that moved, the cell is brought to the table and says so.**]**
+
 **Where a number comes from.** Three sources, and every table says which.
 
 - **(arm)** — the suite's one ignored arm, run by hand on this tree at the commit that carries this record:
@@ -143,7 +145,7 @@ One line a site (arm, `sites`). *Causes* is a hand count: the ways through the s
 | `setup.rs::write_install_span::setup.inject-allowlist#3` | 7 | 4 | 3 | 1 | 3 | 3 | — | d |
 | `setup.rs::write_install_span::setup.write-guide#1` | 6 | 3 | 3 | 0 | 3 | 2 | — | e |
 | `setup.rs::write_install_span::setup.install-hook#2` | 15 | 4 | 11 | 1 | 11 | 10 | — | e |
-| `engine/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1` | 16 | 3 | 13 | 2 | 33 | 3 | — | e |
+| `engine/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1` | 16 | 3 | 13 | 2 | 33 | 2 *(was 3)* | — | e |
 | `engine/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1` | 5 | 3 | 2 | 2 | 4 | 2 | — | e |
 | `setup.rs::write_install_span::setup.inject-hook#1` | — | — | — | — | 0 | 0 | — | e · the site has a reason |
 | `setup.rs::write_install_span::setup.inject-deny#1` | — | — | — | — | 0 | 0 | — | e · the site has a reason |
@@ -156,9 +158,9 @@ One line a site (arm, `sites`). *Causes* is a hand count: the ways through the s
 | `setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1` | 2 | 1 | 1 | 0 | 3 | 2 | 3 | f |
 | `setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1` | 5 | 0 | 5 | 2 | 6 | 0 | 3 | f |
 | `setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1` | 2 | 0 | 2 | 0 | 4 | 4 | 3 | f |
-| `setup.rs::staged_prose_finding::uninstall.staged-prose#1` | 2 | 1 | 1 | 0 | 3 | 2 | 4 | f |
+| `setup.rs::staged_prose_finding::uninstall.staged-prose#1` | 2 | 1 | 1 | 0 | 3 | 0 *(was 2)* | 4 | f |
 | `task.rs::unverified_prose_finding::uninstall.staged-prose#1` | 3 | 2 | 1 | 0 | 2 | 2 | 3 | f |
-| `setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1` | 6 | 1 | 5 | 2 | 10 | 2 | 5 | g |
+| `setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1` | 6 | 1 | 5 | 2 | 10 | 0 *(was 2)* | 5 | g |
 | `setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1` | 5 | 2 | 3 | 0 | 6 | 3 | 4 | g |
 | `setup.rs::uninstall::uninstall.remove-jigc#1` | 4 | 0 | 4 | 0 | 4 | 3 | 3 | g |
 | `setup.rs::uninstall::uninstall.unwire-reference#1` | 8 | 2 | 6 | 0 | 6 | 6 | 4 | g |
@@ -167,7 +169,9 @@ One line a site (arm, `sites`). *Causes* is a hand count: the ways through the s
 | `setup.rs::uninstall::uninstall.remove-deny#1` | 2 | 1 | 1 | 0 | 1 | 1 | 2 | g |
 | `setup.rs::uninstall::uninstall.remove-precommit#1` | 11 | 1 | 10 | 0 | 10 | 9 | 5 | g |
 | `setup.rs::uninstall::uninstall.remove-guide#1` | 1 | 0 | 1 | 0 | 1 | 1 | 1 | g |
-| **54 sites** | **277** | **69** | **208** | **37** | **353** | **170** | | |
+| **54 sites** | **277** | **69** | **208** | **37** | **353** | **165** *(was 170)* | | |
+
+**[2026-10-12: three cells of the column *red* and its sum are the table's as printed again** — the five cases of §7's first question that hold since they were followed with their line filled: one of `setup_dirty_install_finding`, two of `staged_prose_finding`, two of `untracked_workbench_finding`. The sentences under the table, and every other section, count the 170 of `P5`.**]**
 
 Paths are from `crates/cli/src/`, and `engine/` is `crates/engine/src/`. **Causes a site: 277 over the 50 sites with a reading, 5.5; the least is 1 and the most 16.** Cases a site: 353 over 50, 7.1; the least is 1 and the most 33.
 

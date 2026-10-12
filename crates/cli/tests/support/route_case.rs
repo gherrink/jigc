@@ -295,6 +295,10 @@ pub enum Act {
     /// The bytes are the runner's: [`BODY`], the empty JSON object. A link is not followed
     /// and nothing is made where no file stands.
     Mend(Operand),
+    /// Revert the edit at the path the operand names — what *revert the edit* asks for
+    /// where the edit is in no commit: the file's bytes are put back as git's index holds
+    /// them (`git checkout -- <path>`), by the runner's own git.
+    Revert(Operand),
     /// Make the entry the operand names readable to its owner — what *ensure it is
     /// readable* asks for. The entry itself, never what a link leads to.
     MakeReadable(Operand),
@@ -340,6 +344,7 @@ impl Act {
             | Act::PointAtScript(operand)
             | Act::Commit(operand)
             | Act::Mend(operand)
+            | Act::Revert(operand)
             | Act::MakeReadable(operand)
             | Act::MakeWritable(operand) => Some(operand),
             Act::Run(_)
@@ -1240,6 +1245,7 @@ impl Sandbox {
                 Act::PointAtScript(_) => format!("point the link `{named}` at `{SCRIPT}` ({how})"),
                 Act::Commit(_) => format!("commit the change at `{named}` ({how})"),
                 Act::Mend(_) => format!("mend the file `{named}` ({how})"),
+                Act::Revert(_) => format!("revert the edit at `{named}` ({how})"),
                 Act::MakeReadable(_) => format!("make `{named}` readable ({how})"),
                 Act::MakeWritable(_) => format!("make `{named}` writable ({how})"),
                 Act::Run(_)
@@ -1290,6 +1296,21 @@ impl Sandbox {
                             .map_err(|e| e.to_string())
                     } else {
                         Err("not done — no regular file stands there".to_string())
+                    }
+                }
+                Act::Revert(_) => {
+                    let ran = self.run(
+                        self.child(Path::new("git")).args(["checkout", "--", named]),
+                        LIMIT,
+                    );
+                    if ran.success() {
+                        Ok("its bytes are the index's again".to_string())
+                    } else {
+                        Err(format!(
+                            "not done — git has no entry to put back there: {}\n{}",
+                            ran.exit(),
+                            ran.said.trim_end()
+                        ))
                     }
                 }
                 Act::MakeReadable(_) => self.permit(&path, 0o400, "its owner may read it"),

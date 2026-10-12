@@ -2,6 +2,84 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's next seven sites of the gate: the reconciliation's three refusals, the manifest and the working area that cannot be read, and two sites with a reason — 20 cases, 9 of them red under four new keys; an edit in no commit is reverted by the runner's git; and the pilot's two tables printed again (the human's ruling of 2026-10-11, the sites of `task finalize`, second part)
+
+**What.** Twenty more cases in [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs) over five sites, and a reason for two. **Fourteen of the fifteen sites of `task finalize` the ruling takes in are answered; one is owed — `clobber_finding`.** The family's file holds 62 cases, 16 of them red. No product source changes; nothing is fixed.
+
+**A correction to the commit before this one** (`eb289da9`): its message says 16 of its 35 cases that hold do so with the operand implied. It is 12 — the twelve of the carried path, where the route prints no command line for the boundary run again. The entry had no such number.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | new vocabulary |
+|---|---|---|---|---|---|---|---|---|
+| `engine/file_state.rs::conflict_block_finding` | unchanged · caller changed, on the path | 6 | 6 | 6 | 0 | 7 | 0 | `Act::Revert` |
+| `engine/file_state.rs::unanswered_pin_finding` | new-site | 3 | 4 | 1 | 3 `not-constructible` | 1 | 0 | — |
+| `engine/file_state.rs::conformance_block_finding` | unchanged · caller changed, on the path | 3 | 4 | 4 | 0 | 4 | 1 | — |
+| `engine/finalize.rs::provenance_io_finding` | unchanged · caller changed, on the path | 3 | 4 | 3 | 1 `not-constructible` — a declared bound | 3 | 3 | — |
+| `engine/state.rs::io_finding` | unchanged · caller changed, on the path | 7 | 10 | 5 | 5 `not-constructible` | 5 | 5 | — |
+| `engine/file_state.rs::drift_store_finding` | unchanged · caller changed, on the path | 3 | — | — | the site: `not-constructible` | 0 | 0 | — |
+| `engine/finalize.rs::source_path_io_finding` | unchanged · caller changed, on the path | 4 | — | — | the site: `not-constructible` | 0 | 0 | — |
+| **seven sites** | | | **28** | **19** | **9, and 2 sites** | **20** | **9** | |
+
+Of the 11 cases that hold, 7 hold with the operand implied: the act is on an object the route names and does not print — *revert the edit*, *resolve the git failure quoted above* — or is followed by the refused command run again where no line is printed for it. The ways out of a route that are not followed stand in the file's `READINGS`, each with why — five entries over three of the sites.
+
+**Who read and drove what.** The causes of these seven sites — and of the eight of `milestone`, not built here — were enumerated and driven by hand by two read-only helper agents this task launched, on this tree's binary only; their probe scripts and raw outputs are in the task's scratch root and are no part of the repository. Every state that became a case was run again by the suite, which is what the cases rest on; the nine causes given a reason rest on the helper's probes, and on this task's own for the two sites with a reason. Clock: 9 minutes of this task's from the first probe to the suite green, beside about 16 of the one helper's.
+
+**The two sites with a reason.**
+
+- `drift_store_finding` — **the refusal is printed at exit 0.** `jigc validate` is its one door and flips its exit only for the codes of a table this code is not in: a committed doc edited by hand prints *blocking (gates at finalize) · file-state.hash-matches* and the command exits 0. The frame reads a refusal off a non-zero exit. The route it prints — *review the out-of-band edit … and re-author it through the owning workflow* — is followed by nobody here.
+- `source_path_io_finding` — **an earlier read always answers.** Both places that raise it read a file the same finalize has just read, and that first read answers a fault with a plain error and no code.
+
+### The frame, grown once — red first
+
+**`Act::Revert(operand)` — an edit in no commit, reverted by the runner's git.** *Fix the file to restore conformance, or revert the edit* · *or revert the external edit on disk* name an act and print neither a line nor a path. The file's bytes are put back as git's index holds them; a path git holds no entry for is not reverted and the case is red for it. It takes an operand, so the arm that refuses the marked form wherever a path is printed and the arm that holds file acts to the sandbox each gained it. Red: the planted case came out *the same refusal again* where *holds, operand implied* was planted. `route_catalog::an_edit_in_no_commit_is_reverted_to_what_the_index_holds`.
+
+### The red cases — four keys, all new, in the pilot's findings file (§5)
+
+| key | cases | classification |
+|---|---|---|
+| `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind` | 3 | followed, the same refusal again |
+| `r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 3 | followed, the same refusal again |
+| `r1-doc-create-refused-over-the-manifest-stages-the-body-and-the-re-run-exits-0` | 2 | followed, another failure |
+| `r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block` | 1 | followed, another failure |
+
+- **The first two are the canary's writability pattern at two more sites**: a route that names one entry and *a disk or permissions problem* for every error of an I/O call, where the cause is an entry of another kind — text that is no JSON, a directory where a file is read, a file where a directory is opened. The canary's keys are `setup`'s and `uninstall`'s (`r1-p3-setup-writability-route-printed-for-other-causes`, `r1-p3-uninstall-writability-route-not-driven`): **the same defect in another command's step is a neighbour, not the same row**, so the keys are minted. None of the six states is a permission.
+- **The third was found by a case that held and should not have.** A `jigc doc create` refused under `task.working-area-io` over the task's manifest has already staged the doc's body; the same command run again, with nothing mended, exits 0 with *already existed — copied in for update*, and the manifest is still a directory. The case held until it was given what must hold once a create has gone through: the manifest is a file.
+- **None of the 20 cases stands on a declared bound**; one cause that would is given the bound as its reason and is not constructed.
+
+### The previous release's binary, side by side — every red case of the family
+
+From one run of the named-binary arm over the whole catalog, over the cases and the frame of this commit — made before its last edits, which are to prose (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`, as in the pilot's record; 274.1 s; no gate beside it). What a line says and does not say is the pilot's record, §8: a state is built by the binary that is asked; *not provoked* is not *nothing happened*; a case's acts were written by reading this tree's route.
+
+| key | red cases | on this tree's binary | on `rc.24` | `rc.24`'s refusing command | the two routes |
+|---|---|---|---|---|---|
+| `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` | 3 | followed, another failure | the same | exit 3 | the same |
+| `r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored` | 1 | followed, the same refusal again | the same | exit 3 | not the same |
+| `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows` | 1 | followed, another failure | the same | exit 1 | the same |
+| `r1-linked-doc-route-cites-a-command-that-is-itself-refused` | 2 | the same refusal again 1 · another failure 1 | not provoked, both | exit 0, both | — |
+| `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind` | 3 | followed, the same refusal again | the same | exit 3 | the same |
+| `r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 3 | followed, the same refusal again | the same | exit 1 | the same |
+| `r1-doc-create-refused-over-the-manifest-stages-the-body-and-the-re-run-exits-0` | 2 | followed, another failure | the same | exit 1 | the same |
+| `r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block` | 1 | followed, another failure | the same | exit 3 | the same |
+
+**Of the 16 red cases, 14 come to the same classification on `rc.24` — 13 of them over the same printed route — and 2 are *not provoked* there**: the write the linked-worktree guard refuses exits 0 on that binary. **Of the family's 62 lines, 39 have the same classification on both** (holds, operand implied 17 · holds 8 · the same refusal again 7 · another failure 7) **and 23 do not**: 22 are *not provoked* on `rc.24` — 18 that hold here, 2 that hold with the operand implied, the 2 above — and 1 is *not followed* there, its route having fewer spans than the case's act names. The lines themselves are the table's.
+
+### The pilot's two tables, printed again
+
+[route-catalog-pilot-cases.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-sites.tsv) are the arm's blocks `cases` and `sites` as that run printed them, byte for byte: 415 lines of cases and 68 of sites under a header each — the pilot's two commands **and the gate's sixty-two cases and twelve readings**, which is what the arm prints now. The pilot's record has one dated line at its head for it, and the cells of its §3 that quoted the six cases of the first doubt are brought to what the table says. The findings file's two sentences that said *whether a route owes anything there is not said here* point at the ruling that says it.
+
+### The vocabulary half — still unchanged
+
+`CATALOGUED` holds `adapter-guide`, `setup`, `uninstall`. The family's prefixes — `finalize`, `reconciliation`, `file-state`, `task` among its eleven — join with `clobber_finding`, its last owed site; the seven `finalize.*` codes no listed site spells are in the entry before this one.
+
+**Not established.**
+
+- **`clobber_finding`** — one site whose message and route are chosen among seven arms, several of them by a second and a third axis (who holds the home, which exit the doc has, whose doc it is). Not read to a count.
+- **The eight sites of `milestone`.** Their causes are enumerated and driven, by the helper; no case is written.
+- **Whether the helper's nine reasons would survive a second pair of eyes.** Each names what was driven; none was driven twice.
+- **A doubt**: none of the 20 cases is marked. *Resolve the git failure quoted above* and *revert the edit* are followed with an object of the case's, in the marked form, which the frame holds to *operand implied*.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-12 — The route catalog's first seven sites of the gate: nothing staged, git refusing jigc's own stage, a path staged before the work unit, the two amend refusals and the two of a doc in a linked worktree — 42 cases, 7 of them red under four new keys; a re-run takes the flag a route prints, and a reader goes where a route sends them (the human's ruling of 2026-10-11, the sites of `task finalize`, first part)
 
 **What.** A third command's file, [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::task_finalize`, exists by construction and stands in the runner's one-at-a-time group — with the cases of seven of the fifteen sites of `task finalize` the ruling takes in. Their seven rows are off the owed list; eight of the family stay on it. No product source changes; nothing is fixed.

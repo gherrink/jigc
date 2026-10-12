@@ -62,8 +62,10 @@
 //! changed on the path to the refusal, get their cases now, family by family, and are rows
 //! of [`OWED`] until they have them; every other blocking site is a row of the scheduled
 //! list ([`SCHEDULED`], `route_catalog/scheduled.tsv`), owed a case before the port begins.
-//! The first of those families has its file, `task_finalize.rs` — the gate — with seven of
-//! its fifteen sites so far. With them the frame grew twice, each piece red first: the
+//! The first of those families has its file, `task_finalize.rs` — the gate — with fourteen
+//! of its fifteen sites so far, two of them by a reason. With them the frame grew, each
+//! piece red first: an edit in no commit is reverted by the runner's git
+//! ([`an_edit_in_no_commit_is_reverted_to_what_the_index_holds`]), the
 //! refusing command is run again with the flag a route prints
 //! ([`the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line`]),
 //! and a reader goes where a route sends them, and nowhere outside the sandbox
@@ -682,6 +684,37 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::AnotherFailure,
         &["linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route"],
     ),
+    (
+        MANIFEST_ROUTE_SAYS_PERMISSIONS,
+        Classification::SameRefusalAgain,
+        &[
+            "finalize-provenance-manifest-a-directory-area-made-readable",
+            "finalize-provenance-manifest-a-link-to-itself-area-made-readable",
+            "finalize-provenance-manifest-not-json-area-made-readable",
+        ],
+    ),
+    (
+        AREA_ROUTE_SAYS_PERMISSIONS,
+        Classification::SameRefusalAgain,
+        &[
+            "working-area-io-a-directory-at-the-staged-docs-path-workbench-made-writable",
+            "working-area-io-roles-record-not-json-workbench-made-writable",
+            "working-area-io-tasks-directory-a-file-workbench-made-writable",
+        ],
+    ),
+    (
+        REFUSED_CREATE_STAGED_THE_BODY,
+        Classification::AnotherFailure,
+        &[
+            "working-area-io-manifest-a-directory-at-a-copy-in-workbench-made-writable",
+            "working-area-io-manifest-a-directory-at-a-create-workbench-made-writable",
+        ],
+    ),
+    (
+        REVERT_DRAWS_THE_CONFLICT,
+        Classification::AnotherFailure,
+        &["conformance-hand-broken-doc-migrated-in-place-nothing-authored-edit-reverted"],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -815,6 +848,27 @@ const START_LINE_MINTS_NOTHING: &str =
 /// A route cites a command for what it prints — *names where it lands*, *names that
 /// route* — and the command is itself refused.
 const POINTER_REFUSES: &str = "r1-linked-doc-route-cites-a-command-that-is-itself-refused";
+
+/// The finalize cannot read the task's provenance manifest — text that is no JSON, a
+/// directory, a link to itself — and the route names the task's area and *a disk or
+/// permissions problem*.
+const MANIFEST_ROUTE_SAYS_PERMISSIONS: &str =
+    "r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind";
+
+/// A command cannot open or read an entry of a task's working area that is of another
+/// kind than it expects, and the route names `.jigc/` and *a disk or permissions problem*.
+const AREA_ROUTE_SAYS_PERMISSIONS: &str =
+    "r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind";
+
+/// A `jigc doc create` refused over the task's manifest has staged the doc's body all the
+/// same: run again with nothing mended it exits 0, and the manifest is still no file.
+const REFUSED_CREATE_STAGED_THE_BODY: &str =
+    "r1-doc-create-refused-over-the-manifest-stages-the-body-and-the-re-run-exits-0";
+
+/// A migration minted over a doc broken by hand is refused for the doc's shape; the edit
+/// reverted, as the route offers, the same finalize is refused because the source changed.
+const REVERT_DRAWS_THE_CONFLICT: &str =
+    "r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1507,16 +1561,7 @@ const OWED: &[Owed] = &[
     },
     Owed {
         task: "P7 · task finalize — a case or a reason",
-        sites: &[
-            "crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1",
-            "crates/engine/src/file_state.rs::conformance_block_finding::reconciliation.conformance-block#1",
-            "crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1",
-            "crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1",
-            "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1",
-            "crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1",
-            "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1",
-            "crates/engine/src/state.rs::io_finding::task.working-area-io#1",
-        ],
+        sites: &["crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1"],
     },
     Owed {
         task: "P7 · unassigned — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
@@ -3561,7 +3606,8 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 11] = [
+const MARKED: [&[Act]; 12] = [
+    &[Act::Revert(Operand::Unprinted("in/the-way"))],
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
     &[Act::MoveOut(Operand::Unprinted("in/the-way"))],
@@ -3657,6 +3703,7 @@ fn no_file_act_is_done_outside_the_sandbox() {
             Act::PointAtScript(Operand::Span(1)),
             Act::Commit(Operand::Span(0)),
             Act::Mend(Operand::Span(1)),
+            Act::Revert(Operand::Span(0)),
             Act::MakeReadable(Operand::Span(1)),
             Act::MakeWritable(Operand::Span(1)),
         ],
@@ -3672,8 +3719,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 10),
-        "all ten acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 11),
+        "all eleven acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 
@@ -4122,6 +4169,50 @@ fn the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line
             ),
         }
     }
+}
+
+/// **An edit that is in no commit is reverted by the runner's git, at the path the case
+/// stands by.** *Fix the file to restore conformance, or revert the edit* names an act and
+/// prints neither a line nor a path: the object is the case's to name, in the marked form,
+/// and the bytes come back as git's index holds them — the committed file's, where nothing
+/// was staged. A path git holds no entry for is not reverted, and the case is red for it.
+#[test]
+fn an_edit_in_no_commit_is_reverted_to_what_the_index_holds() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-an-edit-in-no-commit-reverted",
+                state: &[Step::File(Place::Repo("README.md"), "edited by hand\n")],
+                refusing: &[
+                    "-c",
+                    "grep -q 'edited by hand' README.md || { : > ran-again; exit 0; }; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: fix the file, or revert the edit'; exit 1",
+                ],
+                acts: &[Act::Revert(Operand::Unprinted("README.md")), Act::Rerun],
+                holds: &[
+                    Check::Lacks(Place::Repo("README.md"), "edited by hand"),
+                    Check::RegularFile(Place::Repo("ran-again")),
+                ],
+                ..PLANTED
+            },
+            Classification::HoldsOperandImplied,
+        ),
+        (
+            Case {
+                name: "planted-a-file-no-index-holds-is-not-reverted",
+                state: &[Step::File(Place::Repo("new.txt"), "edited by hand\n")],
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: fix the file, or revert the edit'; exit 1",
+                ],
+                acts: &[Act::Revert(Operand::Unprinted("new.txt"))],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
 }
 
 /// **A reader goes where the route says, and nowhere outside the sandbox.** A route can

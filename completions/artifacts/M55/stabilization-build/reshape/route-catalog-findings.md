@@ -4,7 +4,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the canary's do for the cases listed under them ([DECISIONS.md](../../../../../DECISIONS.md) → *The route catalog's frame*).
 
-**Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. Whether a route owes anything there is not said here.
+**Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a state only `JIGC_ADAPTERS_DIR` reaches is a declared bound of the catalog — a red case that stands on one is recorded, stays red, and does not block; `$HOME` taken away is no bound.
 
 **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
@@ -318,7 +318,7 @@ Every case starts from one state: somebody's repository — their `CLAUDE.md`, t
 - **What was done:** `jigc uninstall --force`, as printed.
 - **What went wrong:** exit 1 with `uninstall.remove-jigc` — *cannot remove the repo-local `.jigc/` tree: Permission denied*, routed *ensure `.jigc/` is writable* — **after part of `.jigc/` was removed**. Driven by hand over `.jigc/worktrees` of mode 000: all six files of the install under `.jigc/` are gone — the settings record among them — and `.jigc/worktrees` stands; over a task's `docs/` of mode 600: `.jigc/AGENT.md` is gone and the rest stands. The files it took are in git's index. The consent the route offers does not delete *them with the install*: it leaves the install half removed and refuses under another code, whose own route names `.jigc/`.
 - **Not the canary's `r1-uninstall-refuses-and-force-half-removes-no-work-tree-home`:** that row is `--force` refusing at the hook's step, *after `.jigc/` is removed*, in a layout whose home is no work tree. This is the removal of `.jigc/` itself, failing part-way, in a plain checkout. A neighbour.
-- **Every state here is a permission taken away by hand inside the ignored workbench.** Whether a route owes anything there is not said here.
+- **Every state here is a permission taken away by hand inside the ignored workbench.** **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a permission bit changed by hand is a declared bound of the catalog, so a red case that stands on one is recorded, stays red, and does not block — unless the human admits its key by name, as that ruling does one.
 
 ### `r1-uninstall-could-not-look-route-names-the-walks-root-to-make-readable`
 
@@ -496,7 +496,60 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **The doubt:** whether a line a route cites for what it prints owes an exit of 0. The pilot's fourth question is the same one, over a `git` line (`r1-setup-unverified-route-opens-with-the-question-that-failed`).
 - **Cases `linked-doc-second-write-refused-the-preview-asked-where-it-lands`, `linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route`.**
 
+### `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind`
+
+- **Classification:** followed, the same refusal again. **Three cases:** `finalize-provenance-manifest-not-json-area-made-readable`, `…-a-directory-…`, `…-a-link-to-itself-…`.
+- **State:** the open task's `docs/provenance.json` holds text that is no JSON · is a directory · is a symbolic link to itself. None is a permission.
+- **Refusing command:** `jigc task finalize write-a-note` — exit 3, `finalize.provenance-io`; the message ends with the reader's own error — *expected ident at line 1 column 2*, *Is a directory (os error 21)*, *Too many levels of symbolic links*.
+- **Printed route:**
+
+  ```text
+  route: resolve the read fault on the task provenance manifest under `<sandbox>/repo/.jigc/tasks/write-a-note` (a disk or permissions problem), then re-run the finalize
+  ```
+
+- **What was done:** the one entry the route prints made readable to its owner, which it was; the finalize again.
+- **What went wrong:** the same refusal. The route names one kind of fault for every error of the read. It is the canary's writability pattern (`r1-p3-setup-writability-route-printed-for-other-causes`) at a step of another command — a neighbour of that row, not the row.
+
+### `r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind`
+
+- **Classification:** followed, the same refusal again. **Three cases:** `working-area-io-tasks-directory-a-file-workbench-made-writable`, `working-area-io-roles-record-not-json-…`, `working-area-io-a-directory-at-the-staged-docs-path-…`.
+- **State:** a regular file at `.jigc/tasks` · the task's `roles.json` no JSON · a directory at the path the task stages a doc under. None is a permission.
+- **Refusing command:** `jigc start --workflow decided-task "write a note"` · `jigc doc create decisions-log --title 'Decisions Log' --task write-a-note` — exit 1, `task.working-area-io`: *could not open the working area* (*Not a directory*), *could not read the bound roles*, *could not read the staged instance* (*Is a directory*).
+- **Printed route:**
+
+  ```text
+  route: resolve the underlying I/O condition (a disk or permissions problem on the `.jigc/` task working area), then re-run the command
+  ```
+
+- **What was done:** `.jigc/` made writable to its owner, which it was; the command again.
+- **What went wrong:** the same refusal — one route for ten I/O calls, as the key above. At the create door the message names the doc's address as the task: *for task `decisions-log:decisions-log`*.
+
+### `r1-doc-create-refused-over-the-manifest-stages-the-body-and-the-re-run-exits-0`
+
+- **Classification:** followed, another failure. **Two cases:** `working-area-io-manifest-a-directory-at-a-create-workbench-made-writable`, `working-area-io-manifest-a-directory-at-a-copy-in-workbench-made-writable`.
+- **State:** a directory stands where a task's `docs/provenance.json` was — in a task that creates the decisions log, and in a second task once the log is committed.
+- **Refusing command:** `jigc doc create decisions-log --title 'Decisions Log' --task <task>` — exit 1, `task.working-area-io`: *could not provision the instance* · *could not copy in the committed instance*.
+- **Printed route:** the one of the key above.
+- **What was done:** `.jigc/` made writable, which it was; the create again.
+- **What went wrong:** the create exits 0 — *already existed — copied in for update* — with the manifest still a directory: **the refused run had staged the doc's body**, and the second finds it. What must hold once a create has gone through is that the task's manifest is a file; it is not. Without that check the case held.
+
+### `r1-conformance-block-in-a-migration-minted-over-the-edit-revert-draws-conflict-block`
+
+- **Classification:** followed, another failure. **One case:** `conformance-hand-broken-doc-migrated-in-place-nothing-authored-edit-reverted`.
+- **State:** the committed decisions log with its section's heading removed by hand, and `jigc migrate docs/decisions-log.md --as decisions-log` minted over it; nothing authored.
+- **Refusing command:** `jigc task finalize <the migration>` — exit 3, `reconciliation.conformance-block`.
+- **Printed route:**
+
+  ```text
+  route: fix the file to restore conformance, or revert the edit — this is the one case a managed file is yours to hand-edit: the damage was made out-of-band, so it is repaired where it happened
+  ```
+
+- **What was done:** the edit reverted — the file's bytes put back as the index holds them — and the finalize again.
+- **What went wrong:** exit 3 under `reconciliation.conflict-block`: *this path is the source the task is migrating, and it no longer holds what the migration recorded when it was minted*. The migration was minted over the edit, so the route's second way changes the source under it.
+
 ### Seen, and no case
 
+- **`jigc validate` prints `file-state.hash-matches` as *blocking (gates at finalize)* and exits 0**, so the route it prints there is followed by no case (`drift_store_finding` has a reason).
+- **A finding of `task.working-area-io` can print two `route:` lines** — where the file-state record cannot be read during a copy-in, the inner fault's route, `rm <the record>`, stands above the `at:` line and this site's below it. Seen by the helper's probe; no case.
 - **`finalize.stage-failed` over an ignored doc home names the doc's path in git's quoted words and in no word of jigc's**: the route's two causes are the only ones it names.
 - **The backstop of the linked-worktree guard is not reached from jigc's own fan-out worktree**: `jigc task finalize` and `jigc task validate` of a task that stages a doc exit 1 there under `repo.head-detached` first, whose route — *give this work a branch of its own with `git switch -c <new-branch>`* — would put a commit of that task's on a new branch in the sub-task's worktree. Not followed.

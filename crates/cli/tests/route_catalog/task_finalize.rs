@@ -7,12 +7,17 @@
 //! **What stands here** is not the family: it is the sites of it that the fix pass since
 //! the previous release touched, as the human ruled on 2026-10-11 (`DECISIONS.md` →
 //! *Which families the route catalog takes in*) — the rest are rows of the scheduled list.
-//! So far seven: nothing staged over a dirty tree; git refusing to stage jigc's own three
+//! So far fourteen — seven with cases first: nothing staged over a dirty tree; git refusing to stage jigc's own three
 //! paths; a path that was staged before the work unit existed, at the three boundaries
 //! that ask; a promoting doc in a task whose commit is an amend, at the write door and at
 //! the finalize; an amend whose `HEAD` moved; and the two of a doc that promotes in a
 //! checkout that commits code only — a `jigc doc` write or a finalize asked from a linked
-//! worktree, and a mint whose only product is a doc. Each has a row of [`READINGS`].
+//! worktree, and a mint whose only product is a doc. Then the reconciliation and the task
+//! area's own files: a committed doc or the milestone's record changed out of band under
+//! a staged copy, where git cannot say, and into a shape the schema refuses; the task's
+//! provenance manifest unread; and an entry of a working area that cannot be read or made.
+//! Each of those twelve has a row of [`READINGS`]; two more have a reason and no case
+//! ([`REASONS`]) — a refusal printed at exit 0, and one an earlier read always answers.
 //!
 //! **Every case starts from an install and an open task whose commit doc is complete**
 //! ([`ready!`]) — made by the binary under test: `jigc setup`, `jigc start --workflow
@@ -47,6 +52,18 @@ const LINKED_DOC: &str =
     "crates/cli/src/task.rs::linked_worktree_doc_finding::finalize.linked-worktree-doc#1";
 const LINKED_MINT: &str =
     "crates/cli/src/task.rs::linked_worktree_mint_finding::finalize.linked-worktree-doc#1";
+const UNANSWERED_PIN: &str =
+    "crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1";
+const CONFLICT_BLOCK: &str =
+    "crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1";
+const CONFORMANCE_BLOCK: &str = "crates/engine/src/file_state.rs::conformance_block_finding::reconciliation.conformance-block#1";
+const DRIFT_STORE: &str =
+    "crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1";
+const PROVENANCE_IO: &str =
+    "crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1";
+const SOURCE_PATH_IO: &str =
+    "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1";
+const WORKING_AREA_IO: &str = "crates/engine/src/state.rs::io_finding::task.working-area-io#1";
 
 /// The open task's working area, and the amend task's, from the repository root — gone
 /// once the task has landed or is discarded.
@@ -955,6 +972,514 @@ const A_MINT_FROM_A_FAN_OUT_WORKTREE: [Case; 2] = [
     },
 ];
 
+// ---------------------------------------------------------------------------
+// The reconciliation — a committed doc, or the milestone's record, changed out of band
+// ---------------------------------------------------------------------------
+
+/// **A committed decisions log — created in a task and landed by the binary under test —
+/// and then what the case plants**: a second task, an edit by hand, a milestone.
+macro_rules! a_committed_log {
+    ($($plant:expr),* $(,)?) => {
+        &[
+            Step::Jigc(&["setup"]),
+            A_DECIDED_TASK,
+            ITS_COMMIT_DOC[0],
+            ITS_COMMIT_DOC[1],
+            ITS_COMMIT_DOC[2],
+            THE_LOG_CREATED,
+            Step::Jigc(&["task", "finalize", "write-a-note"]),
+            $($plant,)*
+        ]
+    };
+}
+
+/// A second task, minted once the log is committed, with its commit doc complete; and its
+/// own edit of the log — an entry, with the prose the entry requires — which copies the
+/// committed doc in.
+const A_SECOND_TASK: Step = Step::Jigc(&["start", "--workflow", "decided-task", "add more"]);
+const THE_SECOND_TASKS_COMMIT_DOC: [Step; 3] = commit_doc!("add-more");
+const SECOND_AREA: &str = ".jigc/tasks/add-more";
+macro_rules! an_entry_by {
+    ($task:literal) => {
+        [
+            Step::Jigc(&[
+                "doc",
+                "add-item",
+                "decisions-log:decisions-log#entries",
+                "--title",
+                "Use spaces",
+                "--task",
+                $task,
+            ]),
+            Step::File(Place::Outside("why"), "Spaces align.\n"),
+            Step::Jigc(&[
+                "doc",
+                "set-slot",
+                "decisions-log:decisions-log#entries/use-spaces/why",
+                "--task",
+                $task,
+                "--from-file",
+                "../outside/why",
+            ]),
+        ]
+    };
+}
+const ITS_EDIT_OF_THE_LOG: [Step; 3] = an_entry_by!("add-more");
+const THE_SUB_TASKS_EDIT_OF_THE_LOG: [Step; 3] = an_entry_by!("do-a-thing");
+
+/// An edit by hand, in no commit: a line appended to the committed log, and one to the
+/// milestone's record — a shell line a `git` alias runs at the repository's root, since a
+/// state's file step writes a whole file and these bytes are the product's.
+const A_HAND_LINE_IN_THE_LOG: Step = Step::Git(&[
+    "-c",
+    "alias.byhand=!printf '\\nA hand line.\\n' >> docs/decisions-log.md",
+    "byhand",
+]);
+const THE_RECORD: &str = "docs/milestone-records/fan-out.md";
+const A_HAND_NOTE_IN_THE_RECORD: Step = Step::Git(&[
+    "-c",
+    "alias.byhand=!printf '\\nA hand note.\\n' >> docs/milestone-records/fan-out.md",
+    "byhand",
+]);
+/// The committed log with its one section's heading gone — an edit by hand that leaves the
+/// doc no longer what its schema asks for.
+const THE_LOG_WITHOUT_ITS_SECTION: Step = Step::File(
+    Place::Repo(LOG),
+    "---\nschema-version: 1\n---\n\n# Decisions Log\n",
+);
+
+/// A migration of the committed log in place, and of a foreign file elsewhere: the ids
+/// `jigc migrate` mints for the two sources.
+const THE_LOGS_MIGRATION: &str = "migrate-decisions-log-docs-decisions-log-b31ca3264f78";
+const THE_NOTES_MIGRATION: &str = "migrate-decisions-log-notes-old-log-2173a5301d0e";
+
+// `conflict_block_finding` · `reconciliation.conflict-block`
+
+const A_HAND_EDIT_UNDER_A_STAGED_COPY: &str = "a committed doc is edited by hand while an \
+    open task holds it copied in with writes of its own, and the task's finalize is asked";
+const A_CONFLICT_AT_THE_TASKS_DOOR: [Case; 2] = [
+    Case {
+        name: "conflict-hand-line-under-a-tasks-staged-copy-task-discarded-as-printed",
+        site: CONFLICT_BLOCK,
+        cause: A_HAND_EDIT_UNDER_A_STAGED_COPY,
+        state: a_committed_log![
+            A_SECOND_TASK,
+            THE_SECOND_TASKS_COMMIT_DOC[0],
+            THE_SECOND_TASKS_COMMIT_DOC[1],
+            THE_SECOND_TASKS_COMMIT_DOC[2],
+            ITS_EDIT_OF_THE_LOG[0],
+            ITS_EDIT_OF_THE_LOG[1],
+            ITS_EDIT_OF_THE_LOG[2],
+            A_HAND_LINE_IN_THE_LOG,
+        ],
+        refusing: &["task", "finalize", "add-more"],
+        acts: &[Act::Run(0)],
+        holds: &[
+            Check::Absent(Place::Repo(SECOND_AREA)),
+            Check::Contains(Place::Repo(LOG), "A hand line."),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "conflict-hand-line-under-a-tasks-staged-copy-edit-reverted",
+        site: CONFLICT_BLOCK,
+        cause: A_HAND_EDIT_UNDER_A_STAGED_COPY,
+        state: a_committed_log![
+            A_SECOND_TASK,
+            THE_SECOND_TASKS_COMMIT_DOC[0],
+            THE_SECOND_TASKS_COMMIT_DOC[1],
+            THE_SECOND_TASKS_COMMIT_DOC[2],
+            ITS_EDIT_OF_THE_LOG[0],
+            ITS_EDIT_OF_THE_LOG[1],
+            ITS_EDIT_OF_THE_LOG[2],
+            A_HAND_LINE_IN_THE_LOG,
+        ],
+        refusing: &["task", "finalize", "add-more"],
+        acts: &[Act::Revert(Operand::Unprinted(LOG))],
+        holds: &[
+            Check::Lacks(Place::Repo(LOG), "A hand line."),
+            Check::Directory(Place::Repo(SECOND_AREA)),
+        ],
+        ..FINALIZE
+    },
+];
+
+/// A migration's rewrite, authored through the binary under test: one entry, with its prose.
+const A_REWRITE: &str = "title: Decisions Log\nsections:\n  - id: entries\n    items:\n      \
+    - title: \"Use tabs\"\n        set:\n          why: |-\n            <<Tabs are narrower.>>\n";
+const THE_MIGRATIONS_COMMIT_DOC: [Step; 3] =
+    commit_doc!("migrate-decisions-log-docs-decisions-log-b31ca3264f78");
+const A_MIGRATION_OVER_A_STALE_BASELINE: [Case; 1] = [Case {
+    name: "conflict-migration-in-place-over-a-stale-baseline-migration-retired-as-printed",
+    site: CONFLICT_BLOCK,
+    cause: "a committed doc is broken by hand and then migrated in place: the migration's \
+            staged rewrite and the edit both changed the path, whose recorded baseline is \
+            the committed doc's",
+    state: a_committed_log![
+        THE_LOG_WITHOUT_ITS_SECTION,
+        Step::Jigc(&["migrate", LOG, "--as", "decisions-log"]),
+        Step::File(Place::Outside("rewrite.yaml"), A_REWRITE),
+        Step::Jigc(&[
+            "doc",
+            "author",
+            "decisions-log",
+            "--from-file",
+            "../outside/rewrite.yaml",
+            "--task",
+            THE_LOGS_MIGRATION,
+        ]),
+        THE_MIGRATIONS_COMMIT_DOC[0],
+        THE_MIGRATIONS_COMMIT_DOC[1],
+        THE_MIGRATIONS_COMMIT_DOC[2],
+    ],
+    refusing: &["task", "finalize", THE_LOGS_MIGRATION],
+    acts: &[Act::Run(2)],
+    holds: &[Check::Absent(Place::Repo(
+        ".jigc/tasks/migrate-decisions-log-docs-decisions-log-b31ca3264f78",
+    ))],
+    untouched: &[LOG],
+    ..FINALIZE
+}];
+const A_MIGRATION_SOURCE_EDITED_AFTER_THE_MINT: [Case; 1] = [Case {
+    name: "conflict-migration-source-edited-after-the-mint-retired-and-migrated-again-as-printed",
+    site: CONFLICT_BLOCK,
+    cause: "the foreign file a migration task was minted over is edited by hand after the \
+            mint",
+    state: &[
+        Step::Jigc(&["setup"]),
+        Step::File(Place::Repo("notes/old-log.md"), "# Old decisions\n\n- We use tabs.\n"),
+        Step::Git(&["add", "notes/old-log.md"]),
+        Step::Git(&["commit", "-q", "-m", "an old log"]),
+        Step::Jigc(&["migrate", "notes/old-log.md", "--as", "decisions-log"]),
+        Step::Git(&[
+            "-c",
+            "alias.byhand=!printf -- '- A line added after the mint.\\n' >> notes/old-log.md",
+            "byhand",
+        ]),
+    ],
+    refusing: &["task", "finalize", THE_NOTES_MIGRATION],
+    acts: &[Act::Run(0), Act::Run(1)],
+    holds: &[Check::Directory(Place::Repo(
+        ".jigc/tasks/migrate-decisions-log-notes-old-log-2173a5301d0e",
+    ))],
+    untouched: &["notes/old-log.md"],
+    ..FINALIZE
+}];
+const THE_RECORD_EDITED_BY_HAND: [Case; 2] = [
+    Case {
+        name: "conflict-milestone-record-edited-by-hand-checked-out-as-printed",
+        site: CONFLICT_BLOCK,
+        cause: "the milestone's record is edited by hand, in no commit, and a command that \
+                writes the record is asked; jigc holds the hash of what it last wrote",
+        state: &[
+            Step::Jigc(&["setup"]),
+            Step::Jigc(&["milestone", "create", "Fan out"]),
+            A_HAND_NOTE_IN_THE_RECORD,
+        ],
+        refusing: &["milestone", "add-task", "fan-out", "do a thing"],
+        acts: &[Act::Run(1)],
+        holds: &[Check::Lacks(Place::Repo(THE_RECORD), "A hand note.")],
+        ..FINALIZE
+    },
+    Case {
+        name: "conflict-milestone-record-edited-by-hand-no-hash-held-checked-out-from-head-as-printed",
+        site: CONFLICT_BLOCK,
+        cause: "the milestone's record is edited by hand where jigc holds no hash for it — \
+                dropped by `jigc unmanage` — so `HEAD` is what it is compared with",
+        state: &[
+            Step::Jigc(&["setup"]),
+            Step::Jigc(&["milestone", "create", "Fan out"]),
+            Step::Jigc(&["milestone", "add-task", "fan-out", "do a thing"]),
+            Step::Jigc(&["unmanage", THE_RECORD]),
+            A_HAND_NOTE_IN_THE_RECORD,
+        ],
+        refusing: &["milestone", "add-task", "fan-out", "second thing"],
+        acts: &[Act::Run(2), Act::Rerun],
+        holds: &[Check::Lacks(Place::Repo(THE_RECORD), "A hand note.")],
+        ..FINALIZE
+    },
+];
+const A_CONFLICT_AT_THE_JOIN: [Case; 1] = [Case {
+    name: "conflict-hand-line-under-a-sub-tasks-staged-copy-edit-reverted",
+    site: CONFLICT_BLOCK,
+    cause: "a committed doc is edited by hand while a milestone's sub-task holds it copied \
+            in with writes of its own, and the milestone's finalize is asked",
+    state: a_committed_log![
+        A_FAN_OUT_WITH_WORK[0],
+        A_FAN_OUT_WITH_WORK[1],
+        A_FAN_OUT_WITH_WORK[2],
+        A_FAN_OUT_WITH_WORK[3],
+        A_FAN_OUT_WITH_WORK[4],
+        THE_SUB_TASKS_EDIT_OF_THE_LOG[0],
+        THE_SUB_TASKS_EDIT_OF_THE_LOG[1],
+        THE_SUB_TASKS_EDIT_OF_THE_LOG[2],
+        A_HAND_LINE_IN_THE_LOG,
+    ],
+    refusing: &["milestone", "finalize", "fan-out"],
+    acts: &[Act::Revert(Operand::Unprinted(LOG))],
+    holds: &[Check::Lacks(Place::Repo(LOG), "A hand line.")],
+    ..FINALIZE
+}];
+
+// `unanswered_pin_finding` · `reconciliation.conflict-block` — git could not say
+
+/// git cannot compare the record with `HEAD`: a clean filter the repository requires for
+/// the record's path fails. The route names no act and no object — *resolve the git
+/// failure quoted above* — so the object is the case's: the attributes file that asks for
+/// the filter, removed.
+const GIT_CANNOT_COMPARE_THE_RECORD: [Case; 1] = [Case {
+    name: "pin-unanswered-a-required-clean-filter-fails-attributes-removed",
+    site: UNANSWERED_PIN,
+    cause: "jigc holds no hash for the milestone's record and asks git whether the file \
+            differs from `HEAD`; `git diff` fails, over a required clean filter that exits 1",
+    state: &[
+        Step::Jigc(&["setup"]),
+        Step::Jigc(&["milestone", "create", "Fan out"]),
+        Step::Jigc(&["unmanage", THE_RECORD]),
+        Step::Git(&["config", "filter.bad.clean", "false"]),
+        Step::Git(&["config", "filter.bad.required", "true"]),
+        Step::File(
+            Place::Repo(".gitattributes"),
+            "docs/milestone-records/*.md filter=bad\n",
+        ),
+        Step::Git(&[
+            "-c",
+            "alias.later=!sleep 1; touch docs/milestone-records/fan-out.md",
+            "later",
+        ]),
+    ],
+    refusing: &["milestone", "add-task", "fan-out", "do a thing"],
+    acts: &[Act::Remove(Operand::Unprinted(".gitattributes")), Act::Rerun],
+    holds: &[Check::Absent(Place::Repo(".gitattributes"))],
+    untouched: &[],
+    ..FINALIZE
+}];
+
+// `conformance_block_finding` · `reconciliation.conformance-block`
+
+const AN_EDIT_THAT_BREAKS_THE_DOC: &str = "a committed doc is edited by hand into a shape \
+    its schema refuses — its one section's heading removed — and a task that did not touch \
+    it is asked";
+const A_NONCONFORMANT_EDIT_AT_THE_TASKS_DOOR: [Case; 2] = [
+    Case {
+        name: "conformance-hand-broken-doc-at-the-finalize-edit-reverted",
+        site: CONFORMANCE_BLOCK,
+        cause: AN_EDIT_THAT_BREAKS_THE_DOC,
+        state: a_committed_log![
+            A_SECOND_TASK,
+            THE_SECOND_TASKS_COMMIT_DOC[0],
+            THE_SECOND_TASKS_COMMIT_DOC[1],
+            THE_SECOND_TASKS_COMMIT_DOC[2],
+            ITS_CHANGE[0],
+            ITS_CHANGE[1],
+            THE_LOG_WITHOUT_ITS_SECTION,
+        ],
+        refusing: &["task", "finalize", "add-more"],
+        acts: &[Act::Revert(Operand::Unprinted(LOG)), Act::Rerun],
+        holds: &[
+            Check::Absent(Place::Repo(SECOND_AREA)),
+            Check::Contains(Place::Repo(LOG), "## Entries"),
+        ],
+        ..FINALIZE
+    },
+    Case {
+        name: "conformance-hand-broken-doc-at-the-preview-edit-reverted",
+        site: CONFORMANCE_BLOCK,
+        cause: "a committed doc is edited by hand into a shape its schema refuses, and the \
+                preview of a task that did not touch it is asked",
+        state: a_committed_log![
+            A_SECOND_TASK,
+            THE_SECOND_TASKS_COMMIT_DOC[0],
+            THE_SECOND_TASKS_COMMIT_DOC[1],
+            THE_SECOND_TASKS_COMMIT_DOC[2],
+            ITS_CHANGE[0],
+            ITS_CHANGE[1],
+            THE_LOG_WITHOUT_ITS_SECTION,
+        ],
+        refusing: &["task", "validate", "add-more"],
+        acts: &[Act::Revert(Operand::Unprinted(LOG)), Act::Rerun],
+        holds: &[Check::Contains(Place::Repo(LOG), "## Entries")],
+        ..FINALIZE
+    },
+];
+const A_NONCONFORMANT_EDIT_AT_THE_JOIN: [Case; 1] = [Case {
+    name: "conformance-hand-broken-doc-at-the-milestones-finalize-edit-reverted",
+    site: CONFORMANCE_BLOCK,
+    cause: "a committed doc is edited by hand into a shape its schema refuses, and the \
+            finalize of a milestone none of whose sub-tasks touched it is asked",
+    state: a_committed_log![
+        A_FAN_OUT_WITH_WORK[0],
+        A_FAN_OUT_WITH_WORK[1],
+        A_FAN_OUT_WITH_WORK[2],
+        A_FAN_OUT_WITH_WORK[3],
+        A_FAN_OUT_WITH_WORK[4],
+        THE_LOG_WITHOUT_ITS_SECTION,
+    ],
+    refusing: &["milestone", "finalize", "fan-out"],
+    acts: &[Act::Revert(Operand::Unprinted(LOG)), Act::Rerun],
+    holds: &[
+        Check::RegularFile(Place::Repo("work.txt")),
+        Check::Contains(Place::Repo(LOG), "## Entries"),
+    ],
+    ..FINALIZE
+}];
+const A_MIGRATION_MINTED_OVER_THE_BROKEN_DOC: [Case; 1] = [Case {
+    name: "conformance-hand-broken-doc-migrated-in-place-nothing-authored-edit-reverted",
+    site: CONFORMANCE_BLOCK,
+    cause: "a committed doc is broken by hand and a migration task is minted over it; \
+            nothing is authored yet, and the migration's finalize is asked",
+    state: a_committed_log![
+        THE_LOG_WITHOUT_ITS_SECTION,
+        Step::Jigc(&["migrate", LOG, "--as", "decisions-log"]),
+    ],
+    refusing: &["task", "finalize", THE_LOGS_MIGRATION],
+    acts: &[Act::Revert(Operand::Unprinted(LOG)), Act::Rerun],
+    holds: &[Check::Contains(Place::Repo(LOG), "## Entries")],
+    ..FINALIZE
+}];
+
+// ---------------------------------------------------------------------------
+// `provenance_io_finding` · `finalize.provenance-io` and `io_finding` ·
+// `task.working-area-io` — a file of the task's area that cannot be read as what it is
+// ---------------------------------------------------------------------------
+
+/// Put a directory where a file of the task's area stands — a shell line a `git` alias
+/// runs, since a state's step makes a directory only where nothing is.
+macro_rules! a_directory_in_place_of {
+    ($file:literal) => {
+        Step::Git(&[
+            "-c",
+            concat!("alias.swap=!rm ", $file, " && mkdir ", $file),
+            "swap",
+        ])
+    };
+}
+
+/// **The task's provenance manifest is not what jigc wrote**, and the finalize is asked.
+/// The route names one entry — the task's area — and one kind of fault, *a disk or
+/// permissions problem*: the case makes that entry readable, which it was, and runs the
+/// finalize again.
+macro_rules! manifest_unread {
+    ($name:literal, $cause:literal, $damage:expr) => {
+        [Case {
+            name: concat!("finalize-provenance-", $name, "-area-made-readable"),
+            site: PROVENANCE_IO,
+            cause: $cause,
+            state: ready![ITS_CHANGE[0], ITS_CHANGE[1], $damage],
+            acts: &[Act::MakeReadable(Operand::Span(0)), Act::Rerun],
+            holds: &[Check::Absent(Place::Repo(TASK_AREA))],
+            ..FINALIZE
+        }]
+    };
+}
+const THE_MANIFEST_NOT_JSON: [Case; 1] = manifest_unread!(
+    "manifest-not-json",
+    "the task's `docs/provenance.json` holds text that is no JSON",
+    Step::File(
+        Place::Repo(".jigc/tasks/write-a-note/docs/provenance.json"),
+        "not json\n"
+    )
+);
+const THE_MANIFEST_A_DIRECTORY: [Case; 1] = manifest_unread!(
+    "manifest-a-directory",
+    "a directory stands where the task's `docs/provenance.json` was",
+    a_directory_in_place_of!(".jigc/tasks/write-a-note/docs/provenance.json")
+);
+const THE_MANIFEST_A_LINK_TO_ITSELF: [Case; 1] = manifest_unread!(
+    "manifest-a-link-to-itself",
+    "the task's `docs/provenance.json` is a symbolic link to itself",
+    Step::Git(&[
+        "-c",
+        "alias.loop=!ln -sf provenance.json .jigc/tasks/write-a-note/docs/provenance.json",
+        "loop",
+    ])
+);
+
+/// **A `jigc` command cannot read or make an entry of a task's working area**, over a
+/// state that is no permission: the route names `.jigc/` and *a disk or permissions
+/// problem*; the case makes `.jigc/` writable, which it was, and runs the command again.
+/// Where the command is a create that stages a doc, what must hold once it has gone
+/// through is that the task's manifest is a file again — the create records the doc there.
+macro_rules! area_io {
+    (
+        $name:literal, $cause:literal, state: $state:expr, refusing: $refusing:expr
+        $(, holds: $holds:expr)? $(,)?
+    ) => {
+        [Case {
+            name: concat!("working-area-io-", $name, "-workbench-made-writable"),
+            site: WORKING_AREA_IO,
+            cause: $cause,
+            state: $state,
+            refusing: $refusing,
+            acts: &[Act::MakeWritable(Operand::Span(0)), Act::Rerun],
+            $(holds: $holds,)?
+            ..FINALIZE
+        }]
+    };
+}
+const THE_TASKS_DIRECTORY_A_FILE: [Case; 1] = area_io!(
+    "tasks-directory-a-file",
+    "a regular file stands at `.jigc/tasks`, and a task is minted: its working area cannot \
+     be opened",
+    state: &[
+        Step::Jigc(&["setup"]),
+        Step::File(Place::Repo(".jigc/tasks"), "x\n"),
+    ],
+    refusing: &["start", "--workflow", "decided-task", "write a note"],
+);
+const THE_ROLES_RECORD_NOT_JSON: [Case; 1] = area_io!(
+    "roles-record-not-json",
+    "the task's `roles.json` holds text that is no JSON, and a doc is created in the task: \
+     the bound roles cannot be read",
+    state: decided![Step::File(
+        Place::Repo(".jigc/tasks/write-a-note/roles.json"),
+        "not json\n"
+    )],
+    refusing: THE_CREATE,
+);
+const THE_MANIFEST_A_DIRECTORY_AT_A_CREATE: [Case; 1] = area_io!(
+    "manifest-a-directory-at-a-create",
+    "a directory stands where the task's `docs/provenance.json` was, and a doc is created \
+     in the task: the instance cannot be provisioned",
+    state: decided![a_directory_in_place_of!(
+        ".jigc/tasks/write-a-note/docs/provenance.json"
+    )],
+    refusing: THE_CREATE,
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/tasks/write-a-note/docs/provenance.json"
+    ))],
+);
+const A_DIRECTORY_AT_THE_STAGED_DOCS_PATH: [Case; 1] = area_io!(
+    "a-directory-at-the-staged-docs-path",
+    "a directory stands at the path the task stages the doc under, and the doc is created: \
+     the staged instance cannot be read",
+    state: decided![Step::Dir(Place::Repo(
+        ".jigc/tasks/write-a-note/docs/decisions-log:decisions-log.md"
+    ))],
+    refusing: THE_CREATE,
+);
+const THE_MANIFEST_A_DIRECTORY_AT_A_COPY_IN: [Case; 1] = area_io!(
+    "manifest-a-directory-at-a-copy-in",
+    "a directory stands where a second task's `docs/provenance.json` was, and the committed \
+     doc is created again in that task: the committed instance cannot be copied in",
+    state: a_committed_log![
+        A_SECOND_TASK,
+        a_directory_in_place_of!(".jigc/tasks/add-more/docs/provenance.json"),
+    ],
+    refusing: &[
+        "doc",
+        "create",
+        "decisions-log",
+        "--title",
+        "Decisions Log",
+        "--task",
+        "add-more",
+    ],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/tasks/add-more/docs/provenance.json"
+    ))],
+);
+
 /// The cases of the gate, a group a cause — and, within a group, a case a way out of the
 /// cause's route.
 pub const CASES: &[&[Case]] = &[
@@ -984,11 +1509,50 @@ pub const CASES: &[&[Case]] = &[
     &THE_MAIN_INDEX_HOLDS_WHAT_NO_SNAPSHOT_COVERS,
     &A_MINT_FROM_A_LINKED_WORKTREE,
     &A_MINT_FROM_A_FAN_OUT_WORKTREE,
+    &A_CONFLICT_AT_THE_TASKS_DOOR,
+    &A_MIGRATION_OVER_A_STALE_BASELINE,
+    &A_MIGRATION_SOURCE_EDITED_AFTER_THE_MINT,
+    &THE_RECORD_EDITED_BY_HAND,
+    &A_CONFLICT_AT_THE_JOIN,
+    &GIT_CANNOT_COMPARE_THE_RECORD,
+    &A_NONCONFORMANT_EDIT_AT_THE_TASKS_DOOR,
+    &A_NONCONFORMANT_EDIT_AT_THE_JOIN,
+    &A_MIGRATION_MINTED_OVER_THE_BROKEN_DOC,
+    &THE_MANIFEST_NOT_JSON,
+    &THE_MANIFEST_A_DIRECTORY,
+    &THE_MANIFEST_A_LINK_TO_ITSELF,
+    &THE_TASKS_DIRECTORY_A_FILE,
+    &THE_ROLES_RECORD_NOT_JSON,
+    &THE_MANIFEST_A_DIRECTORY_AT_A_CREATE,
+    &A_DIRECTORY_AT_THE_STAGED_DOCS_PATH,
+    &THE_MANIFEST_A_DIRECTORY_AT_A_COPY_IN,
 ];
 
 /// The sites of the family that have no case, each with why: none of the ones taken in so
 /// far.
-pub const REASONS: &[Reason] = &[];
+pub const REASONS: &[Reason] = &[
+    Reason {
+        site: DRIFT_STORE,
+        why: Why::NotConstructible(
+            "the refusal is printed at exit 0. `jigc validate` is its one door — \
+             `detect_committed_store` has no other caller — and that command flips its exit \
+             only for the codes of `render::STORE_EXIT_FLIPS`, which `file-state.hash-matches` \
+             is not among. Driven: a committed doc edited by hand, `jigc validate` prints \
+             the finding as *blocking (gates at finalize)* and exits 0. The frame reads a \
+             refusal off a non-zero exit, so no state provokes one here",
+        ),
+    },
+    Reason {
+        site: SOURCE_PATH_IO,
+        why: Why::NotConstructible(
+            "both places that raise it read `<task>/source-path` a second time: the same \
+             finalize's own validation reads the file first and answers a fault of it with \
+             a plain error and no code. Driven: a directory at that path, and `jigc task \
+             finalize` exits 1 with *could not read the source path for task*. Only a file \
+             that changes between two reads of one process reaches this site",
+        ),
+    },
+];
 
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
 /// derivation; the causes that have no case, each with why; and the ways out of its route
@@ -1171,5 +1735,201 @@ pub const READINGS: &[Reading] = &[
                  act that merges: the case's source is one both checkouts hold",
             ),
         )],
+    },
+    Reading {
+        site: CONFLICT_BLOCK,
+        read: &[
+            "crates/engine/src/file_state.rs::conflict_block_finding and ConflictBlock — six presentations, a message and a route each",
+            "crates/engine/src/file_state.rs::reconcile_committed and reconcile_held — the three arms that raise it for a doc a work unit touched",
+            "crates/engine/src/file_state.rs::ConflictBlock::finding_at, and its one caller in crates/cli/src/task.rs — a migration's source edited after the mint",
+            "crates/cli/src/milestone.rs::reconcile_record_preflight and record_conflict_block — the record's doors",
+        ],
+        causes: 6,
+        derivation: "a presentation is a cause — the message and the route differ by it: a \
+                     task that holds the doc copied in; a migration whose source sits on a \
+                     stale baseline; a migration whose source was edited after its mint; the \
+                     milestone's record where jigc holds the hash of its last write; the \
+                     record where it holds none and `HEAD` is the witness; and the join, \
+                     over a sub-task's staged copy. Within the first, three arms of the \
+                     sweep word it alike — the copy-in witness says *edited*, no witness \
+                     and the file drifted, no hash and git says *modified* — and one is \
+                     followed",
+        without_case: &[],
+        not_followed: &[
+            (
+                "the refused command run again behind the act, where the route prints a \
+                 `jigc` line for another way — *and re-run this command*, *run this \
+                 finalize again*, *then re-run the join*",
+                Why::NotConstructible(
+                    "the frame runs the refusing command again only where the route prints \
+                     no command line of the product; these routes print one for their \
+                     other way. The case ends on the act and holds what the act leaves",
+                ),
+            ),
+            (
+                "the record's hash dropped with `jigc unmanage`, where nobody edited the \
+                 record — a checkout that converts line endings",
+                Why::NotConstructible(
+                    "the way is for a state in which the record's bytes changed and no \
+                     edit was made; its last step is the refused command again, which the \
+                     frame does not run beside a printed `jigc` line",
+                ),
+            ),
+            (
+                "*else revert the commit that changed it* · *discard the sub-task that \
+                 staged this doc* · *undo the edit made since the mint*",
+                Why::NotConstructible(
+                    "each names an act and prints no line for it, on an object the route \
+                     does not print: a commit, a sub-task, an edit",
+                ),
+            ),
+        ],
+    },
+    Reading {
+        site: UNANSWERED_PIN,
+        read: &[
+            "crates/engine/src/file_state.rs::unanswered_pin_finding, and the arm of reconcile_committed that raises it",
+            "crates/cli/src/task.rs::git_against_rev — the four places git's answer is *unanswered*",
+            "crates/cli/src/milestone.rs::reconcile_record_preflight — the door that reaches the arm with no hash and no copy-in witness",
+        ],
+        causes: 4,
+        derivation: "the arm needs a doc a work unit touched, no hash recorded for it and \
+                     no copy-in witness — which a doc staged by this binary always has, so \
+                     the door that reaches it is the milestone record's, after `jigc \
+                     unmanage` — and a git that does not answer. Four ways it does not: \
+                     `ls-tree` of the pin fails; `ls-files` fails; `diff --quiet` exits \
+                     neither 0 nor 1; the comparison through a scratch index fails",
+        without_case: &[
+            (
+                "`git ls-files` fails — git's index cannot be read",
+                Why::NotConstructible(
+                    "provoked by hand at the record's door, with the index's bytes \
+                     replaced; the one way out is that index put back, and the frame has \
+                     no act that restores a file to bytes of the state's own. With it put \
+                     back by hand the re-run exits 0",
+                ),
+            ),
+            (
+                "`git ls-tree` of the pin fails",
+                Why::NotConstructible(
+                    "no state found: a branch that names a missing object reads as an \
+                     unborn `HEAD`, which is another arm",
+                ),
+            ),
+            (
+                "the comparison through a scratch index fails",
+                Why::NotConstructible("no state found that makes it fail"),
+            ),
+        ],
+        not_followed: &[],
+    },
+    Reading {
+        site: CONFORMANCE_BLOCK,
+        read: &[
+            "crates/engine/src/file_state.rs::conformance_block_finding, and the arm of reconcile_committed that raises it: a recorded doc that drifted, untouched by the work unit that sweeps, failing the conformance gate",
+            "crates/cli/src/task.rs::validate and the milestone's merged gate — the doors that sweep",
+        ],
+        causes: 4,
+        derivation: "one arm and one route; the cause is the door that sweeps a doc it did \
+                     not touch: a task's finalize, a task's preview, a milestone's \
+                     finalize — and a migration task minted over the broken doc, before \
+                     anything is authored in it. What the gate's first error is — a section \
+                     missing, a required slot empty, a field twice — changes the message's \
+                     tail and nothing of the route; the cases remove a section's heading",
+        without_case: &[],
+        not_followed: &[(
+            "*fix the file to restore conformance*",
+            Why::NotConstructible(
+                "the reader's own edit of the doc's prose and headings: the frame has no \
+                 act that writes a doc into the shape its schema asks for. Driven by hand \
+                 at the task's door: with the prose put back the finalize exits 0 and \
+                 absorbs the edit",
+            ),
+        )],
+    },
+    Reading {
+        site: PROVENANCE_IO,
+        read: &[
+            "crates/engine/src/finalize.rs::provenance_io_finding, and plan_clobber_guard, which reads the manifest",
+            "crates/engine/src/state.rs::ProvenanceRecord::load — what fails a load, and what reads as empty",
+        ],
+        causes: 4,
+        derivation: "the finalize's planner loads `<task>/docs/provenance.json`; a file \
+                     that is absent, and a link that leads nowhere, read as empty. A load \
+                     fails where the bytes are no JSON, where a directory stands there, \
+                     where the entry is a link that leads to itself — and where the file \
+                     may not be read",
+        without_case: &[(
+            "the manifest may not be read",
+            Why::NotConstructible(
+                "a permission bit changed by hand — a declared bound of the catalog, not \
+                 constructed",
+            ),
+        )],
+        not_followed: &[(
+            "the manifest itself put right",
+            Why::NotConstructible(
+                "the route prints the task's area and no act on the manifest; where a \
+                 route prints a path, the frame takes no other object from a case. What \
+                 the manifest held is jigc's own record, and no command prints it back",
+            ),
+        )],
+    },
+    Reading {
+        site: WORKING_AREA_IO,
+        read: &[
+            "crates/engine/src/state.rs::io_finding — one route, whatever was being done",
+            "crates/engine/src/state.rs::mint_task, stage_minted, create_gated, create_incumbent and copy_in — every call that hands it an error, by the words it is handed",
+            "crates/cli/src/doc.rs::is_migration — the read that answers a fault of `source-path` first",
+        ],
+        causes: 10,
+        derivation: "a cause is what was being done when the I/O call failed, as the \
+                     message says it: open the working area; write the base pin; write \
+                     the task intent; write the task workflow id; read the migration \
+                     source path; copy in the committed instance; provision the instance; \
+                     read the staged instance; read the bound roles; record the bound role. \
+                     Each followed one is a state that is no permission: a file where a \
+                     directory is opened, a directory where a file is read, text that is \
+                     no JSON",
+        without_case: &[
+            (
+                "write the base pin",
+                Why::NotConstructible(
+                    "the directory was made by the same process a moment earlier: only a \
+                     permission bit changed by hand — a declared bound — or a full disk \
+                     fails the write",
+                ),
+            ),
+            (
+                "write the task intent",
+                Why::NotConstructible(
+                    "as the base pin: a file written into a directory the process has \
+                     just made",
+                ),
+            ),
+            (
+                "write the task workflow id",
+                Why::NotConstructible(
+                    "as the base pin: a file written into a directory the process has \
+                     just made",
+                ),
+            ),
+            (
+                "read the migration source path",
+                Why::NotConstructible(
+                    "`doc.rs::is_migration` reads `<task>/source-path` first and answers \
+                     a fault of it with a plain error and no code — driven, with a \
+                     directory there",
+                ),
+            ),
+            (
+                "record the bound role",
+                Why::NotConstructible(
+                    "the record is written by replacement: a link that leads nowhere at \
+                     `roles.json` is replaced and the create exits 0 — driven",
+                ),
+            ),
+        ],
+        not_followed: &[],
     },
 ];
