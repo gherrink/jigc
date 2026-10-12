@@ -10,6 +10,8 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **[2026-10-12: six keys left this file.** The human ruled that a line a route cites for what it prints is held to its words and not to exit 0 ([DECISIONS.md](../../../../../DECISIONS.md) → *A command a route cites for what it prints is held to its words*). Every case under these six was red by the other reading alone; each was followed again with what its route promised as the witness of the cited line's output, and holds: `r1-setup-unverified-route-opens-with-the-question-that-failed` (2 cases) · `r1-linked-doc-route-cites-a-command-that-is-itself-refused` (2) · `r1-clobber-held-migration-route-review-step-exits-4` (2) · `r1-worktree-doors-route-re-run-is-for-the-next-command` (3) · `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` (3) · `r1-home-shape-migration-route-review-step-exits-4` (1). Their sections are gone with them; the witness of each case and what it came to on both binaries is [route-catalog-doubts.md](route-catalog-doubts.md) → R. A record dated before this day that names one of the six names a key that stood then.**]**
 
+**[2026-10-12: three more keys left this file.** The human ruled that a printed line which carries a placeholder for a value of the reader's own is followed with the placeholder filled ([DECISIONS.md](../../../../../DECISIONS.md) → *A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled*). Every case under these three was red by the other reading alone — the line run as it stands, which no shell can split; each was followed again with a value a reader would choose in its state, named by the case with its reason, and holds: `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` (9 cases) · `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` (2) · `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` (2). Their sections are gone with them; the value of each case, why that one, and what it came to on both binaries is [route-catalog-doubts.md](route-catalog-doubts.md) → 2. A record dated before this ruling was carried out that names one of the three names a key that stood then.**]**
+
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
 ## 1. Keyed — cases are listed under each
@@ -715,27 +717,6 @@ Each was driven once more for this section, on this tree's binary.
 - **The doubt:** the gate's first question — a product command printed without the id it requires is a line to run, or the name of a command. Under the second reading the route names no act of the reader's, and there is nothing to follow: the refused retitle has no way out, which is what the route says.
 - *Why no key that stands:* `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is the same question over another function's route, which does tell its reader to run the command again; a neighbour.
 
-### `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice`
-
-- **Classification:** followed, a printed line no shell can split. **Seven cases, all marked `doubt`:** `title-ignored-committed-create-line-run-as-printed`, `title-ignored-committed-create-under-a-slug-line-run-as-printed`, `title-ignored-committed-author-line-run-as-printed`, `title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed`; `already-exists-create-line-run-as-printed`, `already-exists-create-under-a-slug-line-run-as-printed`, `already-exists-author-line-run-as-printed`.
-- **State:** a create whose id is taken. Four over a committed ADR titled *Use tabs*, where the new call carries another title and mints the same id — by `jigc doc create`, by `create --slug`, by `jigc doc author`, and by an `author` in a migration that recorded the slug. Three in a task of `report-jigc-feedback`, whose entry only creates, over a file at the finding's home.
-- **Refusing command:** `jigc doc create …` · `jigc doc author …` — exit 1, `write.title-ignored` (*is already committed and would be copied in for update as `# Use tabs`, and this call mints the same id*) or `create.already-exists` (*already exists on disk at its home, and this workflow's `allows-create` entry … carries `new: true`*).
-- **Printed routes** (one of each kind):
-
-  ```text
-  route: choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint beside the existing doc: `jigc doc create adr --title <title> --slug <slug> --task again`
-  route: the id comes from `--slug use-tabs`, not the title, so pass a distinct `--slug`: `jigc doc create adr --title <title> --slug <slug> --task again`
-  route: set the payload's `title:` to a distinct title (its slug becomes the doc id) and re-run the same `jigc doc author adr --from-file <payload> --task again`
-  route: the id comes from this migration's recorded `--slug use-tabs`, not the payload's `title:`, so no payload changes it — discard this task with `jigc task discard migrate-adr-notes-old-e1a7d84cafc2 --force` (…), then re-migrate under a distinct slug: `jigc migrate <sandbox>/repo/notes/old.md --as adr --slug <slug>`
-  ```
-
-- **What was done:** the printed command line, as printed — behind the printed discard, in the migration's case, which exits 0.
-- **What went wrong:** no shell splits the line: a bare word in angle brackets is a redirection. The refusal lists nothing a placeholder could be filled with, and could not: the title, the slug and the payload are the reader's own to choose.
-- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has — a line to run as printed, or a shape the reader fills.
-- **Driven by hand, the second reading:** `jigc doc create adr --title 'Use spaces' --task again` exits 0 (`adr:use-spaces`); the printed line with the title kept and `--slug other` exits 0 (`adr:other`); a payload titled *Use spaces* exits 0; `jigc doc create jigc-feedback --title 'Another' --task report-a-bug` and the same with `--slug other` exit 0. The migration's line was not driven filled.
-- *Why no key that stands:* `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` is the clobber guard's — another function, at the finalize, whose placeholders are an id and a doctype the product knows; `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` is `jigc uninstall`'s. Neighbours.
-- **Beside it, and green:** the same refusal over the task's own staged doc, whose route prints the rename whole — `jigc doc rename adr:use-tabs --to 'Use Tabs!' --task decide-tabs` — four cases; and `create.already-exists` in a task that holds its doc already, whose route prints the task's exits and the next task's start — four cases, a milestone's sub-task among them.
-
 ## 8. `config` and `start` — the sites the fix pass touched
 
 *Added 2026-10-12, with the cases of [route_catalog/config.rs](../../../../../crates/cli/tests/route_catalog/config.rs) and [route_catalog/start.rs](../../../../../crates/cli/tests/route_catalog/start.rs): the five sites of `jigc config set` and the one of composition taken in by the human's ruling of 2026-10-11 — 24 cases and 3. None of those came out red. **[The commit after it added two cases of `config`, both red, under one key — the last entry of this section.]***
@@ -787,27 +768,6 @@ Each was driven for this section, on this tree's binary.
 - **Driven by hand:** with the link removed and the doc brought back (`git checkout HEAD -- docs/decisions/use-tabs.md`), the printed finalize exits 0 and the edit lands.
 - **Beside it, and green:** the same route over a link to a copy of the doc (`…-edited-over-a-link-to-a-copy-…`); and the record's doors, whose route for the same shape prints the `git checkout HEAD -- <record>` line.
 
-### `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug`
-
-- **Classification:** followed, a printed line no shell can split. **Two cases, both marked `doubt`:** `home-shape-rename-destination-a-link-another-slug-line-run-as-printed`, `home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed`.
-- **State:** a symbolic link that leads nowhere at the home of the id a doc is renamed to — a committed ADR at `jigc rename`, a task's staged ADR at `jigc doc rename`.
-- **Refusing command:** `jigc rename adr:use-tabs --to "Use spaces"` · `jigc doc rename adr:use-tabs --to "Use spaces" --task pick-tabs` — exit 1, `store.home-not-regular-file` at `docs/decisions/use-spaces.md`.
-- **Printed route** (the store door's):
-
-  ```text
-  route: give this doc an id whose home is free — re-run `jigc rename adr:use-tabs --to 'Use spaces' --slug <other-slug>`; or move the link out of the doc's home, so that `docs/decisions/use-spaces.md` is free (commit that where git tracks the link), and re-run `jigc rename adr:use-tabs --to 'Use spaces'`. jigc writes regular files only, so the link is not one it put there, and what becomes of it is yours to decide
-  ```
-
-- **What was done:** the first printed line, as printed.
-- **What went wrong:** no shell splits it: `<other-slug>` is a redirection. The slug is the reader's own to choose.
-- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has.
-- *Why one key for two functions:* `rename.rs::foreign_destination` and `doc.rs::free_destination` print the same sentence for the same state at the two renames. *Why no key that stands:* the distinct-identity key of §7 is another function's line, with other placeholders.
-- **Beside it, and green:** the route's other way at both doors — the link moved out, and at `jigc rename` the printed re-run; a committed link moved out and the move committed; a directory moved away.
-
-### Under a key that stands — `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice`
-
-Two more cases, both marked `doubt`: `home-shape-create-only-create-over-a-link-line-run-as-printed`, `home-shape-create-only-author-over-a-link-line-run-as-printed` — a create under an entry that only creates, over a link at the home. *Why the same and no neighbour:* the route is built by the function the key is about, `distinct_identity_route`, and is its line word for word but for the occupant's name — *to mint beside the link that is there*.
-
 ### Seen by hand, and no case
 
 - **`jigc migrate-corpus` prints the refusal as a row of its report**, not as a finding: *blocked `docs/decisions/use-tabs.md`*, then `store.home-not-regular-file:` and the store's message and route, indented, at exit 1 (an ADR with its `schema-version:` stamp taken off, behind a committed link). The frame reads a refusal by its finding's head line, and has no case here.
@@ -830,14 +790,6 @@ Two more cases, both marked `doubt`: `home-shape-create-only-create-over-a-link-
 - **What was done:** the second way's printed line, `jigc doc show adr:use-spaces`.
 - **What went wrong:** exit 1 under `store.unparseable` — *does not parse: required section heading `## context` is missing … it is a foreign file, not an unmigrated managed doc*. The refusal calls the file *a different doc* and its route offers to read it as one.
 - **Beside it, and green:** the same line where the destination is another committed doc.
-
-### `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug`
-
-- **Classification:** followed, a printed line no shell can split. **Two cases, both marked `doubt`:** `rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed`, `rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed`.
-- **The route's first way**, above: `jigc rename adr:use-tabs --to 'Use spaces' --slug <other-slug>`, run as printed — no shell splits it.
-- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has.
-- **Driven by hand, the second reading:** with `--slug other` the rename exits 0, over the file in no commit and over a link to nothing alike.
-- *Why no key that stands:* the key of §9 is for the two functions that word the store's refusal at a destination; this is `rename.rs::run`'s own arm, the sentence those two were written from. A neighbour.
 
 ### Seen by hand, and no case
 

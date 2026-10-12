@@ -19,13 +19,16 @@
 //! **A route of two of these sites prints the corrected command with the value left to
 //! its reader** — `jigc doc create <type> --title <title> --slug <slug> --task <id>`,
 //! `jigc doc author <type> --from-file <payload> --task <id>`. A distinct title, another
-//! slug and a payload file are the reader's own to choose: no refusal can list them, the
-//! frame fills a placeholder with nothing else, and a bare word in angle brackets is a
-//! redirection to a shell. Such a case runs the line as printed and is marked `doubt`
-//! ([`A_VALUE_OF_THE_READERS_OWN`]).
+//! slug and a payload file are the reader's own to choose: no refusal can list them.
+//! **Such a line is followed with the placeholder filled** — the human's ruling of
+//! 2026-10-12 (`DECISIONS.md` → *A printed line that carries a placeholder for a value of
+//! the reader's own is followed with the placeholder filled*): the case names the value a
+//! reader would choose in its state, inside what the route's words bound it by, and says
+//! why ([`Own`]); the filled line is held to exit 0, and what must hold afterwards is the
+//! doc staged under the value that was named.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Place, Step};
+use crate::support::route_case::{Act, Case, Check, Chosen, Own, Place, Step};
 
 // The sites, as the committed list of refusal sites names them.
 const RETITLE_IN_THE_RECORD: &str =
@@ -53,19 +56,38 @@ const W: Case = Case {
     over: None,
 };
 
-/// The two readings of a printed line whose placeholder stands for a value that is the
-/// reader's own to choose.
-const A_VALUE_OF_THE_READERS_OWN: &str = "the route prints the corrected command with a word in \
-    angle brackets where the reader's own choice goes — `--title <title>`, `--slug <slug>`, \
-    `--from-file <payload>` — over a refusal that lists no such value and could list none: (a) \
-    the backticked line is a command line to run as printed, like every `jigc` line a route \
-    prints — a bare word in angle brackets is a redirection to a shell, and the line cannot be \
-    split; (b) it is a shape the reader fills with a title, a slug or a file of their own — \
-    then the value is the reader's, the frame fills a placeholder only with a value the \
-    refusal lists, and it has no case. The case follows (a). The surface contract says *a \
-    `<placeholder>` the reader fills is legal bare or as a quoted span* (the span fence), and \
-    does not say where a reader takes a value from that no finding carries; it is what the \
-    pilot's first question left open, over a value nobody but the reader has";
+// The values of the reader's own that the cases of this file name — each the value a
+// reader would choose in the case's state, inside what the route's words bound it by.
+
+/// A title the route lets its reader keep — *or keep this one and pass `--slug <slug>`* —
+/// and one of a route that asks nothing of the title: *the id comes from `--slug …`, not
+/// the title*. Either way it is the title of the refused command.
+macro_rules! the_title_of_the_refused_command {
+    ($title:literal, $why:literal) => {
+        Own {
+            placeholder: "<title>",
+            value: $title,
+            why: $why,
+        }
+    };
+}
+/// A slug nothing answers to, where the route asks for one to mint beside what is there,
+/// or for a distinct one.
+macro_rules! a_free_slug {
+    ($slug:literal, $why:literal) => {
+        Own {
+            placeholder: "<slug>",
+            value: $slug,
+            why: $why,
+        }
+    };
+}
+/// The reader's payload with its `title:` set to a distinct title, as the route asks: a
+/// payload file of the state, by its path from where the case stands. The route says
+/// *set the payload's `title:` … and re-run the same* command; a reader edits the payload
+/// or writes another, and the command is handed a payload either way — the frame has no
+/// act that edits a file, so the state holds the second one from the start.
+const THE_PAYLOAD_UNDER_A_DISTINCT_TITLE: &str = "../outside/distinct.yaml";
 
 // ---------------------------------------------------------------------------
 // `run_retitle_item` · `write.machine-maintained` — a retitle of an item of the
@@ -381,8 +403,14 @@ const A_SECOND_TASK: Step = Step::Jigc(&["start", "--workflow", "record-decision
 /// The committed ADR, from the repository root: no case's route may change it.
 const THE_COMMITTED_ADR: &str = "docs/decisions/use-tabs.md";
 
+/// The second task's staged ADR under each id a case below mints.
+const THE_ADR_BESIDE_THE_COMMITTED_ONE: &str = ".jigc/tasks/again/docs/adr:use-tabs-again.md";
+const THE_ADR_UNDER_A_DISTINCT_SLUG: &str = ".jigc/tasks/again/docs/adr:other.md";
+const THE_ADR_UNDER_A_DISTINCT_TITLE: &str = ".jigc/tasks/again/docs/adr:use-spaces.md";
+
 /// **A committed doc already answers to the id**: the route is at a distinct identity, and
-/// its one command line leaves the title, the slug or the payload to its reader.
+/// its one command line leaves the title, the slug or the payload to its reader — the
+/// printed line is followed with the reader's own value in each placeholder.
 const COMMITTED_AND_A_CREATE: [Case; 1] = [Case {
     name: "title-ignored-committed-create-line-run-as-printed",
     site: TITLE_IGNORED,
@@ -390,9 +418,26 @@ const COMMITTED_AND_A_CREATE: [Case; 1] = [Case {
             the title differs from the doc's",
     state: a_committed_adr![A_SECOND_TASK],
     refusing: &["doc", "create", "adr", "--title", "Use Tabs!", "--task", "again"],
-    acts: &[Act::Run(2)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 2,
+        own: &[
+            the_title_of_the_refused_command!(
+                "Use Tabs!",
+                "the title the reader typed, kept: the route says *or keep this one and pass \
+                 `--slug <slug>` to mint beside the existing doc*"
+            ),
+            a_free_slug!(
+                "use-tabs-again",
+                "a slug nothing answers to, to mint beside the existing doc: that doc is \
+                 `adr:use-tabs`, and the title alone slugs to its id"
+            ),
+        ],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_ADR_BESIDE_THE_COMMITTED_ONE),
+        "# Use Tabs!",
+    )],
     untouched: &[THE_COMMITTED_ADR],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 const COMMITTED_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
@@ -412,9 +457,27 @@ const COMMITTED_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
         "--task",
         "again",
     ],
-    acts: &[Act::Run(2)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 2,
+        own: &[
+            the_title_of_the_refused_command!(
+                "Other",
+                "the title the reader typed: the route says the id comes from the slug and \
+                 not from the title, and asks nothing of the title"
+            ),
+            a_free_slug!(
+                "other",
+                "a distinct slug, as the route asks: other than `use-tabs`, which the \
+                 committed doc answers to, and nothing answers to it — it is what the title \
+                 slugs to"
+            ),
+        ],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_ADR_UNDER_A_DISTINCT_SLUG),
+        "# Other",
+    )],
     untouched: &[THE_COMMITTED_ADR],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 const COMMITTED_AND_AN_AUTHOR: [Case; 1] = [Case {
@@ -422,7 +485,11 @@ const COMMITTED_AND_AN_AUTHOR: [Case; 1] = [Case {
     site: TITLE_IGNORED,
     cause: "a committed doc answers to the id a `jigc doc author` mints from its payload's \
             title, and the title differs from the doc's",
-    state: a_committed_adr![A_SECOND_TASK, ANOTHER_TITLE_THE_SAME_ID],
+    state: a_committed_adr![
+        A_SECOND_TASK,
+        ANOTHER_TITLE_THE_SAME_ID,
+        an_adr_titled!("distinct.yaml", "Use spaces"),
+    ],
     refusing: &[
         "doc",
         "author",
@@ -432,12 +499,26 @@ const COMMITTED_AND_AN_AUTHOR: [Case; 1] = [Case {
         "--task",
         "again",
     ],
-    acts: &[Act::Run(1)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 1,
+        own: &[Own {
+            placeholder: "<payload>",
+            value: THE_PAYLOAD_UNDER_A_DISTINCT_TITLE,
+            why: "a payload that is one — an ADR, whole — with its `title:` set to a \
+                  distinct title, as the route asks: *Use spaces*, whose slug nothing \
+                  answers to",
+        }],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_ADR_UNDER_A_DISTINCT_TITLE),
+        "# Use spaces",
+    )],
     untouched: &[THE_COMMITTED_ADR],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
-const THE_USE_TABS_MIGRATION_AREA: &str = ".jigc/tasks/migrate-adr-notes-old-e1a7d84cafc2";
+/// Where a migration keeps the slug it was started under.
+const THE_MIGRATIONS_RECORDED_SLUG: &str =
+    ".jigc/tasks/migrate-adr-notes-old-e1a7d84cafc2/slug-override";
 const COMMITTED_AND_AN_AUTHOR_UNDER_A_MIGRATIONS_SLUG: [Case; 1] = [Case {
     name: "title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed",
     site: TITLE_IGNORED,
@@ -459,10 +540,25 @@ const COMMITTED_AND_AN_AUTHOR_UNDER_A_MIGRATIONS_SLUG: [Case; 1] = [Case {
         "--task",
         THE_NOTES_MIGRATION,
     ],
-    acts: &[Act::Run(2), Act::Run(3)],
-    holds: &[Check::Absent(Place::Repo(THE_USE_TABS_MIGRATION_AREA))],
+    // The discard, as printed; then the migration again under the reader's slug. The
+    // migration's task is named after its source, so the area the discard removed is
+    // there again — under the slug that was named.
+    acts: &[
+        Act::Run(2),
+        Act::RunChosen(Chosen {
+            line: 3,
+            own: &[a_free_slug!(
+                "old-note",
+                "a slug of the migration's own, distinct as the route asks: other than \
+                 `use-tabs`, which the committed doc answers to, and nothing answers to it"
+            )],
+        }),
+    ],
+    holds: &[Check::Contains(
+        Place::Repo(THE_MIGRATIONS_RECORDED_SLUG),
+        "old-note",
+    )],
     untouched: &[THE_COMMITTED_ADR],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 
@@ -479,6 +575,11 @@ const A_REPORT_TASK: Step =
 const THE_TAKEN_HOME: &str = "docs/jigc-feedback/slow-start.md";
 const A_FILE_AT_THE_HOME: Step = Step::File(Place::Repo(THE_TAKEN_HOME), "# Slow start\n");
 const REPORT_AREA: &str = ".jigc/tasks/report-a-bug";
+/// The task's staged finding under each id a case below mints.
+const THE_FINDING_BESIDE_THE_FILE: &str =
+    ".jigc/tasks/report-a-bug/docs/jigc-feedback:slow-start-again.md";
+const THE_FINDING_UNDER_A_DISTINCT_SLUG: &str =
+    ".jigc/tasks/report-a-bug/docs/jigc-feedback:other.md";
 
 const TAKEN_AND_A_CREATE: [Case; 1] = [Case {
     name: "already-exists-create-line-run-as-printed",
@@ -495,9 +596,26 @@ const TAKEN_AND_A_CREATE: [Case; 1] = [Case {
         "--task",
         "report-a-bug",
     ],
-    acts: &[Act::Run(2)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 2,
+        own: &[
+            the_title_of_the_refused_command!(
+                "Slow start",
+                "the title the reader typed, kept: the route says *or keep this one and pass \
+                 `--slug <slug>` to mint beside the existing doc*"
+            ),
+            a_free_slug!(
+                "slow-start-again",
+                "a slug whose home nothing holds, to mint beside the file that is there: \
+                 that file stands at the home of `slow-start`, which the title alone slugs to"
+            ),
+        ],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_FINDING_BESIDE_THE_FILE),
+        "# Slow start",
+    )],
     untouched: &[THE_TAKEN_HOME],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 const TAKEN_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
@@ -517,9 +635,26 @@ const TAKEN_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
         "--task",
         "report-a-bug",
     ],
-    acts: &[Act::Run(2)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 2,
+        own: &[
+            the_title_of_the_refused_command!(
+                "Other",
+                "the title the reader typed: the route says the id comes from the slug and \
+                 not from the title, and asks nothing of the title"
+            ),
+            a_free_slug!(
+                "other",
+                "a distinct slug, as the route asks: other than `slow-start`, whose home \
+                 holds the file, and nothing stands at its own — it is what the title slugs to"
+            ),
+        ],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_FINDING_UNDER_A_DISTINCT_SLUG),
+        "# Other",
+    )],
     untouched: &[THE_TAKEN_HOME],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 const TAKEN_AND_AN_AUTHOR: [Case; 1] = [Case {
@@ -532,6 +667,10 @@ const TAKEN_AND_AN_AUTHOR: [Case; 1] = [Case {
         A_REPORT_TASK,
         A_FILE_AT_THE_HOME,
         Step::File(Place::Outside("finding.yaml"), "title: \"Slow start\"\n"),
+        Step::File(
+            Place::Outside("distinct.yaml"),
+            "title: \"Slow start again\"\n",
+        ),
     ],
     refusing: &[
         "doc",
@@ -542,9 +681,21 @@ const TAKEN_AND_AN_AUTHOR: [Case; 1] = [Case {
         "--task",
         "report-a-bug",
     ],
-    acts: &[Act::Run(1)],
+    acts: &[Act::RunChosen(Chosen {
+        line: 1,
+        own: &[Own {
+            placeholder: "<payload>",
+            value: THE_PAYLOAD_UNDER_A_DISTINCT_TITLE,
+            why: "a payload that is one — as much of a finding as the refused one holds — \
+                  with its `title:` set to a distinct title, as the route asks: *Slow start \
+                  again*, at whose slug's home nothing stands",
+        }],
+    })],
+    holds: &[Check::Contains(
+        Place::Repo(THE_FINDING_BESIDE_THE_FILE),
+        "# Slow start again",
+    )],
     untouched: &[THE_TAKEN_HOME],
-    doubt: Some(A_VALUE_OF_THE_READERS_OWN),
     ..W
 }];
 
@@ -827,14 +978,15 @@ pub const READINGS: &[Reading] = &[
                 Why::NotConstructible(THE_REFUSED_WRITE_AGAIN),
             ),
             (
-                "*choose a distinct `--title`* · *set the payload's `title:` to a distinct title* — the committed arm, in words",
+                "*choose a distinct `--title`* — the committed arm's first way at `create`, in words",
                 Why::NotConstructible(
-                    "the title and the payload are the reader's own, arguments of the \
-                     refused command, which the frame runs again only where the route \
-                     prints no command line — these routes print one. Driven by hand: \
-                     `jigc doc create adr --title 'Use spaces' --task again` exits 0 and \
-                     stages a second ADR; the printed line with `<title>` and `<slug>` \
-                     filled the same way exits 0 too",
+                    "a distinct title and no `--slug` is the refused command with another \
+                     argument, and no line the route prints: the line it prints carries \
+                     `--slug <slug>` and is followed with the title kept, the route's \
+                     second way. The frame runs a refusing command again only as it was \
+                     typed, and only where the route prints no command line. Driven by \
+                     hand: `jigc doc create adr --title 'Use spaces' --task again` exits 0 \
+                     and stages a second ADR",
                 ),
             ),
         ],
@@ -889,13 +1041,13 @@ pub const READINGS: &[Reading] = &[
             ),
         ],
         not_followed: &[(
-            "*choose a distinct `--title`* · *set the payload's `title:` to a distinct title* — the route of a task that holds no doc, in words",
+            "*choose a distinct `--title`* — the first way of a `create` in a task that holds no doc, in words",
             Why::NotConstructible(
-                "the title and the payload are the reader's own, arguments of the refused \
-                 command, which the frame runs again only where the route prints no \
-                 command line — these routes print one. Driven by hand: `jigc doc create \
-                 jigc-feedback --title 'Another' --task report-a-bug` exits 0 and stages \
-                 the finding",
+                "a distinct title and no `--slug` is the refused command with another \
+                 argument, and no line the route prints: the line it prints carries \
+                 `--slug <slug>` and is followed with the title kept, the route's second \
+                 way. Driven by hand: `jigc doc create jigc-feedback --title 'Another' \
+                 --task report-a-bug` exits 0 and stages the finding",
             ),
         )],
     },

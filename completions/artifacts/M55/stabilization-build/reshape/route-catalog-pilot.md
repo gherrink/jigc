@@ -10,6 +10,8 @@
 
 **[2026-10-12 — the two tables were printed with the first ruling carried out, and §15 counts the catalog after it.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the frame of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 536.5 s, load average 68.7 at its start and 73.7 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each — **30 lines of cases and 6 of sites differ from the tables committed before, and no other**: the thirty cases the ruling on cited commands was carried out on, and the count of listed-red cases at the six sites they stand at. §14 is as it was written, a day earlier.**]**
 
+**[2026-10-12 — the two tables were printed with the second ruling carried out, and §16 counts the catalog after it.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the frame of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 408.4 s, load average 14.0 at its start and 23.4 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each — **13 lines of cases and 4 of sites differ from the tables committed before, and no other**: the thirteen cases the ruling on a placeholder for a value of the reader's own was carried out on, and the four sites that count them listed red. The table's column `operand` has a third word since that commit, `chosen`, for a case that names such a value. Every count of §1 to §15 is as counted then; what stands after this ruling is §16's.**]**
+
 **Where a number comes from.** Three sources, and every table says which.
 
 - **(arm)** — the suite's one ignored arm, run by hand on this tree at the commit that carries this record:
@@ -737,5 +739,75 @@ Inside a gate, one behind the other (the gate of the commit before this section'
 - **That a witness is the promise its route makes**: a case states it, by one person's reading of the route's words; the frame holds a case to its witness and nothing holds the witness to the route.
 - **A cited line whose promise no piece of text states** — what is absent from an output, an order of lines: no case asked for one.
 - **The other eight questions**: 46 cases, marked and red as they were.
+- **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: not met, not changed.
+- **Linux**: the run follows the commit and is in the task's return.
+
+## 16. 2026-10-12 — a placeholder for a value of the reader's own, filled: the catalog after the second ruling was carried out
+
+**What this section is.** Of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](route-catalog-doubts.md)), the human ruled a second on 2026-10-12: a printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled ([DECISIONS.md](../../../../../DECISIONS.md) → *A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled*). The entry of that day gave the frame the act that carries it out; the one after it followed the thirteen cases again. This section counts the catalog when that second entry lands. It judges nothing: not what a difference between two binaries is, and not whether a value is the one a reader would choose — that is each case's reading, stated in the case with its reason.
+
+**Where a number comes from.** One run of the ignored arm (§ *Where a number comes from*, at the head), on the tree of the commit that carries this section, the variable naming `rc.24`'s binary of §8: **408.4 s over 627 cases**, load average 14.0 at its start and 23.4 at its end, no gate of this branch beside it. [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) are the blocks `cases` and `sites` of that run, byte for byte. *Before* is §15.
+
+### The catalog's totals (blocks `cases` and `bounds`)
+
+| | before | after |
+|---|---|---|
+| cases | 627 | 627 |
+| red — the cases the expected-red list holds | 231 | **218** |
+| keys | 50 | **47** |
+| red cases that can block · keys that can block | 162 · 40 | 149 · 37 |
+| red cases on a declared bound — a permission bit · a FIFO · the override | 47 · 7 · 19 | 47 · 7 · 19 |
+| the cases no entry lists | 396 | 409 |
+| cases marked `doubt` — of them red | 46 — 46 | 33 — 33 |
+| cases that name a value of the reader's own — column `operand`, `chosen` | — | 13 |
+| **red cases at a refusal `rc.24` does not provoke** — listed red here, *not provoked* there | 58 | **54** |
+
+The thirteen cases that left the list could all block: none stood on a declared bound. By family, red: `doc write` 10 → 3 · `doc read` 5 → 1 · the dynamic sites' 3 → 1; `setup` 118, `uninstall` 45, `task finalize` 22, `milestone` 26, `config` 2 and `start` 0 as they were. Beyond the pilot's two commands 68 → 55, under 21 keys where there were 24; on them 163, under 26, as it was.
+
+What the 627 came to on this tree's binary (block `cases`, column 6): holds 324 · holds, operand implied 85 · the same refusal again 129 · another failure 73 · the command did not end 7 · a printed line no shell can split 5 · a witness changed 4 — and no case under *a cited line does not say what the route promised*. **The five lines no shell can split that are left are the five of the list's question 1**, a placeholder for a value the product knows and the refusal does not list: nothing names a value for them.
+
+### The thirteen cases, and the three keys
+
+Per case — the value, why that one, and what it came to on both binaries before and after — is [route-catalog-doubts.md](route-catalog-doubts.md) → 2. In sum: on this tree's binary a printed line no shell can split 13 became holds 13; on `rc.24` a printed line no shell can split 9 · not provoked 4 became holds 9 · not provoked 4. The three keys that left the findings file with their thirteen cases are named there and at the head of [route-catalog-findings.md](route-catalog-findings.md): 9 cases · 2 · 2.
+
+### Red cases at a refusal `rc.24` does not provoke — 54, under 15 keys (block `cases`, columns 5, 6 and 9)
+
+A line of the block whose fifth column holds a key and whose ninth says *not provoked*: red on this tree, and on `rc.24` the refusing command printed no finding of the case's code at a non-zero exit — it exited 0, or another refusal answered. What such a line says and does not say is §8's.
+
+| key | cases |
+|---|---|
+| `r1-setup-untracked-link-repointed-draws-dirty-install-path` | 16 |
+| `r1-setup-install-hook-route-other-causes-unexamined` | 9 |
+| `r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor` | 7 |
+| `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path` | 6 |
+| `r1-p3-setup-install-hook-undriven-producers-and-causes` | 3 |
+| `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path` | 3 |
+| `r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries` | 2 |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 1 |
+| `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution` | 1 |
+| `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision` | 1 |
+| `r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing` | 1 |
+| `r1-p3-setup-writability-route-printed-for-other-causes` | 1 |
+| `r1-setup-force-over-skip-worktree-path-cannot-commit` | 1 |
+| `r1-setup-settings-record-refused-rerun-installs-without-the-record` | 1 |
+| `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution` | 1 |
+| **15 keys** | **54** |
+
+The four that are no longer among them are the four of the thirteen that stand at `store.home-not-regular-file` — two under each of two keys that are gone.
+
+### The same cases on the previous release's binary — what moved (block `cases`, columns 6, 9 and 12)
+
+No line of §14's table moved from one of its three columns to another: nine of the thirteen were the same classification on both binaries over the same printed route and still are — *a printed line no shell can split* then, *holds* now — and four were *not provoked* on `rc.24` and still are. Beyond the pilot: 274 lines, 155 the same on both, 112 not provoked on `rc.24`, 7 other, as §15 has them. The pilot's two commands as §14 has them.
+
+### The arms' seconds
+
+Inside a gate, one behind the other (the gate of the commit before this section's, `tests passed=5061`, its record of seconds, under a load average of 30 to 105): `start` 3.0 · `unassigned` 5.0 · `config` 11.6 · `doc_write` 12.1 · `doc_read` 20.2 · `uninstall` 26.6 · `setup` 61.1 · `milestone` 64.7 · `task_finalize` 67.5 — 272.0 s together; the arm that fills a placeholder with the value a case names, 3.6 s. The arm of the eight second cases, new with this section's commit: about 20 s where it was run by itself. The ignored arm: 408.4 s.
+
+### Not established
+
+- **That a placeholder a case names is the reader's own, and that its value is one a reader would choose**: a case states both, by one person's reading of the route's words; the frame fills what it is told to and nothing holds the value to the route.
+- **A value the route says to leave**: the frame reads the product's refusal of it as *the same refusal again*, as it reads a route that leads back to its refusal. Eight second cases hold what this tree's binary does with a value outside its route's words; none is a case of the catalog.
+- **The first way of a route that offers two with one line** — a distinct title and no `--slug`: a reason at its site, no case.
+- **The other seven questions**: 33 cases, marked and red as they were.
 - **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: not met, not changed.
 - **Linux**: the run follows the commit and is in the task's return.

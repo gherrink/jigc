@@ -27,7 +27,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+    Act, Case, Check, Chosen, Cited, Operand, Own, Place, Promise, Says, Step,
 };
 
 // The site, as the committed list of refusal sites names it.
@@ -766,17 +766,22 @@ const A_REFERRERS_HOME_AT_THE_RENAME: [Case; 1] = [Case {
     ..H
 }];
 
-/// The two readings of a printed line whose placeholder stands for a slug of the reader's
-/// own choosing.
-const ANOTHER_SLUG_IS_THE_READERS: &str = "*give this doc an id whose home is free — re-run \
-    `… --slug <other-slug>`*: (a) the backticked line is a command line to run as printed, \
-    like every `jigc` line a route prints — a bare word in angle brackets is a redirection \
-    to a shell, and the line cannot be split; (b) it is a shape the reader fills with a slug \
-    of their own — then the value is the reader's, the frame fills a placeholder only with a \
-    value the refusal lists, and it has no case. The case follows (a). The surface contract \
-    says *a `<placeholder>` the reader fills is legal bare or as a quoted span* (the span \
-    fence); it is what the pilot's first question left open, over a value nobody but the \
-    reader has";
+/// **Another slug, where a route says *give this doc an id whose home is free — re-run
+/// `… --slug <other-slug>`*** — the human's ruling of 2026-10-12: the printed line is
+/// followed with the reader's own value in the placeholder. The value is a slug whose home
+/// nothing holds: the title of the rename, *Use spaces*, slugs to `use-spaces`, whose home
+/// is the one that is taken.
+const ANOTHER_SLUG: Own = Own {
+    placeholder: "<other-slug>",
+    value: "spaces",
+    why: "a slug whose home is free, as the route asks: other than `use-spaces`, which the \
+          title slugs to and whose home holds the link — nothing stands at \
+          `docs/decisions/spaces.md`",
+};
+/// The ADR's home under that slug, and the task's staged ADR under it.
+const THE_ADR_UNDER_ANOTHER_SLUG: &str = "docs/decisions/spaces.md";
+const THE_STAGED_ADR_UNDER_ANOTHER_SLUG: &str = ".jigc/tasks/pick-tabs/docs/adr:spaces.md";
+const THE_STAGED_ADR: &str = ".jigc/tasks/pick-tabs/docs/adr:use-tabs.md";
 const A_LINK_AT_THE_RENAMES_DESTINATION: &str = "`jigc rename`: the home of the id the doc is \
     renamed to holds a symbolic link, in no commit";
 const THE_DESTINATION_A_LINK_AT_THE_RENAME: [Case; 2] = [
@@ -785,9 +790,15 @@ const THE_DESTINATION_A_LINK_AT_THE_RENAME: [Case; 2] = [
         cause: A_LINK_AT_THE_RENAMES_DESTINATION,
         state: an_adr_committed![Step::LinkTo(Place::Repo(THE_ADR_AS_USE_SPACES), "nowhere")],
         refusing: RENAME,
-        acts: &[Act::Run(0)],
-        untouched: &[THE_ADR],
-        doubt: Some(ANOTHER_SLUG_IS_THE_READERS),
+        acts: &[Act::RunChosen(Chosen {
+            line: 0,
+            own: &[ANOTHER_SLUG],
+        })],
+        holds: &[
+            Check::RegularFile(Place::Repo(THE_ADR_UNDER_ANOTHER_SLUG)),
+            Check::Contains(Place::Repo(THE_ADR_UNDER_ANOTHER_SLUG), "# Use spaces"),
+            Check::Absent(Place::Repo(THE_ADR)),
+        ],
         ..H
     },
     Case {
@@ -861,8 +872,17 @@ const THE_DESTINATION_A_LINK_AT_THE_IN_TASK_RENAME: [Case; 2] = [
             "--task",
             "pick-tabs",
         ],
-        acts: &[Act::Run(0)],
-        doubt: Some(ANOTHER_SLUG_IS_THE_READERS),
+        acts: &[Act::RunChosen(Chosen {
+            line: 0,
+            own: &[ANOTHER_SLUG],
+        })],
+        holds: &[
+            Check::Contains(
+                Place::Repo(THE_STAGED_ADR_UNDER_ANOTHER_SLUG),
+                "# Use spaces",
+            ),
+            Check::Absent(Place::Repo(THE_STAGED_ADR)),
+        ],
         ..H
     },
     Case {
@@ -887,17 +907,12 @@ const THE_DESTINATION_A_LINK_AT_THE_IN_TASK_RENAME: [Case; 2] = [
     },
 ];
 
-/// The two readings of a printed line whose placeholder stands for a value that is the
-/// reader's own to choose — the question of `doc_write.rs`, at the same function's route.
-const A_VALUE_OF_THE_READERS_OWN: &str = "the route prints the corrected command with a word in \
-    angle brackets where the reader's own choice goes — `--title <title> --slug <slug>`, \
-    `--from-file <payload>` — over a refusal that lists no such value and could list none: (a) \
-    the backticked line is a command line to run as printed — a bare word in angle brackets \
-    is a redirection to a shell, and the line cannot be split; (b) it is a shape the reader \
-    fills with a value of their own — then the frame has no case. The case follows (a). The \
-    surface contract says *a `<placeholder>` the reader fills is legal bare or as a quoted \
-    span* (the span fence); it is what the pilot's first question left open, over a value \
-    nobody but the reader has";
+/// **A create under an entry that only creates, over a link**: the route is the one
+/// `doc_write.rs` follows over a file — the same function words it — and its printed line
+/// is followed the same way, with the reader's own value in each placeholder (the human's
+/// ruling of 2026-10-12).
+const THE_FINDING_BESIDE_THE_LINK: &str =
+    ".jigc/tasks/report-a-bug/docs/jigc-feedback:slow-start-again.md";
 const THE_FINDINGS_HOME: &str = "docs/jigc-feedback/slow-start.md";
 const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
     Case {
@@ -919,8 +934,28 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
             "--task",
             "report-a-bug",
         ],
-        acts: &[Act::Run(2)],
-        doubt: Some(A_VALUE_OF_THE_READERS_OWN),
+        acts: &[Act::RunChosen(Chosen {
+            line: 2,
+            own: &[
+                Own {
+                    placeholder: "<title>",
+                    value: "Slow start",
+                    why: "the title the reader typed, kept: the route says *or keep this one \
+                          and pass `--slug <slug>` to mint beside the link that is there*",
+                },
+                Own {
+                    placeholder: "<slug>",
+                    value: "slow-start-again",
+                    why: "a slug whose home nothing holds, to mint beside the link: the \
+                          link stands at the home of `slow-start`, which the title alone \
+                          slugs to",
+                },
+            ],
+        })],
+        holds: &[Check::Contains(
+            Place::Repo(THE_FINDING_BESIDE_THE_LINK),
+            "# Slow start",
+        )],
         ..H
     },
     Case {
@@ -933,6 +968,10 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
             Step::Dir(Place::Repo("docs/jigc-feedback")),
             Step::LinkTo(Place::Repo(THE_FINDINGS_HOME), "nowhere"),
             Step::File(Place::Outside("finding.yaml"), "title: \"Slow start\"\n"),
+            Step::File(
+                Place::Outside("distinct.yaml"),
+                "title: \"Slow start again\"\n",
+            ),
         ],
         refusing: &[
             "doc",
@@ -943,8 +982,22 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
             "--task",
             "report-a-bug",
         ],
-        acts: &[Act::Run(1)],
-        doubt: Some(A_VALUE_OF_THE_READERS_OWN),
+        acts: &[Act::RunChosen(Chosen {
+            line: 1,
+            own: &[Own {
+                placeholder: "<payload>",
+                value: "../outside/distinct.yaml",
+                why: "a payload that is one — as much of a finding as the refused one \
+                      holds — with its `title:` set to a distinct title, as the route \
+                      asks: *Slow start again*, at whose slug's home nothing stands. A \
+                      second file of the state, where a reader may as well have edited \
+                      the first: the frame has no act that edits one",
+            }],
+        })],
+        holds: &[Check::Contains(
+            Place::Repo(THE_FINDING_BESIDE_THE_LINK),
+            "# Slow start again",
+        )],
         ..H
     },
 ];

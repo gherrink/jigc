@@ -4,13 +4,15 @@
 
 *Rewritten in its head and in section R on 2026-10-12, with the commit that carried the first ruling out; the numbers of that section are from one run of the same arm on that commit's tree (536.5 s over 627 cases, load average 69 at its start and 74 at its end, no gate of this branch beside it). In that run the 46 cases of questions 1 to 8 came to what the tables below say of them.*
 
-**46 cases are marked, under eight questions. A ninth — R, the first one ruled — is carried out: its 30 cases state what their route promised and carry no mark.** The pilot's record listed six questions (its §7), and the three returns after it named three more — *a product command printed without its id*, *a line the route says mints*, *a command cited for what it prints*. Read together they are nine, not twelve:
+*Rewritten in its head again, and in section 2, on 2026-10-12, with the commit that carried the second ruling out; the numbers of that section are from one run of the same arm on that commit's tree (408.4 s over 627 cases, load average 14 at its start and 23 at its end, no gate of this branch beside it). In that run the 33 cases of questions 1 and 3 to 8 came to what the tables below say of them.*
+
+**33 cases are marked, under seven questions. Two more questions are ruled and carried out — R, whose 30 cases state what their route promised, and 2, whose 13 name the value their reader would choose — and none of those 43 carries a mark.** The pilot's record listed six questions (its §7), and the three returns after it named three more — *a product command printed without its id*, *a line the route says mints*, *a command cited for what it prints*. Read together they are nine, not twelve:
 
 | | the question | where it was first named | cases | inside a declared bound |
 |---|---|---|---|---|
 | **R** | a command a route cites for what it prints — **ruled, and carried out: no case of it is marked** | the pilot's fourth; the gate's third — **one question**: both ask whether a printed line that is there for its output is held to exit 0 | 30, none marked | 0 |
+| **2** | a placeholder for a value that is the reader's own to choose — **ruled, and carried out: no case of it is marked** | what was left of the pilot's first, **a second question**: no refusal could list such a value, so the first question's reading (a) — *the route owes it* — has no meaning here | 13, none marked | 0 |
 | 1 | a placeholder for a value the product knows and the refusal does not list | what was left of the pilot's first | 5 | 0 |
-| 2 | a placeholder for a value that is the reader's own to choose | what was left of the pilot's first, **a second question**: no refusal could list such a value, so the first question's reading (a) — *the route owes it* — has no meaning here | 13 | 0 |
 | 3 | *a regular file inside this repository* — any, or a committed one | the pilot's second | 11 | 0 |
 | 4 | *make sure `.jigc/…` is readable* — the entry named, or everything under it | the pilot's third | 3 | 3 |
 | 5 | a clause quoted as a route, with a backticked shape in it | the pilot's fifth | 1 | 1 |
@@ -19,6 +21,8 @@
 | 8 | a line the route says *mints* | the gate's second — **its own question**: the line has a quoted placeholder, which a shell hands on, and the doubt is over what the route says the line does | 1 | 0 |
 
 **What [surface-contract.md](../../../../../design/surface-contract.md) says, by its line.** Line 44, the span fence: every backticked `git …` / `jigc …` span *must carry only shell-safe tokens (a `<placeholder>` the reader fills is legal bare or as a quoted span)*. Line 34, P6: *a placeholder whose value is derivable from the finding's own `key.target` must be substituted before the finding is projected* — for a mechanical route, and exactly two placeholders are derivable, `<address>` and `<doctype>`. Line 71, the printed-path fence: a `git` span is admitted in three shapes, one of them *a span with **no operand**, which names a command rather than a file (`git add`, `git worktree list`, `git stash -u`)*. It has no sentence on a `jigc` span without its operands, on a command a route cites, or on what a route may say a line does.
+
+**Read in this order:** the two questions that are ruled, R and 2, as carried out; then the seven that are open, 1 and 3 to 8.
 
 ---
 
@@ -76,12 +80,61 @@ The routes: *run `git …` to see what git reports, resolve that, then re-run* �
 
 ---
 
+## 2. A placeholder for a value that is the reader's own to choose — ruled, and carried out
+
+**The ruling — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled*): such a line *is followed with the placeholder filled* — the case names the value, the catalog puts it in, and the filled line is held to exit 0 like any other line a route prints. Not taken: *a printed line must run as it stands*, under which every such line is red, against the surface contract's line 44 (*a `<placeholder>` the reader fills is legal bare or as a quoted span*). Not taken: *such a line is no case*, under which nothing follows these routes at all.
+
+**Carried out on 2026-10-12.** A case says which placeholder of a printed line is the reader's own, the value a reader would choose in the case's state, and why that one (`Act::RunChosen`). The frame puts the value in where the route prints that placeholder, as one word whatever it holds, runs the filled line and holds it to exit 0; the line that was run is in the record. A placeholder the case does not name is not filled — the five cases of question 1 are *a printed line no shell can split* as they were. A filled line that is refused for the value, its output quoting the value back, is the case's mistake: a fault of the case, never a red case.
+
+The routes: *choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint beside the existing doc: `jigc doc create <type> --title <title> --slug <slug> --task <id>`* · *the id comes from `--slug …`, not the title, so pass a distinct `--slug`* — the same line · *set the payload's `title:` to a distinct title … and re-run the same `jigc doc author <type> --from-file <payload> --task <id>`* · *discard this task …, then re-migrate under a distinct slug: `jigc migrate <path> --as adr --slug <slug>`* · *give this doc an id whose home is free* / *an id nothing else answers to — re-run `jigc rename <id> --to '<the title>' --slug <other-slug>`*, and the same at `jigc doc rename`. The id, the address, the path and the task are printed concrete in each.
+
+**On this tree's binary all thirteen hold** — where all thirteen were *a printed line no shell can split*. **On `rc.24`**: holds 9 · not provoked 4 — where they were a printed line no shell can split 9 · not provoked 4. The four are the ones at `store.home-not-regular-file`, a refusal that binary does not have.
+
+| case | the value the case names, and why | before: this tree · `rc.24` | after, on this tree's binary | after, on `rc.24` |
+|---|---|---|---|---|
+| `title-ignored-committed-create-line-run-as-printed` | `<title>` = `Use Tabs!`: the title the reader typed, kept — *or keep this one*. `<slug>` = `use-tabs-again`: nothing answers to it; it mints beside `adr:use-tabs` | a printed line no shell can split · the same | holds | holds |
+| `title-ignored-committed-create-under-a-slug-line-run-as-printed` | `<title>` = `Other`: the title typed — the route asks nothing of it. `<slug>` = `other`: distinct, as the route asks — other than `use-tabs` | a printed line no shell can split · the same | holds | holds |
+| `title-ignored-committed-author-line-run-as-printed` | `<payload>` = a second payload file of the state, an ADR whole, its `title:` the distinct *Use spaces* | a printed line no shell can split · the same | holds | holds |
+| `title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed` | `<slug>` = `old-note`: a slug of the migration's own, distinct as the route asks — other than `use-tabs` | a printed line no shell can split · the same | holds | holds |
+| `already-exists-create-line-run-as-printed` | `<title>` = `Slow start`: the title typed, kept. `<slug>` = `slow-start-again`: nothing stands at its home | a printed line no shell can split · the same | holds | holds |
+| `already-exists-create-under-a-slug-line-run-as-printed` | `<title>` = `Other`: the title typed. `<slug>` = `other`: distinct, as the route asks — other than `slow-start` | a printed line no shell can split · the same | holds | holds |
+| `already-exists-author-line-run-as-printed` | `<payload>` = a second payload file of the state, its `title:` the distinct *Slow start again* | a printed line no shell can split · the same | holds | holds |
+| `home-shape-rename-destination-a-link-another-slug-line-run-as-printed` | `<other-slug>` = `spaces`: its home is free — other than `use-spaces`, which the title slugs to and whose home holds the link | a printed line no shell can split · not provoked | holds | not provoked |
+| `home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed` | `<other-slug>` = `spaces`: the same | a printed line no shell can split · not provoked | holds | not provoked |
+| `home-shape-create-only-create-over-a-link-line-run-as-printed` | `<title>` = `Slow start`: the title typed, kept. `<slug>` = `slow-start-again`: nothing stands at its home | a printed line no shell can split · not provoked | holds | not provoked |
+| `home-shape-create-only-author-over-a-link-line-run-as-printed` | `<payload>` = a second payload file of the state, its `title:` the distinct *Slow start again* | a printed line no shell can split · not provoked | holds | not provoked |
+| `rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed` | `<other-slug>` = `spaces`: an id nothing else answers to — other than `use-spaces`, which the other doc holds | a printed line no shell can split · the same | holds | holds |
+| `rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed` | `<other-slug>` = `spaces`: the same, over the file somebody wrote | a printed line no shell can split · the same | holds | holds |
+
+**What the table says, and does not.**
+
+- **No case of the thirteen keeps its mark, and all thirteen left the expected-red list** — with the three keys that held them and nothing else: `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` (9 cases) · `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` (2) · `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` (2). No key of the three stayed.
+- **What each case holds behind the filled line is the doc under the value that was named**: the staged ADR or finding at the id the slug or the payload's title gives it, with the title that was named as its heading; the renamed ADR at the home of the slug that was named, and gone from the home it had; the migration's recorded slug. Somebody's file at the taken home, and the other committed doc, are witnesses and are as they were.
+- **The migration's line, which nobody had driven by hand, holds on both binaries**: the printed discard, then the migration again under the reader's slug.
+- **A payload is a second file of the state.** The route says *set the payload's `title:` to a distinct title … and re-run the same* command; a reader edits the payload or writes another, and the command is handed a payload either way. The frame has no act that edits a file.
+- **Where a route's line offers two ways with one shape** — *choose a distinct `--title`, or keep this one and pass `--slug <slug>`*, over a line that carries both placeholders — the case follows the second: the title kept, a slug named. The first way, a distinct title and no `--slug`, is the refused command with another argument and no line the route prints; it has a reason at its site, and was driven by hand there.
+- **A value outside what its route says, on this tree's binary** — eight second cases, in an arm of their own (`route_catalog::a_value_outside_what_its_route_says_is_read_as_what_it_is_on_this_trees_binary`), none of them a case of the catalog:
+
+  | the value | at | what the line did | what the frame read |
+  |---|---|---|---|
+  | a slug that is none, `Not A Slug` | `jigc doc create` · `jigc migrate` | exit 1, a bare line: `` `--slug "Not A Slug"` is not a valid slug `` | the case's mistake |
+  | the same | `jigc rename` | exit 1, a finding: `write.malformed-slug`, the same words | the case's mistake |
+  | a payload file that is not there | `jigc doc author` | exit 1: *could not read slot prose from* the path | the case's mistake |
+  | the slug the route says to leave — `use-tabs`, `use-spaces` | `jigc doc create` · `jigc rename` | the case's own refusal again | the same refusal again |
+  | the payload the route says to change | `jigc doc author` | the case's own refusal again | the same refusal again |
+  | the slug the route says to leave, `use-tabs` | `jigc migrate` | **exit 0** — the refusal is the later `jigc doc author`'s | the line holds; the case's check of the recorded slug does not |
+
+  **The frame cannot tell a value the route says to leave from a route that leads back to its refusal**: both are the case's own code again. A case's value is held to its route's bound by the case, which says so in its reason; and where a line takes a value its route says to leave, as the migration's does, it is the case's own check that holds the value.
+- **Not established**: that a placeholder a case names is the reader's own, and that its value is one a reader would choose — stated by the case, read by one person. And `rc.24`'s nine were followed with the values chosen by reading this tree's routes; the two binaries print the same route in all nine.
+
+---
+
 ## 1. A placeholder for a value the product knows and the refusal does not list
 
 **The route says:** `jigc milestone discard <milestone-id> --force` over a refusal that lists a worktree's path and no milestone · `jigc doc create <doctype> --title <title> --slug <slug> --task <id>` and `jigc migrate <path> --as <doctype>` over a refusal that lists only the destination — and, in the same routes, `jigc task finalize` with no id.
 
 - **(a)** the value comes from the refusal's own output, as every other value a route needs: the route owes it, and the case is red as it stands.
-- **(b)** the reader knows it from somewhere else: then the frame, which fills a placeholder only with a value the refusal lists, has no case.
+- **(b)** the reader knows it from somewhere else: then the frame, which fills a placeholder with a value the refusal lists or — since question 2 was ruled — with one a case names as the reader's own to choose, has no case: a milestone's id and a doctype are neither.
 
 **The cases — 5, none inside a bound:** under (a) all 5 are red (*a printed line no shell can split*). Under (b) none is a case. Driven by hand with the values put in, as an earlier entry records: the uninstall route holds; of the clobber guard's task arm the printed way is refused, an unprinted one holds, and a third is refused first.
 
@@ -94,33 +147,6 @@ The routes: *run `git …` to see what git reports, resolve that, then re-run* �
 | `clobber-task-file-at-the-home-occupant-migrated-as-printed` | a printed line no shell can split | a printed line no shell can split |
 | `clobber-migration-file-at-the-destination-discarded-and-minted-again-as-printed` | a printed line no shell can split | a printed line no shell can split |
 | `clobber-migration-file-at-the-destination-finalized-and-approved-as-printed` | a printed line no shell can split | a printed line no shell can split |
-
-## 2. A placeholder for a value that is the reader's own to choose
-
-**The route says:** `jigc doc create <type> --title <title> --slug <slug> --task <id>` · `jigc doc author <type> --from-file <payload> --task <id>` · `jigc migrate <path> --as <type> --slug <slug>` · `jigc rename <id> --to <title> --slug <other-slug>` · `jigc doc rename <id> --to <title> --slug <other-slug>` — the id, the address and the task concrete, and a bare word in angle brackets where a title, a slug or a payload file of the reader's own goes.
-
-- **(a)** the backticked line is a command line to run as printed, like every `jigc` line a route prints: a bare `<word>` is a redirection to a shell, and the line cannot be split.
-- **(b)** it is a shape the reader fills with a value of their own: then the value is the reader's, and the frame has no case.
-
-**The cases — 13, none inside a bound:** under (a) all 13 are red (*a printed line no shell can split*). Under (b) none is a case; **driven by hand with a value put in, twelve of the thirteen lines exit 0** — every one but the migration's, which was not driven.
-
-**The contract:** line 44 — *a `<placeholder>` the reader fills is legal bare or as a quoted span*. Read by it alone, (b). A quoted placeholder is one word to a shell and such a line is run as printed by the catalog today (`--to "<title>"`, `"<intent>"`); these are bare.
-
-| case | on this tree's binary | on `rc.24` |
-|---|---|---|
-| `title-ignored-committed-create-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `title-ignored-committed-create-under-a-slug-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `title-ignored-committed-author-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `already-exists-create-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `already-exists-create-under-a-slug-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `already-exists-author-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `home-shape-rename-destination-a-link-another-slug-line-run-as-printed` | a printed line no shell can split | not provoked |
-| `home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed` | a printed line no shell can split | not provoked |
-| `home-shape-create-only-create-over-a-link-line-run-as-printed` | a printed line no shell can split | not provoked |
-| `home-shape-create-only-author-over-a-link-line-run-as-printed` | a printed line no shell can split | not provoked |
-| `rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
-| `rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed` | a printed line no shell can split | a printed line no shell can split |
 
 ## 3. *A regular file inside this repository* — any, or a committed one
 

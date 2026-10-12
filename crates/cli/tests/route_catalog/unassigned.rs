@@ -21,7 +21,9 @@
 //!     taken*. A reason: it takes a pack of the reader's own.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Cited, Place, Promise, Says, Step};
+use crate::support::route_case::{
+    Act, Case, Check, Chosen, Cited, Own, Place, Promise, Says, Step,
+};
 
 // The sites, as a claim names each: the dynamic site's function, and the code minted there.
 const RENAME_NO_SUCH_DOC: &str = "crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1";
@@ -171,17 +173,29 @@ const THE_DOC_GONE_FROM_THE_WORKING_TREE: [Case; 1] = [Case {
 // `jigc rename` · `write.already-present` — a regular file at the destination
 // ---------------------------------------------------------------------------
 
-/// The two readings of a printed line whose placeholder stands for a slug of the reader's
-/// own choosing.
-const ANOTHER_SLUG_IS_THE_READERS: &str = "*give this doc an id nothing else answers to — \
-    re-run `jigc rename … --slug <other-slug>`*: (a) the backticked line is a command line to \
-    run as printed, like every `jigc` line a route prints — a bare word in angle brackets is \
-    a redirection to a shell, and the line cannot be split; (b) it is a shape the reader \
-    fills with a slug of their own — then the value is the reader's, the frame fills a \
-    placeholder only with a value the refusal lists, and it has no case. The case follows \
-    (a). The surface contract says *a `<placeholder>` the reader fills is legal bare or as a \
-    quoted span* (the span fence); it is what the pilot's first question left open, over a \
-    value nobody but the reader has";
+/// **Another slug, where the route says *give this doc an id nothing else answers to —
+/// re-run `jigc rename … --slug <other-slug>`*** — the human's ruling of 2026-10-12
+/// (`DECISIONS.md` → *A printed line that carries a placeholder for a value of the
+/// reader's own is followed with the placeholder filled*): the printed line is followed
+/// with the reader's own value in the placeholder. The title of the rename, *Use spaces*,
+/// slugs to `use-spaces`, which is the id that is taken.
+const THE_RENAME_UNDER_ANOTHER_SLUG: &[Act] = &[Act::RunChosen(Chosen {
+    line: 0,
+    own: &[Own {
+        placeholder: "<other-slug>",
+        value: "spaces",
+        why: "an id nothing else answers to, as the route asks: other than `use-spaces`, \
+              which the title slugs to and something else holds — no doc is `adr:spaces`, \
+              and nothing stands at its home",
+    }],
+})];
+/// What must hold behind it: the ADR at the home of the id that was named, under the
+/// title of the rename, and gone from the home it had.
+const RENAMED_UNDER_ANOTHER_SLUG: &[Check] = &[
+    Check::RegularFile(Place::Repo("docs/decisions/spaces.md")),
+    Check::Contains(Place::Repo("docs/decisions/spaces.md"), "# Use spaces"),
+    Check::Absent(Place::Repo(THE_ADR)),
+];
 
 const ANOTHER_DOC_AT_THE_DESTINATION: &str = "the id the doc is renamed to is another \
     committed doc's";
@@ -212,9 +226,9 @@ const A_COMMITTED_DOC_AT_THE_DESTINATION: [Case; 2] = [
         site: RENAME_DESTINATION_TAKEN,
         cause: ANOTHER_DOC_AT_THE_DESTINATION,
         state: another_adr_committed!(),
-        acts: &[Act::Run(0)],
-        untouched: &[THE_ADR, THE_DESTINATION],
-        doubt: Some(ANOTHER_SLUG_IS_THE_READERS),
+        acts: THE_RENAME_UNDER_ANOTHER_SLUG,
+        holds: RENAMED_UNDER_ANOTHER_SLUG,
+        untouched: &[THE_DESTINATION],
         ..U
     },
     Case {
@@ -235,9 +249,9 @@ const A_FILE_BY_HAND_AT_THE_DESTINATION: [Case; 2] = [
         site: RENAME_DESTINATION_TAKEN,
         cause: A_FILE_IN_NO_COMMIT_AT_THE_DESTINATION,
         state: an_adr_committed![Step::File(Place::Repo(THE_DESTINATION), "mine\n")],
-        acts: &[Act::Run(0)],
-        untouched: &[THE_ADR, THE_DESTINATION],
-        doubt: Some(ANOTHER_SLUG_IS_THE_READERS),
+        acts: THE_RENAME_UNDER_ANOTHER_SLUG,
+        holds: RENAMED_UNDER_ANOTHER_SLUG,
+        untouched: &[THE_DESTINATION],
         ..U
     },
     Case {

@@ -853,41 +853,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
-        A_LINE_FOR_THE_READERS_OWN_CHOICE,
-        Classification::UnsplittableLine,
-        &[
-            "already-exists-author-line-run-as-printed",
-            "already-exists-create-line-run-as-printed",
-            "already-exists-create-under-a-slug-line-run-as-printed",
-            "home-shape-create-only-author-over-a-link-line-run-as-printed",
-            "home-shape-create-only-create-over-a-link-line-run-as-printed",
-            "title-ignored-committed-author-line-run-as-printed",
-            "title-ignored-committed-create-line-run-as-printed",
-            "title-ignored-committed-create-under-a-slug-line-run-as-printed",
-            "title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed",
-        ],
-    ),
-    (
-        ANOTHER_SLUG_LINE,
-        Classification::UnsplittableLine,
-        &[
-            "home-shape-doc-rename-destination-a-link-another-slug-line-run-as-printed",
-            "home-shape-rename-destination-a-link-another-slug-line-run-as-printed",
-        ],
-    ),
-    (
         COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT,
         Classification::SameRefusalAgain,
         &[
             "home-shape-task-edited-over-a-link-to-nothing-the-file-itself-put-there-and-finalized-as-printed",
-        ],
-    ),
-    (
-        RENAME_ANOTHER_SLUG_LINE,
-        Classification::UnsplittableLine,
-        &[
-            "rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed",
-            "rename-destination-taken-by-a-file-in-no-commit-another-slug-line-run-as-printed",
         ],
     ),
     (
@@ -1107,19 +1076,8 @@ const KEPT_THE_ONLY_COMMIT: &str =
 /// reading — every case under it is marked.
 const RECORD_VERBS_WITHOUT_THEIR_IDS: &str =
     "r1-record-retitle-route-names-two-milestone-verbs-without-their-ids";
-/// A create whose id is taken — by a committed doc under another title, or, under an entry
-/// that only creates, by any file — is routed at a distinct identity, and the one command
-/// line the route prints leaves the title, the slug or the payload to its reader, as a
-/// bare word in angle brackets. Rests on a reading — every case under it is marked.
-const A_LINE_FOR_THE_READERS_OWN_CHOICE: &str =
-    "r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice";
 
 // The keys of `doc read` — the store's refusal over a home that is no regular file.
-/// The two renames whose destination's home is no regular file print the way to another
-/// id as a command line with a bare `<other-slug>`. Rests on a reading — every case under
-/// it is marked.
-const ANOTHER_SLUG_LINE: &str =
-    "r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug";
 /// A task that edits a committed doc whose home became a link is told to put there *a
 /// copy of the file it points at*; over a link that leads nowhere there is no such file.
 const COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT: &str =
@@ -1135,12 +1093,6 @@ const TWO_MANAGED_DOCS_OVER_A_STALE_KEY: &str =
     "r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home";
 
 // The keys of the dynamic sites.
-/// `jigc rename` onto an id whose home holds a regular file prints the way to another id
-/// as a command line with a bare `<other-slug>`. Rests on a reading — every case under it
-/// is marked.
-const RENAME_ANOTHER_SLUG_LINE: &str =
-    "r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug";
-
 /// The same refusal over a file somebody wrote at the destination, in no commit: the
 /// message calls it *a different doc* and the route says to read it with `jigc doc show`,
 /// which is refused — the file is no doc.
@@ -6479,6 +6431,154 @@ fn a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_cas
     assert!(
         wrong.is_empty(),
         "{} of the 14 planted cases did not come out as planted:\n\n{}",
+        wrong.len(),
+        wrong.join("\n\n"),
+    );
+}
+
+/// **A value outside what its route says of it, on this tree's binary** — the second
+/// cases of the human's ruling of 2026-10-12 (`DECISIONS.md` → *The thirteen cases under
+/// the second ruled question, followed again*). A case of the catalog names a value inside
+/// what its route's words bound it by; here four of those cases are followed with a value
+/// outside it, and what each comes to is held — three kinds:
+///
+///   * **a value the line's own grammar refuses** — a slug that is none, at each of the
+///     three doors that take one, and a payload file that is not there: the product
+///     quotes the value back, and the runner hands back the case's mistake, never a word
+///     on the route;
+///   * **the value the route says to leave** — the slug that is taken, the payload whose
+///     title is not distinct: the product refuses it as its route says it will, under the
+///     case's own code, and the case comes out *the same refusal again*. **The frame
+///     cannot tell that from a route that leads back to its refusal** — which is why a
+///     case's value is held to its route's bound by the case, which says so in its `why`;
+///   * **a value outside the bound that the line takes** — the migration started again
+///     under the slug that is taken exits 0, the refusal being the later `jigc doc
+///     author`'s: the filled line holds, and what does not is the case's own check of the
+///     slug that was recorded. A case's `holds` are what holds a value where its line does
+///     not.
+///
+/// Followed one after another: eight chains of the real binary, beside whatever the
+/// harness runs at once.
+#[test]
+fn a_value_outside_what_its_route_says_is_read_as_what_it_is_on_this_trees_binary() {
+    /// What a second case is planted to come to.
+    enum Reads {
+        As(Classification, &'static str),
+        AsTheCasesMistake(&'static str, &'static str),
+    }
+    const WHY: &str = "a second case: a value outside what the route says";
+    macro_rules! fills {
+        ($line:expr, $($placeholder:literal = $value:literal),+ $(,)?) => {
+            Act::RunChosen(Chosen {
+                line: $line,
+                own: &[$(Own {
+                    placeholder: $placeholder,
+                    value: $value,
+                    why: WHY,
+                }),+],
+            })
+        };
+    }
+    const CREATE_UNDER_A_SLUG: &str =
+        "title-ignored-committed-create-under-a-slug-line-run-as-printed";
+    const AUTHOR: &str = "title-ignored-committed-author-line-run-as-printed";
+    const MIGRATION: &str =
+        "title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed";
+    const RENAME: &str =
+        "rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed";
+    let second: [(&str, &str, &'static [Act], Reads); 8] = [
+        (
+            CREATE_UNDER_A_SLUG,
+            "a slug that is none, at `jigc doc create`",
+            &[fills!(2, "<title>" = "Other", "<slug>" = "Not A Slug")],
+            Reads::AsTheCasesMistake("<slug>", "`--slug \"Not A Slug\"` is not a valid slug"),
+        ),
+        (
+            RENAME,
+            "a slug that is none, at `jigc rename`",
+            &[fills!(0, "<other-slug>" = "Not A Slug")],
+            Reads::AsTheCasesMistake(
+                "<other-slug>",
+                "write.malformed-slug — `--slug \"Not A Slug\"` is not a valid slug",
+            ),
+        ),
+        (
+            MIGRATION,
+            "a slug that is none, at `jigc migrate`",
+            &[Act::Run(2), fills!(3, "<slug>" = "Not A Slug")],
+            Reads::AsTheCasesMistake("<slug>", "`--slug \"Not A Slug\"` is not a valid slug"),
+        ),
+        (
+            AUTHOR,
+            "a payload file that is not there",
+            &[fills!(1, "<payload>" = "../outside/no-such.yaml")],
+            Reads::AsTheCasesMistake(
+                "<payload>",
+                "could not read slot prose from `../outside/no-such.yaml`",
+            ),
+        ),
+        (
+            CREATE_UNDER_A_SLUG,
+            "the slug the route says to leave: *pass a distinct `--slug`*",
+            &[fills!(2, "<title>" = "Other", "<slug>" = "use-tabs")],
+            Reads::As(
+                Classification::SameRefusalAgain,
+                "`write.title-ignored` again",
+            ),
+        ),
+        (
+            RENAME,
+            "the slug the route says to leave: *an id nothing else answers to*",
+            &[fills!(0, "<other-slug>" = "use-spaces")],
+            Reads::As(
+                Classification::SameRefusalAgain,
+                "`write.already-present` again",
+            ),
+        ),
+        (
+            AUTHOR,
+            "the payload the route says to change: its `title:` is not a distinct one",
+            &[fills!(1, "<payload>" = "../outside/again.yaml")],
+            Reads::As(
+                Classification::SameRefusalAgain,
+                "`write.title-ignored` again",
+            ),
+        ),
+        (
+            MIGRATION,
+            "the slug the route says to leave: *re-migrate under a distinct slug*",
+            &[Act::Run(2), fills!(3, "<slug>" = "use-tabs")],
+            Reads::As(Classification::AnotherFailure, "does not hold: "),
+        ),
+    ];
+
+    let catalog = cases();
+    let mut wrong = Vec::new();
+    for (name, what, acts, reads) in second {
+        let case = Case {
+            acts,
+            ..**catalog
+                .iter()
+                .find(|case| case.name == name)
+                .unwrap_or_else(|| panic!("`{name}` is a case of the catalog"))
+        };
+        match (route_case::follow(binary(), &case), reads) {
+            (Ok(followed), Reads::As(expected, says))
+                if followed.classification == expected && followed.detail.contains(says) => {}
+            (Err(fault), Reads::AsTheCasesMistake(placeholder, says))
+                if fault.contains(&format!(
+                    "refused for the value the case names for `{placeholder}`"
+                )) && fault.contains(says) => {}
+            (Ok(followed), _) => wrong.push(format!(
+                "{what} (`{name}`) — {}:\n{}",
+                followed.classification, followed.detail
+            )),
+            (Err(fault), _) => wrong.push(format!("{what} (`{name}`) — a fault: {fault}")),
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of the 8 second cases did not come out as planted:\n\n{}",
         wrong.len(),
         wrong.join("\n\n"),
     );

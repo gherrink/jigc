@@ -2,6 +2,84 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The thirteen cases under the second ruled question, followed again: each printed line filled with the value its reader would choose — all thirteen hold on this tree's binary, and they leave the expected-red list with three keys (the human's ruling of 2026-10-12, carried out)
+
+**What.** The cases' half of the ruling in the entry below this one. Each of the thirteen cases the catalog had marked under *a placeholder for a value that is the reader's own to choose* now names, for every such placeholder of its printed line, the value a reader would choose in the case's state, and says why; none of them is marked `doubt` any more. The expected-red list lost thirteen entries and three keys; an arm holds eight second cases, each a value outside what its route says; and the records follow — the list for the human ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), its head and its section 2, which now stands beside R), the findings file, the pilot's record (§16) and its two tables, and [pinning.md](implementation/pinning.md) → §6. No product source changes; nothing is fixed; the frame is as the entry below left it.
+
+### The values — each one a reader would choose in the case's state, inside what the route's words bound it by
+
+| the route says | the printed line | the value the case names | cases | on this tree, before → after |
+|---|---|---|---|---|
+| *choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint beside the existing doc* (beside *the link that is there*, over a link) | `jigc doc create <type> --title <title> --slug <slug> --task <id>` | the title the reader typed, kept — `Use Tabs!`, `Slow start` — and a slug nothing answers to: `use-tabs-again`, `slow-start-again` | 3 | a printed line no shell can split → holds |
+| *the id comes from `--slug …`, not the title, so pass a distinct `--slug`* | the same line | the title typed, `Other` — the route asks nothing of it — and a distinct slug, `other` | 2 | a printed line no shell can split → holds |
+| *set the payload's `title:` to a distinct title (its slug becomes the doc id) and re-run the same* | `jigc doc author <type> --from-file <payload> --task <id>` | a payload that is one, with a distinct title — *Use spaces*, *Slow start again* | 3 | a printed line no shell can split → holds |
+| *discard this task with `jigc task discard … --force` …, then re-migrate under a distinct slug* | `jigc migrate <path> --as adr --slug <slug>` | a distinct slug of the migration's own, `old-note` | 1 | a printed line no shell can split → holds |
+| *give this doc an id whose home is free* · *an id nothing else answers to* | `jigc rename <id> --to 'Use spaces' --slug <other-slug>` · the same at `jigc doc rename` | `spaces` — other than `use-spaces`, which the title slugs to and which is the one that is taken | 4 | a printed line no shell can split → holds |
+
+**A title with a space and an exclamation mark in it is one of them** (`Use Tabs!`): it reaches `jigc doc create` as one word, and the staged ADR's heading is `# Use Tabs!`.
+
+**What each case holds behind the filled line is the doc under the value that was named** — a check a wrong value fails: the staged ADR or finding at the id the slug, or the payload's title, gives it, with the title that was named as its heading; the renamed ADR at the home of the slug that was named, under the rename's title, and gone from the home it had; the slug the migration recorded. The file somebody wrote at the taken home, and the other committed doc, are witnesses and are as they were.
+
+### Decided here — pinned, as an engineer
+
+- **A payload is a second file of the state.** The route says *set the payload's `title:` to a distinct title … and re-run the same* command. A reader edits the payload or writes another; the command is handed a payload either way, and the frame has no act that edits a file. So the state holds a second payload from the start and the case names its path. *Why not an act that edits:* it would be an act with bytes of the case's own to write, for three cases whose route is not about how the file comes to be.
+- **Where one printed line serves two ways, the case follows the way the line is the whole of.** *Choose a distinct `--title`, or keep this one and pass `--slug <slug>`* is printed over a line that carries both placeholders: the case keeps the title and names a slug. A distinct title and no `--slug` is the refused command with another argument, a line the route does not print; it keeps its reason at the site, reworded to say so.
+- **Checks that the old reading put there are replaced, not kept beside.** The migration's case held that the working area was gone behind the discard — true when the line behind it could not run; the migration's task is named after its source, so the area is there again once it runs, and the case holds the slug that was recorded. The three cases of `jigc rename` held the ADR *untouched*, which a rename that goes through is there to move; they hold where it went.
+- **The cases keep their names**, which end `-line-run-as-printed`: the earlier records, the findings file's note and the list for the human name them so. What was run is the printed line, filled — the table's column `operand` says `chosen` for each.
+
+### What left the expected-red list, and the findings file
+
+Thirteen cases, under three keys, every one of which held cases of this question alone — so **all three keys left** [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md), with one dated note at its head that names them; none stayed:
+
+| key | cases |
+|---|---|
+| `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` | 9 |
+| `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` | 2 |
+| `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` | 2 |
+
+*Red first, by the list itself:* with the cases changed and the list as it was, the arms of three files named all thirteen — *is listed as red under … and is not red: it came out `followed, holds`* — and nothing else.
+
+### A value outside what its route says — eight second cases, in an arm of their own
+
+`route_catalog::a_value_outside_what_its_route_says_is_read_as_what_it_is_on_this_trees_binary`: four cases of the catalog, each followed again on this tree's binary with a value outside what its route's words bound it by. None is a case of the catalog; the arm holds what each comes to.
+
+| the value | at | what the line did | what the frame read |
+|---|---|---|---|
+| a slug that is none, `Not A Slug` | `jigc doc create` · `jigc migrate` | exit 1, a bare line and no finding: `` `--slug "Not A Slug"` is not a valid slug `` | **the case's mistake** — a fault |
+| the same | `jigc rename` | exit 1, a finding: `write.malformed-slug`, the same words | **the case's mistake** |
+| a payload file that is not there | `jigc doc author` | exit 1: *could not read slot prose from* the path | **the case's mistake** |
+| the slug the route says to leave — `use-tabs`, `use-spaces` | `jigc doc create` · `jigc rename` | the case's own refusal again | the same refusal again |
+| the payload the route says to change | `jigc doc author` | the case's own refusal again | the same refusal again |
+| the slug the route says to leave, `use-tabs` | `jigc migrate` | **exit 0** — the refusal is the later `jigc doc author`'s | the line holds; the case's check of the recorded slug does not |
+
+- **A value the line's own grammar refuses reads as the case's mistake at every door that takes one**, whether the product says it in a bare line or in a finding.
+- **The frame cannot tell a value the route says to leave from a route that leads back to its refusal**: both are the case's own code again. That is why a case's value is held to its route's bound by the case, which says so in its reason — and why this kind is held here, in an arm, and not listed.
+- **A line can take a value its route says to leave.** The migration started again under the taken slug exits 0. The filled line is held to exit 0 and holds; what tells the two values apart is the case's own check.
+- *Not vacuous:* with a line refused for the value read as any refusal, four of the eight came out *another failure*; with the value read ahead of the same refusal, one came out the case's mistake — **`write.title-ignored` quotes back the title the case kept**, so the order in which the frame reads a refused line is what keeps that case a word on the route.
+
+### The previous release's binary, side by side
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 408.4 s over 627 cases, load average 14.0 at its start and 23.4 at its end, no gate of this branch beside it).
+
+- **The thirteen on `rc.24`**: holds 9 — over the same printed route as this tree's, the migration's line among them · not provoked 4 — the four at `store.home-not-regular-file`, a refusal that binary does not have. Before: a printed line no shell can split 9 · not provoked 4.
+- **The catalog after this commit**: 627 cases · 218 red · 47 keys, of which 37 can block with 149 cases (the arm's block `bounds`). **54 red cases stand at a refusal `rc.24` does not provoke**, under 15 keys, where there were 58 under 17 — the record's §16 has them by key.
+
+### The records
+
+- **[route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md)**: 33 cases marked under seven questions, and 2 as carried out, beside R — per case the value, why that one, and what it came to on both binaries, before and after. The 33 lines of the other seven questions were held against this run: each came to what its table says.
+- **[route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §16**, and one dated line at its head. **The two committed tables are that run's blocks `cases` and `sites`, byte for byte, printed after the last edit to anything the arm reads**: 13 lines of cases and 4 of sites differ from the ones committed before, and no other. The edits behind that run are to prose the arm does not read.
+- **[pinning.md](implementation/pinning.md) → §6** says what a filled line is held to.
+
+**Seen, and not touched.** `jigc rename adr:use-tabs --to 'Use spaces' --slug use-tabs` — a rename onto the id the doc already has — exits 0 and commits *rename docs/decisions/use-tabs.md -> docs/decisions/use-tabs.md*. And a slug that is none is refused by a bare line at exit 1 at `jigc doc create` and `jigc migrate`, with no finding and no route, where `jigc rename` refuses it under `write.malformed-slug` with one.
+
+**Not established.**
+
+- **That a placeholder a case names is the reader's own, and that its value is one a reader would choose**: stated by a case with its reason, read by one person. The frame fills what it is told to.
+- **`rc.24`'s nine** were followed with values chosen by reading this tree's routes; the two binaries print the same route in all nine.
+- **The other seven questions**: 33 cases, marked and red as they were.
+- **A second run of the named-binary arm**: it ran once, before this commit's prose was written; that prose is read by no arm.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-12 — A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled (the human's ruling, option A of three); and the route catalog's frame fills it with the value the case names
 
 **The ruling — the human's, 2026-10-12.** On the question *a placeholder for a value that is the reader's own to choose* — the second of the questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 2): `--title <title>`, `--slug <slug>`, `--from-file <payload>`, `--to <title> --slug <other-slug>`, a bare word in angle brackets where a title, a slug or a payload file of the reader's own goes — the human took option A of three:
