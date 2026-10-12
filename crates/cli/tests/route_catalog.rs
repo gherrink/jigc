@@ -6149,62 +6149,128 @@ blocking · setup.later — the next finding lists:
     }
 }
 
+/// What a count through a gate came to ([`inside_at_once`]).
+#[derive(Debug, Default, PartialEq)]
+struct Through {
+    /// The jobs that were let in.
+    entered: usize,
+    /// The jobs that stood at the gate, turned back, when the last of them had asked.
+    waited: usize,
+    /// The most that were inside at once.
+    most: usize,
+}
+
+/// **How many of `jobs` jobs are inside at once**, each sent through `admit` from a thread
+/// of its own, where `waiting` says how many `admit` has turned back and not yet let in.
+///
+/// A job that is inside **stays until every job has asked** — until the jobs inside and
+/// the jobs turned back are, together, all of them. That leaves the scheduler nothing to
+/// decide. A job is turned back only at a gate that is full, and no place is given back
+/// while a job stays; so when the last has asked, the jobs inside are as many as the gate
+/// lets in at once — its width, or all of them under a wider one — whichever thread ran
+/// first and however late another was started. Then they leave, and the ones turned back
+/// go through in the places given back. **Nothing stays from there on**, so of that last
+/// stretch the count says one thing only: that every job was let in.
+///
+/// **What it stands on, and what it cannot end.** That the last job has asked is read off
+/// the gate's own word for who waits: seen from here, a job that has not asked yet and a
+/// job that was refused are the same thing, and a count that took the one for the other is
+/// what this one replaced. It reads no clock — a job that stays looks again when the
+/// scheduler next runs it. So a gate that never lets a waiting job in, and one that never
+/// counts one, hold the arm and do not fail it; the runner's own limit ends that.
+fn inside_at_once(
+    jobs: usize,
+    admit: impl Fn(&dyn Fn()) + Sync,
+    waiting: impl Fn() -> usize + Sync,
+) -> Through {
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct Counted {
+        through: Through,
+        inside: usize,
+        all_asked: bool,
+    }
+    let tally = Mutex::new(Counted::default());
+    let each: Vec<usize> = (0..jobs).collect();
+    route_case::pooled(jobs, &each, |_| {
+        admit(&|| {
+            let mut counted = tally.lock().expect("no job panics under the lock");
+            counted.through.entered += 1;
+            counted.inside += 1;
+            counted.through.most = counted.through.most.max(counted.inside);
+            while !counted.all_asked {
+                let waiting = waiting();
+                if counted.inside + waiting == jobs {
+                    counted.through.waited = waiting;
+                    counted.all_asked = true;
+                } else {
+                    drop(counted);
+                    std::thread::yield_now();
+                    counted = tally.lock().expect("no job panics under the lock");
+                }
+            }
+            counted.inside -= 1;
+        });
+    });
+    tally
+        .into_inner()
+        .expect("no job panicked under the lock")
+        .through
+}
+
 /// **No more chains run at once in one process than the machine is wide** — counted, never
 /// timed. One command's arm bounds its own cases by its pool; two commands' arms in one
 /// process are two pools, and a harness that runs a suite's tests as threads would have
 /// twice the machine's width of chains at once. So every case passes one gate of the
 /// process ([`route_case::Gate`]) before its sandbox is made.
 ///
-/// The gate is held here by a count through one of its kind: twelve jobs arrive from
-/// twelve threads at a gate three wide, each says that it has arrived before it asks to be
-/// let in, and a job that is inside **holds until all twelve have arrived**. Under a gate
-/// that bounds, three are inside when the last arrives and nine wait at it, so the most
-/// that are ever inside is three, exactly; under one that lets everybody through, the
-/// first eleven are inside when the twelfth arrives. No clock is read.
+/// The gate is held here by a count through gates of its kind ([`inside_at_once`]): twelve
+/// jobs arrive from twelve threads, and a job that is inside **stays until every one of
+/// the twelve is inside or has been turned back** — which the gate says, and nothing else
+/// can ([`route_case::Gate::waiting`]). At a gate three wide that is three inside and nine
+/// at the gate, exactly, by the gate's own rule and by no accident of scheduling; and the
+/// nine are let in as places are given back, so all twelve have been inside at the end.
+/// The same at a gate one wide, four wide, as wide as the jobs and wider — so a gate that
+/// lets one more in than its width, or one fewer, comes to a count that says so.
+///
+/// **And the count is no count that cannot tell a gate from none**: sent through nothing,
+/// the twelve are inside at once.
+///
+/// **Its bound, declared:** a gate that never lets a waiting job in holds this arm and
+/// does not fail it — the jobs at the gate never come back. The arm reads no clock, so it
+/// has none to end that wait with.
 ///
 /// And the source half: the runner follows every case inside the process's one gate, which
 /// is as wide as the pool.
 #[test]
 fn no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide() {
-    use std::sync::{Condvar, Mutex};
-
     const WIDE: usize = 3;
     const JOBS: usize = 4 * WIDE;
-    #[derive(Default)]
-    struct Counted {
-        arrived: usize,
-        inside: usize,
-        most: usize,
+    for wide in [WIDE, 1, WIDE + 1, JOBS, JOBS + 1] {
+        let gate = route_case::Gate::new(wide);
+        let inside = wide.min(JOBS);
+        assert_eq!(
+            inside_at_once(JOBS, |job| gate.admit(job), || gate.waiting()),
+            Through {
+                entered: JOBS,
+                waited: JOBS - inside,
+                most: inside,
+            },
+            "{JOBS} jobs at a gate {wide} wide: when the last has asked, {inside} are inside \
+             and the rest stand at the gate; no more are ever inside at once, and every one \
+             is let in",
+        );
     }
-    let gate = route_case::Gate::new(WIDE);
-    let counted = Mutex::new(Counted::default());
-    let arrival = Condvar::new();
-    let jobs: Vec<usize> = (0..JOBS).collect();
-    route_case::pooled(JOBS, &jobs, |_| {
-        counted
-            .lock()
-            .expect("no job panics under the lock")
-            .arrived += 1;
-        arrival.notify_all();
-        gate.admit(|| {
-            let mut counted = counted.lock().expect("no job panics under the lock");
-            counted.inside += 1;
-            counted.most = counted.most.max(counted.inside);
-            let mut counted = arrival
-                .wait_while(counted, |counted| counted.arrived < JOBS)
-                .expect("no job panics under the lock");
-            counted.inside -= 1;
-        })
-    });
-    let counted = counted
-        .into_inner()
-        .expect("no job panicked under the lock");
     assert_eq!(
-        (counted.arrived, counted.most),
-        (JOBS, WIDE),
-        "{JOBS} jobs at a gate {WIDE} wide: {} arrived, {} inside at once at the most",
-        counted.arrived,
-        counted.most,
+        inside_at_once(JOBS, |job| job(), || 0),
+        Through {
+            entered: JOBS,
+            waited: 0,
+            most: JOBS,
+        },
+        "{JOBS} jobs sent through no gate are all inside at once — the count tells a gate \
+         from none",
     );
 
     let frame = rust_source::code_only(include_str!("support/route_case.rs"));

@@ -2,6 +2,66 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The arm that holds the route catalog's gate took *arrived* for *asked*: it was red by the scheduler and never by the gate — a job now stays until every job is inside or turned back, which the gate says
+
+**What.** [route_catalog.rs](crates/cli/tests/route_catalog.rs): the arm `no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide` counts through a new helper, `inside_at_once`. [route_case.rs](crates/cli/tests/support/route_case.rs): `Gate` says how many jobs it has turned back and not yet let in (`Gate::waiting`). The gate decides as it did; no case of the catalog changes, and no product source.
+
+**What was seen.** The arm failed once in a scoped run on a loaded machine — *12 jobs at a gate 3 wide: 12 arrived, 2 inside at once at the most*, where three were expected — and passed alone and in two full gates. Its builder read it as schedule-dependent and left it.
+
+**Which was wrong: the arm.** Two readings were possible — the arm asserts something a scheduler need not grant, or the gate can let in fewer than its width while jobs wait.
+
+- **The arm.** Each job said that it had arrived (`arrived += 1`) and *then* asked to be let in (`gate.admit(…)`), two steps with nothing between them but the scheduler; and a job inside stayed `while arrived < JOBS`. Its doc drew the conclusion the code does not carry: *three are inside when the last arrives and nine wait at it*. A job that has arrived has not asked. If the last job arrives while fewer than three are inside, nobody stays any more, each later job goes in and out in one hold of the count's lock, and the most that were ever inside is whatever the scheduler had let in by then — two, or one. The entry of 2026-10-11 on the pool says the same thing of its own arm, in one sentence this arm did not heed: *nothing a job can see says that no further job is coming*.
+- **The gate, read line by line, lets no fewer in than its width while a job waits** — beyond the moment between a place being given back and the woken job taking it. It decides under one lock; a job waits in `wait_while`, which looks again on every wake; a place is given back under that lock and one waiting job is woken for each place. No path was found by which a place stays free while a job waits, and none was shown by any run.
+
+**How the red was made to appear — by a pause planted where the arm has no synchronisation of its own, on the unchanged tree, and not by load.**
+
+| the arm, at the commit before | runs | red | what it said |
+|---|---|---|---|
+| alone, as committed | 200 | 0 | — |
+| every job has arrived before one asks | 100 | 100 | `12 arrived, 1 inside at once at the most` |
+| two are inside before a third arrives; the ten behind them have arrived, and the two have left, before one of the ten asks | 100 | 100 | `12 arrived, 2 inside at once at the most` — the message that was seen |
+| as committed, 48 processes of it at once | 2880 | 16 | fifteen times `2 inside`, once `1 inside` |
+
+A planted pause makes a schedule that can happen into the one that does; it adds no step the arm does not have. The last row is the same arm with nothing planted, under a load made of itself.
+
+**What was chosen.** A job that is inside **stays until every job has asked** — until the jobs inside and the jobs the gate has turned back are, together, all of them. A job is turned back only at a full gate and no place is given back while a job stays, so when the last has asked the jobs inside are the gate's width exactly, whichever thread ran first. Twelve jobs at gates one, three, four, twelve and thirteen wide: the count at each is what the width says — inside, at the gate, and all twelve let in by the end. And once through no gate at all: twelve inside at once, so the count is shown to tell a gate from none.
+
+- **That needs one word from the gate, and nothing else can give it.** Seen from outside, a job that asked and was refused is the same as one that has not asked yet. `Gate::waiting` is counted in the hold of the lock that found the gate full and taken back in the hold that lets the job in. The runner never reads it.
+- **The same pause, planted on the new arm** — every job has arrived before one asks — 100 of 100 green; alone, 300 of 300; 48 processes of it at once, 2880 of 2880.
+- **No clock is read.** A job that stays looks again when the scheduler next runs it (`yield_now`): the scheduler decides how long the arm takes, and nothing of what it finds.
+
+**Considered and not taken.**
+
+- *Assert only that no more than three were inside.* Never red by the scheduler — and green over a gate four wide whenever the scheduler did not happen to put four inside. It keeps the upper half by giving up the count that shows it.
+- *The count as it was, run again when it misses, or `2..=3` taken for three.* A retry and a slack are the same defect with a lower rate.
+- *A deadline that fails a held arm.* The arm would read a clock on a loaded machine, which is what it is being repaired for; the pool's arm declares the same bound and reads none.
+- *A second door that never waits (`try`), held from one thread.* It would hold a door the runner does not use, and say nothing of the one it does.
+- *A gate that hands a place from the job leaving to a job waiting, so the count could stay through every round of the queue.* It would show the stretch this arm does not see (below) — at the price of rewriting the limiter for its test's sake. Not asked for by any fault found.
+
+**Mutants of the built frame, each run twenty times unless it says otherwise.**
+
+| the frame, changed | the arm |
+|---|---|
+| a job is let in at the door while as many as the width are inside (`>` for `>=`) | red, 20 of 20: `waited: 8, most: 4` where `waited: 9, most: 3` |
+| a waiting job is let in on waking under the same test | red, 20 of 20: the same count |
+| both | red, 20 of 20: the same count |
+| one fewer than the width is let in | red, 20 of 20: `waited: 10, most: 2` |
+| the gate lets everybody through | red, 20 of 20: `waited: 0, most: 12` |
+| the runner follows a case beside the gate | red, 20 of 20, at the source half: *the runner follows a case inside the process's one gate* |
+| the process's gate is not the machine's width | red, 20 of 20, at the source half |
+| a place given back wakes nobody | **held**, 3 of 3 — still running after 15 s, ended |
+| a place is never given back | **held**, 3 of 3 |
+| the gate never counts a job it turned back | **held**, 3 of 3 |
+
+**Not established.**
+
+- **A gate that never lets a waiting job in holds the arm and does not fail it** — the last three rows. The arm has no clock to end the wait with; under the gate's runner a test is ended at eight minutes, and under `cargo test` nothing in the suite ends it. The arm as it was held on the first two of them as well.
+- **The stretch after the last job has asked is not counted.** Nothing stays from there on, so a job goes in and out in one hold of the count's lock and no two of them are ever seen inside together: of that stretch the arm says only that all twelve were let in. A gate that let in too many *on a place given back* — a woken job that did not look again while a newcomer took the place — would pass. Whether that can be put to a count without the hand-over above was not tried.
+- **The red that was seen, under a load average of about 85, was not itself made to happen again**; its message was, by the plant and by the load of the fourth row.
+- **That the gate lets no fewer in than its width** is a reading of its lines and the count at five widths, not a proof over every interleaving.
+- **Across processes** the gate bounds nothing, as before; the runner's test group does.
+- **Linux**: every run here is one machine's, macOS.
+
 ## 2026-10-13 — The thirty cases under the ruled question, followed again: each cited line held to what its route promised — all thirty hold on this tree's binary, thirteen leave the expected-red list and six keys the findings file (the human's ruling of 2026-10-13, carried out)
 
 **What.** The cases' half of the ruling in the entry below this one. Each of the thirty cases the catalog had marked under *a command a route cites for what it prints* now says which printed line is cited and states what the route promised of it; none of them is marked `doubt` any more. The frame grew by one piece, red first; the expected-red list lost thirteen entries and six keys; and the records follow — the list for the human ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), its head and its section R), the findings file, the pilot's record (§15) and its two tables. No product source changes; nothing is fixed.

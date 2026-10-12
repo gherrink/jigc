@@ -166,7 +166,10 @@
 //! pool or by itself — passes one gate of [`width`] before its sandbox is made. Under a
 //! harness that runs a suite's tests as threads of one process, two commands' arms then
 //! share one machine's width; under one that gives each test a process of its own, each
-//! process has its own gate, and nothing here reaches across them.
+//! process has its own gate, and nothing here reaches across them. The gate also says how
+//! many jobs it has turned back and not yet let in ([`Gate::waiting`]) — what the arm that
+//! holds it counts through, since nothing else tells a job the gate refused from one that
+//! has not asked.
 //!
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
@@ -200,7 +203,7 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
+use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use super::scratch::ScratchDir;
@@ -2191,44 +2194,75 @@ pub fn pooled<T: Sync, R: Send>(width: usize, items: &[T], job: impl Fn(&T) -> R
 /// **A gate no more than `width` jobs are inside at once**, whoever sends them through and
 /// from whichever thread. [`pooled`] bounds one caller's jobs by its threads; a gate bounds
 /// every caller's together.
+///
+/// **A gate says how many it has turned back** ([`Gate::waiting`]). Seen from outside, a
+/// job that asked and was not let in is the same as one that has not asked yet; only the
+/// gate knows which, so it counts them, under the lock it decides under. The arm that
+/// holds the gate counts through that, and the runner never reads it.
 pub struct Gate {
     width: usize,
-    inside: Mutex<usize>,
+    held: Mutex<Held>,
     left: Condvar,
+}
+
+/// What a gate counts, under its one lock.
+struct Held {
+    /// The jobs inside.
+    inside: usize,
+    /// The jobs that asked, found the gate full and have not been let in.
+    waiting: usize,
 }
 
 impl Gate {
     pub const fn new(width: usize) -> Gate {
         Gate {
             width,
-            inside: Mutex::new(0),
+            held: Mutex::new(Held {
+                inside: 0,
+                waiting: 0,
+            }),
             left: Condvar::new(),
         }
     }
 
     /// Run `job` once fewer than the gate's width are inside, and hand back what it came
-    /// to. The place is given back however the job ends — a job that panics included.
+    /// to. The place is given back however the job ends — a job that panics included —
+    /// and a job that waits is let in when one is.
     pub fn admit<R>(&self, job: impl FnOnce() -> R) -> R {
         /// One place inside the gate, given back when dropped.
         struct Place<'a>(&'a Gate);
         impl Drop for Place<'_> {
             fn drop(&mut self) {
-                *self.0.inside.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+                self.0.held().inside -= 1;
                 self.0.left.notify_one();
             }
         }
         assert!(self.width > 0, "a gate of no width admits nothing");
-        let mut inside = self
-            .left
-            .wait_while(
-                self.inside.lock().unwrap_or_else(PoisonError::into_inner),
-                |inside| *inside >= self.width,
-            )
-            .unwrap_or_else(PoisonError::into_inner);
-        *inside += 1;
-        drop(inside);
+        let mut held = self.held();
+        if held.inside >= self.width {
+            held.waiting += 1;
+            held = self
+                .left
+                .wait_while(held, |held| held.inside >= self.width)
+                .unwrap_or_else(PoisonError::into_inner);
+            held.waiting -= 1;
+        }
+        held.inside += 1;
+        drop(held);
         let _place = Place(self);
         job()
+    }
+
+    /// **How many jobs stand at the gate**: each asked, found it full, and has not been
+    /// let in. Counted in the hold of the lock that found the gate full and taken back in
+    /// the hold that lets the job in, so a job is never both waiting and inside, and one
+    /// that waits stays counted until a place was given back.
+    pub fn waiting(&self) -> usize {
+        self.held().waiting
+    }
+
+    fn held(&self) -> MutexGuard<'_, Held> {
+        self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
