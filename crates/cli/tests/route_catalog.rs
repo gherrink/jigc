@@ -158,6 +158,16 @@
 //! ([`a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm`]). The frame's
 //! reader of a printed line used to end the whole arm over one.
 //!
+//! **And a line a route cites for what it prints is held to its words** — the tenth
+//! classification, and the human's ruling of 2026-10-13 (`DECISIONS.md` → *A command a
+//! route cites for what it prints is held to its words*): *run `git …` to see what git
+//! reports*, *`jigc task validate <task>` names where it lands*, *`jigc config list` shows
+//! the value in force and the layer it wins from*. A case says which printed line is cited
+//! and what the route promised of it ([`Cited`]); the runner runs the line as printed,
+//! whatever it exits with, and holds its own output to the promise
+//! ([`a_line_a_route_cites_is_held_to_its_words_and_not_to_its_exit`]). A line that is not
+//! marked cited is held to exit 0 as it was.
+//!
 //! **And a printed line with a word in angle brackets is a shape the reader fills** — the
 //! surface contract's reading, taken from the design of record and asked of nobody
 //! (`DECISIONS.md` → 2026-10-11, *The route catalog's first doubt, read by the surface
@@ -253,8 +263,8 @@ use std::path::Path;
 
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
-    self, Act, Bound, Case, Check, Classification, ExpectedRed, Filled, Followed, Operand, Over,
-    Place, Refusal, Seen, Standing, Step, Var,
+    self, Act, Bound, Case, Check, Cited, Classification, ExpectedRed, Filled, Followed, Operand,
+    Over, Place, Promise, Refusal, Says, Seen, Standing, Step, Var,
 };
 use crate::support::rust_source;
 
@@ -3708,9 +3718,11 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 ///
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
 /// [`Operand`], a span's index, a line with the indices of the listed values that fill it
-/// ([`Filled`]), or nothing at all — never a path, a word or a command of
-/// the case's own; an operand is a span's index or the one
-/// marked form; a [`Case`] holds no function, so it cannot act around the runner; and
+/// ([`Filled`]), a cited line with what its output must hold ([`Cited`]), or nothing at
+/// all — never a path, a word or a command of the case's own to act with: what a cited
+/// line carries beside its span's index is a witness, bytes its output is asked for as a
+/// check's are asked of a file, and nothing the runner runs or touches. An operand is a
+/// span's index or the one marked form; a [`Case`] holds no function, so it cannot act around the runner; and
 /// neither this file nor a command's names a filesystem or a process API at all — what the
 /// existing test did by hand (`fs::remove_file` on a path it spelled) has no place to be
 /// written.
@@ -3727,11 +3739,33 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
             variant.ends_with("(Operand)")
                 || variant.ends_with("(usize)")
                 || variant.ends_with("(Filled)")
+                || variant.ends_with("(Cited)")
                 || !variant.contains('('),
-            "the act `{variant}` takes something that is neither an operand, a span's index \
-             nor a line with the indices of what fills it",
+            "the act `{variant}` takes something that is neither an operand, a span's index, \
+             a line with the indices of what fills it nor a cited line with its promise",
         );
     }
+    assert_eq!(
+        (
+            variants(body_of(&frame, "pub struct Cited {")),
+            variants(body_of(&frame, "pub enum Promise {")),
+            variants(body_of(&frame, "pub enum Says {")),
+        ),
+        (
+            vec![
+                "pub line: usize".to_string(),
+                "pub promised: &'static [Promise]".to_string(),
+            ],
+            vec![
+                "Line(&'static [Says])".to_string(),
+                "Route(&'static [Says])".to_string(),
+            ],
+            vec!["Text(&'static str)".to_string(), "Path(Place)".to_string()],
+        ),
+        "a cited line is a span of the route by index, and what it carries beside is what \
+         its output must hold — pieces of text and places of the sandbox, never a line to \
+         run or a path to act on",
+    );
     assert_eq!(
         variants(body_of(&frame, "pub struct Filled {")),
         ["pub line: usize", "pub with: &'static [usize]"],
@@ -3884,13 +3918,15 @@ blocking (gates at finalize) · setup.wanted — refused over `a/b`
     assert_eq!(route("setup"), None, "a code is matched whole");
 }
 
-/// The nine classifications, and the order they are read in: nothing is *followed* that
+/// The ten classifications, and the order they are read in: nothing is *followed* that
 /// was not provoked or printed no route; a changed witness outranks a repeated refusal,
 /// which outranks any other failure; the marked form holds only as *operand implied*; a
 /// command that did not end is said where it stopped the case — ahead of *not provoked*
 /// for the refusing command, behind a changed witness and ahead of everything else for a
-/// command of the route; and a printed line no shell can split is read behind those two
-/// and ahead of the refusal that follows a step nobody could do.
+/// command of the route; a printed line no shell can split is read behind those two
+/// and ahead of the refusal that follows a step nobody could do; and a cited line that
+/// does not say what the route promised is read behind that one and ahead of a repeated
+/// refusal and of any other failure.
 #[test]
 fn the_classifications_in_their_order() {
     let provoked = Seen {
@@ -3907,6 +3943,7 @@ fn the_classifications_in_their_order() {
         failed: true,
         implied: true,
         unsplit: true,
+        unsaid: true,
         ..followed
     };
     let table = [
@@ -3964,6 +4001,16 @@ fn the_classifications_in_their_order() {
             Seen {
                 witness_changed: false,
                 unsplit: false,
+                ..everything
+            },
+            Classification::CitedLineUnsaid,
+            "followed, a cited line does not say what the route promised",
+        ),
+        (
+            Seen {
+                witness_changed: false,
+                unsplit: false,
+                unsaid: false,
                 ..everything
             },
             Classification::SameRefusalAgain,
@@ -5686,6 +5733,301 @@ blocking · setup.install-hook — refused, with `jigc -c 'exit 9'` in its head:
         fault.contains("which is no `jigc` or `git` command line"),
         "{fault}"
     );
+}
+
+/// A shell that stands in for a refusal whose route cites a line for what it prints, then
+/// names the step that clears the refusal and the re-run. The refusal's own head carries
+/// the words the cited line is promised to say, and the route spells seven lines more for
+/// the arm below: what each of them prints and exits with is its script's, in the state.
+const CITES: &str = r#"test -e held || exit 0
+cat <<'END'
+blocking · setup.install-hook — refused over `held`, and the review of held is what `jigc review` prints
+  route: run `jigc review` to read the review, remove `held`, then re-run `jigc -c "test ! -e held"`. Beside it: `jigc other`, `jigc quiet`, `jigc again`, `jigc two`, `jigc one`, `jigc -c true <held>`
+END
+exit 1"#;
+
+/// The state of [`CITES`]: the path the refusal is over, and a script a line the route
+/// prints — `jigc <script>` is the shell running it where the case stands.
+const WHAT_THE_LINES_SAY: &[Step] = &[
+    Step::File(Place::Repo("held"), "held\n"),
+    // What the route promised, at an exit that is not 0.
+    Step::Script(Place::Repo("review"), "echo 'the review of held'\nexit 4\n"),
+    // Other words, at the same exit; and at exit 0.
+    Step::Script(Place::Repo("other"), "echo 'something else'\nexit 4\n"),
+    Step::Script(Place::Repo("quiet"), "echo 'something else'\n"),
+    // The refusal's own code again, with a route of its own over the same path.
+    Step::Script(
+        Place::Repo("again"),
+        "printf '%s\\n' 'blocking · setup.install-hook — refused again over `held`' \
+         '  at: held' '  route: move it aside, then re-run'\nexit 1\n",
+    ),
+    // Two findings: one over the path that prints no route, one with a route over another.
+    Step::Script(
+        Place::Repo("two"),
+        "printf '%s\\n' \"advisory · setup.other — a finding over \\`$PWD/held\\`\" \
+         '  at: held' 'blocking · setup.third — a finding over another path' \
+         '  route: move it aside'\nexit 1\n",
+    ),
+    // One finding over the path, by its absolute spelling, with a route of its own.
+    Step::Script(
+        Place::Repo("one"),
+        "printf '%s\\n' \"blocking · setup.third — refused over \\`$PWD/held\\`\" \
+         '  at: held' '  route: move it aside'\nexit 1\n",
+    ),
+];
+
+/// **A line a route cites for what it prints is held to its words, and not to its exit** —
+/// the human's ruling of 2026-10-13 (`DECISIONS.md` → *A command a route cites for what it
+/// prints is held to its words*). A case says which printed line is cited and what the
+/// route promised of it ([`Cited`]); the line is run as printed, whatever it exits with,
+/// and its output must keep the promise — or the case comes out with a word of its own,
+/// never *another failure* and never *the same refusal again*.
+///
+/// Planted, kind by kind: a cited line that exits 4 with the promised words holds, and the
+/// same line not marked cited is *another failure*, as it was; a cited line that says
+/// something else is red under its own word at exit 4 and at exit 0 alike, and the acts
+/// behind it are still done; a line the route prints behind a cited one is held to exit 0
+/// as before; the promise is asked of the cited line's own output — the refusal's head
+/// says the words, and so does a line cited before or after, and neither stands in; a
+/// cited line that repeats the refusal is read for its words too; a promise of *a route of
+/// its own* is kept by one finding that names the path and carries a route, never by two
+/// findings that have one each; a cited line no shell can split is what it was; and a
+/// cited line with no promise, a promise with no piece and a cited span that is no command
+/// line are faults of the case.
+#[test]
+fn a_line_a_route_cites_is_held_to_its_words_and_not_to_its_exit() {
+    const THE_REVIEW: &[Promise] = &[Promise::Line(&[Says::Text("the review of held")])];
+    const A_ROUTE_OVER_THE_PATH: &[Promise] = &[Promise::Route(&[
+        Says::Path(Place::Repo("held")),
+        Says::Text("move it aside"),
+    ])];
+    macro_rules! cited {
+        ($line:expr, $promised:expr $(,)?) => {
+            Act::RunCited(Cited {
+                line: $line,
+                promised: $promised,
+            })
+        };
+    }
+    let planted = |name: &'static str, acts: &'static [Act]| Case {
+        name,
+        state: WHAT_THE_LINES_SAY,
+        refusing: &["-c", CITES],
+        acts,
+        ..PLANTED
+    };
+    let sh = Path::new("/bin/sh");
+    let follow = |case: &Case| {
+        route_case::follow(sh, case).expect("the planted case is one the runner follows")
+    };
+
+    // The cited line exits 4 and says what was promised: the case holds, and the lines
+    // behind it were run and held.
+    let holds = follow(&planted(
+        "planted-a-cited-line-that-exits-4-and-says-it",
+        &[
+            cited!(0, THE_REVIEW),
+            Act::Remove(Operand::Span(1)),
+            Act::Run(2),
+        ],
+    ));
+    assert!(
+        holds.classification == Classification::Holds
+            && holds
+                .detail
+                .contains("run the cited line `jigc review` (span 0): exit 4")
+            && holds.detail.contains("the review of held")
+            && holds.detail.ends_with("(span 2): exit 0"),
+        "a cited line is not held to exit 0, and what it printed is in the record — it came \
+         out {}:\n{}",
+        holds.classification,
+        holds.detail,
+    );
+    // Not marked cited, the same line is held to exit 0 exactly as before.
+    come_out(&[(
+        planted(
+            "planted-the-same-line-not-marked-cited",
+            &[Act::Run(0), Act::Remove(Operand::Span(1)), Act::Run(2)],
+        ),
+        Classification::AnotherFailure,
+    )]);
+
+    // The cited line says something else: red under its own word, at exit 4 and at exit 0,
+    // and the acts behind it are still done.
+    let unsaid = follow(&planted(
+        "planted-a-cited-line-that-exits-4-and-says-something-else",
+        &[
+            cited!(3, THE_REVIEW),
+            Act::Remove(Operand::Span(1)),
+            Act::Run(2),
+        ],
+    ));
+    assert!(
+        unsaid.classification == Classification::CitedLineUnsaid
+            && unsaid
+                .detail
+                .contains("does not say what the route promised")
+            && unsaid.detail.contains("remove `held` (span 1): removed")
+            && unsaid.detail.ends_with("(span 2): exit 0"),
+        "the case is red for the cited line's words, and the acts behind it are done — it \
+         came out {}:\n{}",
+        unsaid.classification,
+        unsaid.detail,
+    );
+    come_out(&[
+        (
+            planted(
+                "planted-a-cited-line-that-exits-0-and-says-something-else",
+                &[
+                    cited!(4, THE_REVIEW),
+                    Act::Remove(Operand::Span(1)),
+                    Act::Run(2),
+                ],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // A line the route prints behind a cited one is held to exit 0 as before.
+        (
+            planted(
+                "planted-a-line-behind-a-cited-one-that-exits-4",
+                &[cited!(0, THE_REVIEW), Act::Run(3)],
+            ),
+            Classification::AnotherFailure,
+        ),
+        // The promise is asked of the cited line's own output: the refusal's head says the
+        // words, a line cited before said them, and a line cited after says them.
+        (
+            planted(
+                "planted-the-words-said-by-a-line-cited-before",
+                &[cited!(0, THE_REVIEW), cited!(3, THE_REVIEW)],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        (
+            planted(
+                "planted-the-words-said-by-a-line-cited-after",
+                &[cited!(3, THE_REVIEW), cited!(0, THE_REVIEW)],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // A cited line that repeats the refusal under the case's own code is read for its
+        // words like any other: it keeps a promise of a route of its own over the path…
+        (
+            planted(
+                "planted-a-cited-line-that-is-the-same-refusal-with-its-route",
+                &[cited!(
+                    5,
+                    &[Promise::Route(&[
+                        Says::Text("`held`"),
+                        Says::Text("move it aside"),
+                    ])],
+                )],
+            ),
+            Classification::Holds,
+        ),
+        // … and is red under the cited line's word where it does not say what was promised.
+        (
+            planted(
+                "planted-a-cited-line-that-is-the-same-refusal-and-says-something-else",
+                &[cited!(5, THE_REVIEW)],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // A route of its own over the path: one finding names the path — by the place's
+        // absolute spelling — and carries the route.
+        (
+            planted(
+                "planted-a-cited-line-with-one-finding-over-the-path-and-its-route",
+                &[cited!(7, A_ROUTE_OVER_THE_PATH)],
+            ),
+            Classification::Holds,
+        ),
+        // Two findings that have one each keep no such promise.
+        (
+            planted(
+                "planted-a-cited-line-with-the-path-in-one-finding-and-a-route-in-another",
+                &[cited!(6, A_ROUTE_OVER_THE_PATH)],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // A promise of one line is kept by one line, never by two that hold a piece each.
+        (
+            planted(
+                "planted-a-cited-line-with-the-pieces-on-one-line",
+                &[cited!(
+                    7,
+                    &[Promise::Line(&[
+                        Says::Path(Place::Repo("held")),
+                        Says::Text("refused over"),
+                    ])],
+                )],
+            ),
+            Classification::Holds,
+        ),
+        (
+            planted(
+                "planted-a-cited-line-with-the-pieces-on-two-lines",
+                &[cited!(
+                    7,
+                    &[Promise::Line(&[
+                        Says::Path(Place::Repo("held")),
+                        Says::Text("move it aside"),
+                    ])],
+                )],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // Every promise of a cited line is held, not the first alone.
+        (
+            planted(
+                "planted-a-cited-line-that-keeps-the-first-of-two-promises",
+                &[cited!(
+                    0,
+                    &[
+                        Promise::Line(&[Says::Text("the review of held")]),
+                        Promise::Line(&[Says::Text("something else")]),
+                    ],
+                )],
+            ),
+            Classification::CitedLineUnsaid,
+        ),
+        // A cited line no shell can split is what it was.
+        (
+            planted(
+                "planted-a-cited-line-no-shell-can-split",
+                &[cited!(8, THE_REVIEW)],
+            ),
+            Classification::UnsplittableLine,
+        ),
+    ]);
+
+    // A witness any output satisfies is no witness; and a cited span is a command line.
+    for (name, acts, says) in [
+        (
+            "planted-a-cited-line-with-no-promise",
+            &[cited!(0, &[])] as &'static [Act],
+            "states no promise",
+        ),
+        (
+            "planted-a-promise-with-no-piece",
+            &[cited!(0, &[Promise::Line(&[])])],
+            "holds no piece",
+        ),
+        (
+            "planted-a-promise-of-no-bytes",
+            &[cited!(0, &[Promise::Route(&[Says::Text("")])])],
+            "holds no piece",
+        ),
+        (
+            "planted-a-cited-span-that-is-no-command-line",
+            &[cited!(1, THE_REVIEW)],
+            "which is no `jigc` or `git` command line",
+        ),
+    ] {
+        let fault = route_case::follow(sh, &planted(name, acts))
+            .expect_err("a fault of the case as written");
+        assert!(fault.contains(says), "`{name}`: {fault}");
+    }
 }
 
 /// **A path is taken out of the index of the checkout it stands in**, and the file stays.

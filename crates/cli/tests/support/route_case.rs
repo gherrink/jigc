@@ -38,7 +38,7 @@
 //! placed by a child process, as that section's Linux rule asks of a file that may be
 //! executed. The refusing argv runs on the binary **handed in** — the frame names no
 //! binary of its own, so the same case runs on another release's. Then the acts, then the
-//! checks, then the witnesses, and one of nine [`Classification`]s.
+//! checks, then the witnesses, and one of ten [`Classification`]s.
 //!
 //! **Where a route names an act and not its object, the runner owns the object.** *Move
 //! the directory out of the way* says where from and never where to; *point it at a regular
@@ -117,6 +117,23 @@
 //! refusal lists no value cannot be filled; a case that runs such a line as printed comes
 //! out *a printed line no shell can split*, as before. A value that is a path out of the
 //! sandbox is not handed to any command.
+//!
+//! **A line a route cites for what it prints is held to its words, and not to its exit**
+//! ([`Act::RunCited`], [`Cited`], [`Promise`]) — the human's ruling of 2026-10-13
+//! (`DECISIONS.md` → *A command a route cites for what it prints is held to its words*).
+//! *Run `git …` to see what git reports*, *`jigc task finalize <id>` to review the fidelity
+//! diff*, *`jigc milestone discard <id>`, which answers for the same path with its own
+//! route*: such a line is there for its output, and may well be refused itself. A case
+//! marks the line cited and states what the route promised of it — read off the route's
+//! own words for the case's state, as pieces of text and places of the sandbox. The runner
+//! runs the line as printed and does not hold its exit code; **its own output must keep
+//! every promise**, or the case comes out with a classification of its own
+//! ([`Classification::CitedLineUnsaid`]) — never *another failure*, never *the same
+//! refusal again*. The promise is a witness over output where [`Case::witnesses`] are over
+//! files, and it is strict: a cited line with no promise, or a promise with no piece, is a
+//! fault of the case. **Nothing loosens for any other line**: a line not marked cited is
+//! held to exit 0, the lines a route prints behind a cited one included, and a cited line
+//! no shell can split is *a printed line no shell can split* as before.
 //!
 //! **Where a route sends its reader to the refusal's own listing, the runner runs the
 //! command that stands there** ([`Act::RunListed`], [`listed_spans_in`]). *Run the command
@@ -284,6 +301,37 @@ pub struct Filled {
     pub with: &'static [usize],
 }
 
+/// One piece of what a cited line's output must hold ([`Promise`]).
+#[derive(Clone, Copy, Debug)]
+pub enum Says {
+    /// These bytes — the route's promise, spelled out for the case's state.
+    Text(&'static str),
+    /// The absolute path of this place of the sandbox, as the product prints one.
+    Path(Place),
+}
+
+/// **One thing a route promised of a line it cites for what it prints** — a witness over
+/// that line's output, as [`Case::witnesses`] are over files. Every piece is held within
+/// one line of the output; a promise with no piece is a fault of the case.
+#[derive(Clone, Copy, Debug)]
+pub enum Promise {
+    /// One line of the output holds every one of these.
+    Line(&'static [Says]),
+    /// One finding of the output carries a `route:` line of its own, and its lines — its
+    /// first, the indented ones under it, the route's included — hold every one of these:
+    /// what *answers with its own route* and *names that route* ask for.
+    Route(&'static [Says]),
+}
+
+/// A printed line a route cites for what it prints, and what the route promised of it: the
+/// line a span of the printed route, by index, and the promises its output is held to —
+/// every one of them.
+#[derive(Clone, Copy, Debug)]
+pub struct Cited {
+    pub line: usize,
+    pub promised: &'static [Promise],
+}
+
 /// One thing a reader does to follow a route.
 #[derive(Clone, Copy, Debug)]
 pub enum Act {
@@ -298,6 +346,15 @@ pub enum Act {
     /// Every placeholder of the line is filled, in the line's order, each as one word of
     /// the command line; then the line is run as [`Act::Run`] runs one.
     RunFilled(Filled),
+    /// **Run a printed line the route cites for what it prints, and hold its output to
+    /// what the route promised** ([`Cited`]) — the human's ruling of 2026-10-13: such a
+    /// line *is held to its words*. It is run as [`Act::Run`] runs one; its exit code is
+    /// not held; its output — stdout, then stderr — must keep every promise, or the case
+    /// comes out [`Classification::CitedLineUnsaid`]. The promise is the case's to state,
+    /// read off the route's own words, and is matched against this line's output and no
+    /// other command's. A cited line with no promise is a fault of the case: a witness any
+    /// output satisfies is none.
+    RunCited(Cited),
     /// Move the directory the operand names out of the way: out of the repository, to the
     /// sandbox's `moved/` under the path it had ([`Place::Moved`]), with everything in it.
     /// A link to a directory is not one.
@@ -409,6 +466,7 @@ impl Act {
             | Act::Unstage(operand) => Some(operand),
             Act::Run(_)
             | Act::RunFilled(_)
+            | Act::RunCited(_)
             | Act::RunListed(_)
             | Act::Cd(_)
             | Act::Rerun
@@ -461,7 +519,8 @@ pub struct Case {
     pub env: &'static [Var],
     /// The acts that follow the printed route, in the route's order.
     pub acts: &'static [Act],
-    /// What must hold once they are done — beside every [`Act::Run`] exiting 0.
+    /// What must hold once they are done — beside every [`Act::Run`] exiting 0 and every
+    /// cited line ([`Act::RunCited`]) saying what the route promised.
     pub holds: &'static [Check],
     /// Files under `outside/` whose bytes must be afterwards what they were before the
     /// refusing command ran. One that was absent must still be absent.
@@ -653,6 +712,7 @@ pub enum Classification {
     AnotherFailure,
     DidNotEnd,
     UnsplittableLine,
+    CitedLineUnsaid,
 }
 
 impl Classification {
@@ -667,6 +727,9 @@ impl Classification {
             Classification::AnotherFailure => "followed, another failure",
             Classification::DidNotEnd => "the command did not end",
             Classification::UnsplittableLine => "followed, a printed line no shell can split",
+            Classification::CitedLineUnsaid => {
+                "followed, a cited line does not say what the route promised"
+            }
         }
     }
 
@@ -709,6 +772,9 @@ pub struct Seen {
     /// A line the route prints for an act to run is one no shell splits into words: it
     /// was not run.
     pub unsplit: bool,
+    /// A line the route cites for what it prints was run, and its output does not keep
+    /// what the route promised of it.
+    pub unsaid: bool,
 }
 
 /// The one classification of what was seen. **The order is the rule**: a witness that
@@ -720,7 +786,10 @@ pub struct Seen {
 /// witness, which it must not hide, and ahead of everything else a followed route comes to.
 /// **A printed line no shell can split is read behind those two and ahead of a repeated
 /// refusal**: the step it stood for was not done, so the refusal that follows it is what
-/// the line cost, and would otherwise be all the case said.
+/// the line cost, and would otherwise be all the case said. **And a cited line that does
+/// not say what the route promised is read next, ahead of a repeated refusal and of any
+/// other failure**: the reader was sent to it for its words and did not get them, and
+/// what a later line of the route then came to would otherwise be all the case said.
 pub fn classify(seen: &Seen) -> Classification {
     if seen.did_not_end && !seen.provoked {
         Classification::DidNotEnd
@@ -734,6 +803,8 @@ pub fn classify(seen: &Seen) -> Classification {
         Classification::DidNotEnd
     } else if seen.unsplit {
         Classification::UnsplittableLine
+    } else if seen.unsaid {
+        Classification::CitedLineUnsaid
     } else if seen.same_refusal {
         Classification::SameRefusalAgain
     } else if seen.failed {
@@ -864,6 +935,26 @@ pub fn refusal_in(said: &str, code: &str) -> Option<Refusal> {
         .find_map(|line| line.trim_start().strip_prefix("route: "))
         .map(str::to_string);
     Some(Refusal { route })
+}
+
+/// **The findings a command printed**, each as its lines: the first line of a finding —
+/// one [`head_code`] reads a code off — and the indented lines under it, to the first line
+/// that is not indented. What a [`Promise::Route`] is asked of: a route is its own
+/// finding's, as [`refusal_in`] has it.
+fn findings_in(said: &str) -> Vec<Vec<&str>> {
+    let mut findings: Vec<Vec<&str>> = Vec::new();
+    let mut open = false;
+    for line in said.lines() {
+        if head_code(line).is_some() {
+            findings.push(vec![line]);
+            open = true;
+        } else if open && line.starts_with(char::is_whitespace) {
+            findings.last_mut().expect("a finding is open").push(line);
+        } else {
+            open = false;
+        }
+    }
+    findings
 }
 
 /// **What the refusal of `code` lists**, in order: the values of the indented lines of its
@@ -1365,6 +1456,7 @@ impl Sandbox {
                 }
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::Rerun
@@ -1436,6 +1528,7 @@ impl Sandbox {
                 Act::Unstage(_) => self.unstage(&path),
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::Rerun
@@ -1453,7 +1546,7 @@ impl Sandbox {
             });
         }
         let (what, ran) = match act {
-            Act::Run(_) | Act::RunFilled(_) | Act::RunListed(_) => {
+            Act::Run(_) | Act::RunFilled(_) | Act::RunCited(_) | Act::RunListed(_) => {
                 let (at, line, how) = match act {
                     Act::RunFilled(filled) => {
                         let printed = span(filled.line)?;
@@ -1507,6 +1600,28 @@ impl Sandbox {
                         (filled.line, line, format!(", {}", how.join(", ")))
                     }
                     Act::Run(at) => (at, span(at)?.to_string(), String::new()),
+                    Act::RunCited(cited) => {
+                        if cited.promised.is_empty() {
+                            return Err(format!(
+                                "an act cites span {} for what it prints and states no \
+                                 promise: a witness any output satisfies is no witness",
+                                cited.line
+                            ));
+                        }
+                        for promise in cited.promised {
+                            let (Promise::Line(pieces) | Promise::Route(pieces)) = promise;
+                            let empty = |piece: &Says| matches!(piece, Says::Text(text) if text.trim().is_empty());
+                            if pieces.is_empty() || pieces.iter().any(empty) {
+                                return Err(format!(
+                                    "an act cites span {} for what it prints, and a promise \
+                                     of it holds no piece, or a piece of no bytes: a witness \
+                                     any output satisfies is no witness",
+                                    cited.line
+                                ));
+                            }
+                        }
+                        (cited.line, span(cited.line)?.to_string(), String::new())
+                    }
                     Act::RunListed(at) => {
                         let listed = commands.get(at).ok_or_else(|| {
                             format!(
@@ -1517,7 +1632,7 @@ impl Sandbox {
                         })?;
                         (at, listed.clone(), String::new())
                     }
-                    _ => unreachable!("the three acts that run a printed line"),
+                    _ => unreachable!("the four acts that run a printed line"),
                 };
                 // A span of the route, or — for a command the refusal lists — of its listing.
                 let of = if matches!(act, Act::RunListed(_)) {
@@ -1547,13 +1662,14 @@ impl Sandbox {
                         ));
                     }
                 };
-                (
-                    format!("run `{line}` ({of} {at}{how})"),
-                    self.run(
-                        self.tested(case, program, &stand).args(&words[1..]),
-                        self.under_test,
-                    ),
-                )
+                let ran = self.run(
+                    self.tested(case, program, &stand).args(&words[1..]),
+                    self.under_test,
+                );
+                if let Act::RunCited(cited) = act {
+                    return Ok(self.held_to_its_words(line, cited, &ran, seen));
+                }
+                (format!("run `{line}` ({of} {at}{how})"), ran)
             }
             Act::Cd(at) => {
                 let line = span(at)?;
@@ -1644,6 +1760,87 @@ impl Sandbox {
             seen.failed = true;
             format!("{what}: {}\n{}", ran.exit(), ran.said)
         })
+    }
+
+    /// **What a cited line came to**: it is held to its words and not to its exit. `ran`
+    /// is the cited line's own child — its output, stdout then stderr, is what every
+    /// promise is asked of, and no other command's. A line that did not end said nothing
+    /// that can be read as its answer, and is a command that did not end. What the line
+    /// printed is kept in the record either way: it is what the case is about.
+    fn held_to_its_words(&self, line: &str, cited: Cited, ran: &Ran, seen: &mut Seen) -> String {
+        let what = format!("run the cited line `{line}` (span {})", cited.line);
+        if ran.held.is_some() {
+            seen.did_not_end = true;
+            return format!("{what}: {}\n{}", ran.exit(), ran.said);
+        }
+        let unkept: Vec<String> = cited
+            .promised
+            .iter()
+            .filter_map(|promise| self.kept(&ran.said, promise).err())
+            .collect();
+        if unkept.is_empty() {
+            format!(
+                "{what}: {} — not held to exit 0; its output says what the route promised\n{}",
+                ran.exit(),
+                ran.said
+            )
+        } else {
+            seen.unsaid = true;
+            format!(
+                "{what}: {} — its output does not say what the route promised: {}\n{}",
+                ran.exit(),
+                unkept.join("; "),
+                ran.said
+            )
+        }
+    }
+
+    /// Whether `said` keeps `promise` — `Err` is what it lacks, in words. A piece is bytes
+    /// of the case's or the absolute path of a place of this sandbox, and is held within
+    /// one line.
+    fn kept(&self, said: &str, promise: &Promise) -> Result<(), String> {
+        let piece = |says: &Says| match *says {
+            Says::Text(text) => text.to_string(),
+            Says::Path(place) => self.at(place).display().to_string(),
+        };
+        let named = |pieces: &[String]| {
+            pieces
+                .iter()
+                .map(|piece| format!("`{piece}`"))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        };
+        match promise {
+            Promise::Line(pieces) => {
+                let pieces: Vec<String> = pieces.iter().map(piece).collect();
+                if said
+                    .lines()
+                    .any(|line| pieces.iter().all(|piece| line.contains(piece.as_str())))
+                {
+                    Ok(())
+                } else {
+                    Err(format!("no line of it holds {}", named(&pieces)))
+                }
+            }
+            Promise::Route(pieces) => {
+                let pieces: Vec<String> = pieces.iter().map(piece).collect();
+                if findings_in(said).iter().any(|finding| {
+                    finding
+                        .iter()
+                        .any(|line| line.trim_start().starts_with("route: "))
+                        && pieces
+                            .iter()
+                            .all(|piece| finding.iter().any(|line| line.contains(piece.as_str())))
+                }) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "no finding of it carries a route of its own and holds {}",
+                        named(&pieces)
+                    ))
+                }
+            }
+        }
     }
 
     /// Whether `value`, filled into a printed line, is no path out of this sandbox — read
@@ -2146,7 +2343,8 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
             let done = sandbox.perform(binary, case, *act, &printed, &mut seen)?;
             detail.push(done);
         }
-        if !seen.same_refusal && !seen.failed && !seen.did_not_end && !seen.unsplit {
+        if !seen.same_refusal && !seen.failed && !seen.did_not_end && !seen.unsplit && !seen.unsaid
+        {
             for check in case.holds {
                 if let Err(why) = sandbox.check(*check) {
                     seen.failed = true;

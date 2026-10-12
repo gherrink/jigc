@@ -2,6 +2,45 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — A command a route cites for what it prints is held to its words, not to exit 0 (the human's ruling, option A of two); and the route catalog's frame runs a cited line and holds its own output to what the route promised
+
+**The ruling — the human's, 2026-10-13.** On the question *is a command that a route cites for what it prints held to exit 0?* — the first of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → R) — the human took option A of two:
+
+> **A line a route cites for what it prints is held to its words**: it passes when its output says what the route promised, whatever it exits with. The promised text is a witness of the case, so the check stays strict.
+>
+> **Not taken:** held to exit 0 — under which a route could never cite a command that can itself be refused.
+
+Such lines, from the catalog: *run `git …` to see what git reports* · *`jigc task validate <task>` names where it lands* · *re-run `jigc task finalize <id>` to review the fidelity diff* · *`jigc milestone discard <id>`, which answers for the same path with its own route* · *`jigc config list` shows the value in force and the layer it wins from* · *`jigc describe` lists the doctype surface*.
+
+**What this commit is.** The ruling's record, and the frame's half of carrying it out: [route_case.rs](crates/cli/tests/support/route_case.rs) gains the act that runs a cited line and holds its output to a witness, with the arm that was red before it. **No case of the catalog is changed by it** — the thirty cases under the question are followed again in the commit after this one, with the records. No product source changes.
+
+### The frame — what a case now says, and what the runner does with it
+
+- **`Act::RunCited(Cited { line, promised })`.** A case says which printed line is cited — a span of the printed route, by index, as every operand is — and what the route promised of it, as data: `promised` is one `Promise` or several, each of pieces (`Says::Text`, bytes; `Says::Path`, the absolute path of a place of the sandbox, which the product prints and no case can spell).
+- **Two kinds of promise, and no third until a case needs one.** `Promise::Line`: one line of the output holds every piece. `Promise::Route`: one finding of the output carries a `route:` line of its own and its lines hold every piece — what *answers for the same path with its own route* and *names that route* ask for. A piece is held within one line.
+- **The line is run as printed and its exit code is not held.** Its own output — stdout, then stderr — must keep every promise. **The output is the cited line's and no other command's**: not the refusal's, which often says the same words, and not a line's that ran before or behind it.
+- **A cited line that does not say it is red under a word of its own**: the tenth classification, *followed, a cited line does not say what the route promised* — read behind *a printed line no shell can split* and ahead of *the same refusal again* and of *another failure*, so a cited line that is refused under the case's own code and says nothing of what was promised is red for its words, not for its exit.
+- **Nothing loosens for any other line.** A line not marked cited is held to exit 0 exactly as before, the lines a route prints behind a cited one included; a cited line no shell can split is *a printed line no shell can split*; one that does not end is *the command did not end*.
+- **A witness any output satisfies is no witness**: a cited line with no promise, a promise with no piece and a piece of no bytes are faults of the case as written, and so is a cited span that is no `jigc` or `git` command line.
+- **What a cited line printed is in the record** of what the runner did, whatever it exited with — the list for the human had to say *not kept* of seventeen such lines.
+
+*Why the promise rides the act, and is not a check of the case.* A check is over a place of the sandbox once every act is done; a promise is over one command's output, and which command is the whole of it. Carried by the act, the witness cannot be asked of another act's output by a case as written — only by a runner that is wrong, which the arm holds. *Why an act may carry text now.* The rule is that an act takes no path, word or command of the case's own **to act with**; the witness is nothing the runner runs or touches — bytes its output is asked for, as `Check::Contains` asks a file — and the arm that holds the rule now holds `Cited`, `Promise` and `Says` to exactly those shapes.
+
+### Red first
+
+`route_catalog::a_line_a_route_cites_is_held_to_its_words_and_not_to_its_exit`, fifteen planted cases over a shell that stands in for the binary, and four faults. **Against a runner that declared the act and ran a cited line as any printed line, twelve of the fifteen did not come out as planted**: the line that exits 4 with the promised words was *another failure*; the line that exits 0 and says something else *held*; the line that repeats the refusal was *the same refusal again* whatever it said; and every promise of a route or of one line was *another failure* at the line's exit. The three that came out as planted on that runner are the ones that say nothing loosens: the same line not marked cited, a line behind a cited one that exits 4, a cited line no shell can split — and, with the frame built, they still do.
+
+**Three mutants of the built frame, each named by the arm:** the witness dropped — a cited line that says something else *held*; the exit code held again — the line that exits 4 with the promised words was *another failure*; the witness asked of every command's output so far, not the cited line's — the refusal's own head says the words, and the case *held*.
+
+Two arms that hold the frame's rules moved with it: `no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed` admits the act and holds the three new types to their shapes (with the act not admitted it names `RunCited(Cited)`), and `the_classifications_in_their_order` holds ten.
+
+**Not established.**
+
+- **The thirty cases**: none is followed under the ruling yet; which hold, which keys leave the findings file and what the previous release's binary does are the next commit's.
+- **A promise no piece of text can state** — one about what is absent from an output, or about an order of lines: the frame has no such kind, and no case has asked for one.
+- **A cited line that is a shape the reader fills** (a `<placeholder>` in it): the act runs a line as printed; no cited line of the catalog holds a placeholder.
+- **Linux**: the run follows the task's last commit.
+
 ## 2026-10-12 — The route catalog's owed list is empty and gone: the four dynamic sites no family has — one left for the port, three answered in part, a code at a time; 8 more cases, 5 of them red under three new keys; the catalog beyond the pilot counted, and every marked case on one list for the human (the human's ruling of 2026-10-11, the last of its families)
 
 **What.** A ninth file wired through `tables!`, [route_catalog/unassigned.rs](crates/cli/tests/route_catalog/unassigned.rs), for the dynamic sites the ruling takes in; a correction to the commit before this one; the owed list taken out of the suite; the record's section for the catalog beyond the pilot ([route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §14) with the two tables printed again; and [route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), every case marked `doubt` under the question it hangs on. **Every blocking site of the product now has a case, a reason or a row of the scheduled list, and there is no fourth answer.** No product source changes; nothing is fixed.
