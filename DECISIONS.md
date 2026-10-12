@@ -2,6 +2,134 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The byte table's frame: a sandbox's picture as data, a row as quoted lines, and a comparison that starts no process — eighteen arms red first against a comparison that answered *holds* to everything, thirty-one changes to the built one each named by its arm; and two fences stand before the first row and the first cell (the pilot's task `B1`)
+
+**What.** The second task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §4, §8; the entry below this one is its first). [byte_cell.rs](crates/cli/tests/support/byte_cell.rs) is the frame and [byte_table.rs](crates/cli/tests/byte_table.rs) the suite; under the suite's directory stand its two lists, [`scheduled.tsv`](crates/cli/tests/byte_table/scheduled.tsv) and [`owed.rs`](crates/cli/tests/byte_table/owed.rs). No row is data yet and no cell exists: this is what both are born into. No product source changes; no process is started by anything here, and nothing names a binary.
+
+### The frame
+
+- **A manifest** — a sandbox's picture, as data: every entry under its root by path (a directory is an entry; a regular file is its permission bits and the id git gives its bytes through the path's filters), and git's layer asked of git — each checkout's `HEAD`, branch and index, the refs, the stash, the registrations, the local configuration, the object ids of the store, the ids within reach, the commits within reach with what each changed, and where each plant's marker stands. Of a `.git` directory it holds only the files nobody else reads. **What takes one off a sandbox is the task `B2b`'s.**
+- **A row** — the leaf as `cli::cli::VERB_KINDS` holds it, the consent's flag, and lines. **A line** is what it allows, when, whether it holds on a refusal, and the sentences it rests on, each a `Quote`: the doc, the heading, the words.
+- **The comparison** — `compare`, from a row and what was seen (the manifest before the cell's lead-ins, the one before the command, the one after, the plants, how the command ended, whether the cell runs the consent spelling, and what the cell is listed as) to one of **eight classifications**, with why, with **how many differences every line of the row excused**, and with whether the classification hangs on what *held* means.
+
+**The classifications, in the order they are read:** *the command did not end* · and for a command that exited 0, *lost* · *git's state moved outside its allowance* · *written outside its allowance* · and for one that refused, *refused, and changed what a refusal may not* — the one rule a refusal is held to · *not the listed outcome* · *holds* · *refuses, nothing changed*. Six are red.
+
+### The vocabulary — what the four rows needed, and nothing more
+
+Read off [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §7, which says for each word which lines needed it.
+
+| in the frame | says | needed by |
+|---|---|---|
+| `Where::Path` | one path of the repository; a `*` is one component | S1 to S9 · U2, U3, U5 · T2 |
+| `Where::Under` | a directory and everything under it | S4 · U1 · T5, T6 · M1, M6, M10 |
+| `Where::Hook` | the `pre-commit` hook in the hooks directory git resolves | S10 · U4 |
+| `Where::AStagedDocsHome` | wherever a staged doc lands — known by the bytes that arrive | T1 · M2 |
+| `May::WriteWhole` | made, or replaced by any bytes, as a regular file | S1, S4, S5, S6, S8 · T2, T5 · M1, M5, M10 |
+| `May::MergeInto` | every line that stood there stays, in order | S2, S3, S7, S9, S10 |
+| `May::TakeOutOf` | every line that stands there afterwards stood there before | U2, U3, U4 |
+| `May::Removed` | gone | S6 · U1, U4, U5 · T6 · M6 |
+| `May::CopyOfAStagedDoc` | a regular file that is a staged doc, byte for byte | T1 · M2 |
+| `May::MovedAsideTo` | gone from its place and standing, the same entry, under a named directory | T6 · M6 |
+| `Allows::Commit(Holding::OnlyTheLines)` | a commit holding only what the row's lines wrote | S11 |
+| `Allows::Commit(Holding::TheIndex)` | … and the main checkout's index as it stood | T4 |
+| `Allows::Commit(Holding::TheWorktrees)` | … and what every other checkout had staged | M3 |
+| `Allows::Staged` | the index staged where the row's lines wrote | T3 |
+| `Allows::Unregistered` | a worktree's registration removed, under a named directory | U6 · M7 |
+| `When::NoCommitYet` | a condition read off the state before the command | S9 |
+| `Line::on_refusal` | holds on a refusal | M1 (yes); every other line (no) |
+| `Row::consent` | the flag under which a planted path named in the output may go | S14 · U8 |
+
+**Nothing reaches out of the repository** — no row needed a place under `home/`, `outside/` or `tmp/` — so the pair of the plan's arm *a write outside the repository is seen*, the same write covered, cannot be stated and is not.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A plant gone from its place is judged by where its bytes stand, and by no line.** Nowhere: *lost*. At another path: *written outside*, unless a line that moves the place aside names the directory they arrived under. At no path and in an object within reach: *git's state moved* — something was committed in its place. Under the consent spelling, with the path named in the output, the difference is the lines' to judge; a flag on a row that declares no consent is none.
+- **Bytes no line covers that stand nowhere are *lost* — unless a lead-in of the cell wrote them**, read off the manifest taken before the lead-ins; then *written outside*. That is the plan's rule for the product's own bytes, and it is the only use the third manifest has.
+- **A refusal is held to one rule and to no other.** Whatever a refused command changed outside a line that holds on a refusal is *refused, and changed what a refusal may not* — a plant gone on a refusal too: the loss rule's words bind a command that exited 0.
+- **A staged doc is a regular `.md` file under a task's `docs/`** — `.jigc/tasks/<id>/docs/`, where two design docs say staged prose stands — **or, where a milestone's join has built its merged set, a file of that set.** Once its file is gone from the working area it must stand in a commit the command made; at another path it is *git's state moved*, nowhere *lost*. *A stated bound:* at a milestone's boundary a sub-task's own staged copy is held through the merged set, not by itself.
+- **A checkout that follows the commit the command made is covered by the commit's line** — a file or an index entry of the main checkout that is what that commit holds at its path. Without it a boundary's fast-forward reads as writes no line covers.
+- **A directory on the way to a covered write counts with the line that covers the write**, and one that emptied under a covered removal with that line.
+- **A difference at a path inside a `.git` directory is git's state**, and no line covers one but the hook's.
+- ***Held* is the narrowest of the plan's three readings**, and the verdict says where it hangs on the question: the bytes are in the store and nothing reaches them. The reading in between, through a reflog, is not carried apart from the store.
+- **The fence reads the committed record while no row is data.** Its 57 quotations are held to their docs from this commit on; when a row becomes data, each of its quotes must also be one the record has.
+- **The pilot's leaves outside the first cut stand on the owed list**, under the task of the plan that would bring their row (`B5` to `B9`), and not on the scheduled list — which is for a leaf with a reason to wait, and the human has not ruled on the families.
+- **The owed list is a file of the suite's directory, `byte_table/owed.rs`, and not a constant of the suite** — where the plan has it. The plan's *Writes* for this task put one file of data under `byte_table/` and no Rust file, and the registration fence refuses exactly that: a directory beside a suite of its name is a set of that suite's modules, and one that holds none is a walk that checks nothing (`test_target_registration::every_aggregated_submodule_is_declared_by_its_aggregator`). **This commit's first full gate was red on it** — 3011 passed, 1 failed, in the fast tier — and nothing was committed on it. The list is wired in by one `#[path]` line and leaves with its last row.
+
+### Red first
+
+**Against a comparison that declared its classifications and answered *holds* to everything, a quote fence that held every quote, and a leaf fence that named nothing, all eighteen arms were red, each at its own assertion:**
+
+| arm | came out, against the stub | expected |
+|---|---|---|
+| `a_plant_that_is_gone_is_lost_whatever_the_row_says` | holds | lost |
+| `bytes_that_stand_elsewhere_are_not_lost` | holds | written outside |
+| `a_plant_with_no_bytes_is_a_fault_of_the_cell` | a verdict | a fault |
+| `the_products_own_file_rewritten_is_no_loss` | holds | written outside |
+| `a_lines_condition_is_read_off_the_state_before_the_command` | holds | written outside |
+| `a_merge_keeps_every_line_and_a_take_out_adds_none` | holds | written outside |
+| `a_write_outside_the_repository_is_seen` | holds | written outside |
+| `another_checkout_is_seen` | holds | written outside |
+| `a_file_of_gits_is_gits_state` | holds | git's state moved |
+| `gits_state_is_seen` | holds | git's state moved |
+| `a_commit_holds_what_its_line_declares` | holds | git's state moved |
+| `an_object_that_is_gone_is_seen` | holds | git's state moved |
+| `a_staged_doc_is_accounted_for` | holds | lost |
+| `a_refusal_may_change_only_what_a_line_that_holds_on_a_refusal_covers` | holds | refused, and changed |
+| `the_classifications_in_their_order` | holds | lost |
+| `the_excused_are_counted_line_by_line` | 0, 0, 0 | 2, 3, 0 |
+| `a_lines_quote_is_held_to_its_docs_text` | a quote one word off held | red |
+| `every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row` | 0 named | 3 |
+
+**Thirty-one changes to the built frame and fence, each named by the arm it belongs to** — one at a time, each over the whole suite:
+
+| the frame, changed | named by |
+|---|---|
+| a line excuses a planted removal · a consent that names nothing is one | the plant's arm |
+| bytes that stand elsewhere are lost · a moved-aside plant is not excused | the arm of bytes that stand elsewhere |
+| a plant with no bytes is taken | its arm |
+| the product's own bytes are lost like anybody's | its arm |
+| a line's condition is not read | its arm |
+| a merge is any change · a take-out is any change | the merge's arm |
+| a line reaches out of the repository | the arm of a write outside |
+| a registration is dropped wherever it stands · the registrations are not compared | the other checkout's arm |
+| a file of git's is an ordinary file | its arm |
+| the stash is not compared · a ref is not compared · an index entry is not compared | git's state |
+| a commit under the index holds anything · a commit of the lines holds the index too | the commit's arm |
+| a link is a file a line wrote · a staged doc is not asked after | the staged doc's arm |
+| an object that is gone is not seen | its arm |
+| every line holds on a refusal | the refusal's arm |
+| a write outside outranks a loss · a command that did not end is read like any · the listed outcome is not read | the order's arm |
+| a directory on the way is not counted | the count's arm |
+| a `#` in a fenced block ends a section · a quote is held by its first word · a quote is held anywhere in its doc | the quote fence |
+| a leaf answered twice is answered · a leaf with no answer is not named | the leaf fence |
+
+**One of them survived the arms as first written**: *a quote is held anywhere in its doc* — no fixture row asked for words that stand under a **later** heading. The fixture gained that row, and all thirty-one were run again on the arms as committed — after the owed list had moved to its file, too.
+
+### What the arms do not hold — the half that reads a sandbox
+
+They drive the comparison over manifests built by hand. Of the plan's table (§4) these are therefore **not** held by this commit, and are the task's that builds the reader (`B2b`): that *held* is asked through git's filters; that a registration whose directory is gone is read from its admin files (this commit holds only that such a file, changed, is git's state); that a modification time and a plain `git status` are in no layer; that a command which does not end is ended (this commit holds only where *did not end* is read); and every arm's stand-in — a script handed in as the binary.
+
+### The two fences
+
+- **`a_lines_quote_is_held_to_its_docs_text`** — `unquoted`: the words stand, byte for byte, in the section the heading opens; a section ends at the next heading of its level or above; a `#` line in a fenced block is no heading. On a fixture, then **over every quotation of the committed record**, 57 today — so a design doc that moves under a line reddens here before any row is data.
+- **`every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row`** — every `Write` row of `cli::cli::VERB_KINDS`, **36**, has exactly one answer: a row of the table (none yet), a line of the scheduled list, or a row of the owed list under the task of the plan that owes it. **Owed, 28**: `B2c` 4 (`setup`, `uninstall`, `task finalize`, `milestone finalize`) · `B4` 1 (`task discard`) · `B6` 8 · `B7` 7 · `B8` 4 · `B9` 4. **Scheduled, 8** — the leaves the plan's script counts untouched since the previous release, each with that as its reason and with `B3` to read it against its handler: `ingest`, `unmanage`, `task bind`, `config insert-step`, `replace-step`, `remove-step`, `fill`, `fork`. A leaf the product gains tomorrow is on no list and is named.
+
+### The seam into the route catalog's frame
+
+**None in this commit.** `route_case.rs` is byte for byte what it was; `byte_cell.rs` takes nothing from it and exposes nothing that runs a child. The second constructor, the visibility and `tmp/` as a place are the task `B2b`'s, as the plan's *Writes* has it.
+
+### The group
+
+`byte_table` is registered in [`groups/g_migration.rs`](crates/cli/tests/groups/g_migration.rs), beside `route_catalog` — the suite whose frame its runner will reuse, in the target whose CI leg exists; the plan's §9 has the reason and its price. Its eighteen arms start no process and ran in 0.00 s together.
+
+**Not established.**
+
+- **That the comparison classifies a real sandbox as it classifies a hand-built one** — no reader exists; the manifests of these arms carry ids that stand for their bytes.
+- **That the four rows, once data, need no word more** — the vocabulary was read off the record by one person; three conditions the docs give stay words in their lines.
+- **That the staged-doc rule fits a milestone's boundary** beyond the stated bound; no fan-out was built.
+- **The questions of reading** — the record's §6 and the plan's §7 — none is decided here; a cell follows the stricter reading.
+- **Linux** — nothing here starts a process or reads a clock, and no run in the container was made for it.
+
 ## 2026-10-12 — The byte table's pilot is begun: the plan it is built to is on record, and its four acceptance rows are written from the design docs — 57 quoted sentences, six places where a doc is silent or says two things, and no line made up (the human's ruling of 2026-10-12; the pilot's task `B0`)
 
 **What.** The first task of the byte table's pilot, and a record only: no test, no product source, nothing run to learn what a command writes. Two files land beside the route catalog's records — the plan the pilot is built to, and the allowances of the four commands its acceptance needs, each line resting on a sentence quoted from the design doc that owns the command.

@@ -1,0 +1,19 @@
+# The byte table's scheduled list — the write leaves the pilot leaves for before the port.
+#
+# A line a leaf: its words as `cli::cli::VERB_KINDS` holds them, space-separated; a tab; and
+# why it waits. `byte_table::every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row` holds
+# every write leaf of the product to exactly one of a row of the table, a line here, or a row
+# of the owed list in the suite. The ruling is the human's of 2026-10-12 — only the writing
+# commands the fix pass touched are piloted now, the rest before the port (`DECISIONS.md` →
+# *The reshaped `test` stage is run for real in parts*, ruling 3) — and which leaves the pass
+# touched is a count the plan made by script (`…/reshape/byte-table-plan.md` → §1.4): 28 of
+# 36, with these eight outside it. The plan's task `B3` reads each of the eight against its
+# handler and commits the count; a line leaves this file in the commit that brings its row.
+ingest	the plan's script counts it untouched since the previous release — and the plan's own reading finds it one step from a changed function (`FileStateRecord::load` and `::save`); `B3` reads it against its handler
+unmanage	the plan's script counts it untouched since the previous release — and the plan's own reading finds it one step from a changed function (`FileStateRecord::load` and `::save`); `B3` reads it against its handler
+task bind	the plan's script counts it untouched since the previous release: its one edge to a changed function is a name two files share; `B3` reads it against its handler
+config insert-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
+config replace-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
+config remove-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
+config fill	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
+config fork	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler

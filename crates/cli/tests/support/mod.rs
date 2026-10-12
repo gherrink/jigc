@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 
 pub mod branch_and_pull;
+pub mod byte_cell;
 pub mod child_stdin;
 pub mod ci_workflow;
 pub mod committing_doors;

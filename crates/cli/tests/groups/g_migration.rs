@@ -9,6 +9,8 @@ mod support;
 mod arch_doc_acceptance;
 #[path = "../arch_doc_components_materialize.rs"]
 mod arch_doc_components_materialize;
+#[path = "../byte_table.rs"]
+mod byte_table;
 #[path = "../cargo_install_probe.rs"]
 mod cargo_install_probe;
 #[path = "../design_altitude_schemas.rs"]
