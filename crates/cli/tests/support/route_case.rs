@@ -118,6 +118,26 @@
 //! out *a printed line no shell can split*, as before. A value that is a path out of the
 //! sandbox is not handed to any command.
 //!
+//! **A printed line that carries a placeholder for a value of the reader's own is followed
+//! with the placeholder filled** ([`Act::RunChosen`], [`Own`]) — the human's ruling of
+//! 2026-10-12 (`DECISIONS.md` → *A printed line that carries a placeholder for a value of
+//! the reader's own is followed with the placeholder filled*). `--title <title>`, `--slug
+//! <other-slug>`, `--from-file <payload>`: no refusal could list such a value, so the case
+//! names it — which placeholder is the reader's own, the value a reader would choose in
+//! the case's state, and why that one — and it is the one word of a case's that an act
+//! hands to a command. It goes where the route prints that placeholder and nowhere else:
+//! a placeholder the case does not name is not filled, and the line stays *a printed line
+//! no shell can split*. **The value is one word to the command, whatever it holds**: a
+//! mark stands in its place while a real shell splits the line, and the value takes the
+//! mark's place in the word the shell made — bare in the printed line or quoted, it never
+//! meets a shell. The filled line is then held to exit 0 like any other line a route
+//! prints, and **what was run is in the record**: the words of the command, each as a
+//! shell would take it, with every value and why. **A value the line's own grammar refuses
+//! is the case's mistake**: where a filled line is refused and its output quotes the value
+//! back — the case's own refusal again apart, which is read first — the runner hands back
+//! a fault of the case, which no classification covers and no list can hold. A value that
+//! is a path out of the sandbox is handed to no command.
+//!
 //! **A line a route cites for what it prints is held to its words, and not to its exit**
 //! ([`Act::RunCited`], [`Cited`], [`Promise`]) — the human's ruling of 2026-10-12
 //! (`DECISIONS.md` → *A command a route cites for what it prints is held to its words*).
@@ -304,6 +324,32 @@ pub struct Filled {
     pub with: &'static [usize],
 }
 
+/// **One value of the reader's own, for one placeholder of a printed line** — the human's
+/// ruling of 2026-10-12 (`DECISIONS.md` → *A printed line that carries a placeholder for a
+/// value of the reader's own is followed with the placeholder filled*). Which placeholder
+/// is the reader's own is the case's to say, and so is the value: a title, a slug, a
+/// payload file — nothing a refusal could list.
+#[derive(Clone, Copy, Debug)]
+pub struct Own {
+    /// The placeholder as the route prints it, angle brackets included: `<slug>`.
+    pub placeholder: &'static str,
+    /// The value a reader would choose in the case's state — inside whatever the route's
+    /// words bound it by: *another* slug, a *distinct* title, a payload that is one.
+    pub value: &'static str,
+    /// Why a reader would choose that value there. It is printed with the line that was
+    /// run; a value with no reason is a fault of the case.
+    pub why: &'static str,
+}
+
+/// A printed line and the values of the reader's own that fill it: the line a span of the
+/// printed route, by index, and a value for each placeholder the case says is the
+/// reader's. A placeholder of the line that no [`Own`] names is not filled.
+#[derive(Clone, Copy, Debug)]
+pub struct Chosen {
+    pub line: usize,
+    pub own: &'static [Own],
+}
+
 /// One piece of what a cited line's output must hold ([`Promise`]).
 #[derive(Clone, Copy, Debug)]
 pub enum Says {
@@ -351,6 +397,16 @@ pub enum Act {
     /// Every placeholder of the line is filled, in the line's order, each as one word of
     /// the command line; then the line is run as [`Act::Run`] runs one.
     RunFilled(Filled),
+    /// **Run a printed line whose placeholders for a value of the reader's own are filled
+    /// with the values the case names** ([`Chosen`]) — the human's ruling of 2026-10-12:
+    /// such a line *is followed with the placeholder filled*, and the filled line is held
+    /// to exit 0 like any other line a route prints. Each value is put in where the route
+    /// prints its placeholder, bare or quoted, as one word whatever it holds; a
+    /// placeholder the case does not name stays as printed, and the line with it one no
+    /// shell can split. A filled line that is refused **for the value** — its output
+    /// quotes the value back — is the case's mistake and a fault of the case: it says
+    /// nothing of the route.
+    RunChosen(Chosen),
     /// **Run a printed line the route cites for what it prints, and hold its output to
     /// what the route promised** ([`Cited`]) — the human's ruling of 2026-10-12: such a
     /// line *is held to its words*. It is run as [`Act::Run`] runs one; its exit code is
@@ -471,6 +527,7 @@ impl Act {
             | Act::Unstage(operand) => Some(operand),
             Act::Run(_)
             | Act::RunFilled(_)
+            | Act::RunChosen(_)
             | Act::RunCited(_)
             | Act::RunListed(_)
             | Act::Cd(_)
@@ -1042,6 +1099,45 @@ fn one_word(value: &str) -> String {
     }
 }
 
+/// What every mark of the runner's opens with ([`mark`]).
+const MARK: &str = "route-case-own-value-";
+
+/// **The word that stands in a printed line where the `at`-th value of the reader's own
+/// goes**, until a shell has split the line: letters, digits and hyphens, which a shell
+/// hands on unchanged, bare and inside either kind of quotes.
+fn mark(at: usize) -> String {
+    format!("{MARK}{at}-here")
+}
+
+/// `text` with each mark replaced by what `put` makes of its value — the value itself, in
+/// a word the shell has split off; the value as a reader would type it, in a line that is
+/// shown and not run.
+fn unmarked(text: &str, own: &[Own], put: impl Fn(&str) -> String) -> String {
+    own.iter()
+        .enumerate()
+        .fold(text.to_string(), |text, (at, own)| {
+            text.replace(&mark(at), &put(own.value))
+        })
+}
+
+/// **The value of the case's own that a refused line's output quotes back**, where `act`
+/// filled a line with one: the value, whole, between a pair of backticks or of either kind
+/// of quotation mark — `--slug "Not A Slug"` is not a valid slug; could not read
+/// `` `no-such.yaml` ``. It is how a command says that it refuses *this value*, and it is
+/// read off the output and off nothing else: a refusal for the value that does not quote
+/// it is read as any refusal is, and one that quotes it and refuses for another reason is
+/// read as the case's mistake — the fault prints the output, so its reader sees which.
+fn quoted_back(act: Act, said: &str) -> Option<&'static Own> {
+    let Act::RunChosen(chosen) = act else {
+        return None;
+    };
+    chosen.own.iter().find(|own| {
+        ['`', '"', '\'']
+            .iter()
+            .any(|quote| said.contains(&format!("{quote}{}{quote}", own.value)))
+    })
+}
+
 /// The backticked spans of a route, in order — the odd pieces of a split on `` ` ``. An
 /// unpaired last backtick opens no span.
 pub fn spans(route: &str) -> Vec<&str> {
@@ -1461,6 +1557,7 @@ impl Sandbox {
                 }
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunChosen(_)
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
@@ -1533,6 +1630,7 @@ impl Sandbox {
                 Act::Unstage(_) => self.unstage(&path),
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunChosen(_)
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
@@ -1551,7 +1649,11 @@ impl Sandbox {
             });
         }
         let (what, ran) = match act {
-            Act::Run(_) | Act::RunFilled(_) | Act::RunCited(_) | Act::RunListed(_) => {
+            Act::Run(_)
+            | Act::RunFilled(_)
+            | Act::RunChosen(_)
+            | Act::RunCited(_)
+            | Act::RunListed(_) => {
                 let (at, line, how) = match act {
                     Act::RunFilled(filled) => {
                         let printed = span(filled.line)?;
@@ -1605,6 +1707,21 @@ impl Sandbox {
                         (filled.line, line, format!(", {}", how.join(", ")))
                     }
                     Act::Run(at) => (at, span(at)?.to_string(), String::new()),
+                    Act::RunChosen(chosen) => {
+                        let printed = span(chosen.line)?;
+                        let (line, how) = self.marked(chosen, printed)?;
+                        if let Some(own) =
+                            chosen.own.iter().find(|own| !self.stays(&stand, own.value))
+                        {
+                            seen.failed = true;
+                            return Ok(format!(
+                                "run `{printed}` (span {}) with `{}` filled by the case's \
+                                 `{}`: not done — it names nothing inside the case's sandbox",
+                                chosen.line, own.placeholder, own.value
+                            ));
+                        }
+                        (chosen.line, line, how)
+                    }
                     Act::RunCited(cited) => {
                         if cited.promised.is_empty() {
                             return Err(format!(
@@ -1637,7 +1754,7 @@ impl Sandbox {
                         })?;
                         (at, listed.clone(), String::new())
                     }
-                    _ => unreachable!("the four acts that run a printed line"),
+                    _ => unreachable!("the five acts that run a printed line"),
                 };
                 // A span of the route, or — for a command the refusal lists — of its listing.
                 let of = if matches!(act, Act::RunListed(_)) {
@@ -1645,11 +1762,18 @@ impl Sandbox {
                 } else {
                     "span"
                 };
-                let line = line.as_str();
-                let words = match super::shell_words_or(line, &stand, &self.home()) {
+                // A value of the reader's own stands in the line as a mark until the shell
+                // has split it ([`Self::marked`]).
+                let own: &[Own] = match act {
+                    Act::RunChosen(chosen) => chosen.own,
+                    _ => &[],
+                };
+                let words = match super::shell_words_or(&line, &stand, &self.home()) {
                     Ok(words) => words,
                     Err(said) => {
                         seen.unsplit = true;
+                        // Not run: the line as its reader would have typed it.
+                        let line = unmarked(&line, own, one_word);
                         return Ok(format!(
                             "run `{line}` ({of} {at}{how}): not run — no shell splits it \
                              into words\n{}",
@@ -1657,6 +1781,24 @@ impl Sandbox {
                         ));
                     }
                 };
+                // Each value takes its mark's place in the word the shell made of it: it
+                // never met the shell, so it is one word whatever it holds. And the line
+                // of the record is the words that are run, each as a shell would take it.
+                let (words, line) = if own.is_empty() {
+                    (words, line)
+                } else {
+                    let words: Vec<String> = words
+                        .iter()
+                        .map(|word| unmarked(word, own, str::to_string))
+                        .collect();
+                    let line = words
+                        .iter()
+                        .map(|word| one_word(word))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    (words, line)
+                };
+                let line = line.as_str();
                 let program = match words.first().map(String::as_str) {
                     Some("jigc") => binary,
                     Some("git") => Path::new("git"),
@@ -1761,10 +1903,103 @@ impl Sandbox {
         } else if refusal_in(&ran.said, code).is_some() {
             seen.same_refusal = true;
             format!("{what}: {}, `{code}` again", ran.exit())
+        } else if let Some(own) = quoted_back(act, &ran.said) {
+            return Err(self.shown(&format!(
+                "{what}: {} — refused for the value the case names for `{}`: the line's \
+                 output quotes `{}` back. A value the line's own grammar refuses is the \
+                 case's mistake, and what the line came to says nothing of the route\n{}",
+                ran.exit(),
+                own.placeholder,
+                own.value,
+                ran.said
+            )));
         } else {
             seen.failed = true;
             format!("{what}: {}\n{}", ran.exit(), ran.said)
         })
+    }
+
+    /// **A printed line with a mark where each placeholder the case names stands**, and
+    /// what the record says of the values — `Err` is a fault of the case as written. A
+    /// mark is a word no shell changes; the value takes its place once the shell has split
+    /// the line ([`unmarked`]), so a value is one word of the command whether its
+    /// placeholder is printed bare or quoted, and whatever the value holds. A placeholder
+    /// no [`Own`] names is left as printed.
+    fn marked(&self, chosen: Chosen, printed: &str) -> Result<(String, String), String> {
+        let fault = |what: String| {
+            Err(format!(
+                "an act fills span {}, `{printed}`, with values of the reader's own, and \
+                 {what}",
+                chosen.line
+            ))
+        };
+        if chosen.own.is_empty() {
+            return fault(
+                "names no value: a line that is a command as it stands is run as printed"
+                    .to_string(),
+            );
+        }
+        if printed.contains(MARK) {
+            return fault(format!(
+                "the printed line holds the runner's own mark, `{MARK}`"
+            ));
+        }
+        let holes = placeholders(printed);
+        for (at, own) in chosen.own.iter().enumerate() {
+            if chosen.own[..at]
+                .iter()
+                .any(|before| before.placeholder == own.placeholder)
+            {
+                return fault(format!("names `{}` twice", own.placeholder));
+            }
+            if !holes
+                .iter()
+                .any(|(from, to)| &printed[*from..*to] == own.placeholder)
+            {
+                return fault(format!(
+                    "names `{}`, which span {} does not hold",
+                    own.placeholder, chosen.line
+                ));
+            }
+            if own.value.is_empty() || own.value.contains(MARK) {
+                return fault(format!(
+                    "names for `{}` a value of no bytes, or one that holds the runner's own \
+                     mark: a reader chooses a value",
+                    own.placeholder
+                ));
+            }
+            if own.why.trim().is_empty() {
+                return fault(format!(
+                    "does not say why a reader would choose `{}` for `{}`",
+                    own.value, own.placeholder
+                ));
+            }
+        }
+        let (mut line, mut end) = (String::new(), 0);
+        for (from, to) in holes {
+            let Some(at) = chosen
+                .own
+                .iter()
+                .position(|own| own.placeholder == &printed[from..to])
+            else {
+                continue;
+            };
+            line.push_str(&printed[end..from]);
+            line.push_str(&mark(at));
+            end = to;
+        }
+        line.push_str(&printed[end..]);
+        let how: Vec<String> = chosen
+            .own
+            .iter()
+            .map(|own| {
+                format!(
+                    "`{}` filled by the case's `{}` — {}",
+                    own.placeholder, own.value, own.why
+                )
+            })
+            .collect();
+        Ok((line, format!(", {}", how.join(", "))))
     }
 
     /// **What a cited line came to**: it is held to its words and not to its exit. `ran`

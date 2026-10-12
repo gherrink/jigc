@@ -2,6 +2,64 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled (the human's ruling, option A of three); and the route catalog's frame fills it with the value the case names
+
+**The ruling — the human's, 2026-10-12.** On the question *a placeholder for a value that is the reader's own to choose* — the second of the questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 2): `--title <title>`, `--slug <slug>`, `--from-file <payload>`, `--to <title> --slug <other-slug>`, a bare word in angle brackets where a title, a slug or a payload file of the reader's own goes — the human took option A of three:
+
+> **A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled**: the case names the value, the catalog puts it in, and the filled line is held to exit 0 like any other line a route prints.
+>
+> **Not taken:** *a printed line must run as it stands* — under which every such line is red, against the surface contract's line 44 (*a `<placeholder>` the reader fills is legal bare or as a quoted span*).
+>
+> **Not taken:** *such a line is no case* — under which nothing follows these routes at all.
+
+**What this commit is.** The ruling's record, and the frame's half of carrying it out: [route_case.rs](crates/cli/tests/support/route_case.rs) gains the act that fills a printed line with the reader's own values, with the arm that was red before it. **No case of the catalog is changed by it** — the thirteen cases under the question are followed again in the commit after this one, with the records. No product source changes.
+
+### The frame — what a case now says, and what the runner does with it
+
+- **`Act::RunChosen(Chosen { line, own })`.** A case says which printed line it fills — a span of the printed route, by index, as every operand is — and, for each placeholder that is the reader's own, an `Own { placeholder, value, why }`: the placeholder as the route prints it (`<other-slug>`), the value a reader would choose in the case's state, and why that one. **Which placeholder is the reader's own is data of the case, and so is its value.**
+- **A placeholder the case does not name is not filled.** The line then stays what it is today, *a printed line no shell can split*. Nothing loosens for a placeholder for a value the product knows and the refusal does not list (the list's question 1, not ruled) or for a `jigc` command printed without its id (question 7, not ruled): the first is still a line nobody can fill, the second holds no placeholder at all.
+- **The value is one word to the command, whatever it holds.** A mark — a word no shell changes — stands in the placeholder's place while a real shell splits the line, as it splits every printed line; the value then takes the mark's place in the word the shell made. It never meets a shell, so a title with a space, an apostrophe and quotation marks in it is one word, **bare in the printed line or quoted alike**.
+- **The filled line is held to exit 0 like any other line a route prints**, and so are the lines behind it. The case comes out *followed, holds*, not *operand implied*: the route prints the place, and the surface contract says the reader fills it.
+- **What was run is in the record**: the words of the command, each as a shell would take it — `jigc takes 'it'\''s "Use Tabs!"' use-tabs-again` — with every value and its why, at exit 0 and at a refusal. A red case shows the line that was red and not the shape. And the table of the ignored arm says `chosen` in its column `operand` for a case that names a value, where it says `printed` or `implied` for the others.
+- **A value the line's own grammar refuses is the case's mistake, and reads as one.** Where a filled line is refused and its output **quotes a value back** — the value whole, between backticks or either kind of quotation mark: `` `--slug "Not A Slug"` is not a valid slug ``, ``could not read slot prose from `no-such.yaml` `` — the runner hands back **a fault of the case as written**, with the filled line, the value and what the line said. A fault is no classification: the arm that follows the case fails with it, no list can hold it, and on another binary the table prints it as *not followed*.
+- **A value that is a path out of the sandbox is handed to no command**, as a listed value is not.
+- **Faults of the case as written**: a filled line with no value (such a line is run as printed), a value for a placeholder the line does not hold, a placeholder named twice, a value of no bytes, a value with no reason.
+
+### Decided here — pinned, as an engineer
+
+- **A third way to run a printed line with a placeholder, and not a wider `RunFilled`.** `RunFilled` takes indices into what the refusal lists and refuses a line it does not fill whole; a reader's own value is named by its placeholder and leaves the others alone. One act with both would have had to say which of two rules a missing value falls under. *No line of the thirteen needs both a listed value and one of the reader's own*; no act fills both.
+- **By a mark, and not by quoting the value for a shell and putting it into the line.** Quoted for a shell, a value put where the route prints `"<title>"` arrives with the quotation marks of its own quoting inside it — a wrong title, at exit 0. The mutant that does so is named by the arm. The surface contract makes a placeholder legal *bare or as a quoted span*, so the frame fills both; the thirteen lines are all bare.
+- **No new classification for the case's mistake.** The frame already has the word: *a fault of the case as written, which no classification covers*. A classification would have to be red — and then a mistake in a value could be listed under a key as a finding of the product, which is what must not happen — or not red, and then a case with a wrong value would be green.
+- **How *refused for the value* is read: off the output, and off nothing else.** The frame names no binary and carries no grammar of the product's — a slug grammar copied into it would be a second home for a rule the product owns, and wrong on the day the product's moved. What a command prints when it refuses a value is the value, quoted; that is read. **The case's own refusal again is read first**: a route that leads back to its refusal is a red case whatever that refusal quotes.
+- **The reason rides the value.** `why` is a field and is printed with the line, so that a red case, or a fault, shows the choice it rests on.
+
+### Red first
+
+`route_catalog::a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_case_names`: fourteen planted cases over a shell that stands in for the binary. **Against a runner that declared the act and ran the line as printed, twelve of the fourteen did not come out as planted**: every filled line was *a printed line no shell can split*, the quoted one ran with the placeholder's own letters for a title, and none of the seven faults was handed back. The two that came out as planted on that runner are the ones that say nothing loosens — the same line run as printed, and a line with a placeholder the case does not name — and with the frame built they still do.
+
+Two arms that hold the frame's rules were red with it and moved: `no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed` named `RunChosen(Chosen)` as an act that takes something it may not, and now admits it and holds `Chosen` and `Own` to their shapes — **one word of a case's own does reach a command now, by this ruling, and only where the route prints a placeholder of the name the case gives**; and `the_table_follows_each_binary_with_the_state_that_binary_built` printed `printed` for a planted case that names a value.
+
+**Eight mutants of the built frame, each named by the arm:**
+
+| the frame, changed | planted cases that did not come out as planted |
+|---|---|
+| the fill dropped — the marks arrive where the values belong | 6 |
+| a placeholder the case did not name filled too | 1 — the line with `<id>` in it ran |
+| the value split into two words | 3 |
+| the unfilled line recorded | 5 |
+| a line refused for the value read as any refusal | 2 — both came out *another failure* |
+| the value read ahead of the same refusal | 1 — a route that leads back to its refusal was handed back as the case's mistake |
+| a value out of the sandbox handed on | 1 |
+| the value quoted for a shell and put into the printed line | 1 — the quoted placeholder |
+
+**Not established.**
+
+- **The thirteen cases**: none is followed under the ruling yet; which hold, which keys leave the findings file and what the previous release's binary does are the next commit's.
+- **That a placeholder a case names is the reader's own, and that its value is one a reader would choose**: stated by the case with its why, read by one person. The frame fills what it is told to; nothing in it tells a value of the reader's own from one the product knows.
+- **A refusal for the value that does not quote the value** — a payload that is no payload draws `write.wrong-shape`, which names no file — is read as any refusal: *another failure*, with the filled line and the output in the record. **And a refusal that quotes the value and is for something else** is read as the case's mistake; the fault prints the output.
+- **A line that holds a placeholder for a listed value beside one for the reader's own**, and **a cited line with a placeholder**: no act fills the first whole or cites the second; no case has asked.
+- **Linux**: the run follows the task's last commit.
+
 ## 2026-10-12 — The arm that holds the route catalog's gate took *arrived* for *asked*: it was red by the scheduler and never by the gate — a job now stays until every job is inside or turned back, which the gate says
 
 **What.** [route_catalog.rs](crates/cli/tests/route_catalog.rs): the arm `no_more_chains_run_at_once_in_one_process_than_the_machine_is_wide` counts through a new helper, `inside_at_once`. [route_case.rs](crates/cli/tests/support/route_case.rs): `Gate` says how many jobs it has turned back and not yet let in (`Gate::waiting`). The gate decides as it did; no case of the catalog changes, and no product source.

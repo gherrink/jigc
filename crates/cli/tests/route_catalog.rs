@@ -177,6 +177,18 @@
 //! arms that hold the marked form and the sandbox's bound hold the new act too. A
 //! placeholder the refusal lists no value for cannot be filled.
 //!
+//! **And a placeholder for a value of the reader's own is filled with the value the case
+//! names** — the human's ruling of 2026-10-12 (`DECISIONS.md` → *A printed line that
+//! carries a placeholder for a value of the reader's own is followed with the placeholder
+//! filled*): `--title <title>`, `--slug <other-slug>`, `--from-file <payload>`. Which
+//! placeholder is the reader's own is data of the case, and so is its value, with why a
+//! reader would choose it ([`Own`]); the runner puts it in as one word, whatever it holds,
+//! runs the filled line and holds it to exit 0 as any printed line, and the record holds
+//! the line that was run
+//! ([`a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_case_names`]).
+//! A placeholder the case does not name is not filled, and a filled line that is refused
+//! for the value is the case's mistake — a fault of the case, never a red case.
+//!
 //! **And with the sites behind those**, each piece again with an arm that was red first: a
 //! case stands where it says, in the environment it says
 //! ([`a_case_stands_where_it_says_in_the_environment_it_says`]); the refusing command is run
@@ -263,8 +275,8 @@ use std::path::Path;
 
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
-    self, Act, Bound, Case, Check, Cited, Classification, ExpectedRed, Filled, Followed, Operand,
-    Over, Place, Promise, Refusal, Says, Seen, Standing, Step, Var,
+    self, Act, Bound, Case, Check, Chosen, Cited, Classification, ExpectedRed, Filled, Followed,
+    Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing, Step, Var,
 };
 use crate::support::rust_source;
 
@@ -3644,10 +3656,14 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 ///
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
 /// [`Operand`], a span's index, a line with the indices of the listed values that fill it
-/// ([`Filled`]), a cited line with what its output must hold ([`Cited`]), or nothing at
-/// all — never a path, a word or a command of the case's own to act with: what a cited
-/// line carries beside its span's index is a witness, bytes its output is asked for as a
-/// check's are asked of a file, and nothing the runner runs or touches. An operand is a
+/// ([`Filled`]), a line with the reader's own values for its placeholders ([`Chosen`]), a
+/// cited line with what its output must hold ([`Cited`]), or nothing at all — never a
+/// path or a command of the case's own to act with: what a cited line carries beside its
+/// span's index is a witness, bytes its output is asked for as a check's are asked of a
+/// file, and nothing the runner runs or touches. **One word of a case's own does reach a
+/// command, by the human's ruling of 2026-10-12**: a value of the reader's own, which goes
+/// where the route prints a placeholder of the name the case gives and nowhere else — it
+/// stands in for no operand the route prints. An operand is a
 /// span's index or the one marked form; a [`Case`] holds no function, so it cannot act around the runner; and
 /// neither this file nor a command's names a filesystem or a process API at all — what the
 /// existing test did by hand (`fs::remove_file` on a path it spelled) has no place to be
@@ -3665,12 +3681,34 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
             variant.ends_with("(Operand)")
                 || variant.ends_with("(usize)")
                 || variant.ends_with("(Filled)")
+                || variant.ends_with("(Chosen)")
                 || variant.ends_with("(Cited)")
                 || !variant.contains('('),
             "the act `{variant}` takes something that is neither an operand, a span's index, \
-             a line with the indices of what fills it nor a cited line with its promise",
+             a line with the indices of what fills it, a line with the reader's own values \
+             for its placeholders nor a cited line with its promise",
         );
     }
+    assert_eq!(
+        (
+            variants(body_of(&frame, "pub struct Chosen {")),
+            variants(body_of(&frame, "pub struct Own {")),
+        ),
+        (
+            vec![
+                "pub line: usize".to_string(),
+                "pub own: &'static [Own]".to_string(),
+            ],
+            vec![
+                "pub placeholder: &'static str".to_string(),
+                "pub value: &'static str".to_string(),
+                "pub why: &'static str".to_string(),
+            ],
+        ),
+        "a line filled with the reader's own values is a span of the route by index, and \
+         what it carries beside is a value for a placeholder the route prints, by that \
+         placeholder's name, with why — never a line to run or a path to act on",
+    );
     assert_eq!(
         (
             variants(body_of(&frame, "pub struct Cited {")),
@@ -6149,6 +6187,303 @@ blocking · setup.later — the next finding lists:
     }
 }
 
+/// A shell that stands in for a refusal whose route prints lines with placeholders for
+/// values of the reader's own — a title, a slug, a payload — bare, quoted, and beside a
+/// placeholder for an id; then the re-run. `jigc <script>` is the shell running a script
+/// of the state where the case stands, with the words behind it as its arguments.
+const A_SHAPE_FOR_THE_READERS_OWN: &str = r#"test -e taken || exit 0
+cat <<'END'
+blocking · setup.install-hook — refused over `taken`, an id that is taken
+  route: give it another title and slug with `jigc takes <title> <slug>`, or `jigc takes "<title>" '<slug>'`; by the id, `jigc takes <id> <slug>`. Beside it: `jigc refuses <slug>`, `jigc again <slug>`, `jigc malformed <slug>`, `jigc unreadable <payload>`. Then re-run `jigc -c "test -e got"`
+END
+exit 1"#;
+
+/// The state of [`A_SHAPE_FOR_THE_READERS_OWN`]: the path the refusal is over, and a
+/// script a line the route prints.
+const WHAT_THE_FILLED_LINES_DO: &[Step] = &[
+    Step::File(Place::Repo("taken"), "taken\n"),
+    // Writes down how many words it was handed, and each on a line of its own.
+    Step::Script(Place::Repo("takes"), "printf '%s\\n' \"$#\" \"$@\" > got\n"),
+    // Refused, for a reason that is not the value's.
+    Step::Script(Place::Repo("refuses"), "echo 'not from here'\nexit 3\n"),
+    // The refusal's own code again — and it quotes the value it was handed.
+    Step::Script(
+        Place::Repo("again"),
+        "printf '%s\\n' \"blocking · setup.install-hook — refused again: \\`$1\\` is taken too\" \
+         '  route: give it another'\nexit 1\n",
+    ),
+    // Refused for the value: the line's own grammar, in the words the product has for it.
+    Step::Script(
+        Place::Repo("malformed"),
+        "echo \"\\`--slug \\\"$1\\\"\\` is not a valid slug — use lowercase letters\"\nexit 1\n",
+    ),
+    Step::Script(
+        Place::Repo("unreadable"),
+        "echo \"could not read slot prose from \\`$1\\`: No such file or directory\"\nexit 1\n",
+    ),
+];
+
+/// **A printed line that carries a placeholder for a value of the reader's own is followed
+/// with the placeholder filled** — the human's ruling of 2026-10-12 (`DECISIONS.md` → *A
+/// printed line that carries a placeholder for a value of the reader's own is followed
+/// with the placeholder filled*). Which placeholder is the reader's own is data of the
+/// case, and so is its value ([`Own`]): the runner puts the value in where the route
+/// prints that placeholder, as one word whatever it holds, and the filled line is run and
+/// held to exit 0 as any printed line is.
+///
+/// Planted, kind by kind: a title with a space, an apostrophe and quotation marks in it
+/// arrives as one word, bare in the printed line and quoted alike, and the line behind the
+/// filled one is run and held; what was run — the filled line, each value and why — is in
+/// the record, at exit 0 and at a refusal; a placeholder the case does not name is not
+/// filled, so the line stays one no shell can split, as the same line run as printed is;
+/// a filled line that is refused is red as any printed line is — *another failure*, or
+/// *the same refusal again* even where that refusal quotes the value; **and a filled line
+/// that is refused for the value — its output quotes the value back — is the case's
+/// mistake**: a fault of the case, which says so, and no classification. A value that is
+/// a path out of the sandbox is handed to no command. And a filled line with no value, a
+/// value for a placeholder the line does not hold, a placeholder named twice, a value of
+/// no bytes and a value with no reason are faults of the case as written.
+#[test]
+fn a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_case_names() {
+    const WHY: &str = "planted: the value a reader would choose here";
+    const A_TITLE: Own = Own {
+        placeholder: "<title>",
+        value: "it's \"Use Tabs!\"",
+        why: "planted: a title with a space, an apostrophe and quotation marks in it",
+    };
+    const A_SLUG: Own = Own {
+        placeholder: "<slug>",
+        value: "use-tabs-again",
+        why: WHY,
+    };
+    macro_rules! chosen {
+        ($line:expr, $own:expr $(,)?) => {
+            Act::RunChosen(Chosen {
+                line: $line,
+                own: $own,
+            })
+        };
+    }
+    /// What the script wrote down where each value arrived as one word.
+    const TWO_WORDS_AS_NAMED: Check = Check::Contains(
+        Place::Repo("got"),
+        "2\nit's \"Use Tabs!\"\nuse-tabs-again\n",
+    );
+    let planted = |name: &'static str, acts: &'static [Act]| Case {
+        name,
+        state: WHAT_THE_FILLED_LINES_DO,
+        refusing: &["-c", A_SHAPE_FOR_THE_READERS_OWN],
+        acts,
+        ..PLANTED
+    };
+    let sh = Path::new("/bin/sh");
+    // Every planted case is followed, and every one that did not come out as planted is
+    // said at the end — a runner that is wrong is wrong in more than one of them.
+    let mut wrong: Vec<String> = Vec::new();
+    // A planted case that is followed, with what its record must hold.
+    let mut comes_out =
+        |case: Case, expected: Classification, record: &[&str]| match route_case::follow(sh, &case)
+        {
+            Ok(followed)
+                if followed.classification == expected
+                    && record.iter().all(|piece| followed.detail.contains(piece)) => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {}, where `{expected}` was planted with a record that holds \
+                 {record:?}\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        };
+
+    // Each value arrives as one word, whatever it holds; the line behind is run and held;
+    // and the record holds the line that was run, each value and why.
+    comes_out(
+        Case {
+            holds: &[TWO_WORDS_AS_NAMED],
+            ..planted(
+                "planted-a-line-filled-with-values-of-the-readers-own",
+                &[chosen!(0, &[A_TITLE, A_SLUG]), Act::Run(7)],
+            )
+        },
+        Classification::Holds,
+        &[
+            "run `jigc takes 'it'\\''s \"Use Tabs!\"' use-tabs-again` (span 0, `<title>` filled \
+             by the case's `it's \"Use Tabs!\"` — planted: a title with a space, an apostrophe \
+             and quotation marks in it, `<slug>` filled by the case's `use-tabs-again` — \
+             planted: the value a reader would choose here): exit 0",
+            "(span 7): exit 0",
+        ],
+    );
+    // A placeholder that is printed quoted is filled the same way: one word.
+    comes_out(
+        Case {
+            holds: &[TWO_WORDS_AS_NAMED],
+            ..planted(
+                "planted-a-quoted-placeholder-filled-with-a-value-of-the-readers-own",
+                &[chosen!(1, &[A_TITLE, A_SLUG]), Act::Run(7)],
+            )
+        },
+        Classification::Holds,
+        &["(span 7): exit 0"],
+    );
+    // Run as printed, the line is what it was before: no shell splits it.
+    comes_out(
+        planted(
+            "planted-the-same-line-run-as-printed",
+            &[Act::Run(0), Act::Run(7)],
+        ),
+        Classification::UnsplittableLine,
+        &["not run — no shell splits it into words"],
+    );
+    // A placeholder the case does not name is not filled: the line is not run, so nothing
+    // was written for the line behind it to find.
+    comes_out(
+        planted(
+            "planted-a-placeholder-the-case-does-not-name-beside-one-it-names",
+            &[chosen!(2, &[A_SLUG]), Act::Run(7)],
+        ),
+        Classification::UnsplittableLine,
+        &[
+            "not run — no shell splits it into words",
+            "(span 7): exit 1",
+        ],
+    );
+    // A filled line that is refused is red as any printed line is, and the record holds
+    // the line that was red and not its shape.
+    comes_out(
+        planted(
+            "planted-a-filled-line-that-is-refused",
+            &[chosen!(3, &[A_SLUG])],
+        ),
+        Classification::AnotherFailure,
+        &[
+            "run `jigc refuses use-tabs-again` (span 3, `<slug>` filled by the case's",
+            "): exit 3\nnot from here",
+        ],
+    );
+    // The case's own refusal again is that, even where it quotes the value.
+    comes_out(
+        planted(
+            "planted-a-filled-line-that-is-the-same-refusal-again",
+            &[chosen!(4, &[A_SLUG])],
+        ),
+        Classification::SameRefusalAgain,
+        &["run `jigc again use-tabs-again` (span 4, `<slug>` filled by the case's"],
+    );
+    // A value that is a path out of the sandbox is handed to no command.
+    comes_out(
+        planted(
+            "planted-a-value-that-is-a-path-out-of-the-sandbox",
+            &[chosen!(
+                6,
+                &[Own {
+                    placeholder: "<payload>",
+                    value: "../../elsewhere",
+                    why: WHY,
+                }],
+            )],
+        ),
+        Classification::AnotherFailure,
+        &["not done — it names nothing inside the case's sandbox"],
+    );
+
+    // A planted case the runner hands back as a fault of the case, with what the fault says.
+    let mut is_a_fault =
+        |name: &'static str, acts: &'static [Act], says: &[&str]| match route_case::follow(
+            sh,
+            &planted(name, acts),
+        ) {
+            Err(fault) if says.iter().all(|piece| fault.contains(piece)) => {}
+            Err(fault) => wrong.push(format!(
+                "`{name}` is a fault of the case that does not say {says:?}: {fault}"
+            )),
+            Ok(followed) => wrong.push(format!(
+                "`{name}` — {}, where a fault of the case that says {says:?} was planted\n{}",
+                followed.classification, followed.detail
+            )),
+        };
+    // Refused for the value — the output quotes it back: the case's mistake, said as one.
+    is_a_fault(
+        "planted-a-slug-the-lines-own-grammar-refuses",
+        &[chosen!(
+            5,
+            &[Own {
+                placeholder: "<slug>",
+                value: "Not A Slug",
+                why: WHY,
+            }],
+        )],
+        &[
+            "run `jigc malformed 'Not A Slug'` (span 5, `<slug>` filled by the case's",
+            "refused for the value the case names for `<slug>`",
+            "`--slug \"Not A Slug\"` is not a valid slug",
+        ],
+    );
+    is_a_fault(
+        "planted-a-payload-that-is-not-there",
+        &[chosen!(
+            6,
+            &[Own {
+                placeholder: "<payload>",
+                value: "no-such.yaml",
+                why: WHY,
+            }],
+        )],
+        &[
+            "run `jigc unreadable no-such.yaml` (span 6, `<payload>` filled by the case's",
+            "refused for the value the case names for `<payload>`",
+            "could not read slot prose from `no-such.yaml`",
+        ],
+    );
+    // What a case may not write.
+    is_a_fault(
+        "planted-a-filled-line-with-no-value",
+        &[chosen!(0, &[])],
+        &["names no value"],
+    );
+    is_a_fault(
+        "planted-a-value-for-a-placeholder-the-line-does-not-hold",
+        &[chosen!(3, &[A_SLUG, A_TITLE])],
+        &["names `<title>`, which span 3 does not hold"],
+    );
+    is_a_fault(
+        "planted-a-placeholder-named-twice",
+        &[chosen!(0, &[A_TITLE, A_SLUG, A_SLUG])],
+        &["names `<slug>` twice"],
+    );
+    is_a_fault(
+        "planted-a-value-of-no-bytes",
+        &[chosen!(
+            3,
+            &[Own {
+                placeholder: "<slug>",
+                value: "",
+                why: WHY,
+            }],
+        )],
+        &["a value of no bytes"],
+    );
+    is_a_fault(
+        "planted-a-value-with-no-reason",
+        &[chosen!(
+            3,
+            &[Own {
+                placeholder: "<slug>",
+                value: "use-tabs-again",
+                why: " ",
+            }],
+        )],
+        &["does not say why"],
+    );
+
+    assert!(
+        wrong.is_empty(),
+        "{} of the 14 planted cases did not come out as planted:\n\n{}",
+        wrong.len(),
+        wrong.join("\n\n"),
+    );
+}
+
 /// What a count through a gate came to ([`inside_at_once`]).
 #[derive(Debug, Default, PartialEq)]
 struct Through {
@@ -6988,12 +7323,21 @@ fn on_two_binaries<'a>(
     })
 }
 
-/// Whether a case follows its route by an object or a command the route does not print:
-/// the marked form, or the refusing command run again. Read off the acts as they print
+/// **Where a case's acts take what they act on, in one word.** `implied`: an object or a
+/// command the route does not print — the marked form, or the refusing command run again.
+/// `chosen`: the route prints a placeholder for a value of the reader's own, and the value
+/// is the case's ([`Act::RunChosen`]). `printed`: every operand is the route's. A case
+/// that does both of the first two is `implied`. Read off the acts as they print
 /// themselves, so an act added to the frame later is read without a list of acts here.
-fn operand_implied(case: &Case) -> bool {
+fn operand(case: &Case) -> &'static str {
     let acts = format!("{:?}", case.acts);
-    acts.contains("Unprinted(") || acts.contains("Rerun")
+    if acts.contains("Unprinted(") || acts.contains("Rerun") {
+        "implied"
+    } else if acts.contains("RunChosen(") {
+        "chosen"
+    } else {
+        "printed"
+    }
 }
 
 /// **What became of a case's witnesses on one binary**, read off what the runner said:
@@ -7052,7 +7396,8 @@ fn routes(row: &Beside) -> &'static str {
 }
 
 /// **The table: a line a case, tab-separated** — the case, its site, whether its route
-/// prints the operand of every act (`printed`) or the case names one (`implied`), whether
+/// prints the operand of every act (`printed`), the case names one (`implied`) or the case
+/// names a value of the reader's own for a placeholder the route prints (`chosen`), whether
 /// it rests on a doubtful reading, the key it is listed red under on this tree; then for
 /// this tree's binary and for the named one what the case came to, how its refusing
 /// command ended ([`refusing_ended`]) and what became of its witnesses ([`witnesses`]);
@@ -7073,11 +7418,7 @@ fn table(rows: &[Beside], expected: &[ExpectedRed]) -> String {
             "{}\t{}\t{}\t{}\t{key}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
             row.case.name,
             row.case.site,
-            if operand_implied(row.case) {
-                "implied"
-            } else {
-                "printed"
-            },
+            operand(row.case),
             if row.case.doubt.is_some() {
                 "doubt"
             } else {
@@ -7357,6 +7698,33 @@ fn the_table_follows_each_binary_with_the_state_that_binary_built() {
         !said.to_lowercase().contains("regress"),
         "what the arm prints says what each binary did, and nothing about what a \
          difference is",
+    );
+
+    // A case that fills a placeholder with a value of its own says so in its line: the
+    // route prints the place, and the value is the case's.
+    let names_a_value = Case {
+        name: "planted-a-case-that-names-a-value-of-the-readers-own",
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: re-run `jigc -c true x <slug>`'; exit 1",
+        ],
+        acts: &[Act::RunChosen(Chosen {
+            line: 0,
+            own: &[Own {
+                placeholder: "<slug>",
+                value: "a-slug",
+                why: "planted: any slug",
+            }],
+        })],
+        ..PLANTED
+    };
+    let printed = table(&on_two_binaries(sh, bash, &[&names_a_value], &[]), &[]);
+    assert!(
+        printed.lines().nth(1).is_some_and(|line| line
+            .contains("\tchosen\t-\t-\tfollowed, holds\texit 1\tas they were\tfollowed, holds\t")),
+        "a case that names a value of the reader's own has `chosen` where a case whose \
+         route prints every operand has `printed`:\n{printed}",
     );
 
     let suite = rust_source::code_only(include_str!("route_catalog.rs"));
