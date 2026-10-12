@@ -33,6 +33,7 @@
 #
 #   dev/stabilize-canary setup --root ROOT --commit REV --run RUN --previous VERSION
 #                        --previous-commit SHA [--items ID,ID]
+#                        [--parts [--budget N] [--order CLASS,CLASS]]
 #       ROOT is an ABSOLUTE path of plain segments (the harness takes no other scratch
 #       root) — never a relative one, which would be read from wherever the caller
 #       stands. It is not there yet and its parent is, or it is an empty directory, as
@@ -48,7 +49,12 @@
 #       VERSION and SHA are the previous release and the commit it was released from (a
 #       full sha this repository holds): what the preflight builds the second binary
 #       from. --items names the opening's items (THE SYNTHETIC OPENING); without it, the
-#       five that are marked there.
+#       five that are marked there. --parts is THE SWITCH: with it the setup writes
+#       THE OPENING OF A RUN IN PARTS (below) in place of the synthetic opening — a run
+#       with a queue — and --items names items of THAT opening's table; --budget and
+#       --order are that opening's, each with its default there, and neither is taken
+#       without the switch (usage). The commit named must then also hold, in its
+#       DECISIONS.md, exactly one entry that states the exit rule (unfit).
 #       Everything is checked before anything is made; a setup that fails after that
 #       leaves a root that holds no canary.json, which no act takes for a canary. It ends
 #       with `check`, and with the state a fresh run has — `next` is `test`, round 1,
@@ -57,7 +63,14 @@
 #       candidate, head, remote_head, previous: {version, commit}, door, items: [{item,
 #       kind}], seeded, state: {next, round, attempt}, session_cwd, script_path, args,
 #       args_then, returns: {first, then}, check, expect: {agents, tool_steps,
-#       wall_minutes}} — WHAT THE ORCHESTRATOR INVOKES, below.
+#       wall_minutes}} — WHAT THE ORCHESTRATOR INVOKES, below. UNDER --parts the line
+#       holds no `seeded`, `args`, `args_then`, `returns` or `expect` — those are the
+#       small canary's one stage — and holds instead, after `items`: plants: [{key,
+#       class}], condition, budget, hand_on, order; and, after `state`: queue — the keys
+#       the run's queue ranks, first to last — and listed: {WHY: [key]}, every row that
+#       is in no queue under the word that keeps it out, as the run's own state says
+#       both. It names where the session stands and the harness by its path, and PRINTS
+#       NO ARGUMENTS: what each act of the parts is invoked with is not built here.
 #
 #   dev/stabilize-canary check --root ROOT
 #       THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — asserted, before the session
@@ -158,6 +171,72 @@
 #                So `refuted` is what a verifier should return, and `confirmed` would be
 #                a real finding about the product.)
 #
+# THE OPENING OF A RUN IN PARTS — `setup --parts` (the plan for running the reshaped
+# `test` stage for real in parts, staged-canary.md beside the reshape plan under
+# completions/artifacts/M55/stabilization-build/reshape/: its section 4, and `SC2` of its
+# section 10; DECISIONS.md -> 2026-10-12, "The canary's setup opens a run with a queue").
+# ONE SWITCH, AND WITHOUT IT A SETUP IS WHAT IT WAS, TO THE BYTE — the suite holds a
+# setup without the switch to what this tool made before it had one. Under it the setup
+# writes another opening through the same calls of the clone's own record script: A RUN
+# WITH A QUEUE, cut down to what the parts run. All of it is this section's tables
+# (PARTS_DOOR, PARTS_ITEMS, BUDGET, HAND_ON, ORDER, CONDITION, PLANTS):
+#
+#   the census   the same four clauses; the stop, the scope and the bounds the same
+#   the door     ONE: `jigc setup`. The review row covers it, and every plant stands at it.
+#   the items    * row-setup         review-row       no-lost-files    in scope, by the door
+#                * gate              held-gate        working-product  every candidate
+#                * regression-set    held-regression  working-product  every candidate
+#                * regression-again  held-regression  working-product  every candidate
+#                (*: all four, where --items names none; --items takes any of them, as
+#                a root opened again after a repair needs fewer.) `regression-again` is
+#                the regression set ONCE MORE under an id of its own, so that one stage
+#                shows a kept baseline USED and not only kept. NO ROUTE HUNT, NO SECOND
+#                DOOR, NO TRIAL ARM AND NO SCRIPTED ARM: those are a later canary's.
+#   the facts    budget 9 (--budget N: a positive whole number) · hand-on 2 · the order
+#                `route under-confirmed`, `behaviour under-confirmed` (--order: classes
+#                joined by commas, each ONE PLAIN WORD `<kind>:<origin>`, written to
+#                the record as `<kind> <origin>`; held to its shape here, and to the
+#                classes there are by the record script). THE DEFAULT ORDER NAMES TWO
+#                CLASSES ONLY A VERIFIER'S FILING GIVES A ROW: nothing is in the queue
+#                until the human rules another order, and a stage returns as it hunted.
+#                · condition: the heading of THE ONE entry of the commit's DECISIONS.md
+#                that opens `2026-10-04 — The exit rule, revised`, whole, as the record
+#                script takes it. None there, or more than one, is refused (unfit).
+#   the plants   FOURTEEN ledger rows of round 0 whose right outcome is known beforehand
+#                — the table below. EACH IS GRADED AT THE OPENING: `unclear`, under the
+#                human's name, as the ledger takes a grade given there — so that no
+#                triage decides whether a plant is launched: nothing is untriaged, and a
+#                setup that leaves a row for a triage is refused (not-fresh). Each
+#                carries its class — its kind, and `seed` — and its kind's evidence:
+#                the route line as printed, or the commands as run. A VERIFIER HAS THE
+#                ROW AND NOTHING ELSE, so the row's `repro` holds the claim, word for
+#                word, and how its state is built: `<rig>` is what the rig tool
+#                (`dev/jigc-rig bare`) mints for the binary under test — in the first
+#                row the rig's ROOT, the repository being `<rig>/repo`; in every other
+#                row that repository itself. No row says which way its claim falls.
+#
+#                key                             class            what a verifier should return
+#                plant-install-hook-regression   route seed       confirmed, a regression
+#                plant-false-route-claim         route seed       refuted: does not reproduce
+#                plant-linux-root-claim          route seed       undrivable, on a host that
+#                                                                 is no Linux or for a
+#                                                                 caller that is not root
+#                plant-prose-lead                lead seed        nothing: it is in no queue
+#                plant-reserve-1 ... -10         behaviour seed   refuted, each of the ten:
+#                                                                 small false claims that
+#                                                                 only fill the queue
+#
+#                THE PLANTS' WORDS ARE DATA, AND NONE IS THIS TOOL'S TO REWORD: the
+#                plan's table as its step `P0` drove it on both binaries on 2026-10-12
+#                — the candidate, a release build of the product as `72ca156a` holds
+#                it, and the previous release, 1.0.0-rc.24 — and as the builder of this
+#                switch drove it once more the same day: the first plant refused twice
+#                on the candidate and exited 0 on the previous release; the second
+#                exited 1, then 0, on both; every reserve claim was false on both; the
+#                third and the lead were driven by nobody. `plant-reserve-2` is a
+#                conjunction whose first half is true (`exits 0`): its right verdict
+#                needs both halves read.
+#
 # WHAT IT SHOWS (the plan's list): that a stage reaches its record and pushes it with
 # real agents — the attempt's marker, the scope, the instruments, triage, a verifier, the
 # record's own gate, the one commit, the vetted push, the state read back — and what the
@@ -220,13 +299,16 @@
 #    6  taken         the repository holds the run, or its loop branch
 #    7  no-commit     the candidate, or the previous release's commit, is no commit of
 #                     the repository
-#    8  unfit         the commit named lacks a script of a run, or the harness
+#    8  unfit         the commit named lacks a script of a run, or the harness — or,
+#                     under --parts, its log does not hold exactly one entry that states
+#                     the exit rule
 #    9  tool          a command the setup runs failed: git, or the clone's own
 #                     dev/stabilize-record or dev/stabilize-step — a scanner that could
 #                     not run among them — or the file system refused a directory or a
 #                     file; the root then holds no canary
 #   10  not-isolated  the clone could reach something that is not its bare remote
-#   11  not-fresh     the run the setup opened is not in the state a fresh run has
+#   11  not-fresh     the run the setup opened is not in the state a fresh run has —
+#                     or, under --parts, a row of it is left for a triage
 #   12  missing       the root holds no canary
 #   13  link          a directory of the canary is a link, or is not where it should be
 #
@@ -281,6 +363,10 @@ RETURNS = ("first", "then")
 
 SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 SLUG_MAX = 100
+# A budget as the record script takes one, and an order as --order spells it: classes
+# joined by commas, each ONE PLAIN WORD, `<kind>:<origin>`.
+NUMBER = re.compile(r"[1-9][0-9]{0,5}")
+CLASSES = re.compile(r"[a-z]+(?:-[a-z]+)*:[a-z]+(?:-[a-z]+)*(?:,[a-z]+(?:-[a-z]+)*:[a-z]+(?:-[a-z]+)*)*")
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
 # A segment of a scratch root as the harness takes one (its SCRATCH_RE).
@@ -440,6 +526,165 @@ machine's, every step in a fresh directory under the scratch root:
 Confirmed: the verb exits 0 and notes.md is gone. Refuted: it stands, as written.
 """
 
+# --- the opening of a run in parts: these tables, under the switch ----------------
+#
+# What the setup writes with --parts (the header: THE OPENING OF A RUN IN PARTS). Nothing
+# below is read without the switch.
+
+# The round's ONE door there: the review row covers it, and every plant stands at it.
+PARTS_DOOR = "jigc setup"
+# The items, in the test set's order — all four are run where --items names none. The
+# two held checks of the small canary's table are this opening's as they stand there.
+PARTS_ITEMS = (
+    {
+        "item": "row-setup",
+        "kind": "review-row",
+        "clause": "no-lost-files",
+        "runs": "in-scope",
+        "doors": [PARTS_DOOR],
+        "default": True,
+        "brief": "The review row of ONE door, `jigc setup`, kept small on purpose. The source pass: the path from the verb's dispatch in crates/cli/src/cli.rs to everything it writes - which files it creates or replaces in the repository and in its git directory, what it follows a link to, and what it commits. The driver's table, on the binary of the BINARY line, in throwaway repositories under the scratch root: the verb in a repository it never ran in, run a second time there, and in one that holds an untracked file and a hook of the user's own - per row the exit status, what it printed, and `git status --porcelain` before and after.",
+    },
+    next(row for row in ITEMS if row["item"] == "gate"),
+    next(row for row in ITEMS if row["item"] == "regression-set"),
+    {
+        "item": "regression-again",
+        "kind": "held-regression",
+        "clause": "working-product",
+        "runs": "every-candidate",
+        "default": True,
+        "brief": "The regression set, first part, ONCE MORE under an id of its own - the same long scripted check AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind regression`), over the same two commits: the previous release's commit %(previous)s against the candidate's, over the list " + LIST + " as the candidate holds it. It is started after the item `regression-set` and finds the baseline that one kept. The tool starts it, waits for it and reads the verdict out of the ONE line dev/regression-set prints; this item's result is written from that verdict's file. No agent runs a command off this brief.",
+    },
+)
+# The facts of a run with a queue: how many verdicts a `test` stage may spend (--budget),
+# how many items a verifier hands on, and the order of classes the queue is ranked by
+# (--order) — by default two classes only a verifier's filing gives a row, so that nothing
+# is in the queue until the human rules another order.
+BUDGET = 9
+HAND_ON = 2
+ORDER = ("route under-confirmed", "behaviour under-confirmed")
+# Where the closing condition is stated: the log, the marker an entry opens with, and what
+# the ONE entry that states the exit rule opens with after it. The run names that entry by
+# its heading, whole — found in the commit named, and held to the log by the record script.
+LOG = "DECISIONS.md"
+ENTRY = "## "
+CONDITION = "2026-10-04 — The exit rule, revised"
+
+# THE PLANTS — ledger rows whose right outcome is known beforehand. THEIR WORDS ARE DATA,
+# and none is this tool's to reword: each claim and each kind's evidence is the plan's
+# table as its step `P0` drove it on both binaries, word for word — so three characters
+# of them are outside ASCII (a dash of a claim's own, and the dot that parts two commands),
+# where the small canary's table holds none: a plant's row is read by its verifier, by its
+# key, and the harness reads a digest — no agent relays a row by hand.
+#
+# The route line of the first plant, whole — the plan quotes it up to its first `jigc
+# setup` — and of the next two; each as the binary prints it after its two leading spaces.
+ROUTE_LINK = "route: remove the link at `<rig>/outside/shared-hook`, or point it at a script inside this repository, then re-run `jigc setup`. `--force` does not change this: it consents to replacing a file, not to following a link"
+ROUTE_WRITABLE = "route: ensure the repo's git hooks directory is writable, then re-run `jigc setup`"
+CODE = "setup.install-hook"
+# HOW A PLANT'S STATE IS BUILT — the tool's own words, and no part of a claim: a verifier
+# has the row and nothing else. `<rig>` means the repository in every claim that says it,
+# and the rig's root in the first plant's route line; each row says which it is there.
+BARE = "`dev/jigc-rig bare`"
+IN_THE_REPOSITORY = "The state: `<rig>` is a fresh repository with one commit that `jigc setup` never ran in - the directory `repo` of what " + BARE + " mints, with the binary under test named to it (`--binary`). Every command is run in that repository, and `jigc` is the binary under test."
+VR1 = "completions/artifacts/M55/stabilization-build/canary-one/run/r1/reports/test/verify-p2-r1-setup-install-hook-route-other-causes-unexamined.a1.md"
+PLANTED = "seeded at the opening by dev/stabilize-canary - a claim, graded there so that its first reader is a verifier"
+PLANTS = (
+    {
+        "key": "plant-install-hook-regression",
+        "kind": "route",
+        "claim": "where `.git/hooks/pre-commit` is a link to an existing script outside the repository, `jigc setup` refuses at `setup.install-hook` and its route names the script as the link; done as printed, the script is deleted and the re-run exits 1 again; the previous release exits 0",
+        "route": ROUTE_LINK,
+        "code": CODE,
+        "state": "The state: `<rig>` is the root " + BARE + " mints, with the binary under test named to it (`--binary`); the repository is `<rig>/repo`, with one commit, and `jigc setup` never ran in it. Write a script to `<rig>/outside/shared-hook` - beside the repository and in none - with mode 755; make `.git/hooks/pre-commit` of the repository a symbolic link to it, by its absolute path; run `jigc setup` in the repository; remove what the route it prints names after `remove the link at`; run `jigc setup` again. Then the same on the previous release's binary, in a rig of its own. This drive is the block `Repro VR-1` of " + VR1 + ".",
+    },
+    {
+        "key": "plant-false-route-claim",
+        "kind": "route",
+        "claim": "where the default hooks directory is of mode 555, `jigc setup` refuses at `setup.install-hook`; done as its route prints — the directory made writable — the re-run exits 1 again",
+        "route": ROUTE_WRITABLE,
+        "code": CODE,
+        "state": IN_THE_REPOSITORY + " Give its hooks directory the mode 555 (`chmod 555 .git/hooks`); run `jigc setup`; do what the route it prints says (`chmod u+w .git/hooks`); run `jigc setup` again.",
+    },
+    {
+        "key": "plant-linux-root-claim",
+        "kind": "route",
+        "claim": "on a Linux host, for a caller that is root, a hooks directory carrying the immutable attribute draws the same refusal; the route as printed changes nothing for root, and the re-run exits 1 again",
+        "route": ROUTE_WRITABLE,
+        "code": CODE,
+        "state": IN_THE_REPOSITORY + " The refusal the claim means is the one this row's route line and code name.",
+    },
+    {"key": "plant-prose-lead", "kind": "lead", "claim": "`jigc setup` may behave otherwise in a repository with several worktrees; nobody looked"},
+    {"key": "plant-reserve-1", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 1", "commands": "`jigc setup`; the exit status"},
+    {"key": "plant-reserve-2", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` exits 0 and makes no commit", "commands": "`git rev-parse HEAD` · `jigc setup` · `git rev-parse HEAD`"},
+    {"key": "plant-reserve-3", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` leaves `git status --porcelain` not empty", "commands": "`jigc setup` · `git status --porcelain`"},
+    {"key": "plant-reserve-4", "kind": "behaviour", "claim": "in `<rig>`, `jigc setup` makes two commits", "commands": "`git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
+    {"key": "plant-reserve-5", "kind": "behaviour", "clause": "no-lost-files", "claim": "an untracked file `notes.md` at the root of `<rig>` is gone after `jigc setup`", "commands": "`printf 'my notes\\n' > notes.md` · `jigc setup` · `cat notes.md`"},
+    {"key": "plant-reserve-6", "kind": "behaviour", "claim": "a second `jigc setup`, right after the first, exits 1", "commands": "`jigc setup` · `jigc setup`; the second exit status"},
+    {"key": "plant-reserve-7", "kind": "behaviour", "claim": "a second `jigc setup` makes a second commit", "commands": "`jigc setup` · `git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"},
+    {"key": "plant-reserve-8", "kind": "behaviour", "claim": "`jigc setup` leaves another branch checked out", "commands": "`git branch --show-current` · `jigc setup` · `git branch --show-current`"},
+    {"key": "plant-reserve-9", "kind": "behaviour", "claim": "`jigc setup` adds a remote", "commands": "`git remote` · `jigc setup` · `git remote`"},
+    {"key": "plant-reserve-10", "kind": "behaviour", "claim": "`jigc setup` leaves a stash entry", "commands": "`jigc setup` · `git stash list`"},
+)
+SUBJECT_PARTS = "docs(record): %s - the synthetic opening of a canary run in parts"
+
+OPENING_PARTS = """# %(run)s - the opening record of a canary run in parts
+
+This is a SYNTHETIC opening. dev/stabilize-canary wrote it, in a throwaway clone whose
+one remote is a bare repository beside it, so that ONE `test` stage of the stabilization
+workflow - of a run with a queue - can be run in parts with real agents. It is not the
+human-led opening of any run, it closes nothing, and nothing of it leaves this clone.
+
+## The closing condition
+
+By reference: DECISIONS.md, the entry of 2026-10-04, "The exit rule, revised" - four
+clauses, each with its scope and one instrument. The run's record names that entry by its
+heading (`run.md`: condition), and its census names the clauses as:
+
+- `no-lost-files` - its first clause: no file is lost and nothing incorrect is written
+  or updated, in the scope that entry's first sharpening gives it. Instrument: the
+  review rows and the audit.
+- `working-product` - its second: a working product others can rely on. Instrument: the
+  regression set, and here the gate.
+- `usable-by-agents` - its third: it is usable by the agents. Instrument: the trial arms,
+  of which this opening holds none.
+- `migration-works` - its fourth: the planned migration of this project will work.
+  Instrument: a port rehearsal, which is not built - no item judges this clause.
+
+## The candidate, and the previous release
+
+The candidate is the tip of `%(loop)s`: this record's commit, on %(candidate)s. The
+previous release is %(previous)s, released from %(previous_commit)s.
+
+## The test set
+
+%(items)s. The table is `test-set.md`, beside this file. The round's ONE door is
+`%(door)s`: the invocation's `scope` names it.
+
+## The budget, the number handed on, the order
+
+A `test` stage of a round may spend %(budget)s verdicts. A verifier hands on at most
+%(hand_on)s items. The queue is ranked by this order of classes: %(order)s. All three are
+facts of `run.md`.
+
+## The declared bounds, the stop mode, the scope
+
+No bound is declared. The run stops after every round. The default scope is the delta.
+
+## The ledger's opening rows
+
+%(count)s rows of round 0, each a claim about the door, seeded by the setup tool:
+%(plants)s.
+
+Each is graded `unclear` at this opening, under the human's name, as the ledger takes a
+grade that an opening gives - so no triage grades one, and whether one is verified is the
+order's and the budget's. Each carries its class - its kind, and that it is a seed - with
+its kind's evidence: the route line a refusal printed, or the commands that would show
+the behaviour. The claim itself, and how its state is built, is in the row (`ledger.md`:
+repro; `classes.md`). Nobody has driven one for this run, and nothing here says whether
+any holds.
+"""
+
 
 class Refusal(Exception):
     def __init__(self, kind, detail, evidence, recommendation):
@@ -597,15 +842,42 @@ def holds(commit, path):
     return source("cat-file", "-e", "%s:%s" % (commit, path)).code == 0
 
 
-def chosen(value):
+def chosen(value, table):
     """The opening's items: the ones named, in the table's order — or the default ones."""
-    known = [row["item"] for row in ITEMS]
+    known = [row["item"] for row in table]
     if value is None:
-        return [row for row in ITEMS if row["default"]]
+        return [row for row in table if row["default"]]
     named = value.split(",")
     if len(set(named)) != len(named) or not all(name in known for name in named):
         refuse("usage", "--items %s names an item twice, or one this tool has no row for: the items are %s — see dev/stabilize-canary --help" % (json.dumps(value), ", ".join(known)))
-    return [row for row in ITEMS if row["item"] in named]
+    return [row for row in table if row["item"] in named]
+
+
+def queued(args):
+    """The facts of a run with a queue, as the switch and its two flags give them — or
+    None without the switch, where neither flag is taken: the small canary's run has no
+    queue. The entry that states its closing condition is found once the commit is."""
+    if not args.parts:
+        for flag in ("budget", "order"):
+            if getattr(args, flag) is not None:
+                refuse("usage", "--%s is a fact of the opening --parts writes: without the switch the setup opens the small canary, a run with no queue — see dev/stabilize-canary --help" % flag)
+        return None
+    order = ORDER if args.order is None else tuple(named.replace(":", " ") for named in args.order.split(","))
+    if len(set(order)) != len(order):
+        refuse("usage", "--order %s names a class twice — see dev/stabilize-canary --help" % json.dumps(args.order))
+    return {"budget": BUDGET if args.budget is None else int(args.budget), "hand-on": HAND_ON, "order": list(order)}
+
+
+def stated(candidate):
+    """The heading of THE ONE entry of the commit's log that states the exit rule, whole:
+    what the run names as where its closing condition is stated. The record script takes
+    a heading that is exactly one entry's and no other text, so one that is not there, or
+    is there twice, is asked for here — before anything is made."""
+    log = source("show", "%s:%s" % (candidate, LOG))
+    heads = [line[len(ENTRY):] for line in log.out.split("\n") if line.startswith(ENTRY + CONDITION)] if log.code == 0 else []
+    if len(heads) != 1:
+        refuse("unfit", "the commit named, %s, holds %d entries of %s that open `%s%s`, and the opening of a run in parts names exactly one: the entry that states the run's closing condition" % (candidate, len(heads), LOG, ENTRY, CONDITION), log.shown() if log.code != 0 else " / ".join(heads), "name a commit whose %s holds that entry once" % LOG)
+    return heads[0]
 
 
 # --- the opening ----------------------------------------------------------------
@@ -620,6 +892,31 @@ def test_set(items, previous_commit):
         if row.get("doors"):
             written["doors"] = row["doors"]
         rows.append(written)
+    return rows
+
+
+def plant_rows():
+    """The plants, as the rows `ledger-add` is handed: each of round 0 at the one door,
+    GRADED — `unclear`, under the human's name — with its class and its kind's evidence,
+    and a repro that opens with the claim, word for word, and says how the state is
+    built. A lead has no evidence, and so no state to build."""
+    rows = []
+    for plant in PLANTS:
+        row = {
+            "key": plant["key"],
+            "doctype": "jigc-feedback",
+            "round": 0,
+            "source": PLANTED,
+            "door": PARTS_DOOR,
+            "clause": plant.get("clause", CLAUSES[1]),
+            "repro": "The claim: %s." % plant["claim"] if plant["kind"] == "lead" else "The claim: %s. %s" % (plant["claim"], plant.get("state", IN_THE_REPOSITORY)),
+            "grade": "unclear",
+            "graded_by": "human",
+            "kind": plant["kind"],
+            "origin": "seed",
+        }
+        row.update({name: plant[name] for name in ("route", "commands", "code") if name in plant})
+        rows.append(row)
     return rows
 
 
@@ -650,13 +947,19 @@ def expected(items):
 def setup(args, facts):
     # EVERYTHING IS ASKED BEFORE ANYTHING IS MADE.
     root = unused(args.root)
-    run_name, items = args.run, chosen(args.items)
+    # THE SWITCH: `queue` is the facts of a run with a queue — and None without it, where
+    # every line below makes what it always made.
+    queue = queued(args)
+    run_name, items = args.run, chosen(args.items, ITEMS if queue is None else PARTS_ITEMS)
+    door = DOOR if queue is None else PARTS_DOOR
     loop, run_dir = LOOP % run_name, "%s/%s" % (RUNS, run_name)
     candidate = commit_of(args.commit, "the candidate")
     previous = commit_of(args.previous_commit, "the previous release's commit")
     lacks = [path for path in NEEDS if not holds(candidate, path)]
     if lacks:
         refuse("unfit", "the commit named, %s, lacks %s: a stage has nothing to run there" % (candidate, ", ".join(lacks)), "", "name a commit that holds the two scripts of a run and the harness")
+    if queue is not None:
+        queue["condition"] = stated(candidate)
     if os.path.lexists(os.path.join(ROOT, run_dir)) or holds(candidate, run_dir):
         refuse("taken", "the repository holds `%s`: the canary's run exists in its clone only, so that a stage launched from the wrong directory finds no such run" % run_dir, "", "name a run the repository does not hold")
     branches = lines(source("for-each-ref", "--format=%(refname)", "refs/heads/" + loop, "refs/remotes/*/" + loop).out)
@@ -684,15 +987,25 @@ def setup(args, facts):
     # THE OPENING: the record's prose, which no script writes; then every fact, row and
     # item through the CLONE'S OWN record script; then one commit, of the run's directory.
     os.makedirs(os.path.join(clone, run_dir))
-    told = {"run": run_name, "loop": loop, "candidate": candidate, "previous": args.previous, "previous_commit": previous, "door": DOOR, "seeded": SEEDED, "block": BLOCK, "items": ", ".join("`%s` (%s)" % (row["item"], row["kind"]) for row in items)}
+    told = {"run": run_name, "loop": loop, "candidate": candidate, "previous": args.previous, "previous_commit": previous, "door": door, "seeded": SEEDED, "block": BLOCK, "items": ", ".join("`%s` (%s)" % (row["item"], row["kind"]) for row in items)}
+    opened = {"stop": "every-round", "previous": args.previous, "previous-commit": previous, "scope": "delta", "clauses": list(CLAUSES)}
+    if queue is None:
+        text, rows, subject = OPENING % told, [seeded_row(run_dir)], SUBJECT
+    else:
+        rows, subject = plant_rows(), SUBJECT_PARTS
+        told.update(budget=queue["budget"], hand_on=queue["hand-on"], order=", ".join("`%s`" % named for named in queue["order"]), count=len(rows), plants=", ".join("`%s` (%s seed)" % (plant["key"], plant["kind"]) for plant in PLANTS))
+        text = OPENING_PARTS % told
+        # The condition's entry, the budget, the number handed on and the order: the
+        # run's facts, written with the others in the one call an opening makes.
+        opened.update(queue)
     with open(os.path.join(clone, run_dir, "opening.md"), "x", encoding="ascii") as file:
-        file.write(OPENING % told)
+        file.write(text)
     record = os.path.join(clone, RECORD)
-    made([record, "run-set", "--run", run_name], clone, json.dumps({"stop": "every-round", "previous": args.previous, "previous-commit": previous, "scope": "delta", "clauses": list(CLAUSES)}))
+    made([record, "run-set", "--run", run_name], clone, json.dumps(opened))
     made([record, "item-set", "--run", run_name], clone, json.dumps(test_set(items, previous)))
-    made([record, "ledger-add", "--run", run_name], clone, json.dumps([seeded_row(run_dir)]))
+    made([record, "ledger-add", "--run", run_name], clone, json.dumps(rows))
     made(["git", "add", "--", run_dir], clone)
-    made(["git", "commit", "-q", "-m", SUBJECT % run_name], clone)
+    made(["git", "commit", "-q", "-m", subject % run_name], clone)
     # THE PUSH IS THE STEP TOOL'S: a record's push, every commit of it vetted first.
     made([os.path.join(clone, STEP), "push", "--branch", loop, "--run-dir", run_dir], clone)
 
@@ -708,27 +1021,42 @@ def setup(args, facts):
         candidate=candidate,
         head=made(["git", "rev-parse", "HEAD"], clone),
         previous={"version": args.previous, "commit": previous},
-        door=DOOR,
+        door=door,
         items=[{"item": row["item"], "kind": row["kind"]} for row in items],
-        seeded=SEEDED,
     )
-    found = examined(root, facts)
+    if queue is None:
+        facts.update(seeded=SEEDED)
+    else:
+        facts.update(plants=[{"key": plant["key"], "class": "%s seed" % plant["kind"]} for plant in PLANTS], condition=queue["condition"], budget=queue["budget"], hand_on=queue["hand-on"], order=queue["order"])
+    found, state = examined(root, facts)
     # THE RUN IS IN THE STATE A FRESH RUN HAS, as the clone's own record script reads it.
     fresh = {"next": "test", "round": 1, "attempt": 1}
     if found["state"] != fresh or found["not_ready"]:
         refuse("not-fresh", "the run `%s` is not in the state a fresh run has — `next` is `test`, round 1, attempt 1, and the opening owes nothing" % run_name, json.dumps({"state": found["state"], "not_ready": found["not_ready"]}))
-    facts.update(
-        remote_head=found["remote_head"],
-        state=fresh,
-        session_cwd=clone,
-        script_path=os.path.join(clone, HARNESS),
-        args={"stage": "test", "run": run_name, "scratch": scratch, "scope": {"doors": [DOOR]}},
-        args_then={"stage": "test", "run": run_name, "scratch": scratch},
-        returns={name: os.path.join(results, name + ".json") for name in RETURNS},
-        check="dev/%s check --root %s" % (PROG, root),
-        expect=expected(items),
-        status="ready",
-    )
+    facts.update(remote_head=found["remote_head"], state=fresh)
+    if queue is not None:
+        # EVERY PLANT IS GRADED AT THE OPENING: a row left for a triage would have that
+        # triage decide whether a plant is launched, and is no opening of the parts.
+        if state.get("untriaged"):
+            refuse("not-fresh", "the run `%s` holds rows a triage would be handed: every plant is graded at the opening, so that none is" % run_name, json.dumps({"untriaged": state["untriaged"]}))
+        # What the run's own state says of its queue: the keys it ranks, and every row
+        # that is in none, under the word that keeps it out.
+        listed = {}
+        for row in state.get("ledger") or []:
+            if row.get("route") == "listed":
+                listed.setdefault(row.get("why"), []).append(row.get("key"))
+        facts.update(queue=[row.get("key") for row in (state.get("queue") or {}).get("ranked") or []], listed=listed)
+    facts.update(session_cwd=clone, script_path=os.path.join(clone, HARNESS))
+    if queue is None:
+        facts.update(
+            args={"stage": "test", "run": run_name, "scratch": scratch, "scope": {"doors": [DOOR]}},
+            args_then={"stage": "test", "run": run_name, "scratch": scratch},
+            returns={name: os.path.join(results, name + ".json") for name in RETURNS},
+        )
+    facts.update(check="dev/%s check --root %s" % (PROG, root))
+    if queue is None:
+        facts.update(expect=expected(items))
+    facts.update(status="ready")
     kept = os.path.join(root, KEPT)
     with open(kept, "x", encoding="ascii") as file:
         file.write(json.dumps(facts, indent=1) + "\n")
@@ -743,7 +1071,8 @@ def not_isolated(detail, evidence=""):
 
 def examined(root, kept):
     """THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — or a refusal — and what the run
-    holds, read. Every answer is git's own, asked under the caller's configuration."""
+    holds, read: what `check` prints of it, and the run's state as the clone's own record
+    script printed it. Every answer is git's own, asked under the caller's configuration."""
     origin, clone, scratch, results = (os.path.join(root, name) for name in DIRS)
     for path in (origin, clone, scratch, results):
         if os.path.islink(path) or os.path.realpath(path) != path or not os.path.isdir(path):
@@ -800,7 +1129,7 @@ def examined(root, kept):
         "items": [{"item": row.get("item"), "kind": row.get("kind"), "selected": row.get("selected")} for row in state.get("items") or []],
         "ledger": [{name: row.get(name) for name in ("key", "grade", "disposition", "route")} for row in state.get("ledger") or []],
         "returned": {name: os.path.isfile(os.path.join(results, name + ".json")) for name in RETURNS},
-    }
+    }, state
 
 
 def check(args, facts):
@@ -809,7 +1138,7 @@ def check(args, facts):
     if not os.path.isfile(kept):
         refuse("missing", "the root `%s` holds no canary: no `%s` is there — a setup that failed leaves none" % (root, KEPT), "", "`dev/stabilize-canary setup` builds one, under a root that is not there yet")
     with open(kept, encoding="ascii") as file:
-        facts.update(examined(root, parsed(file.read(), "`%s`" % kept)), status="checked")
+        facts.update(examined(root, parsed(file.read(), "`%s`" % kept))[0], status="checked")
 
 
 # --- arguments ------------------------------------------------------------------
@@ -830,6 +1159,8 @@ def grammar(pattern, what, longest=None):
 
 
 FLAGS = {
+    "budget": grammar(NUMBER, "a positive whole number"),
+    "order": grammar(CLASSES, "an order of classes (`<kind>:<origin>` words joined by `,`, as `route:seed,behaviour:seed`)"),
     "run": grammar(SLUG, "a slug (a-z0-9 words joined by single `-`, at most %d characters)" % SLUG_MAX, SLUG_MAX),
     "previous": grammar(VERSION, "a version (`1.2.3`, `1.2.3-rc.4`)"),
     "previous-commit": grammar(FULL_SHA, "a full commit sha"),
@@ -847,7 +1178,11 @@ def arguments(argv):
             sub.add_argument("--" + flag, required=True, **({"type": FLAGS[flag]} if flag in FLAGS else {}))
         return sub
 
-    act("setup", setup, ["root", "commit", "run", "previous", "previous-commit"]).add_argument("--items")
+    opening = act("setup", setup, ["root", "commit", "run", "previous", "previous-commit"])
+    opening.add_argument("--items")
+    opening.add_argument("--parts", action="store_true")
+    for flag in ("budget", "order"):
+        opening.add_argument("--" + flag, type=FLAGS[flag])
     act("check", check, ["root"])
     if not argv or argv[0] not in acts.choices:
         refuse("usage", "%s is not an act: the acts are %s — see dev/stabilize-canary --help" % (json.dumps(argv[0]) if argv else "nothing", ", ".join(acts.choices)))

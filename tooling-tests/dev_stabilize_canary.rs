@@ -44,6 +44,30 @@
 //! - and every command the tool names is one plain invocation of a committed tool
 //!   ([`every_command_the_tool_names_is_one_plain_invocation_of_a_committed_tool`]).
 //!
+//! **Under one switch, `--parts`, the setup writes another opening** — the one the reshaped
+//! `test` stage is run on in parts
+//! ([staged-canary.md](../completions/artifacts/M55/stabilization-build/reshape/staged-canary.md)
+//! → §4, and §10's `SC2`; [DECISIONS.md](../DECISIONS.md) → *2026-10-12 — The canary's
+//! setup opens a run with a queue*): a run with a queue, on the door `jigc setup`, whose
+//! ledger holds the plan's plants. Its arms:
+//!
+//! - the facts — a budget, the number a verifier hands on, an order of classes and the entry
+//!   that states the closing condition — as given, and as the flags give them
+//!   ([`a_fresh_setup_is_ready_with_the_budget_the_order_and_the_hand_on_it_was_given`]);
+//! - the plants, word for word, each graded at the opening with its class and its kind's
+//!   evidence — so that the queue is empty, nothing is untriaged and `next` is `test`
+//!   ([`its_seeded_rows_carry_the_grade_and_the_class_the_canary_plants`]);
+//! - the order part 3 rules, written through the clone's own record script, and the queue
+//!   it leaves
+//!   ([`the_order_part_three_rules_puts_the_route_plants_and_the_reserve_into_the_queue_in_that_rank`]);
+//! - the one door ([`its_door_is_the_review_rows_and_the_plants`]);
+//! - what the switch refuses
+//!   ([`under_the_switch_a_flag_outside_its_grammar_a_log_without_the_one_entry_and_a_plant_nobody_graded_are_refused`]);
+//! - and **without the switch a setup is what it was, to the byte** — its line, the file it
+//!   keeps, its commit and every file of the opening, held to what the tool made before
+//!   the switch existed ([`a_setup_without_the_switch_is_what_it_was`];
+//!   `tooling-tests/fixtures/stabilize-canary-setup.golden`).
+//!
 //! **Why a small source repository and not this one.** The tool clones the repository it
 //! lies in, so the suite places it in a [`StepRig`] — the two scripts of a run, the hygiene
 //! scan and a stand-in for gitleaks, a bare remote — beside a copy of the committed harness.
@@ -330,6 +354,47 @@ impl Canary {
             commit,
             previous,
         }
+    }
+
+    /// A source whose log holds the ONE entry that states the exit rule: what a setup under
+    /// the switch names as the run's closing condition.
+    fn parts(label: &str) -> Self {
+        let mut canary = Canary::new(label);
+        canary.log(&[EXIT_RULE]);
+        canary
+    }
+
+    /// The source's log with one entry more under each of `headings`, committed: the commit
+    /// a setup is handed from then on.
+    fn log(&mut self, headings: &[&str]) {
+        let mut log = self.rig.read("DECISIONS.md");
+        for heading in headings {
+            log.push_str(&format!("\n## {heading}\n\nAn entry.\n"));
+        }
+        self.rig.write("DECISIONS.md", &log);
+        self.commit = self.rig.commit("docs: the log's entries");
+    }
+
+    /// A write of the clone's own record script, fed `fed`: whether it was taken, and what
+    /// it printed on stderr.
+    fn record(&self, clone: &Path, act: &str, fed: &Value) -> (bool, String) {
+        let mut child = self
+            .command(&clone.join(RECORD))
+            .args([act, "--run", RUN])
+            .current_dir(self.rig.dir())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn the clone's record script");
+        child_stdin::feed(&mut child, fed.to_string());
+        let out = child
+            .wait_with_output()
+            .expect("the clone's record script exits");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
     }
 
     /// The rig's directory as the file system resolves it: the tool prints real paths.
@@ -1948,4 +2013,905 @@ fn every_command_the_tool_names_is_one_plain_invocation_of_a_committed_tool() {
     ] {
         assert!(help.contains(said), "the help says `{said}`");
     }
+}
+
+// --- under the switch: the opening of a run in parts ---------------------------------
+
+/// The switch, the one door of the opening it writes, and the facts that opening holds
+/// where no flag says otherwise.
+const PARTS: &str = "--parts";
+const PARTS_DOOR: &str = "jigc setup";
+const BUDGET: u64 = 9;
+const HAND_ON: u64 = 2;
+const ORDER: [&str; 2] = ["route under-confirmed", "behaviour under-confirmed"];
+/// The order part 3 rules, as the record script takes it and as the tool's flag spells it.
+const ORDER_THREE: [&str; 4] = [
+    "route under-confirmed",
+    "route seed",
+    "behaviour under-confirmed",
+    "behaviour seed",
+];
+const ORDER_THREE_FLAG: &str =
+    "route:under-confirmed,route:seed,behaviour:under-confirmed,behaviour:seed";
+/// The heading of the entry of the log that states the exit rule, whole: what the run
+/// names as where its closing condition is stated.
+const EXIT_RULE: &str = "2026-10-04 — The exit rule, revised: four clauses, each with a scope and one instrument — a finding blocks the call only if it breaks a clause inside its scope (the human's)";
+
+/// The opening's items under the switch when none is named, by id and kind.
+const PARTS_ITEMS: [(&str, &str); 4] = [
+    ("row-setup", "review-row"),
+    ("gate", "held-gate"),
+    ("regression-set", "held-regression"),
+    ("regression-again", "held-regression"),
+];
+
+/// The two route lines the plants quote, each as the binary prints it after its two
+/// leading spaces — the first whole, to its last word — and the refusal's code.
+const ROUTE_LINK: &str = "route: remove the link at `<rig>/outside/shared-hook`, or point it at a script inside this repository, then re-run `jigc setup`. `--force` does not change this: it consents to replacing a file, not to following a link";
+const ROUTE_WRITABLE: &str =
+    "route: ensure the repo's git hooks directory is writable, then re-run `jigc setup`";
+const CODE: &str = "setup.install-hook";
+
+/// **The plants, word for word** — typed here a second time, from the table the plan's
+/// step `P0` drove on both binaries, so that a plant reworded in the tool is red: the key,
+/// the class, the claim, and the kind's evidence (the route line as printed, or the
+/// commands as run; none for the lead).
+const PLANTS: [(&str, &str, &str, Option<&str>); 14] = [
+    (
+        "plant-install-hook-regression",
+        "route seed",
+        "where `.git/hooks/pre-commit` is a link to an existing script outside the repository, `jigc setup` refuses at `setup.install-hook` and its route names the script as the link; done as printed, the script is deleted and the re-run exits 1 again; the previous release exits 0",
+        Some(ROUTE_LINK),
+    ),
+    (
+        "plant-false-route-claim",
+        "route seed",
+        "where the default hooks directory is of mode 555, `jigc setup` refuses at `setup.install-hook`; done as its route prints — the directory made writable — the re-run exits 1 again",
+        Some(ROUTE_WRITABLE),
+    ),
+    (
+        "plant-linux-root-claim",
+        "route seed",
+        "on a Linux host, for a caller that is root, a hooks directory carrying the immutable attribute draws the same refusal; the route as printed changes nothing for root, and the re-run exits 1 again",
+        Some(ROUTE_WRITABLE),
+    ),
+    (
+        "plant-prose-lead",
+        "lead seed",
+        "`jigc setup` may behave otherwise in a repository with several worktrees; nobody looked",
+        None,
+    ),
+    (
+        "plant-reserve-1",
+        "behaviour seed",
+        "in `<rig>`, `jigc setup` exits 1",
+        Some("`jigc setup`; the exit status"),
+    ),
+    (
+        "plant-reserve-2",
+        "behaviour seed",
+        "in `<rig>`, `jigc setup` exits 0 and makes no commit",
+        Some("`git rev-parse HEAD` · `jigc setup` · `git rev-parse HEAD`"),
+    ),
+    (
+        "plant-reserve-3",
+        "behaviour seed",
+        "in `<rig>`, `jigc setup` leaves `git status --porcelain` not empty",
+        Some("`jigc setup` · `git status --porcelain`"),
+    ),
+    (
+        "plant-reserve-4",
+        "behaviour seed",
+        "in `<rig>`, `jigc setup` makes two commits",
+        Some("`git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`"),
+    ),
+    (
+        "plant-reserve-5",
+        "behaviour seed",
+        "an untracked file `notes.md` at the root of `<rig>` is gone after `jigc setup`",
+        Some("`printf 'my notes\\n' > notes.md` · `jigc setup` · `cat notes.md`"),
+    ),
+    (
+        "plant-reserve-6",
+        "behaviour seed",
+        "a second `jigc setup`, right after the first, exits 1",
+        Some("`jigc setup` · `jigc setup`; the second exit status"),
+    ),
+    (
+        "plant-reserve-7",
+        "behaviour seed",
+        "a second `jigc setup` makes a second commit",
+        Some(
+            "`jigc setup` · `git rev-list --count HEAD` · `jigc setup` · `git rev-list --count HEAD`",
+        ),
+    ),
+    (
+        "plant-reserve-8",
+        "behaviour seed",
+        "`jigc setup` leaves another branch checked out",
+        Some("`git branch --show-current` · `jigc setup` · `git branch --show-current`"),
+    ),
+    (
+        "plant-reserve-9",
+        "behaviour seed",
+        "`jigc setup` adds a remote",
+        Some("`git remote` · `jigc setup` · `git remote`"),
+    ),
+    (
+        "plant-reserve-10",
+        "behaviour seed",
+        "`jigc setup` leaves a stash entry",
+        Some("`jigc setup` · `git stash list`"),
+    ),
+];
+
+/// The plants' keys of one class, in the ledger's order.
+fn plants_of(class: &str) -> Vec<&'static str> {
+    PLANTS
+        .iter()
+        .filter(|plant| plant.1 == class)
+        .map(|plant| plant.0)
+        .collect()
+}
+
+/// The keys the state's queue ranks, first to last.
+fn ranked(state: &Value) -> Vec<String> {
+    state["queue"]["ranked"]
+        .as_array()
+        .unwrap_or_else(|| panic!("a run with a queue says its queue: {state}"))
+        .iter()
+        .map(|row| row["key"].as_str().expect("a key").to_owned())
+        .collect()
+}
+
+#[test]
+fn a_fresh_setup_is_ready_with_the_budget_the_order_and_the_hand_on_it_was_given() {
+    let canary = Canary::parts("parts-ready");
+    let line = canary.ready("canary", &[PARTS]);
+    let root = canary.root("canary");
+    let clone = root.join("clone");
+
+    // (1) THE LINE SAYS THE FACTS OF THE OPENING: the budget, the number a verifier hands
+    // on, the order — as the record script holds it — and the entry that states the closing
+    // condition, which the setup found in the log of the commit named.
+    assert_eq!(
+        json!([
+            line["budget"],
+            line["hand_on"],
+            line["order"],
+            line["condition"]
+        ]),
+        json!([BUDGET, HAND_ON, ORDER, EXIT_RULE]),
+        "{line}"
+    );
+
+    // (2) AND THE RUN HOLDS THEM, as the clone's own record script reads them back: it is a
+    // run with a queue, nothing of its budget is spent, and it is ready.
+    let state = canary.state(&clone);
+    assert_eq!(
+        json!([
+            state["facts"]["budget"],
+            state["facts"]["hand-on"],
+            state["facts"]["order"],
+            state["facts"]["condition"]
+        ]),
+        json!([BUDGET, HAND_ON, ORDER, EXIT_RULE]),
+        "{state}"
+    );
+    assert_eq!(
+        state["budget"],
+        json!({"limit": BUDGET, "spent": 0, "left": BUDGET}),
+        "{state}"
+    );
+    assert_eq!(
+        json!([
+            state["facts"]["stop"],
+            state["facts"]["previous"],
+            state["facts"]["previous-commit"],
+            state["facts"]["scope"],
+            state["facts"]["clauses"]
+        ]),
+        json!([
+            "every-round",
+            PREVIOUS,
+            canary.previous,
+            "delta",
+            [
+                "no-lost-files",
+                "working-product",
+                "usable-by-agents",
+                "migration-works"
+            ]
+        ]),
+        "{state}"
+    );
+    assert_eq!(
+        json!([
+            state["opened"],
+            state["not_ready"],
+            state["next"],
+            state["position"]["test"]
+        ]),
+        json!([true, [], "test", {"round": 1, "attempt": 1}]),
+        "{state}"
+    );
+    assert_eq!(
+        line["state"],
+        json!({"next": "test", "round": 1, "attempt": 1}),
+        "{line}"
+    );
+
+    // (3) THE CANARY IS MADE AS EVERY CANARY IS: one commit on the commit named, pushed to
+    // the bare repository beside the clone, a clean tree — and `check` holds it.
+    let head = canary.git(&clone, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        json!([line["head"], line["remote_head"], line["candidate"]]),
+        json!([head, head, canary.commit]),
+        "{line}"
+    );
+    assert_eq!(canary.git(&clone, &["rev-parse", "HEAD^"]), canary.commit);
+    assert_eq!(
+        canary.git(&clone, &["status", "--porcelain", "--untracked-files=all"]),
+        ""
+    );
+    assert_eq!(
+        canary.git(
+            &clone,
+            &[
+                "diff",
+                "--name-only",
+                "HEAD^",
+                "HEAD",
+                "--",
+                ".",
+                &format!(":(exclude){RUN_DIR}")
+            ]
+        ),
+        "",
+        "the opening changes nothing outside the run's directory"
+    );
+    let checked = canary.tool(&["check", "--root", &root.display().to_string()]);
+    let read = checked.done("check", "checked");
+    assert_eq!(
+        json!([
+            read["pushed"],
+            read["records"],
+            read["pending"],
+            read["state"]
+        ]),
+        json!([true, 0, 0, {"next": "test", "round": 1, "attempt": 1}]),
+        "{read}"
+    );
+
+    // (4) THE LINE NAMES WHERE THE SESSION STANDS AND THE HARNESS BY ITS PATH, AND PRINTS NO
+    // ARGUMENTS: what each act of the parts is invoked with is not this opening's to say,
+    // and the small canary's two argument objects and its count are of another stage.
+    assert_eq!(
+        json!([line["session_cwd"], line["script_path"], line["check"]]),
+        json!([
+            clone.display().to_string(),
+            clone.join(HARNESS).display().to_string(),
+            format!("{TOOL} check --root {}", root.display())
+        ]),
+        "{line}"
+    );
+    for absent in ["args", "args_then", "returns", "expect", "seeded"] {
+        assert_eq!(line[absent], Value::Null, "`{absent}`: {line}");
+    }
+
+    // (5) AS IT WAS GIVEN: another budget, another order and other items are the caller's
+    // flags — here the root the plan opens for its fourth part after a repair: the gate
+    // alone, the order part 3 rules, a budget of four. The queue then holds every plant
+    // the order names from the opening on, and the run is as fresh.
+    let line = canary.ready(
+        "part-four",
+        &[
+            PARTS,
+            "--budget",
+            "4",
+            "--order",
+            ORDER_THREE_FLAG,
+            "--items",
+            "gate",
+        ],
+    );
+    assert_eq!(
+        json!([
+            line["budget"],
+            line["hand_on"],
+            line["order"],
+            line["items"]
+        ]),
+        json!([4, HAND_ON, ORDER_THREE, [{"item": "gate", "kind": "held-gate"}]]),
+        "{line}"
+    );
+    let state = canary.state(&canary.root("part-four").join("clone"));
+    assert_eq!(
+        json!([
+            state["facts"]["budget"],
+            state["facts"]["hand-on"],
+            state["facts"]["order"],
+            state["budget"]["left"],
+            state["next"]
+        ]),
+        json!([4, HAND_ON, ORDER_THREE, 4, "test"]),
+        "{state}"
+    );
+    let queue: Vec<&str> = [plants_of("route seed"), plants_of("behaviour seed")].concat();
+    assert_eq!(ranked(&state), queue, "{state}");
+    assert_eq!(line["queue"], json!(queue), "{line}");
+}
+
+#[test]
+fn its_seeded_rows_carry_the_grade_and_the_class_the_canary_plants() {
+    let canary = Canary::parts("parts-plants");
+    let line = canary.ready("canary", &[PARTS]);
+    let clone = canary.root("canary").join("clone");
+    let state = canary.state(&clone);
+
+    // (1) THE PLANTS, IN THE TABLE'S ORDER — each a row of round 0 at the round's one door,
+    // GRADED AT THE OPENING: `unclear`, by the human, as the ledger takes a grade given
+    // there — so that no triage decides whether a plant is launched.
+    let ledger = state["ledger"].as_array().expect("the ledger");
+    assert_eq!(
+        ledger.iter().map(|row| &row["key"]).collect::<Vec<_>>(),
+        PLANTS.iter().map(|plant| plant.0).collect::<Vec<_>>(),
+        "{state}"
+    );
+    for (row, (key, class, claim, evidence)) in ledger.iter().zip(PLANTS) {
+        assert_eq!(
+            json!([
+                row["round"],
+                row["door"],
+                row["grade"],
+                row["graded_by"],
+                row["disposition"]
+            ]),
+            json!([0, PARTS_DOOR, "unclear", "human", "open"]),
+            "`{key}`: {row}"
+        );
+        // The clause its claim would break: the second, but for the one claim of a file
+        // that is gone, which is the first's.
+        assert_eq!(
+            row["clause"],
+            if key == "plant-reserve-5" {
+                "no-lost-files"
+            } else {
+                "working-product"
+            },
+            "`{key}`: {row}"
+        );
+        // ITS CLASS: its kind and where it comes from — a seed, every one — and ITS KIND'S
+        // EVIDENCE, word for word: the route line as printed, or the commands as run. The
+        // lead carries none, and was given as nothing but a lead.
+        let (kind, origin) = class.split_once(' ').expect("a class is two words");
+        assert_eq!(
+            json!([
+                row["class"]["kind"],
+                row["class"]["origin"],
+                row["class"]["given"],
+                row["class"]["parent"],
+                row["class"]["evidence"]
+            ]),
+            json!([kind, origin, null, null, evidence]),
+            "`{key}`: {row}"
+        );
+        // A route plant names the refusal's code; no other row names one.
+        assert_eq!(
+            row["class"]["code"],
+            if kind == "route" {
+                json!(CODE)
+            } else {
+                Value::Null
+            },
+            "`{key}`: {row}"
+        );
+        // THE CLAIM, WORD FOR WORD, opens the row's repro — and nothing of the row says
+        // which way the claim falls.
+        let repro = row["repro"].as_str().expect("a repro");
+        assert!(
+            repro.starts_with(&format!("The claim: {claim}.")),
+            "`{key}` holds its claim word for word: {repro}"
+        );
+        // A VERIFIER HAS THE ROW AND NOTHING ELSE: every row with evidence says how its
+        // state is built — the rig, and what `<rig>` stands for in that row.
+        if evidence.is_some() {
+            assert!(
+                repro.contains("The state: `<rig>` is ")
+                    && repro.contains("`dev/jigc-rig bare`")
+                    && repro.contains("`--binary`"),
+                "`{key}` says how its state is built: {repro}"
+            );
+        }
+        let told = json!([row["source"], row["repro"], row["class"]["evidence"]]).to_string();
+        for answer in ["false", "refuted", "confirmed", "reserve", "ballast"] {
+            assert!(
+                !told.contains(answer),
+                "a text of `{key}` says `{answer}`: {told}"
+            );
+        }
+    }
+    // The regression's row is the one whose `<rig>` is the rig's ROOT: its route line names
+    // the script beside the repository, and its repro says where both lie and cites the
+    // block of the first canary's report that is this drive.
+    let regression = ledger[0]["repro"].as_str().expect("a repro");
+    for said in [
+        "the repository is `<rig>/repo`",
+        "`<rig>/outside/shared-hook`",
+        "`Repro VR-1`",
+        "the previous release's binary",
+    ] {
+        assert!(regression.contains(said), "`{said}`: {regression}");
+    }
+    // NO PATH OF A MACHINE in any row, and none in the opening record.
+    let opening =
+        fs::read_to_string(clone.join(RUN_DIR).join("opening.md")).expect("the opening record");
+    for text in [&state["ledger"].to_string(), &opening] {
+        for host in ["/Users/", "/home/", "/private/", "/tmp/", "/var/"] {
+            assert!(!text.contains(host), "`{host}`: {text}");
+        }
+    }
+    assert!(
+        opening
+            .bytes()
+            .all(|b| b == b'\n' || (0x20..0x7f).contains(&b)),
+        "the opening record is printable ASCII: {opening}"
+    );
+    for said in [
+        "SYNTHETIC",
+        "The exit rule, revised",
+        PARTS_DOOR,
+        "plant-install-hook-regression",
+        "plant-reserve-10",
+    ] {
+        assert!(
+            opening.contains(said),
+            "the opening record says `{said}`:\n{opening}"
+        );
+    }
+
+    // (2) AT THE OPENING THE QUEUE IS EMPTY, NOTHING IS UNTRIAGED AND `next` IS `test`: the
+    // order names two classes only a verifier's filing gives a row, so every plant is
+    // listed — the lead as a lead, every other as off the order — and none is the human's.
+    assert_eq!(
+        json!([
+            state["queue"]["ranked"],
+            state["untriaged"],
+            state["human_list"],
+            state["next"]
+        ]),
+        json!([[], [], [], "test"]),
+        "{state}"
+    );
+    for row in ledger {
+        assert_eq!(
+            json!([row["route"], row["why"]]),
+            json!([
+                "listed",
+                if row["class"]["kind"] == "lead" {
+                    "lead"
+                } else {
+                    "class-off-the-order"
+                }
+            ]),
+            "{row}"
+        );
+    }
+
+    // (3) AND THE LINE SAYS IT: the plants by key and class, the queue, and what is listed
+    // by the word that keeps it out.
+    assert_eq!(
+        line["plants"],
+        Value::Array(
+            PLANTS
+                .iter()
+                .map(|plant| json!({"key": plant.0, "class": plant.1}))
+                .collect()
+        ),
+        "{line}"
+    );
+    let off: Vec<&str> = [plants_of("route seed"), plants_of("behaviour seed")].concat();
+    assert_eq!(
+        json!([line["queue"], line["listed"]]),
+        json!([[], {"class-off-the-order": off, "lead": ["plant-prose-lead"]}]),
+        "{line}"
+    );
+}
+
+#[test]
+fn the_order_part_three_rules_puts_the_route_plants_and_the_reserve_into_the_queue_in_that_rank() {
+    let canary = Canary::parts("parts-order");
+    canary.ready("canary", &[PARTS]);
+    let clone = canary.root("canary").join("clone");
+    assert_eq!(ranked(&canary.state(&clone)), Vec::<String>::new());
+
+    // THE ORDER PART 3 RULES, written as a ruling writes it: one `run-set` of the clone's
+    // own record script, and nothing else.
+    let (taken, said) = canary.record(&clone, "run-set", &json!({"order": ORDER_THREE}));
+    assert!(taken, "another order is taken at any step: {said}");
+    let state = canary.state(&clone);
+
+    // THIRTEEN ROWS: the three route plants, then the ten reserve plants, each class in the
+    // ledger's order — and the lead in no queue.
+    let (route, reserve) = (plants_of("route seed"), plants_of("behaviour seed"));
+    assert_eq!(
+        route,
+        [
+            "plant-install-hook-regression",
+            "plant-false-route-claim",
+            "plant-linux-root-claim"
+        ]
+    );
+    assert_eq!(reserve.len(), 10);
+    assert_eq!(
+        ranked(&state),
+        [route.clone(), reserve.clone()].concat(),
+        "{state}"
+    );
+    assert_eq!(
+        state["queue"]["classes"],
+        json!([
+            {"kind": "route", "origin": "under-confirmed", "length": 0},
+            {"kind": "route", "origin": "seed", "length": 3},
+            {"kind": "behaviour", "origin": "under-confirmed", "length": 0},
+            {"kind": "behaviour", "origin": "seed", "length": 10}
+        ]),
+        "{state}"
+    );
+    let lead = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .find(|row| row["key"] == "plant-prose-lead")
+        .expect("the lead");
+    assert_eq!(
+        json!([lead["route"], lead["why"]]),
+        json!(["listed", "lead"])
+    );
+    // THE QUEUE IS LONGER THAN THE BUDGET, of which nothing is spent; nothing is untriaged;
+    // and the round, which has no candidate yet, is still the `test` stage's to begin.
+    assert_eq!(
+        json!([
+            state["budget"],
+            state["untriaged"],
+            state["next"],
+            state["position"]["test"]
+        ]),
+        json!([{"limit": BUDGET, "spent": 0, "left": BUDGET}, [], "test", {"round": 1, "attempt": 1}]),
+        "{state}"
+    );
+
+    // THE CONTROL — THE RANK IS THE ORDER'S, never the ledger's: with the reserve's class
+    // named first, the ten reserve plants stand ahead of the three route plants.
+    let (taken, said) = canary.record(
+        &clone,
+        "run-set",
+        &json!({"order": ["behaviour seed", "route seed"]}),
+    );
+    assert!(taken, "{said}");
+    assert_eq!(
+        ranked(&canary.state(&clone)),
+        [reserve, route].concat(),
+        "the queue is ranked by the order"
+    );
+}
+
+#[test]
+fn its_door_is_the_review_rows_and_the_plants() {
+    let canary = Canary::parts("parts-door");
+    let line = canary.ready("canary", &[PARTS]);
+    let clone = canary.root("canary").join("clone");
+    let state = canary.state(&clone);
+
+    // ONE DOOR, `jigc setup`: the line's, the review row's, and every plant's.
+    assert_eq!(line["door"], PARTS_DOOR, "{line}");
+    let items = state["items"].as_array().expect("the items");
+    let listed = |items: &Value| -> Vec<(String, String)> {
+        items
+            .as_array()
+            .expect("items")
+            .iter()
+            .map(|i| {
+                (
+                    i["item"].as_str().expect("an id").to_owned(),
+                    i["kind"].as_str().expect("a kind").to_owned(),
+                )
+            })
+            .collect()
+    };
+    let expected: Vec<(String, String)> = PARTS_ITEMS
+        .iter()
+        .map(|(item, kind)| ((*item).to_owned(), (*kind).to_owned()))
+        .collect();
+    assert_eq!(listed(&line["items"]), expected, "{line}");
+    assert_eq!(listed(&state["items"]), expected, "{state}");
+    let item = |id: &str| -> &Value {
+        items
+            .iter()
+            .find(|i| i["item"] == id)
+            .unwrap_or_else(|| panic!("the item `{id}`"))
+    };
+    assert_eq!(
+        json!([
+            item("row-setup")["runs"],
+            item("row-setup")["doors"],
+            item("row-setup")["registries"],
+            item("row-setup")["clause"]
+        ]),
+        json!(["in-scope", [PARTS_DOOR], [], "no-lost-files"]),
+        "{state}"
+    );
+    assert!(
+        item("row-setup")["brief"]
+            .as_str()
+            .is_some_and(|brief| brief.contains("`jigc setup`") && !brief.contains("doc list")),
+        "the review row's brief is of its door: {state}"
+    );
+    for row in state["ledger"].as_array().expect("the ledger") {
+        assert_eq!(row["door"], PARTS_DOOR, "{row}");
+    }
+    // The three held checks run on every candidate and judge the second clause; THE SECOND
+    // REGRESSION ITEM is the first once more — the same held command, over the same two
+    // commits — under an id of its own.
+    for (id, _) in &PARTS_ITEMS[1..] {
+        assert_eq!(
+            json!([item(id)["runs"], item(id)["clause"]]),
+            json!(["every-candidate", "working-product"]),
+            "`{id}`: {state}"
+        );
+    }
+    for id in ["regression-set", "regression-again"] {
+        assert!(
+            item(id)["brief"]
+                .as_str()
+                .is_some_and(|brief| brief.contains("`hold-start --kind regression`")
+                    && brief.contains(&canary.previous)
+                    && !brief.contains("dev/regression-set run")),
+            "`{id}` is the held regression set over the previous release's commit: {state}"
+        );
+    }
+    // NO SECOND DOOR, NO ROUTE HUNT, NO TRIAL ARM, NO SCRIPTED ARM: the kinds are the review
+    // row's and the held checks', and the small canary's door is nowhere in the run.
+    let kinds: Vec<&str> = items
+        .iter()
+        .map(|i| i["kind"].as_str().expect("a kind"))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "review-row",
+            "held-gate",
+            "held-regression",
+            "held-regression"
+        ],
+        "{state}"
+    );
+    let opening =
+        fs::read_to_string(clone.join(RUN_DIR).join("opening.md")).expect("the opening record");
+    for text in [
+        &state["items"].to_string(),
+        &state["ledger"].to_string(),
+        &opening,
+    ] {
+        assert!(!text.contains(DOOR), "the small canary's door: {text}");
+    }
+    assert!(opening.contains("`jigc setup`"), "{opening}");
+
+    // THE ITEMS ARE THE CALLER'S TO NAME, from the switch's own table: the root the plan
+    // opens for its second part after a repair leaves the two regression items out — and an
+    // item of the small canary's table is none of this opening's.
+    let line = canary.ready("part-two", &[PARTS, "--items", "gate,row-setup"]);
+    assert_eq!(
+        line["items"],
+        json!([{"item": "row-setup", "kind": "review-row"}, {"item": "gate", "kind": "held-gate"}]),
+        "{line}"
+    );
+    for bad in [
+        "row-doc-list",
+        "gate,arm-control",
+        "regression-again,regression-again",
+        "",
+    ] {
+        let root = canary.root("refused").display().to_string();
+        canary
+            .tool(&canary.setup_args(&root, RUN, &[PARTS, "--items", bad]))
+            .refused("usage");
+        assert!(
+            !canary.root("refused").exists(),
+            "nothing was made for `{bad}`"
+        );
+    }
+    // And without the switch the switch's items are none of the small canary's.
+    let root = canary.root("refused").display().to_string();
+    canary
+        .tool(&canary.setup_args(&root, RUN, &["--items", "row-setup"]))
+        .refused("usage");
+}
+
+/// A record script that hands every call to the real one beside it — but for the ledger's
+/// rows, from which it drops the grade: the plants it adds are rows nobody graded.
+const UNGRADING_RECORD: &str = r#"#!/usr/bin/env python3
+import json, os, subprocess, sys
+real = os.path.join(os.path.dirname(os.path.realpath(__file__)), "stabilize-record.real")
+fed = sys.stdin.buffer.read()
+if sys.argv[1:2] == ["ledger-add"]:
+    rows = json.loads(fed)
+    for row in rows:
+        row.pop("grade", None)
+        row.pop("graded_by", None)
+    fed = json.dumps(rows).encode()
+sys.exit(subprocess.run([sys.executable, real] + sys.argv[1:], input=fed).returncode)
+"#;
+
+#[test]
+fn under_the_switch_a_flag_outside_its_grammar_a_log_without_the_one_entry_and_a_plant_nobody_graded_are_refused()
+ {
+    let mut canary = Canary::new("parts-refuses");
+    let unmade = |canary: &Canary, name: &str| {
+        assert!(
+            !canary.root(name).exists(),
+            "a refused setup makes nothing: `{name}` is there"
+        );
+    };
+
+    // THE LOG OF THE COMMIT NAMED HOLDS THE ENTRY THAT STATES THE EXIT RULE EXACTLY ONCE, or
+    // the commit is unfit for this opening — asked before anything is made. Here it holds
+    // none …
+    canary.setup(&canary.root("l0"), &[PARTS]).refused("unfit");
+    unmade(&canary, "l0");
+    // … and the same commit is fit for the small canary, which names no entry.
+    canary
+        .setup(&canary.root("small"), &[])
+        .done("setup", "ready");
+    // … here an entry only speaks of it, which is not the entry.
+    canary.log(&["2026-10-05 — What follows from the exit rule, revised"]);
+    canary.setup(&canary.root("l1"), &[PARTS]).refused("unfit");
+    unmade(&canary, "l1");
+
+    // From here on the log holds the one entry.
+    canary.log(&[EXIT_RULE]);
+    let setup = |at: &str, more: &[&str]| canary.setup(&canary.root(at), more);
+
+    // A BUDGET IS A POSITIVE WHOLE NUMBER, AND AN ORDER A LIST OF CLASSES, each one plain
+    // word `<kind>:<origin>` and none twice.
+    for budget in ["0", "-1", "nine", "1.5", "", "09"] {
+        setup("b", &[PARTS, "--budget", budget]).refused("usage");
+    }
+    for order in [
+        "",
+        "route",
+        "route seed",
+        "route:seed,route:seed",
+        "route:seed,",
+        "Route:seed",
+        "route:seed:hunt",
+    ] {
+        setup("o", &[PARTS, "--order", order]).refused("usage");
+    }
+    unmade(&canary, "b");
+    unmade(&canary, "o");
+    // A CLASS THE RECORD SCRIPT DOES NOT KNOW is that script's to refuse, in its own words:
+    // the setup fails at its write, and the root holds no canary.
+    let told = setup("o2", &[PARTS, "--order", "route:nowhere"]);
+    let refused = told.refused("tool");
+    assert!(
+        refused["halt"]["evidence"]
+            .as_str()
+            .is_some_and(|evidence| evidence.contains("stabilize-record: refused bad-value")),
+        "{refused}"
+    );
+    assert!(!canary.root("o2").join("canary.json").exists());
+
+    // WITHOUT THE SWITCH NEITHER FLAG IS TAKEN: the small canary's run has no queue.
+    setup("n1", &["--budget", "9"]).refused("usage");
+    setup("n2", &["--order", ORDER_THREE_FLAG]).refused("usage");
+    unmade(&canary, "n1");
+    unmade(&canary, "n2");
+    // And the switch takes no value.
+    setup("n3", &["--parts=yes"]).refused("usage");
+    unmade(&canary, "n3");
+
+    // A PLANT NOBODY GRADED IS NO OPENING OF THE PARTS: a triage would be handed it, and
+    // would decide whether it is launched. Here the commit's record script is wrapped, and
+    // the wrapper drops every row's grade — the run is ready, its next step is `test`, and
+    // the setup refuses it all the same.
+    let script = fs::read(canary.rig.root.join(RECORD)).expect("read the record script");
+    placed_executable::write(&canary.rig.root.join(format!("{RECORD}.real")), script);
+    placed_executable::write(&canary.rig.root.join(RECORD), UNGRADING_RECORD);
+    canary.commit = canary
+        .rig
+        .commit("chore: a record script that grades no plant");
+    let told = canary.setup(&canary.root("g1"), &[PARTS]);
+    let refused = told.refused("not-fresh");
+    assert!(
+        refused["halt"]["evidence"]
+            .as_str()
+            .is_some_and(
+                |evidence| evidence.contains("plant-install-hook-regression")
+                    && evidence.contains("ungraded")
+            ),
+        "the refusal names the rows nobody graded: {refused}"
+    );
+    assert!(!canary.root("g1").join("canary.json").exists());
+    // The same commit opens the small canary, whose one seeded row nobody is to grade.
+    canary.setup(&canary.root("g2"), &[]).done("setup", "ready");
+
+    // AND TWO ENTRIES THAT OPEN AS THE ONE DOES ARE NOT ONE: the run would name neither.
+    canary.log(&["2026-10-04 — The exit rule, revised once more: a second entry"]);
+    canary.setup(&canary.root("l2"), &[PARTS]).refused("unfit");
+    unmade(&canary, "l2");
+}
+
+/// What a setup WITHOUT the switch made, as the tool made it before the switch existed.
+const GOLDEN: &str = "tooling-tests/fixtures/stabilize-canary-setup.golden";
+
+/// Everything a setup under `root` made that is the tool's own to decide, as one text: the
+/// line it printed, the file it keeps, the opening's commit — its subject and its paths —
+/// and every file of the run's directory, byte for byte. What differs from one rig to the
+/// next is named by what it is: the root, the three commits. The line's own hash, which is
+/// over those, is left out.
+fn made_by(canary: &Canary, root: &Path, raw: &str, line: &Value) -> String {
+    let clone = root.join("clone");
+    let named = [
+        (root.display().to_string(), "<root>"),
+        (line["head"].as_str().expect("a sha").to_owned(), "<head>"),
+        (canary.commit.clone(), "<candidate>"),
+        (canary.previous.clone(), "<previous>"),
+    ];
+    let plain = |text: &str| {
+        named.iter().fold(text.to_owned(), |text, (value, name)| {
+            text.replace(value, name)
+        })
+    };
+    let printed = raw
+        .rfind(", \"sha256\": \"")
+        .map(|at| &raw[..at])
+        .expect("the line ends with its sha256");
+    let mut made = format!("== the line, without its sha256\n{}\n", plain(printed));
+    made.push_str(&format!(
+        "== canary.json\n{}",
+        plain(&fs::read_to_string(root.join("canary.json")).expect("the kept line"))
+    ));
+    made.push_str(&format!(
+        "== the opening's commit\n{}\n",
+        canary.git(&clone, &["log", "-1", "--format=%an <%ae>%n%s%n%b"])
+    ));
+    let paths = canary.git(&clone, &["diff", "--name-only", "HEAD^", "HEAD"]);
+    for path in paths.lines() {
+        made.push_str(&format!(
+            "== {path}\n{}",
+            plain(&fs::read_to_string(clone.join(path)).expect("a file of the opening"))
+        ));
+    }
+    made
+}
+
+/// **Without the switch the setup is what it was, to the byte.** The fixture is what the
+/// tool made of this suite's source before it had a switch — captured from that tool, at
+/// the commit this arm was written on — and a setup made today is held to it whole: the
+/// line and its order of fields, the kept file, the commit, and every file the record
+/// script wrote for it. A switch that leaks into the small canary's opening — a fact, a
+/// row, a field of the line — is red here.
+#[test]
+fn a_setup_without_the_switch_is_what_it_was() {
+    let canary = Canary::new("unswitched");
+    let root = canary.root("canary");
+    let told = canary.setup(&root, &[]);
+    let line = told.done("setup", "ready").clone();
+    let made = made_by(&canary, &root, &told.raw, &line);
+    let golden = fs::read_to_string(repo_root().join(GOLDEN)).expect("read the golden");
+    assert_eq!(
+        made, golden,
+        "a setup without the switch is not what it was — the left is what the tool makes now"
+    );
+    // AND WHAT IS HELD IS A WHOLE OPENING, no excerpt of one: the line, the kept file, the
+    // commit and the five files a small canary's opening is.
+    assert_eq!(golden.matches("\n== ").count() + 1, 8, "{golden}");
+    // The same source under the switch is another opening — the control that the fixture
+    // can tell the two apart.
+    let switched = Canary::parts("switched");
+    let root = switched.root("canary");
+    let told = switched.setup(&root, &[PARTS]);
+    let line = told.done("setup", "ready").clone();
+    assert_ne!(made_by(&switched, &root, &told.raw, &line), golden);
 }

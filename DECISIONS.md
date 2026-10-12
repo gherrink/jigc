@@ -2,6 +2,104 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The canary's setup opens a run with a queue: under one switch, `--parts`, `dev/stabilize-canary` writes the opening the reshaped `test` stage is run on in parts — the door `jigc setup`, four items, a budget of 9, a hand-on number of 2, an order that leaves the queue empty, the entry that states the exit rule and fourteen plants graded at the opening — and without the switch a setup is what it was, to the byte (the staged plan's `SC2`, the first part of `T9`; the builder's choices inside it)
+
+**What.** [`dev/stabilize-canary`](dev/stabilize-canary) gains one switch ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §4 and §10, `SC2` — below, *the plan*; ruling 1 of the entry below; the first third of the row `wf-canary-setup`). With `--parts` a setup writes, through the same three calls of the clone's own record script that every setup makes — `run-set`, `item-set`, `ledger-add` — the opening of a run with a queue; the tool's header holds it as the section *THE OPENING OF A RUN IN PARTS*, and its tables are that section's (`PARTS_DOOR`, `PARTS_ITEMS`, `BUDGET`, `HAND_ON`, `ORDER`, `CONDITION`, `PLANTS`). **Nothing of the harness, the record script, the step tool or an agent's definition is touched: every fact and every row of the opening was taken by the committed record script as it stands.** In one place:
+
+| | Without the switch — the small canary, unchanged | With `--parts` |
+|---|---|---|
+| the door | `jigc doc list` | `jigc setup` |
+| the items | five by default, of six | `row-setup` (review row, in scope by the door), `gate` (held), `regression-set` (held), `regression-again` (held) — all four by default; `--items` names any of them |
+| the run's facts | stop, previous release, scope, census | the same, and `budget` 9 (`--budget N`), `hand-on` 2, `order` `route under-confirmed`, `behaviour under-confirmed` (`--order`), `condition` — the heading of the entry of 2026-10-04 that states the exit rule |
+| the ledger | one row, ungraded, without a class | fourteen plants, each graded `unclear` by the human, with its class and its kind's evidence |
+| the state it must leave | `next: test`, round 1, attempt 1, the opening owing nothing | the same — and **nothing untriaged** |
+| the line | as it was | no `seeded`, `args`, `args_then`, `returns` or `expect`; `plants`, `condition`, `budget`, `hand_on`, `order`, and — read from the run's own state — `queue` and `listed` |
+
+**The state a fresh root has**, as the record script prints it for a setup from this repository's own log (one real setup, with the machine's own gitleaks and denylist, from the commit this task was built on): `next: test`, round 1, attempt 1, nothing owed, nothing untriaged; the budget 9, spent 0; **the queue empty**; thirteen rows listed as `class-off-the-order` and the lead as `lead`; `gate`, `regression-set` and `regression-again` selected, `row-setup` waiting for the round's scope. With the order part 3 rules written by one `run-set` there, the queue is the three route plants and then the ten reserve plants, thirteen rows, and `next` is still `test` — the round has no candidate.
+
+**Chosen where the plan left it to the builder — and what was rejected.**
+
+- **The switch is `--parts`**, the plan's working name: it is what the plan's §5 has the human type.
+- **`--order` spells a class as one plain word, `<kind>:<origin>`, joined by commas** (`route:seed,behaviour:seed`), and the tool writes `<kind> <origin>` to the record. *Rejected:* the record script's own two-word spelling — a value with a space in it is a quoted argument, and every command this tool names, and every line a later task prints for a fresh root, is held to plain words.
+- **The budget and the order are flags; the number a verifier hands on is not.** The plan names three flags (budget, order, items), and no root of its §9 changes the number. **Neither flag is taken without the switch** (`usage`): the small canary's run has no queue.
+- **An order is held to its shape here, and to the classes there are by the record script** — the choice the harness made for a ruling of an order. A class that script does not know is its refusal, in its own line, as `tool`; the root then holds no canary.
+- **The condition's heading is found, not typed.** The tool reads the `DECISIONS.md` of the commit named and takes the entries that open `2026-10-04 — The exit rule, revised`: exactly one, whose heading it writes whole — and none, or two, is `unfit`, asked before anything is made. The record script then holds the same heading to the clone's log once more. *Rejected:* the heading as a constant of the tool — a line of 173 characters typed a second time. This repository's log holds exactly one.
+- **Every plant is graded at the opening, and a setup that leaves a row for a triage is refused** (`not-fresh`, naming the rows): the grade is what keeps a triage from deciding whether a plant is launched, so it is held, not hoped for.
+- **A verifier has the row and nothing else, so the row's `repro` holds the claim and how its state is built.** It opens *The claim: …* — the plan's words — and goes on *The state: …*, the tool's words: what `dev/jigc-rig bare` mints, the binary named to it, where the commands are run. The kind's evidence is the route line or the commands, alone; a route plant carries the refusal's code; **no cell says which way a claim falls** — the plan's columns *Source* and *What must happen* are in the tool's header, for whoever reads a part, and in no row. The lead's row is its claim.
+- **The clause a plant would break is `working-product`** — the clause the first canary's row for the planted regression carries — but for the one claim of a file that is gone, which is `no-lost-files`. The plan's table names none.
+- **The opening record names the plants by key and class and holds none of their words.** It is printable ASCII, as the small canary's is. **The plants' words are not:** a dash of one claim's own and the dot that parts two commands stand in the ledger as the plan and `P0` have them. The small canary's table was held to ASCII because an agent relayed the state; a plant's row is read by its verifier, by its key.
+- **The line under the switch prints no arguments** (the plan: *it prints no arguments*). The small canary's two argument objects, its two return files and its count of agents describe one stage of another shape, and saying them of the parts would be a count nobody held to a stage.
+- **`check` is untouched.** For a root of the parts it prints what it prints for any — `returned: {first, then}` among it, which no act of the parts writes.
+- **The arm that holds the old setup compares it with a fixture**, [`tooling-tests/fixtures/stabilize-canary-setup.golden`](tooling-tests/fixtures/stabilize-canary-setup.golden): the line in its order of fields, the kept file, the opening's commit and the five files of the run's directory, with the root and the three commits named by what they are. **The file is the suite's and stands outside the letter of the task's write-set** (the tool, its suite, this log). *Rejected:* a hash in the suite — a red arm would say that something differs and not what; the text as a constant of the suite — twelve kilobytes of another file's bytes in a source file.
+
+**The plants are data, and where their words came from.** The plan's step `P0` drove every row of the plan's §4 table once on both binaries on 2026-10-12 and wrote, for each plant, the claim and the evidence to plant. That table is what the tool holds, word for word; it was a scratch file and is in no commit, so this entry and the suite's second typing of the fourteen rows are its record. **Every difference between the plan's §4, `P0`'s table and what is planted:**
+
+| Where | The plan's §4 | Planted |
+|---|---|---|
+| the regression's route line | ends at ``then re-run `jigc setup` `` | **the whole line**, as the binary prints it: it goes on ``. `--force` does not change this: it consents to replacing a file, not to following a link`` (`P0`'s first correction) |
+| both route lines | — | from `route:` on, without the two leading spaces the binary prints before it |
+| `<rig>` | one word for two things: the repository, and — in the regression's route — the root that holds it | each row says which it is there: in the regression's row the rig's root, the repository at `<rig>/repo` and the script at `<rig>/outside/shared-hook`; in every other row the repository itself (`P0`'s second correction). The claims keep the word as they have it |
+| the commands | `BINARY setup`, and what is read *before and after* | as `P0` ran them: `jigc setup`, the binary's directory first on the `PATH`, and each command spelled out, parted by `·` |
+| `plant-reserve-5` | *write it; `BINARY setup`; read it* | ``printf 'my notes\n' > notes.md`` · `jigc setup` · `cat notes.md` |
+| `plant-reserve-10` | `git stash list` *after* | `jigc setup` · `git stash list` |
+| the regression's repro | a link to the first canary's report | that report's path, in the clone, and the block's name — after the drive itself, in words |
+| `plant-false-route-claim` | the route line and the code | and, in the row's state, the two `chmod` commands of `P0`'s block |
+| `plant-linux-root-claim` | *draws the same refusal* | the claim as it is, and one sentence of the tool's: the refusal it means is the one the row's route line and code name |
+| the two spares | named | not planted: no reserve claim fell. The second is worded *`jigc setup` changes the repository's own configuration* in `P0`'s table |
+
+**`plant-reserve-2` is the one reserve plant whose right verdict needs both halves read**: *exits 0 and makes no commit* is false on both binaries, and its first half is true. It is planted as it is.
+
+**The acceptance: every plant driven once more by the builder, on both binaries.** The candidate — a release build of the product as `72ca156a` holds it, sha256 `dded1fac…beadfc`, the hash the first canary's record gives its candidate; the product's source, `Cargo.toml` and `Cargo.lock` do not differ from there to the commit this task was built on — and the previous release, `1.0.0-rc.24`, sha256 `accf3996…ab5d`. Each hash asserted before the first drive; one fresh `dev/jigc-rig bare --binary …` a plant and a binary, twenty-four rigs; the binary's directory first on the `PATH` and `command -v jigc` printing it in every one; every exit status read bare. Darwin arm64, an unprivileged caller.
+
+| Plant | On the candidate | On the previous release | As planted |
+|---|---|---|---|
+| `plant-install-hook-regression` | run 1 exits 1 at `setup.install-hook`, the route line the planted one to the byte with the rig's root for `<rig>`; the path it names is a regular file and no link; removed, the script is gone and the link still a link; run 2 exits 1 at `setup.install-hook` again, *leads to nothing* | exits 0, no refusal, one install commit; the script outside written through the link, 31 to 5143 bytes | **yes — it reproduces, and is green on the previous release** |
+| `plant-false-route-claim` | exits 1 with the planted route line; the directory made writable; the re-run exits 0, one install commit | the same | yes — false on both |
+| `plant-linux-root-claim` | not driven: no Linux host, no root caller | not driven | as an undrivable plant |
+| `plant-prose-lead` | nothing to drive | — | — |
+| `plant-reserve-1` | exits 0 | exits 0 | false on both |
+| `plant-reserve-2` | exits 0; `HEAD` moved | the same | false on both |
+| `plant-reserve-3` | exits 0; porcelain empty | the same | false on both |
+| `plant-reserve-4` | exits 0; one commit made | the same | false on both |
+| `plant-reserve-5` | exits 0; `notes.md` there, its bytes the same, untracked | the same | false on both |
+| `plant-reserve-6` | exits 0, then 0 | the same | false on both |
+| `plant-reserve-7` | two commits after the first run, two after the second | the same | false on both |
+| `plant-reserve-8` | `main` before and after | the same | false on both |
+| `plant-reserve-9` | no remote before or after | the same | false on both |
+| `plant-reserve-10` | no stash entry before or after | the same | false on both |
+
+**Red first.** The six arms were written before the tool changed and run on the parent's: five red, each at its first setup, for the one reason a switch that does not exist gives — `refused usage: unrecognized arguments: --parts`. `a_setup_without_the_switch_is_what_it_was` is by its nature green on the parent as far as it holds the old setup — its fixture was captured from the parent's tool, before any line of it changed — and was red there only at its control, the setup under the switch. One assertion was corrected between the red run and the first green one: that no text of a row says which way its claim falls first read the whole row, whose JSON says `"reopened": false`; it reads the row's source, repro and evidence. One was added after the first green run, where a mutant about to be run had nothing against it: the clause of each plant. All six were green at their first run on the changed tool.
+
+| Arm | What it holds |
+|---|---|
+| `a_fresh_setup_is_ready_with_the_budget_the_order_and_the_hand_on_it_was_given` | the four facts in the line and in the run's state; the run ready and fresh; the canary made as every canary is, and `check` holding it; no arguments in the line; and a root opened with `--budget 4`, part 3's order and the gate alone, whose queue holds the thirteen plants from the opening on |
+| `its_seeded_rows_carry_the_grade_and_the_class_the_canary_plants` | the fourteen rows against a second typing of the table: grade, grader, round, door, clause, class, evidence, code, the claim word for word, how the state is built; no path of a machine; the queue empty, nothing untriaged, nothing the human's, `next: test`; the line's `plants`, `queue` and `listed` |
+| `the_order_part_three_rules_puts_the_route_plants_and_the_reserve_into_the_queue_in_that_rank` | one `run-set` of the clone's record script — no harness: three route plants, ten reserve plants, the lead listed, the budget unspent; and, the control, the reserve first where the order names its class first |
+| `its_door_is_the_review_rows_and_the_plants` | the one door in the line, the review row and every plant; the four items and their kinds, and no other kind; the small canary's door nowhere; `--items` from the switch's table only, and the switch's items none of the small canary's |
+| `under_the_switch_a_flag_outside_its_grammar_a_log_without_the_one_entry_and_a_plant_nobody_graded_are_refused` | a log with no such entry, with an entry that only speaks of the rule, and with two; six budgets and seven orders outside the grammar; a class the record script refuses; either flag without the switch; and a record script that drops every grade — `not-fresh` |
+| `a_setup_without_the_switch_is_what_it_was` | the fixture, whole |
+
+**Mutants of the finished tool** — thirty-nine, each one edit, the arm that names its property run on each, the tool put back and its hash compared after. All died: four that let the switch reach the small canary (the switch as the default, its door, a line without the count, a graded row) at the fixture; eight of the facts and the line (the budget, the number handed on, an opening order that names the route plants' class, the condition not written, each flag not read, the line's queue, the small canary's arguments printed); thirteen of the plants (the grade, the grader, the origin, the round, a claim reworded, the route line as the plan quotes it, a command dropped, the code dropped, the clause, the state unsaid, the block uncited, the lead given as a behaviour, a reserve plant as a route's); five of the door and the items; nine of what is refused (two entries, no entry, an entry that speaks of the rule, each flag without the switch, a class twice, a budget of nought, an order that is any text, a row left for a triage). Two died by a traceback of the mutant's own making, at the assertion aimed at. **No mutant, and no pin beyond a few words:** the opening record's prose, the commit's subject, the two briefs written here, and the header.
+
+**The assertions this task carried.** None: no arm of the canary's suite that stood before is touched, and no other suite reads this tool. The suite gains six arms and one fixture; they run in the `rest` part of CI's tooling leg, which they lengthen by six arms that each make one to four real setups.
+
+**What the next tasks owe because of this.**
+
+- `SC3`: **the line under the switch has no argument object, no return file and no count** — and `check` and the kept file still know two return files by the small canary's names; the rows of `PARTS_ITEMS` that are new carry no count of agents, and `expected` is the small canary's. `--order` takes plain words, so the setup line of a fresh root for a later part can be printed as one plain invocation. The suite's source has the exit rule's entry only where `Canary::parts` made it. **No arm of this task runs a stage on the opening**, under the stand-in or otherwise: that the scope step's door selects `row-setup`, that a stage starts two held regression items, that triage is handed no plant — all first run by `SC3`'s arm.
+- `T9`, the rest: the opening with a queue as the only opening, and with it the fixture and its arm; the hunt's door and its item; the scripted arm as a held item.
+- `T10`: nothing new; the two sentences the plan names for it stand.
+
+**What is not established.**
+
+- **That a verifier handed a plant's row reaches the verdict the header expects, or at what cost.** The drive shows what the binaries do.
+- **Anything of `plant-linux-root-claim` and of the lead**: driven by nobody.
+- **The drive beyond its one state**: each plant once a binary, release builds, macOS, the rig's masked git configuration. The regression's route prints a canonical path: under a root reached through a link the printed path is not the string the rig exports, and a verifier comparing the two as strings would see a difference that is not the finding (`P0`'s note; the row says `<rig>` and no more).
+- **Whether a cell would keep the route line's two leading spaces**: not tried.
+- **A root whose items leave out the review row** is opened and read by an arm, and run by nothing.
+- **The fixture pins what the record script renders for a run without an order**, beside what this tool decides: a task that changes that rendering carries it — and the reshape plan's phase condition forbids such a change before the old path goes.
+
+**Seen and not touched.** Three keys of the plan's say which way their claim falls — `plant-false-route-claim`, `plant-install-hook-regression`, and `reserve` in ten — and a verifier is handed its key; the keys are the plan's, used across its tables, and a part's reading should say whether a verifier leaned on one. The tool lies in the clone with its header, and the plan beside it: the answers are one read away from any agent that looks, as the small canary's were. An edit of a mutant that makes the tool raise ends in a traceback and no line — `main` catches a refusal and what the file system refuses, and nothing else.
+
 ## 2026-10-12 — The reshaped `test` stage is run for real in parts, now, and not once at the end of its build: the plan for the four parts approved, a scoped review before the first, the tasks that remain re-ordered around them and the whole canary still owed — and with it the byte table for the exit rule's first clause piloted now, and the regression set's second part left until before the port (four rulings of the human's; the orchestrating session's record, no code)
 
 **What.** One commit of the orchestrating session's own, a record and no code. Four rulings of the human of 2026-10-12 go on record. The plan one of them approved is committed as [staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) — below, *the plan* — beside the build's plan it cuts across ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md), below *the build's plan*), which gains one dated sentence that points at it. Four rows of [decisions-pending.md](implementation/decisions-pending.md) move: two ruled, one added, one discharged. **Nothing is built by this commit, and no part has run.**
