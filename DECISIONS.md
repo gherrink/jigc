@@ -2,6 +2,114 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's eight sites of `milestone`: the three doors that ask what a sub-task's worktree path still holds, the id a record owns, a provision that stopped half-way, a boundary with nothing to land, one path staged twice and a file of the area that cannot be read — 84 cases, 32 of them red under eight new keys; a command the refusal lists is run by its place in the listing, and the pilot's two tables printed again (the human's ruling of 2026-10-11, the sites of `milestone`)
+
+**What.** A fourth command's file, [route_catalog/milestone.rs](crates/cli/tests/route_catalog/milestone.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::milestone`, exists by construction and stands in the runner's one-at-a-time group — with the cases of all eight sites of `milestone` the ruling takes in. **Nothing of `milestone` is on the owed list.** No product source changes; nothing is fixed.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | minutes | new vocabulary |
+|---|---|---|---|---|---|---|---|---|---|
+| `engine/milestone.rs::record_home_refusal` | new-site | 2 groups | 5 | 5 | 0 | 7 | 1 | 4 | — |
+| `milestone.rs::zero_contribution_finding` | unchanged · caller changed, on the path | 2 | 5 | 5 | 0 | 6 | 4 | 5 | `Step::JigcAt` |
+| `combine.rs::collision_finding` | unchanged · caller changed, on the path | 2 groups | 3 | 3 | 0 | 3 | 0 | 4 | `Act::Unstage` |
+| `milestone.rs::provision_failed_finding` | unchanged · caller changed, on the path | 3 | 6 | 4 | 1 `not-constructible` — a declared bound · 1 `platform` | 5 | 0 | 4 | — |
+| `engine/milestone.rs::io_finding` | unchanged · caller changed, on the path | 3 groups | 26 | 19 | 7 `not-constructible` | 19 | 19 | 9 | — |
+| `milestone.rs::dirty_worktree_finding` | route-changed | 4 groups | 12 | 12 | 0 | 18 | 1 | 9 | `Act::RunListed` |
+| `milestone.rs::leftover_finding` | function-changed | 3 groups | 10 | 10 | 0 | 13 | 1 | 6 | — |
+| `milestone.rs::unlanded_work_finding` | new-code | 4 groups | 12 | 11 | 1 `not-constructible` | 13 | 6 | 9 | — |
+| **eight sites** | | | **79** | **69** | **10** | **84** | **32** | **50** | |
+
+What each count is derived from, the causes without a case and the ways not followed are the file's `READINGS`. *Minutes* are the machine's clock from the family's first probe to its arm green, about fifty for the eight together and split by estimate; the gate, the frame's three pieces and the named-binary runs are not in them. No site came near the hour. Of the 52 cases that hold, 13 hold with the operand implied — an entry the route says to move aside and does not print, or the refused command run again where no line is printed for it.
+
+**Who read and drove what.** The helper of the task before this one had enumerated and driven the family's causes; its recipes and raw outputs were handed on as leads. **Every cause that has a case here was derived again from the callee by this task** — the eight constructors and the functions their rows name — and every state that became a case was run by the suite. The helper's counts were 15, 5, 12, 10, 3, 4, 2 and 16 words; this task's are in the table and differ where it counted otherwise (the worktree doors by what the listed line's reason and fate say, the area's refusal by the word and the door). Of the helper's reasons for a cause it did not follow, the ones kept as a reason here were each driven once more: the record's read behind an earlier read (three doors, two ways), and the restore recipe by hand.
+
+**How the three worktree doors are counted.** `jigc milestone provision`, `discard` and `finalize` ask one probe (`probe_leftover`, and at the finalize its sibling `unlanded_work`) what a sub-task's worktree path holds — what stands there, whether git left it mid-operation, what git's registration of it still holds — and word a line a held path. A cause is what the probe found, as the line's reason says it; the states are made by file acts and by git run in the worktree: a file written, staged, committed there; a bisect started; the directory removed or moved away; the `.git` link moved out or overwritten; the registration's index overwritten; and the whole repository copied beside itself (`cp -R`), a case of the copy standing in it.
+
+### The frame, grown three times — each piece red first against a runner that declared it and did nothing
+
+- **`Act::RunListed(n)` — a command the refusal's own listing carries, by its place among the listing's backticked spans.** The routes of the worktree doors say *run the command on that line*, *the command that abandons it is on its line*: the line is the refusal's, above its route. The act names the n-th backticked span of the listing (`route_case::listed_spans_in`: the indented lines of the finding that carries the code, never its head, its route or another finding's) and the runner runs it as it runs a printed line of the route — a `git` line on git, a `jigc` line on the binary under test. **A listed line that is neither is a fault of the case**: the recipe that brings a checkout back is three commands joined by `&&` with a redirect among them, and the runner hands no line a shell to interpret. *Not built:* an act that does. It would let a printed line write wherever a shell's operators lead, and the frame's bound is that an act stays in the sandbox by construction; the ways that need it have a reason. Red: `left: []  right: ["jigc -c 'rm held'", "git --version"]` — the listing read as empty. `route_catalog::a_command_the_refusal_lists_is_run_by_its_place_among_the_listed_spans`.
+- **`Act::Unstage(operand)` — a path taken out of the index of the checkout it stands in.** *Have the contending sub-tasks touch distinct files* names an act and prints neither a line nor a path: one sub-task lets the path go. The entry is dropped by the runner's git, run in the directory that holds the path — a linked worktree's index is its own — and the file stays; a path git holds no entry for is not unstaged and the case is red for it. It takes an operand, so the arm that refuses the marked form wherever a path is printed and the arm that holds file acts to the sandbox each gained it. Red: the planted case came out *the same refusal again* where *holds, operand implied* was planted. `route_catalog::a_path_is_taken_out_of_the_index_of_the_checkout_it_stands_in`.
+- **`Step::JigcAt(place, argv)` — a state step that runs the binary under test in another place of the sandbox.** The task before this one had found no state that needs it; a sub-task's commit doc does — the product re-enters a sub-task from its own worktree and from nowhere else. Red: the planted case came out *not provoked* where *holds* was planted, the step's file not made. `route_catalog::a_state_step_runs_the_binary_under_test`.
+
+**The frame's panic over a deleted directory was not met.** No case of the family stands in a worktree that its route removes; the panic the last return names is where it was.
+
+### The red cases — eight keys, all new, in the pilot's findings file (§6)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 19 | followed, the same refusal again | 0 |
+| `r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards` | 3 | followed, another failure | 0 |
+| `r1-worktree-doors-route-re-run-is-for-the-next-command` | 3 | followed, the same refusal again | 3 |
+| `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` | 3 | followed, another failure | 3 |
+| `r1-record-exists-route-says-continue-over-a-file-that-is-no-record` | 1 | followed, another failure | 0 |
+| `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place` | 1 | followed, the same refusal again | 1 |
+| `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed` | 1 | followed, another failure | 0 |
+| `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution` | 1 | followed, another failure | 0 |
+
+- **Nineteen of the 32 are one sentence** — *a disk or permissions problem on the `.jigc/` milestone area* — over an entry of another kind, at every followed cause of `io_finding`. It is the gate's `r1-task-working-area-io-…` in another family's function; a neighbour, so the key is minted.
+- **Two keys are a re-run or an abandon that the route itself says will answer again** (6 cases, all marked): the frame holds every printed command to exit 0.
+- **None of the 84 cases stands on a declared bound.** Two causes that would are given the bound as their reason and are not constructed.
+
+### The doubts — each one of the questions already listed
+
+| cases | the route says | which question |
+|---|---|---|
+| 6 | *move that entry aside, and this door then prints the one line …* · *move it aside and re-run for the command …* · *or abandon the milestone with `jigc milestone discard <id>`, which answers for the same path with its own route* | the gate's third and the pilot's fourth — a command cited for what it prints; the surface contract is silent |
+| 1 | *`git add` their work inside their worktrees* | the pilot's sixth — a `git` verb printed with no operand; the contract: such a span *names a command rather than a file* |
+
+No new question.
+
+### The previous release's binary, side by side — the 32 red cases
+
+From the first of three runs of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 308.1 s the first, load average 7.4 at its start and 13.6 at its end, no gate of this branch beside any; all three printed the same lines for the family, and the second is the one whose tables are committed, below). What a line says and does not say is the pilot's record, §8: a state is built by the binary that is asked; *not provoked* is not *nothing happened*; a case's acts were written by reading this tree's route.
+
+| key | red cases | on this tree's binary | on `rc.24` | `rc.24`'s refusing command | the two routes |
+|---|---|---|---|---|---|
+| `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` | 19 | the same refusal again | the same | exit 1 | the same |
+| `r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards` | 3 | another failure | the same | exit 3 | the same |
+| `r1-worktree-doors-route-re-run-is-for-the-next-command` | 3 | the same refusal again | the same 1 · not provoked 2 | exit 1 · exit 3 | not the same · — |
+| `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` | 3 | another failure | not provoked, all three | exit 3 | — |
+| `r1-record-exists-route-says-continue-over-a-file-that-is-no-record` | 1 | another failure | the same | exit 1 | the same |
+| `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place` | 1 | the same refusal again | the same | exit 3 | the same |
+| `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed` | 1 | another failure | the same | exit 1 | the same |
+| `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution` | 1 | another failure | not provoked | exit 3 | — |
+
+**Of the 32 red cases, 26 come to the same classification on `rc.24` — 25 of them over the same printed route — and 6 are *not provoked* there**: the six of `milestone.unlanded-work`, a code that binary does not have; its finalize exits 3 under another. **Of the family's 84 lines, 59 have the same classification on both** (holds 20 · holds, operand implied 13 · the same refusal again 21 · another failure 5), 55 of them over the same route, **and 25 do not**: every one is *not provoked* on `rc.24` — 19 that hold here and the 6 above; its refusing command exits 0 in 16 of them, 3 in 7 and 1 in 2, and no witness changed in any. The lines themselves are the table's.
+
+### The fence
+
+- **`CATALOGUED` holds the family's three prefixes** — `combine`, `join`, `milestone` — beside the fourteen it had. One code of them no listed site spells: `milestone.rollback-conflict`, the second of the five door codes handed to `rollback::rollback_conflict_finding`, said to be minted there by a row of `MINTED_AT` like its sibling.
+- **What the two lists hold when this task stops.**
+
+| family | owed — a case or a reason | owed — the caller's diff to be read | scheduled |
+|---|---|---|---|
+| `task finalize` | 0 | 0 | 42 |
+| `milestone` | 0 | 0 | 23 |
+| `doc write` | 2 | 11 | 10 |
+| `config` | 5 | 0 | 14 |
+| `start` | 1 | 2 | 7 |
+| `doc read` | 1 | 2 | 2 |
+| `migrate` | 0 | 2 | 0 |
+| `task discard` · `ingest` · `task bind` · `validate` | 0 | 0 | 11 |
+| `unassigned` — the dynamic sites | 0 | 4 | 16 |
+| **together** | **9** | **21** | **125** |
+
+The scheduled list is one row shorter than the ruling's entry left it: `empty_commit_finding`, taken in by the entry below this one.
+
+### The pilot's two tables, printed again
+
+[route-catalog-pilot-cases.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot-sites.tsv) are the arm's blocks `cases` and `sites` as one run printed them, byte for byte: 544 lines of cases and 78 of sites under a header each — the pilot's two commands, the gate's 107 cases over sixteen sites and `jigc milestone`'s 84 over eight (303.9 s, load average 7.0 at its start and 13.3 at its end, no gate of this branch beside it; a run made minutes earlier printed both blocks byte for byte the same). **And a run after the last edit to anything the arm reads printed them byte for byte the same again**: the gate's lint then refused the runner an eighth argument, three of them were bundled into one, and the arm was run once more over that frame (676.6 s, beside another lane's gate, load average 38). What was written after it is this entry's own account of the runs and the record's line. The pilot's record has one dated line at its head for it.
+
+**Not established.**
+
+- **The ways that are a shell line.** The restore recipe and the re-link are run by no case; the recipe was driven by hand once, at the finalize, and holds there.
+- **A moved repository**, and what a worktree door says of a registration git lists at the path the repository had: a reason, not a case.
+- **The record's read and its three writes** as causes of the area's refusal: an earlier read answers, or what is left is a declared bound. Driven, not followed.
+- **A cause nobody constructed.** The worktree doors' 34 causes are states one probe tells apart; the probe's three legs combine in more ways than were planted — a link at a path beside a registration, an empty directory at the discard and the finalize — and each such state was read as one of the counted ones, by its line's reason.
+- **Whether the helper's leads this task did not take up hold.** Its copied-and-moved states beyond the copy, and its second ways out at several causes, were not driven again.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-12 — The route catalog's last two sites of the gate: the clobber guard, seven arms at two doors, and the empty commit, taken in by a second reading of the ruling — 45 cases, 10 of them red under five new keys; the gate's eleven prefixes join the vocabulary the fence holds, and a code a scheduled dynamic site mints is said to be minted there (the human's ruling of 2026-10-11, the sites of `task finalize`, third part)
 
 **What.** Forty-five more cases in [route_catalog/task_finalize.rs](crates/cli/tests/route_catalog/task_finalize.rs) over two sites. **The family is answered: sixteen sites, fourteen with a reading and two with a reason; 107 cases, 26 of them red; nothing of `task finalize` is on the owed list.** No product source changes; nothing is fixed.

@@ -6,7 +6,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a state only `JIGC_ADAPTERS_DIR` reaches is a declared bound of the catalog — a red case that stands on one is recorded, stays red, and does not block; `$HOME` taken away is no bound.
 
-**The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
+**[2026-10-12: and of two families beyond the pilot's two commands** — the gate (§5) and `jigc milestone` (§6), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -641,3 +641,128 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **A route of the clobber guard prints its rename with the title left to the reader** — `jigc doc rename adr:use-tabs --to "<title>" --task pick-tabs`. Run as printed, the quoted placeholder is the title: the doc lands as `docs/decisions/title.md` under the heading `# <title>`. Sixteen cases run it so; thirteen of them hold, and the three that do not are red for another line of their route.
 - **`finalize.empty-commit`'s first way is *make a change, then re-run `jigc task finalize <id>`***: a file written and not staged, then the printed re-run, is refused under `finalize.nothing-staged`, whose route says to `git add` it. Driven by hand; the frame has no act that writes a file of a case's own.
 - **Under `status.showUntrackedFiles=no`, a task whose whole change is a new file under `.jigc/config` lands on this tree and is refused on the previous release's binary** (`finalize.nothing-staged`) — the one change the fix pass made to what counts as something to commit. Driven by hand on both.
+
+## 6. `milestone` — the sites the fix pass touched
+
+*Added 2026-10-12, with the cases of [route_catalog/milestone.rs](../../../../../crates/cli/tests/route_catalog/milestone.rs): the eight sites of the family taken in by the human's ruling of 2026-10-11, 84 cases. Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and `jigc milestone create "Fan out"`, made by the binary under test; the sub-tasks are `do-a-thing` and `second-thing`.
+
+### `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind`
+
+- **Classification:** followed, the same refusal again. **Nineteen cases:** `area-io-…-workbench-made-writable` — every case of `io_finding`.
+- **State:** an entry of the milestone's area, or of a sub-task's, that is of another kind than the command expects: a regular file at `.jigc/milestones`, or a link that leads nowhere at the area (the create); `base.json` or `tasks.json` holding text that is no JSON, or a directory in the place of either (add-task, the join, the finalize); a link, a file or a directory in the join's staging area; a sub-task's `provenance.json` no JSON or a directory; a staged doc body a directory or bytes that are no text (the finalize). None is a permission.
+- **Refusing command:** `jigc milestone create` · `add-task` · `join` · `finalize` — exit 1, `milestone.area-io`: *could not open the milestone area*, *could not read the task list*, *could not clear the parent staging area*, … — each with the I/O call's own error.
+- **Printed route:**
+
+  ```text
+  route: resolve the underlying I/O condition (a disk or permissions problem on the `.jigc/` milestone area), then re-run the command
+  ```
+
+- **What was done:** `.jigc/` made writable to its owner, which it was; the command again.
+- **What went wrong:** the same refusal — one route whichever of eighteen things was being done, naming one kind of fault. *Why a key of its own:* it is `r1-task-working-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind` in another function, of another family — the same sentence, word for word but for the area's name; a neighbour of that row, as that row is of the canary's.
+
+### `r1-record-exists-route-says-continue-over-a-file-that-is-no-record`
+
+- **Classification:** followed, another failure. **One case:** `record-exists-a-draft-by-hand-continued-with-a-sub-task-as-printed`.
+- **State:** a file somebody drafted by hand at `docs/milestone-records/fan-out.md`, in no commit; no milestone was ever created.
+- **Refusing command:** `jigc milestone create "Fan out"` — exit 1, `milestone.record-exists`: *milestone `fan-out` already has a record*.
+- **Printed route:**
+
+  ```text
+  route: continue it with `jigc milestone add-task fan-out "<intent>"`, or create this one under a different title
+  ```
+
+- **What was done:** the printed line, as printed.
+- **What went wrong:** exit 1 under `milestone.record-read-back` — *could not re-derive milestone state from its record: required section heading `## tasks` is missing*. There is no milestone to continue: the refusal reads the file's presence, the route its absence of a settled status. The source says the status is *decoration on the block*.
+- **Beside it, and green:** the same line over a record that is one — with its workbench and without (`record-exists-live-…`, two cases).
+
+### `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place`
+
+- **Classification:** followed, the same refusal again. **One case, marked `doubt`:** `zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed`.
+- **State:** the sub-task's worktree is provisioned and holds its work, a file written and not staged.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.zero-contribution`.
+- **Printed route:**
+
+  ```text
+  route: `jigc milestone provision fan-out` gives every sub-task a working area (a fresh clone has none; an existing one is reused); execute the sub-tasks, `git add` their work inside their worktrees, then re-run `jigc milestone finalize fan-out` — or settle the milestone as abandoned with `jigc milestone discard fan-out`
+  ```
+
+- **What was done:** the three printed lines of the first way, where the case stands: the provision (exit 0, the worktree reused), `git add` (exit 0, *Nothing specified, nothing added*), the finalize.
+- **What went wrong:** the same refusal: nothing was staged. The route says where the `git add` belongs — *inside their worktrees* — and prints neither a path nor a line that goes there.
+- **The doubt:** the pilot's sixth question, over another verb — a `git` span with no operand is a line to run, or the name of a verb.
+
+### `r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards`
+
+- **Classification:** followed, another failure. **Three cases:** `zero-contribution-work-unstaged-milestone-discarded-as-printed`, `zero-contribution-only-a-commit-doc-milestone-discarded-as-printed`, `zero-contribution-no-record-doctype-only-a-commit-doc-milestone-discarded-as-printed`.
+- **State:** a milestone with nothing to land whose sub-task holds work that is not staged — or whose one doc is its commit doc, in a project with a milestone record and in one without.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.zero-contribution`, the route above.
+- **What was done:** the route's other way, `jigc milestone discard fan-out`, as printed.
+- **What went wrong:** exit 1 — under `milestone.dirty-worktree` over the unstaged work, under `milestone.staged-prose` over the commit doc. The abandon the route offers is refused by the discard door's own guards in three of the five states this refusal is raised in; each guard prints a route of its own, which ends in its consent.
+- **Beside it, and green:** the same line where the sub-task holds nothing — never provisioned, and provisioned with nothing staged.
+
+### `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed`
+
+- **Classification:** followed, another failure. **One case:** `leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed`.
+- **State:** a link that leads nowhere stands at `.jigc/worktrees/do-a-thing`, where the sub-task's worktree is to be provisioned.
+- **Refusing command:** `jigc milestone provision fan-out` — exit 1, `milestone.leftover-holds-work`: *the file itself — it is a file, not a worktree*.
+- **Printed route:**
+
+  ```text
+  route: `jigc milestone provision fan-out --force` — but look at what is listed above first and move out anything you need; the removal is permanent
+  ```
+
+- **What was done:** the consent, as printed.
+- **What went wrong:** exit 1 under `milestone.provision-failed` — *`git worktree add --detach …` failed: … already exists*. The consent's clearing step asks whether the path exists by following the link, sees nothing and removes nothing; git then refuses the path. The second refusal's route prints the same line again.
+- **Beside it, and green:** the same consent over a regular file at the path, and the link removed by hand before the consent (`provision-failed-forced-over-a-link-to-nothing-link-removed-and-provisioned-as-printed`).
+
+### `r1-worktree-doors-route-re-run-is-for-the-next-command`
+
+- **Classification:** followed, the same refusal again. **Three cases, all marked `doubt`:** `dirty-worktree-a-git-entry-that-leads-nowhere-moved-out-and-discarded-as-printed`, `unlanded-a-git-entry-that-leads-nowhere-moved-out-and-finalized-as-printed`, `unlanded-a-file-where-the-worktree-was-moved-out-and-finalized-as-printed`.
+- **State:** a sub-task's worktree whose `.git` entry leads nowhere git can read — or a file where the worktree was — beside a registration that still holds a staged path.
+- **Refusing command:** `jigc milestone discard fan-out` (exit 1, `milestone.dirty-worktree`) · `jigc milestone finalize fan-out` (exit 3, `milestone.unlanded-work`).
+- **What the line and the route say** (the finalize):
+
+  ```text
+    .jigc/worktrees/do-a-thing: git's registration of this path still holds 1 staged path in no commit (work.txt) — what stands there has a `.git` entry git reads no repository through, and no printed command overwrites one: move that entry aside, and this door then prints the one line that re-links the checkout, its files untouched — …
+  route: that line carries no command, because none is safe to print over what stands at the path — take the step it names by hand (a path brought back or re-linked is a live worktree again, whose staged paths the boundary lands), then re-run `jigc milestone finalize fan-out` — or abandon the milestone with `jigc milestone discard fan-out`, which answers for the same path with its own route
+  ```
+
+- **What was done:** the entry moved out of its path by the runner; the printed re-run.
+- **What went wrong:** the same refusal, now with the line that re-links the checkout — as the line said it would be. The frame holds every printed command to exit 0.
+- **The doubt:** a command a route cites for what it prints — the gate's third question and the pilot's fourth.
+
+### `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door`
+
+- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `unlanded-no-directory-and-staged-paths-in-the-registration-milestone-discarded-as-printed`, `unlanded-no-directory-and-a-registration-git-cannot-read-milestone-discarded-as-printed`, `unlanded-checkout-with-no-git-link-milestone-discarded-as-printed`.
+- **State:** a sub-task's worktree directory gone and its registration holding a staged path, or unreadable; or the checkout standing with no `.git` link.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.unlanded-work`.
+- **What was done:** the route's other way — *or abandon the milestone with `jigc milestone discard fan-out`, which answers for the same path with its own route* — as printed. The first way is a shell line on the listed line, or no line at all, which no case runs.
+- **What went wrong:** exit 1 under `milestone.dirty-worktree`: the discard door asks the same path the same question, as the route says it will.
+- **The doubt:** the same question as the key above.
+- **Driven by hand, the first way:** the recipe the line prints for a directory that is gone — `mkdir -p … && printf 'gitdir: %s\n' … > …/.git && git -C … restore .` — exits 0, and the finalize then lands the commit.
+
+### `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution`
+
+- **Classification:** followed, another failure. **One case:** `unlanded-a-commit-kept-on-a-branch-and-finalized-as-printed`.
+- **State:** a milestone of one sub-task, whose sub-agent committed its work in its worktree instead of staging it.
+- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.unlanded-work`. The line carries two commands: `git -C <worktree> branch kept/do-a-thing <sha>` (*keep it*) and `git -C <worktree> reset --soft <base>` (*to land it with the milestone instead*).
+- **Printed route:**
+
+  ```text
+  route: run the command on that line that fits what you want kept or landed (a kept commit clears the path, and a path brought back or re-linked is a live worktree again, whose staged paths the boundary lands), then re-run `jigc milestone finalize fan-out` — or abandon the milestone with `jigc milestone discard fan-out`, which answers for the same path with its own route
+  ```
+
+- **What was done:** the keep command, then the printed re-run.
+- **What went wrong:** exit 3 under `milestone.zero-contribution`: the kept commit was the milestone's only work, and a commit kept aside is not landed. *A kept commit clears the path*, and the boundary then has nothing.
+- **Beside it, and green:** the other command on the same line — the commit turned into staged paths, and the finalize lands them; and the keep command beside another sub-task's staged work.
+
+### Seen by hand, and no case
+
+Each was driven once more for this section, on this tree's binary.
+
+- **`jigc milestone discard fan-out --force` over a file where a provisioned worktree was exits 0 with the milestone half torn down**: it prints a warning — *could not remove the fan-out worktree … `git worktree remove --force …` failed* — and *discarded milestone:fan-out (… workbench NOT fully removed — the warnings above name what is left)*; the record reads `discarded` and git's registration of the path is left. (`mv .jigc/worktrees/do-a-thing ../elsewhere; printf x > .jigc/worktrees/do-a-thing; jigc milestone discard fan-out --force`.) Over a file at a path that was never provisioned the same command says *workbench removed* and leaves the file, as the route says it will.
+- **`jigc milestone provision fan-out --force` over a registration it cannot read says nothing of what it dropped**: with the worktree's directory gone and the registration's index overwritten, it prints *provisioned 1 worktree(s)* and no more. The state here is a file's bytes, no permission.
+- **`jigc milestone provision fan-out` exits 0 over a registered worktree whose `.git` entry leads nowhere**, beside a registration that holds a staged path: the path is registered and not stale, so it is reused and not asked.
+- **`jigc milestone join fan-out` exits 0 — *1 doc(s) merged* — over a staged doc body that is a directory, and over one whose bytes are no text**; the finalize refuses both under `milestone.area-io`.
+- **`combine.code-collision` exits 1 at the finalize**, where the boundary's other blocks exit 3.
+- **The conflict block at the milestone's finalize ends *then re-run the join***, and `jigc milestone join fan-out` exits 0 with the conflict standing (a committed doc edited by hand under a sub-task's staged copy).
+- **Four doors answer a broken file of the area with a plain error and no code**: `jigc milestone provision` and `discard` over a `tasks.json` that is no JSON (add-task, the join and the finalize refuse under `milestone.area-io`); `jigc milestone finalize` over a live worktree whose index is no index; and the finalize, the discard and a sub-task's discard over a record whose bytes are no text where jigc holds no hash for it — the first two naming the record by its absolute path.

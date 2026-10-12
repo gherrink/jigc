@@ -118,6 +118,21 @@
 //! out *a printed line no shell can split*, as before. A value that is a path out of the
 //! sandbox is not handed to any command.
 //!
+//! **Where a route sends its reader to the refusal's own listing, the runner runs the
+//! command that stands there** ([`Act::RunListed`], [`listed_spans_in`]). *Run the command
+//! on that line* names no span of the route: the line is one of the refusal's listing, and
+//! the command a backticked span of it — bytes the product printed, named by its index
+//! among the listing's spans and never spelled by a case. It is run as a printed line of
+//! the route is: split by a real shell, a `jigc` line on the binary under test, a `git`
+//! line on git. A listed line that is neither — a recipe of several commands joined by a
+//! shell's operators — is run by nobody: the runner hands a line no shell to interpret.
+//!
+//! **And where a route says a checkout must let a path go, the runner drops its index
+//! entry** ([`Act::Unstage`]): *have the contending sub-tasks touch distinct files* names
+//! an act and prints neither a line nor a path, so the object is the case's, in the marked
+//! form, and the git is the runner's — run in the directory that holds the path, since a
+//! linked worktree's index is its own.
+//!
 //! **No more chains run at once in one process than the machine is wide** ([`Gate`]).
 //! A case is one child process at a time; [`pooled`] bounds how many cases one caller
 //! follows at once, and every case followed in this process — by whichever arm, through a
@@ -129,7 +144,9 @@
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
 //! on the binary handed in: the state is that release's own, and no case copies the
-//! product's lines into its state to stand in for one.
+//! product's lines into its state to stand in for one. **And in another place of the
+//! sandbox where the product makes the state only from there** ([`Step::JigcAt`]): a
+//! milestone's sub-task is re-entered from its own worktree.
 //!
 //! **A sandbox is removed whole, whatever its state shut.** A state may take the owner's
 //! right to write or search a directory away, and a route need not give it back; the
@@ -218,6 +235,11 @@ pub enum Step {
     /// never by bytes a case copies out of it. It runs under the mask as it stands, like
     /// every step, and must exit 0.
     Jigc(&'static [&'static str]),
+    /// **[`Step::Jigc`], run in this place of the sandbox and not at the repository's root**
+    /// — a state the product makes only where it is asked from: a milestone's sub-task is
+    /// re-entered from its own worktree, and nowhere else. The place is there by the time
+    /// the step runs; like every step it runs under the mask and must exit 0.
+    JigcAt(Place, &'static [&'static str]),
 }
 
 /// One variable of the environment a case's **commands under test** run in — the refusing
@@ -329,6 +351,19 @@ pub enum Act {
     /// a re-run is: refused wherever the printed route holds a command line of the
     /// product, and no better than [`Classification::HoldsOperandImplied`].
     RerunWith(usize),
+    /// **Run a command line the refusal lists** — what *run the command on that line* asks
+    /// for, where a route sends its reader to a line of the refusal's own listing: the
+    /// backticked span of this index among the spans the listing holds
+    /// ([`listed_spans_in`]), run as [`Act::Run`] runs a printed line of the route. Bytes
+    /// the product printed, by index, and never a line of the case's; a listed line that is
+    /// no `jigc` or `git` command line is a fault of the case.
+    RunListed(usize),
+    /// **Take the path the operand names out of the index of the checkout it stands in** —
+    /// what *have the contending sub-tasks touch distinct files* asks of one of them: the
+    /// entry is dropped by the runner's own git (`git rm --cached`), in the directory that
+    /// holds the path, and the file stays where it is. A path git holds no entry for is not
+    /// unstaged, and the case is red for it.
+    Unstage(Operand),
 }
 
 impl Act {
@@ -346,9 +381,11 @@ impl Act {
             | Act::Mend(operand)
             | Act::Revert(operand)
             | Act::MakeReadable(operand)
-            | Act::MakeWritable(operand) => Some(operand),
+            | Act::MakeWritable(operand)
+            | Act::Unstage(operand) => Some(operand),
             Act::Run(_)
             | Act::RunFilled(_)
+            | Act::RunListed(_)
             | Act::Cd(_)
             | Act::Rerun
             | Act::RerunInTheRepository
@@ -523,7 +560,8 @@ pub fn standing(case: &Case) -> Standing {
                     }
                 }
             }
-            Step::Script(..) | Step::File(..) | Step::Dir(_) | Step::Jigc(_) => {}
+            Step::Script(..) | Step::File(..) | Step::Dir(_) | Step::Jigc(_) | Step::JigcAt(..) => {
+            }
         }
     }
     for var in case.env {
@@ -837,6 +875,25 @@ pub fn listed_in(said: &str, code: &str) -> Vec<String> {
         .collect()
 }
 
+/// **The command lines the refusal of `code` lists**, in order: the backticked spans of the
+/// indented lines of its finding that are not its `route:` line — the lines [`listed_in`]
+/// reads, and of them the spans alone. What [`Act::RunListed`] names a line by.
+pub fn listed_spans_in(said: &str, code: &str) -> Vec<String> {
+    let mut lines = said
+        .lines()
+        .skip_while(|line| head_code(line) != Some(code));
+    if lines.next().is_none() {
+        return Vec::new();
+    }
+    lines
+        .take_while(|line| head_code(line).is_none())
+        .filter(|line| line.starts_with(char::is_whitespace))
+        .filter(|line| !line.trim_start().starts_with("route: "))
+        .flat_map(spans)
+        .map(str::to_string)
+        .collect()
+}
+
 /// The `<placeholder>` words of a printed line, as byte ranges, in order: an angle
 /// bracket, bytes that are neither, and the bracket that closes it.
 fn placeholders(line: &str) -> Vec<(usize, usize)> {
@@ -943,6 +1000,16 @@ impl Ran {
             (None, None) => "killed by a signal".to_string(),
         }
     }
+}
+
+/// What a refusal printed for an act to take its object from: the backticked spans of its
+/// route, every value its listing holds ([`listed_in`]), and of those the backticked spans
+/// alone ([`listed_spans_in`]).
+#[derive(Clone, Copy)]
+struct Printed<'a> {
+    spans: &'a [&'a str],
+    listed: &'a [String],
+    commands: &'a [String],
 }
 
 /// A case's sandbox: one scratch root, removed when dropped.
@@ -1146,6 +1213,19 @@ impl Sandbox {
                     assert!(made.success(), "mkfifo {}", path.display());
                 }
                 Step::Git(args) => self.git(args),
+                Step::JigcAt(place, args) => {
+                    let ran = self.run(
+                        self.child(binary).current_dir(self.at(place)).args(args),
+                        LIMIT,
+                    );
+                    assert!(
+                        ran.success(),
+                        "the binary under test, as a state's step in `{}`, {args:?}: {}\n{}",
+                        self.shown(&self.at(place).display().to_string()),
+                        ran.exit(),
+                        ran.said
+                    );
+                }
                 Step::Jigc(args) => {
                     let ran = self.run(self.child(binary).args(args), LIMIT);
                     assert!(
@@ -1206,10 +1286,14 @@ impl Sandbox {
         binary: &Path,
         case: &Case,
         act: Act,
-        spans: &[&str],
-        listed: &[String],
+        printed: &Printed<'_>,
         seen: &mut Seen,
     ) -> Result<String, String> {
+        let Printed {
+            spans,
+            listed,
+            commands,
+        } = *printed;
         let code = case.code();
         let stand = self
             .went
@@ -1248,8 +1332,12 @@ impl Sandbox {
                 Act::Revert(_) => format!("revert the edit at `{named}` ({how})"),
                 Act::MakeReadable(_) => format!("make `{named}` readable ({how})"),
                 Act::MakeWritable(_) => format!("make `{named}` writable ({how})"),
+                Act::Unstage(_) => {
+                    format!("take `{named}` out of its checkout's index ({how})")
+                }
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
@@ -1315,8 +1403,10 @@ impl Sandbox {
                 }
                 Act::MakeReadable(_) => self.permit(&path, 0o400, "its owner may read it"),
                 Act::MakeWritable(_) => self.permit(&path, 0o200, "its owner may write it"),
+                Act::Unstage(_) => self.unstage(&path),
                 Act::Run(_)
                 | Act::RunFilled(_)
+                | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
@@ -1333,7 +1423,7 @@ impl Sandbox {
             });
         }
         let (what, ran) = match act {
-            Act::Run(_) | Act::RunFilled(_) => {
+            Act::Run(_) | Act::RunFilled(_) | Act::RunListed(_) => {
                 let (at, line, how) = match act {
                     Act::RunFilled(filled) => {
                         let printed = span(filled.line)?;
@@ -1387,7 +1477,23 @@ impl Sandbox {
                         (filled.line, line, format!(", {}", how.join(", ")))
                     }
                     Act::Run(at) => (at, span(at)?.to_string(), String::new()),
-                    _ => unreachable!("the two acts that run a printed line"),
+                    Act::RunListed(at) => {
+                        let listed = commands.get(at).ok_or_else(|| {
+                            format!(
+                                "an act runs listed span {at}, and the refusal lists {} \
+                                 backticked span(s)",
+                                commands.len()
+                            )
+                        })?;
+                        (at, listed.clone(), String::new())
+                    }
+                    _ => unreachable!("the three acts that run a printed line"),
+                };
+                // A span of the route, or — for a command the refusal lists — of its listing.
+                let of = if matches!(act, Act::RunListed(_)) {
+                    "listed span"
+                } else {
+                    "span"
                 };
                 let line = line.as_str();
                 let words = match super::shell_words_or(line, &stand, &self.home()) {
@@ -1395,7 +1501,7 @@ impl Sandbox {
                     Err(said) => {
                         seen.unsplit = true;
                         return Ok(format!(
-                            "run `{line}` (span {at}{how}): not run — no shell splits it \
+                            "run `{line}` ({of} {at}{how}): not run — no shell splits it \
                              into words\n{}",
                             said.trim_end()
                         ));
@@ -1406,13 +1512,13 @@ impl Sandbox {
                     Some("git") => Path::new("git"),
                     _ => {
                         return Err(format!(
-                            "an act runs span {at}, `{line}`, which is no `jigc` or `git` \
+                            "an act runs {of} {at}, `{line}`, which is no `jigc` or `git` \
                              command line"
                         ));
                     }
                 };
                 (
-                    format!("run `{line}` (span {at}{how})"),
+                    format!("run `{line}` ({of} {at}{how})"),
                     self.run(
                         self.tested(case, program, &stand).args(&words[1..]),
                         self.under_test,
@@ -1520,6 +1626,31 @@ impl Sandbox {
         match path.parent().map(fs::canonicalize) {
             Some(Ok(parent)) => parent.starts_with(&self.root),
             _ => !Path::new(value).is_absolute() && value.split('/').all(|part| part != ".."),
+        }
+    }
+
+    /// Take the path out of the index of the checkout it stands in: `git rm --cached`, run
+    /// in the directory that holds the path — so a linked worktree's entry is dropped from
+    /// that worktree's index — and the file itself is not touched.
+    fn unstage(&self, path: &Path) -> Result<String, String> {
+        let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+            return Err("not done — the path has no name to unstage".to_string());
+        };
+        let ran = self.run(
+            self.child(Path::new("git"))
+                .current_dir(dir)
+                .args(["rm", "-q", "--cached", "--"])
+                .arg(name),
+            LIMIT,
+        );
+        if ran.success() {
+            Ok("its index entry is gone, and the file stands".to_string())
+        } else {
+            Err(format!(
+                "not done — git holds no entry there: {}\n{}",
+                ran.exit(),
+                ran.said.trim_end()
+            ))
         }
     }
 
@@ -1961,8 +2092,14 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
             }
         }
         let listed = listed_in(&refused.said, code);
+        let commands = listed_spans_in(&refused.said, code);
+        let printed = Printed {
+            spans: &spans,
+            listed: &listed,
+            commands: &commands,
+        };
         for act in case.acts {
-            let done = sandbox.perform(binary, case, *act, &spans, &listed, &mut seen)?;
+            let done = sandbox.perform(binary, case, *act, &printed, &mut seen)?;
             detail.push(done);
         }
         if !seen.same_refusal && !seen.failed && !seen.did_not_end && !seen.unsplit {

@@ -9,7 +9,7 @@
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
 //! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
-//! `uninstall.rs` and `task_finalize.rs`.
+//! `uninstall.rs`, `task_finalize.rs` and `milestone.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -69,7 +69,15 @@
 //! refusing command is run again with the flag a route prints
 //! ([`the_refusing_command_is_run_again_only_where_the_route_prints_no_command_line`]),
 //! and a reader goes where a route sends them, and nowhere outside the sandbox
-//! ([`a_reader_goes_where_the_route_says_and_nowhere_outside_the_sandbox`]).
+//! ([`a_reader_goes_where_the_route_says_and_nowhere_outside_the_sandbox`]). **The second
+//! has its file too, `milestone.rs`** — the eight sites of the `jigc milestone` verbs the
+//! ruling takes in, each with a reading — and with it three pieces more: a command the
+//! refusal's own listing carries is run by its place among the listing's spans
+//! ([`a_command_the_refusal_lists_is_run_by_its_place_among_the_listed_spans`]), a path
+//! is taken out of the index of the checkout it stands in
+//! ([`a_path_is_taken_out_of_the_index_of_the_checkout_it_stands_in`]), and a state step
+//! runs the binary under test in another place of the sandbox
+//! ([`a_state_step_runs_the_binary_under_test`]).
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -299,6 +307,8 @@ tables! {
     mod uninstall;
     #[path = "route_catalog/task_finalize.rs"]
     mod task_finalize;
+    #[path = "route_catalog/milestone.rs"]
+    mod milestone;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -757,6 +767,78 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::AnotherFailure,
         &["clobber-staged-twice-at-the-home-doc-renamed-and-milestone-finalized-as-printed"],
     ),
+    (
+        CONTINUE_OVER_NO_RECORD,
+        Classification::AnotherFailure,
+        &["record-exists-a-draft-by-hand-continued-with-a-sub-task-as-printed"],
+    ),
+    (
+        GIT_ADD_WITH_NO_PATH_AND_NO_PLACE,
+        Classification::SameRefusalAgain,
+        &["zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed"],
+    ),
+    (
+        ABANDON_LINE_REFUSED,
+        Classification::AnotherFailure,
+        &[
+            "zero-contribution-no-record-doctype-only-a-commit-doc-milestone-discarded-as-printed",
+            "zero-contribution-only-a-commit-doc-milestone-discarded-as-printed",
+            "zero-contribution-work-unstaged-milestone-discarded-as-printed",
+        ],
+    ),
+    (
+        MILESTONE_AREA_ROUTE_SAYS_PERMISSIONS,
+        Classification::SameRefusalAgain,
+        &[
+            "area-io-a-directory-at-a-merged-bodys-path-at-the-finalize-workbench-made-writable",
+            "area-io-a-file-at-the-staging-area-at-the-finalize-workbench-made-writable",
+            "area-io-a-file-at-the-staging-areas-docs-at-the-finalize-workbench-made-writable",
+            "area-io-a-link-to-nothing-at-the-area-at-the-create-workbench-made-writable",
+            "area-io-a-link-to-nothing-at-the-staging-area-at-the-finalize-workbench-made-writable",
+            "area-io-base-pin-a-directory-and-no-task-list-at-add-task-workbench-made-writable",
+            "area-io-base-pin-not-json-at-add-task-workbench-made-writable",
+            "area-io-milestones-directory-a-file-at-the-create-workbench-made-writable",
+            "area-io-no-area-and-milestones-directory-a-file-at-add-task-workbench-made-writable",
+            "area-io-staged-body-a-directory-at-the-finalize-workbench-made-writable",
+            "area-io-staged-body-not-utf-8-at-the-finalize-workbench-made-writable",
+            "area-io-sub-task-manifest-a-directory-at-the-join-workbench-made-writable",
+            "area-io-sub-task-manifest-not-json-at-the-finalize-workbench-made-writable",
+            "area-io-sub-task-manifest-not-json-at-the-join-workbench-made-writable",
+            "area-io-task-list-a-directory-and-no-base-pin-at-add-task-workbench-made-writable",
+            "area-io-task-list-a-directory-at-add-task-workbench-made-writable",
+            "area-io-task-list-not-json-at-add-task-workbench-made-writable",
+            "area-io-task-list-not-json-at-the-finalize-workbench-made-writable",
+            "area-io-task-list-not-json-at-the-join-workbench-made-writable",
+        ],
+    ),
+    (
+        RE_RUN_FOR_THE_NEXT_COMMAND,
+        Classification::SameRefusalAgain,
+        &[
+            "dirty-worktree-a-git-entry-that-leads-nowhere-moved-out-and-discarded-as-printed",
+            "unlanded-a-file-where-the-worktree-was-moved-out-and-finalized-as-printed",
+            "unlanded-a-git-entry-that-leads-nowhere-moved-out-and-finalized-as-printed",
+        ],
+    ),
+    (
+        UNLANDED_ABANDON_LINE_REFUSED,
+        Classification::AnotherFailure,
+        &[
+            "unlanded-checkout-with-no-git-link-milestone-discarded-as-printed",
+            "unlanded-no-directory-and-a-registration-git-cannot-read-milestone-discarded-as-printed",
+            "unlanded-no-directory-and-staged-paths-in-the-registration-milestone-discarded-as-printed",
+        ],
+    ),
+    (
+        CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED,
+        Classification::AnotherFailure,
+        &["leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed"],
+    ),
+    (
+        KEPT_THE_ONLY_COMMIT,
+        Classification::AnotherFailure,
+        &["unlanded-a-commit-kept-on-a-branch-and-finalized-as-printed"],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -938,6 +1020,44 @@ const DROPPED_THE_ONLY_SUB_TASK: &str =
 /// `combine.code-collision` over the two staged files.
 const RENAME_DRAWS_THE_COLLISION: &str =
     "r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision";
+
+// The keys of `milestone`.
+/// `jigc milestone create` over a file at the record's home that is no record: the route
+/// says to continue the milestone with `add-task`, which is refused — there is none.
+const CONTINUE_OVER_NO_RECORD: &str =
+    "r1-record-exists-route-says-continue-over-a-file-that-is-no-record";
+/// The zero-contribution route says to `git add` the sub-tasks' work *inside their
+/// worktrees* and prints the verb with no path and no place. Rests on a reading — the case
+/// under it is marked.
+const GIT_ADD_WITH_NO_PATH_AND_NO_PLACE: &str =
+    "r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place";
+/// The zero-contribution route's other way, `jigc milestone discard <id>`, is refused by
+/// that door's own guards where a sub-task holds unstaged work or a staged commit doc.
+const ABANDON_LINE_REFUSED: &str =
+    "r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards";
+/// A `jigc milestone` verb cannot read or make an entry of the milestone's area that is of
+/// another kind than it expects, and the route names `.jigc/` and *a disk or permissions
+/// problem*.
+const MILESTONE_AREA_ROUTE_SAYS_PERMISSIONS: &str =
+    "r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind";
+/// A worktree door's line says to move an entry aside *and re-run for the command* that
+/// re-links or brings back the checkout: the re-run is the same refusal, with the next
+/// line. Rests on a reading — every case under it is marked.
+const RE_RUN_FOR_THE_NEXT_COMMAND: &str = "r1-worktree-doors-route-re-run-is-for-the-next-command";
+/// The unlanded-work route's other way, `jigc milestone discard <id>`, *answers for the
+/// same path with its own route*: it is refused. Rests on a reading — every case under it
+/// is marked.
+const UNLANDED_ABANDON_LINE_REFUSED: &str =
+    "r1-unlanded-route-abandon-line-is-refused-by-the-discard-door";
+/// `jigc milestone provision --force`, the consent the leftover refusal prints, over a
+/// link that leads nowhere: refused under `milestone.provision-failed`.
+const CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED: &str =
+    "r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed";
+/// The unlanded-work route keeps a sub-task's commit on a branch and re-runs the finalize:
+/// where that commit was the milestone's only work, the re-run is refused under
+/// `milestone.zero-contribution`.
+const KEPT_THE_ONLY_COMMIT: &str =
+    "r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1392,9 +1512,9 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 // ---------------------------------------------------------------------------
 
 /// **The code prefixes whose vocabulary the catalog is held to** — the families of
-/// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, and the eleven of the
-/// gate (`task finalize`), as [`refusal_sites::FAMILIES`] assigns them. A prefix joins
-/// when its command's file does.
+/// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, the eleven of the gate
+/// (`task finalize`) and the three of `milestone` (`combine`, `join`, `milestone`), as
+/// [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
 /// The sites are held family or no family
 /// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
 /// this is the list for the arm beside it, which asks after every code a prefix spells.
@@ -1402,11 +1522,14 @@ const CATALOGUED: &[&str] = &[
     "adapter-guide",
     "amend",
     "changelog-recording",
+    "combine",
     "commit-recording",
     "conformance",
     "doc-code",
     "file-state",
     "finalize",
+    "join",
+    "milestone",
     "owner-artifact",
     "reconciliation",
     "schema-conformance",
@@ -1613,10 +1736,15 @@ const MINTED_AT: &[MintedAt] = &[
         why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
     },
     // `rollback::rollback_conflict_finding(…, door, …)`: `door.code` is one of five
-    // `ConflictDoor` values — this one, and `milestone.`, `task-discard.`, `rename.` and
+    // `ConflictDoor` values — these two, and `task-discard.`, `rename.` and
     // `config.rollback-conflict`.
     MintedAt {
         code: "finalize.rollback-conflict",
+        site: ROLLBACK_CONFLICT,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
+    },
+    MintedAt {
+        code: "milestone.rollback-conflict",
         site: ROLLBACK_CONFLICT,
         why: A_SCHEDULED_SITE_OF_SEVERAL_DOORS,
     },
@@ -1712,19 +1840,6 @@ const OWED: &[Owed] = &[
         sites: &[
             "crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1",
             "crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1",
-        ],
-    },
-    Owed {
-        task: "P7 · milestone — a case or a reason",
-        sites: &[
-            "crates/cli/src/combine.rs::collision_finding::combine.code-collision#1",
-            "crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1",
-            "crates/cli/src/milestone.rs::leftover_finding::milestone.leftover-holds-work#1",
-            "crates/cli/src/milestone.rs::provision_failed_finding::milestone.provision-failed#1",
-            "crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1",
-            "crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1",
-            "crates/engine/src/milestone.rs::io_finding::milestone.area-io#1",
-            "crates/engine/src/milestone.rs::record_home_refusal::milestone.record-exists#1",
         ],
     },
     Owed {
@@ -3910,7 +4025,8 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 12] = [
+const MARKED: [&[Act]; 13] = [
+    &[Act::Unstage(Operand::Unprinted("in/the-way"))],
     &[Act::Revert(Operand::Unprinted("in/the-way"))],
     &[Act::Remove(Operand::Unprinted("in/the-way"))],
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
@@ -4010,6 +4126,7 @@ fn no_file_act_is_done_outside_the_sandbox() {
             Act::Revert(Operand::Span(0)),
             Act::MakeReadable(Operand::Span(1)),
             Act::MakeWritable(Operand::Span(1)),
+            Act::Unstage(Operand::Span(0)),
         ],
         ..PLANTED
     };
@@ -4023,8 +4140,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 11),
-        "all eleven acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 12),
+        "all twelve acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 
@@ -4746,6 +4863,29 @@ fn a_state_step_runs_the_binary_under_test() {
         },
         Classification::Holds,
     )]);
+    // And in another place of the sandbox, where a state is one the product makes only
+    // from there ([`Step::JigcAt`]): the step's file is made where the step says.
+    come_out(&[(
+        Case {
+            name: "planted-a-state-the-binary-under-test-made-in-another-place",
+            state: &[
+                Step::Dir(Place::Outside("elsewhere")),
+                Step::JigcAt(
+                    Place::Outside("elsewhere"),
+                    &["-c", "echo made > made-there"],
+                ),
+            ],
+            refusing: &[
+                "-c",
+                "test -f ../outside/elsewhere/made-there || exit 0; test -e made-there && exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: re-run `jigc -c true`'; exit 1",
+            ],
+            acts: &[Act::Run(0)],
+            ..PLANTED
+        },
+        Classification::Holds,
+    )]);
 }
 
 /// **A sandbox is removed whole, whatever its state shut.** A case that plants a directory
@@ -4869,6 +5009,145 @@ fn a_printed_line_no_shell_can_split_is_a_red_case_and_stops_no_arm() {
             && followed.detail.ends_with("(span 2): exit 0"),
         "the line is not run, the acts behind it are done, and the case is red for the \
          line — it came out {}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+}
+
+/// A shell that stands in for a refusal whose listing carries two command lines, beside
+/// another finding's listing, which carries one too: the first clears the path the refusal
+/// is over, the second does nothing to it.
+const LISTS_COMMANDS: &str = r#"test -e held || exit 0
+cat <<'END'
+advisory · setup.other — another finding, whose head names `jigc -c 'exit 7'`:
+  `jigc -c 'exit 8'`
+blocking · setup.install-hook — refused over one path, with `jigc -c 'exit 9'` in its head:
+  held: one thing (clear it with `jigc -c 'rm held'`); and `git --version` says nothing of it
+  route: run the command on that line that clears the path, then re-run `jigc -c "test ! -e held"`
+END
+exit 1"#;
+
+/// **A command the refusal lists is run by its place among the spans its listing holds.**
+/// A route can send its reader to the refusal's own listing — *run the command on that
+/// line* — where each held path has its line and the command that clears it. The act names
+/// the command by its index among the backticked spans of the listing: the lines of the
+/// finding that carries the code, never its head, its route, or another finding's lines.
+#[test]
+fn a_command_the_refusal_lists_is_run_by_its_place_among_the_listed_spans() {
+    let said = "\
+advisory · setup.other — another finding, whose head names `jigc -c 'exit 7'`:
+  `jigc -c 'exit 8'`
+blocking · setup.install-hook — refused, with `jigc -c 'exit 9'` in its head:
+  held: one thing (clear it with `jigc -c 'rm held'`); and `git --version` says nothing
+  route: run the command on that line, then re-run `jigc -c \"test ! -e held\"`
+";
+    assert_eq!(
+        route_case::listed_spans_in(said, "setup.install-hook"),
+        ["jigc -c 'rm held'", "git --version"],
+        "the spans of the listing of the finding that carries the code, and no other",
+    );
+    assert!(route_case::listed_spans_in(said, "setup.absent").is_empty());
+
+    const THE_ONE_THAT_CLEARS: &[Act] = &[Act::RunListed(0), Act::Run(0)];
+    const THE_OTHER: &[Act] = &[Act::RunListed(1), Act::Run(0)];
+    const NOT_LISTED: &[Act] = &[Act::RunListed(2), Act::Run(0)];
+    let sh = Path::new("/bin/sh");
+    let planted = |acts: &'static [Act]| Case {
+        name: "planted-a-command-the-refusal-lists",
+        state: &[Step::File(Place::Repo("held"), "held\n")],
+        refusing: &["-c", LISTS_COMMANDS],
+        acts,
+        ..PLANTED
+    };
+    let followed = route_case::follow(sh, &planted(THE_ONE_THAT_CLEARS))
+        .expect("the planted case is one the runner follows");
+    assert!(
+        followed.classification == Classification::Holds
+            && followed
+                .detail
+                .contains("run `jigc -c 'rm held'` (listed span 0): exit 0"),
+        "the listed command is run and the route's re-run holds — it came out {}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+    // The other listed command is run too, and clears nothing.
+    come_out(&[(planted(THE_OTHER), Classification::AnotherFailure)]);
+    let fault = route_case::follow(sh, &planted(NOT_LISTED))
+        .expect_err("a command the refusal does not list is a fault of the case");
+    assert!(fault.contains("the refusal lists 2"), "{fault}");
+
+    // A listed line that is no command of git's or jigc's is run by nobody.
+    let lists_a_shell_line = Case {
+        name: "planted-a-listed-line-that-is-a-shell-line",
+        state: &[Step::File(Place::Repo("held"), "held\n")],
+        refusing: &[
+            "-c",
+            "printf '%s\\n' 'blocking · setup.install-hook — refused:' \
+             '  held (clear it with `rm held && true`)' \
+             '  route: run the command on that line'; exit 1",
+        ],
+        acts: &[Act::RunListed(0)],
+        holds: &[Check::RegularFile(Place::Repo("held"))],
+        ..PLANTED
+    };
+    let fault = route_case::follow(sh, &lists_a_shell_line)
+        .expect_err("a listed shell line is a fault of the case");
+    assert!(
+        fault.contains("which is no `jigc` or `git` command line"),
+        "{fault}"
+    );
+}
+
+/// **A path is taken out of the index of the checkout it stands in**, and the file stays.
+/// *Have the contending sub-tasks touch distinct files* names an act and prints no line:
+/// one of two checkouts lets a path go, which is its index entry dropped. The object is
+/// the case's, in the marked form; the git is the runner's, run where the path stands — a
+/// linked worktree's index is its own.
+#[test]
+fn a_path_is_taken_out_of_the_index_of_the_checkout_it_stands_in() {
+    let planted = |acts: &'static [Act]| Case {
+        name: "planted-a-staged-path-a-route-says-to-let-go",
+        state: &[
+            Step::Git(&["worktree", "add", "-q", "../outside/wt", "-b", "side"]),
+            Step::File(Place::Outside("wt/shared.txt"), "theirs\n"),
+            Step::Git(&["-C", "../outside/wt", "add", "shared.txt"]),
+        ],
+        refusing: &[
+            "-c",
+            "git -C ../outside/wt diff --cached --quiet && exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused over a staged path' \
+             '  route: have the other checkout let that file go, then run this again'; exit 1",
+        ],
+        acts,
+        holds: &[Check::RegularFile(Place::Outside("wt/shared.txt"))],
+        ..PLANTED
+    };
+    const LET_GO: &[Act] = &[
+        Act::Unstage(Operand::Unprinted("../outside/wt/shared.txt")),
+        Act::Rerun,
+    ];
+    const NO_ENTRY: &[Act] = &[
+        Act::Unstage(Operand::Unprinted("../outside/wt/nothing-here")),
+        Act::Rerun,
+    ];
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted(LET_GO))
+        .expect("the planted case is one the runner follows");
+    assert!(
+        followed.classification == Classification::HoldsOperandImplied
+            && followed.detail.contains("its index entry is gone"),
+        "the entry is dropped, the file stands, and the re-run holds — it came out {}:\n{}",
+        followed.classification,
+        followed.detail,
+    );
+    // A path git holds no entry for is not unstaged, and the refusal stands.
+    let followed = route_case::follow(Path::new("/bin/sh"), &planted(NO_ENTRY))
+        .expect("the planted case is one the runner follows");
+    assert!(
+        followed.classification == Classification::SameRefusalAgain
+            && followed
+                .detail
+                .contains("not done — git holds no entry there"),
+        "it came out {}:\n{}",
         followed.classification,
         followed.detail,
     );
