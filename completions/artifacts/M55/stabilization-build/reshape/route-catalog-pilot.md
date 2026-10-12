@@ -8,6 +8,8 @@
 
 **[2026-10-12, a third time — the two tables were printed with every family the ruling takes in, and §14 counts the catalog beyond the pilot.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-12, byte for byte, over the cases, the readings and the reasons of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 467.8 s, load average 8.8 at its start and 38.7 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each. Every count of §1 to §13 is still `P5`'s, over the pilot's two commands, as counted then; what stands beyond them is §14's.**]**
 
+**[2026-10-13 — the two tables were printed with the first ruling carried out, and §15 counts the catalog after it.** They are the arm's blocks `cases` and `sites` as one run printed them on 2026-10-13, byte for byte, over the cases, the readings and the frame of the commit that carries this line, made after the last edit to anything the arm reads (the variable naming `rc.24`'s binary of §8; 536.5 s, load average 68.7 at its start and 73.7 at its end; no gate of this branch beside it): 627 lines of cases and 92 of sites under a header each — **30 lines of cases and 6 of sites differ from the tables committed before, and no other**: the thirty cases the ruling on cited commands was carried out on, and the count of listed-red cases at the six sites they stand at. §14 is as it was written, a day earlier.**]**
+
 **Where a number comes from.** Three sources, and every table says which.
 
 - **(arm)** — the suite's one ignored arm, run by hand on this tree at the commit that carries this record:
@@ -666,4 +668,74 @@ Inside a gate, one behind the other (the gate of the commit before this section'
 - **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: the runner still starts that command in a directory that is gone and panics. No case of the seven families met it — none stands in a directory its route removes — and it was not changed.
 - **The clause the fix pass added to the re-point's route** (a file parked on the way): followed by no case; driven by hand ([route-catalog-findings.md](route-catalog-findings.md) → §8).
 - **That a site left for the port was rightly left**: 28 rows say which change was read and why it is off the path; that is a reading.
+- **Linux**: the run follows the commit and is in the task's return.
+
+## 15. 2026-10-13 — a cited line held to its words: the catalog after the first ruling was carried out
+
+**What this section is.** Of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](route-catalog-doubts.md)), the human ruled the first on 2026-10-13: a line a route cites for what it prints is held to its words and not to exit 0 ([DECISIONS.md](../../../../../DECISIONS.md) → *A command a route cites for what it prints is held to its words*). The entry of that day gave the frame the act that carries it out; the one after it followed the thirty cases again. This section counts the catalog when that second entry lands. It judges nothing: not what a difference between two binaries is, and not whether a witness is the one its route makes — that is each case's reading, stated in the case.
+
+**Where a number comes from.** One run of the ignored arm (§ *Where a number comes from*, at the head), on the tree of the commit that carries this section, the variable naming `rc.24`'s binary of §8: **536.5 s over 627 cases**, load average 68.7 at its start and 73.7 at its end, no gate of this branch beside it. [route-catalog-pilot-cases.tsv](route-catalog-pilot-cases.tsv) and [route-catalog-pilot-sites.tsv](route-catalog-pilot-sites.tsv) are the blocks `cases` and `sites` of that run, byte for byte. *Before* is §14, and where §14 has no such count, the same sum over the table committed with it.
+
+### The catalog's totals (blocks `cases` and `bounds`)
+
+| | before | after |
+|---|---|---|
+| cases | 627 | 627 |
+| red — the cases the expected-red list holds | 244 | **231** |
+| keys | 56 | **50** |
+| red cases that can block · keys that can block | 175 · 46 | 162 · 40 |
+| red cases on a declared bound — a permission bit · a FIFO · the override | 47 · 7 · 19 | 47 · 7 · 19 |
+| the cases no entry lists | 383 | 396 |
+| cases marked `doubt` — of them red | 76 — 59 | 46 — 46 |
+| **red cases at a refusal `rc.24` does not provoke** — listed red here, *not provoked* there | 70 | **58** |
+
+The thirteen cases that left the list could all block: none stood on a declared bound. By family, red: `setup` 120 → 118 · `task finalize` 26 → 22 · `milestone` 32 → 26 · `doc read` 6 → 5; `uninstall` 45, `doc write` 10, `config` 2, `start` 0 and the dynamic sites' 3 as they were. Beyond the pilot's two commands 79 → 68, under 24 keys where there were 29; on them 165 → 163, under 26 where there were 27.
+
+What the 627 came to on this tree's binary (block `cases`, column 6): holds 311 · holds, operand implied 85 · the same refusal again 129 · another failure 73 · a printed line no shell can split 18 · the command did not end 7 · a witness changed 4 — **and no case under the tenth classification**, *a cited line does not say what the route promised*: every cited line of the catalog says it on this tree.
+
+### The thirty cases, and the six keys
+
+Per case — the witness, and what it came to on both binaries before and after — is [route-catalog-doubts.md](route-catalog-doubts.md) → R. In sum: on this tree's binary another failure 9 · the same refusal again 4 · holds 17 became holds 25 · holds, operand implied 5; on `rc.24` holds 17 · not provoked 12 · the same refusal again 1 became holds 17 · not provoked 12 · a cited line does not say what the route promised 1. The six keys that left the findings file with their thirteen cases are named there and at the head of [route-catalog-findings.md](route-catalog-findings.md).
+
+### Red cases at a refusal `rc.24` does not provoke — 58, under 17 keys (block `cases`, columns 5, 6 and 9)
+
+A line of the block whose fifth column holds a key and whose ninth says *not provoked*: red on this tree, and on `rc.24` the refusing command printed no finding of the case's code at a non-zero exit — it exited 0, or another refusal answered. What such a line says and does not say is §8's.
+
+| key | cases |
+|---|---|
+| `r1-setup-untracked-link-repointed-draws-dirty-install-path` | 16 |
+| `r1-setup-install-hook-route-other-causes-unexamined` | 9 |
+| `r1-setup-seeded-ignore-route-followed-leaves-no-secrets-floor` | 7 |
+| `r1-setup-link-pointed-at-uncommitted-file-draws-dirty-install-path` | 6 |
+| `r1-p3-setup-install-hook-undriven-producers-and-causes` | 3 |
+| `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path` | 3 |
+| `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` | 2 |
+| `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` | 2 |
+| `r1-uninstall-refusal-behind-the-workbench-rerun-leaves-the-settings-entries` | 2 |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 1 |
+| `r1-clobber-route-drops-the-milestones-only-sub-task-and-the-re-run-draws-zero-contribution` | 1 |
+| `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision` | 1 |
+| `r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing` | 1 |
+| `r1-p3-setup-writability-route-printed-for-other-causes` | 1 |
+| `r1-setup-force-over-skip-worktree-path-cannot-commit` | 1 |
+| `r1-setup-settings-record-refused-rerun-installs-without-the-record` | 1 |
+| `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution` | 1 |
+| **17 keys** | **58** |
+
+The twelve that are no longer among them are twelve of the thirteen that left the list: every one but the discard door's re-run, which `rc.24` refuses too.
+
+### The same cases on the previous release's binary — what moved (block `cases`, columns 6, 9 and 12)
+
+One line of §14's table moved, and no other: of `milestone`'s 84 lines the same classification on both is now 58 — 55 over the same printed route — where it was 59, and *other* 1 where it was 0. It is the discard door's re-run over a `.git` entry that leads nowhere, *holds, operand implied* here and *a cited line does not say what the route promised* on `rc.24`, whose route under the code is not the same. Beyond the pilot: 274 lines, 155 the same on both, 112 not provoked on `rc.24`, 7 other. The pilot's two commands as §14 has them.
+
+### The arms' seconds
+
+Inside a gate, one behind the other (the gate of the commit before this section's, `tests passed=5060`, its log's `test-seconds`, under a load average of 40 to 120): `start` 3.9 · `unassigned` 6.1 · `doc_write` 11.8 · `config` 13.5 · `doc_read` 21.5 · `uninstall` 25.5 · `setup` 47.3 · `milestone` 56.3 · `task_finalize` 75.0 — 260.9 s together; the arm that holds a cited line to its words, 14.0 s. The ignored arm: 536.5 s.
+
+### Not established
+
+- **That a witness is the promise its route makes**: a case states it, by one person's reading of the route's words; the frame holds a case to its witness and nothing holds the witness to the route.
+- **A cited line whose promise no piece of text states** — what is absent from an output, an order of lines: no case asked for one.
+- **The other eight questions**: 46 cases, marked and red as they were.
+- **The frame over a route that removes the directory its reader stands in and then prints a command without a `cd`**: not met, not changed.
 - **Linux**: the run follows the commit and is in the task's return.

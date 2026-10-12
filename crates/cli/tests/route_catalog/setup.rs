@@ -41,7 +41,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Filled, Operand, Over, Place, SCRIPT, Step, Var,
+    Act, Case, Check, Cited, Filled, Operand, Over, Place, Promise, SCRIPT, Says, Step, Var,
 };
 
 /// The hook `jigc setup` installs, from the repository root.
@@ -2793,21 +2793,14 @@ const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 3] = [
 /// git could not answer the question the install asks before its first write.
 const UNVERIFIED: &str = "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1";
 
-/// The two readings of the route's first clause.
-const WHICH_FIRST_STEP: &str = "*run `git …` to see what git reports, resolve that, then \
-                                re-run*: (a) the printed `git` line is a step of the route, \
-                                run as printed and held to exit 0 like every command a \
-                                route prints — followed here: it is the question that \
-                                failed, and it fails again; (b) the line is there to show \
-                                git's own words, its failure is what it is for, and the \
-                                route's steps are *resolve that* and the re-run — the case \
-                                beside this one that ends `-resolved`";
-
-/// **git cannot answer, followed the two ways the route's first clause can be read.** What
-/// *resolves that* is in git's words and never in the route, so the object is the case's
-/// to name, by the marked form: the one file git's words name, removed.
+/// **git cannot answer, followed with the question asked as the route prints it, and
+/// without.** *Run `git …` to see what git reports* cites the line for what it prints, and
+/// such a line is held to its words (the human's ruling of 2026-10-13): what git reports
+/// of the file the case's state broke, whatever git exits with. What *resolves that* is in
+/// git's words and never in the route, so the object is the case's to name, by the marked
+/// form: the one file git's words name, removed.
 macro_rules! unverified_ways {
-    ($prefix:literal, $cause:expr, $broken:literal, $body:literal) => {
+    ($prefix:literal, $cause:expr, $broken:literal, $body:literal, reports: $report:literal $(,)?) => {
         [
             Case {
                 name: concat!($prefix, "-asked-as-printed-and-resolved"),
@@ -2815,12 +2808,14 @@ macro_rules! unverified_ways {
                 cause: $cause,
                 state: &[Step::File(Place::Repo($broken), $body)],
                 acts: &[
-                    Act::Run(0),
+                    Act::RunCited(Cited {
+                        line: 0,
+                        promised: &[Promise::Line(&[Says::Text($report)])],
+                    }),
                     Act::Remove(Operand::Unprinted($broken)),
                     Act::Run(3),
                 ],
                 holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
-                doubt: Some(WHICH_FIRST_STEP),
                 ..SETUP
             },
             Case {
@@ -2841,13 +2836,15 @@ const GIT_REFUSES_TO_SPEAK_FOR_THE_REPOSITORY: [Case; 2] = unverified_ways!(
     "git refuses to say whether the install home is a work tree, where a `.git` stands — \
      here over a configuration file it cannot read",
     ".git/config",
-    "[core\n"
+    "[core\n",
+    reports: "fatal: bad config line 1 in file .git/config",
 );
 const GIT_STATUS_FAILS: [Case; 2] = unverified_ways!(
     "setup-git-status-fails",
     "`git status` fails in a work tree — here over an index that is not one",
     ".git/index",
-    "no index\n"
+    "no index\n",
+    reports: "fatal: .git/index: index file smaller than expected",
 );
 
 /// The cases of `jigc setup`, a group a cause — and, within a group, a case a way out of

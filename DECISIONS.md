@@ -2,6 +2,75 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The thirty cases under the ruled question, followed again: each cited line held to what its route promised — all thirty hold on this tree's binary, thirteen leave the expected-red list and six keys the findings file (the human's ruling of 2026-10-13, carried out)
+
+**What.** The cases' half of the ruling in the entry below this one. Each of the thirty cases the catalog had marked under *a command a route cites for what it prints* now says which printed line is cited and states what the route promised of it; none of them is marked `doubt` any more. The frame grew by one piece, red first; the expected-red list lost thirteen entries and six keys; and the records follow — the list for the human ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md), its head and its section R), the findings file, the pilot's record (§15) and its two tables. No product source changes; nothing is fixed.
+
+### The witnesses — each read off the route's own words, for the case's state
+
+| the route says | the cited line | what its output must say | cases | on this tree, before → after |
+|---|---|---|---|---|
+| *run `git …` to see what git reports, resolve that, then re-run* | the `git` line that failed | git's own report of the file the state broke — `fatal: bad config line 1 in file .git/config` · `fatal: .git/index: index file smaller than expected` | 2 | another failure → holds, operand implied |
+| *`jigc task validate <task>` names where it lands* | the preview | one line with the home the doc promotes to and *the main checkout at* that checkout's path | 1 | the same refusal again → holds |
+| *`jigc task finalize <task>` names that route* — the way onto a branch | the finalize | a finding that says *HEAD is detached* and carries a route of its own naming `git switch <branch>` | 1 | another failure → holds |
+| *re-run `jigc task finalize <id>` to review the fidelity diff and `… --approve` to land it* | the review | the diff: the rewrite's header with the doc's home, a line of the foreign source, a line of the rewrite | 3 | another failure → holds |
+| *or abandon the milestone with `jigc milestone discard <id>`, which answers for the same path with its own route* | the discard | a finding at that path that carries a route of its own | 3 | another failure → holds |
+| *move that entry aside, and this door then prints the one line that re-links the checkout* | the door's own re-run | the `printf 'gitdir: %s\n' …` line, with the registration's path and the checkout's `.git` on it | 2 | the same refusal again → holds, operand implied |
+| *move it aside and re-run for the command that brings the checkout back* | the door's own re-run | the recipe on one line: the directory made, the registration written, the files restored | 1 | the same refusal again → holds, operand implied |
+| *`jigc config list` shows the value in force and the layer it wins from* | the list | the refused knob's own line, whole — its value and `(pack-default)` | 15 | holds → holds |
+| *`jigc describe` lists the doctype surface — check the id you typed against it* | the describe | the line that opens the doc-types it lists, with the id's doctype on it | 2 | holds → holds |
+
+**A witness a wrong output fails, in each**: another file's report, a diff under another home or with a side missing, a knob at another value or another layer, a route in a finding over another path, a refusal with no route. **No case keeps its mark** — there was none for which such a witness could not be stated, so the list the ruling asked for is empty. The promises of three cases stand in the refusal's listing and not on its `route:` line — the two a worktree door makes of its own re-run; they are the refusal's words all the same, and the route sends its reader to that line.
+
+**The seventeen that held before hold by more now.** They exited 0, and that was all the frame asked; each is now held to the line it was run for — `docs-root = docs/  (pack-default)` after a set that was refused.
+
+### What left the expected-red list, and the findings file
+
+Thirteen cases, under six keys, every one of which held cases of this question alone — so **all six keys left** [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md), with one dated note at its head that names them; none stayed:
+
+| key | cases |
+|---|---|
+| `r1-setup-unverified-route-opens-with-the-question-that-failed` | 2 |
+| `r1-linked-doc-route-cites-a-command-that-is-itself-refused` | 2 |
+| `r1-clobber-held-migration-route-review-step-exits-4` | 2 |
+| `r1-worktree-doors-route-re-run-is-for-the-next-command` | 3 |
+| `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` | 3 |
+| `r1-home-shape-migration-route-review-step-exits-4` | 1 |
+
+*Red first, by the list itself:* with the cases changed and the list as it was, the arms of four files named all thirteen — *is listed as red under … and is not red* — and nothing else.
+
+**The case that draws another refusal.** From a worktree whose `HEAD` is detached the route cites `jigc task finalize <task>`, which exits 1 under `repo.head-detached` and not under the citing code. Read: **its route is the one the citing route promised.** The citing route says the task *commits nothing from here until it is on a branch* and that the finalize *names that route*; the finalize says *HEAD is detached* and routes *re-attach HEAD with `git switch <branch>`, then re-run this command*.
+
+### Six cases of `jigc milestone` stop at the cited line — pinned, as an engineer
+
+Followed as steps, the six went on to hold an end state: the milestone's area gone behind the discard, the work landed behind the finalize. **Those checks are gone with the reading that put them there.** The route promises of the cited command that it *answers with its own route*, or *prints the one line* — and it does, refused again as the refusal says it will be. What comes behind it is not this case's: the discard door's own route has its cases at its own site, and the line that re-links a checkout is a shell recipe, a way the site's reading already gives a reason. *Why not keep the checks and stay red:* a check behind a cited line would hold the command to succeeding after all, which is the option the human did not take.
+
+### The frame, grown once — red first
+
+**A place of the sandbox is spelled as a command prints its path** (`Says::Path`). The preview's promise names the main checkout, which is the repository's root, `Place::Repo("")` — and a place joined from an empty name ends in a separator no command prints. *Red:* a planted cited line that prints `the main checkout at` and the root came out *a cited line does not say what the route promised* — *no line of it holds … `<sandbox>/repo/`*. A piece is now the place's components and nothing behind the last.
+
+### The previous release's binary, side by side
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 536.5 s over 627 cases, load average 68.7 at its start and 73.7 at its end, no gate of this branch beside it).
+
+- **The thirty on `rc.24`**: holds 17 — the fifteen of `jigc config set` and the two of `jigc rename`, over the same printed route · not provoked 12 · *a cited line does not say what the route promised* 1. Before: holds 17 · not provoked 12 · the same refusal again 1.
+- **The one under the new word** is the discard door's re-run over a `.git` entry that leads nowhere: that binary's line promises no line that re-links and its re-run prints none. The case's acts and its witness were written by reading this tree's refusal.
+- **The catalog after this commit**: 627 cases · 231 red · 50 keys, of which 40 can block with 162 cases (the arm's block `bounds`). **58 red cases stand at a refusal `rc.24` does not provoke**, under 17 keys, where there were 70 — the record's §15 has them by key.
+
+### The records
+
+- **[route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md)**: 46 cases marked under eight questions, and R as carried out — per case the witness and what it came to on both binaries, before and after. The 46 lines of the other eight questions were held against this run: each came to what its table says.
+- **[route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §15**, and one dated line at its head. **The two committed tables are that run's blocks `cases` and `sites`, byte for byte, printed after the last edit to anything the arm reads**: 30 lines of cases and 6 of sites differ from the ones committed before, and no other.
+- **[pinning.md](implementation/pinning.md) → §6** says what a cited line is held to since the entry below.
+
+**Not established.**
+
+- **That a witness is the promise its route makes**: stated by a case, read by one person. The frame holds a case to its witness; nothing holds the witness to the route.
+- **A check of what stands behind a cited command** in the six cases of `jigc milestone`: no case holds one now.
+- **The other eight questions**: 46 cases, marked and red as they were.
+- **A second run of the named-binary arm**: it ran once.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-13 — A command a route cites for what it prints is held to its words, not to exit 0 (the human's ruling, option A of two); and the route catalog's frame runs a cited line and holds its own output to what the route promised
 
 **The ruling — the human's, 2026-10-13.** On the question *is a command that a route cites for what it prints held to exit 0?* — the first of the nine questions the catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → R) — the human took option A of two:

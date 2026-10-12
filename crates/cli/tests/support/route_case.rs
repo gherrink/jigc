@@ -306,7 +306,9 @@ pub struct Filled {
 pub enum Says {
     /// These bytes — the route's promise, spelled out for the case's state.
     Text(&'static str),
-    /// The absolute path of this place of the sandbox, as the product prints one.
+    /// The absolute path of this place of the sandbox, as the product prints one: its
+    /// components, with nothing behind the last — `Place::Repo("")` is the repository's
+    /// root.
     Path(Place),
 }
 
@@ -1801,7 +1803,15 @@ impl Sandbox {
     fn kept(&self, said: &str, promise: &Promise) -> Result<(), String> {
         let piece = |says: &Says| match *says {
             Says::Text(text) => text.to_string(),
-            Says::Path(place) => self.at(place).display().to_string(),
+            // As a command prints a path: its components, and nothing behind the last —
+            // the repository's root is `Place::Repo("")`, which joins to a path that ends
+            // in a separator.
+            Says::Path(place) => self
+                .at(place)
+                .components()
+                .collect::<PathBuf>()
+                .display()
+                .to_string(),
         };
         let named = |pieces: &[String]| {
             pieces

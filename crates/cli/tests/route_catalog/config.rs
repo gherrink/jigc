@@ -14,9 +14,10 @@
 //! root …* — and beside it cite a command for what it prints: `jigc config list`. The
 //! root is the reader's own and an argument of the refused command; the frame runs a
 //! refusing command again only as it was typed, and only where a route prints no command
-//! line. So a case runs the one line the route prints, and is marked `doubt`
-//! ([`THE_CITED_LIST`]); the re-run under another root is a way with a reason in
-//! [`READINGS`], driven by hand.
+//! line. So a case runs the one line the route prints — cited for what it prints, and held
+//! to its words (the human's ruling of 2026-10-13): the knob's value in force and the layer
+//! it wins from, on the knob's own line ([`in_force`]). The re-run under another root is a
+//! way with a reason in [`READINGS`], driven by hand.
 //!
 //! **And the re-point's refusal says *fix what this message names*.** What that is stands
 //! in the refusal's message and not in its route, so the object is the case's, in the
@@ -29,7 +30,9 @@
 //! itself put in the link's place, committed, and the refused command again.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+};
 
 // The sites, as the committed list of refusal sites names them.
 const REPOINT_FAILED: &str = "crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1";
@@ -66,30 +69,39 @@ const C: Case = Case {
 // `config.unusable-root` — a root knob's value refused at the door
 // ---------------------------------------------------------------------------
 
-/// The two readings of a command a route cites for what it prints.
-const THE_CITED_LIST: &str = "*re-run with a root … ; `jigc config list` shows the value in \
-    force and the layer it wins from*: (a) the backticked `jigc config list` is a step of the \
-    route, a command line to run as printed and held to exit 0; (b) it is cited for what it \
-    prints, and the route's one act is the re-run with another root — the reader's own, an \
-    argument of the refused command, for which the route prints no line and the frame has no \
-    act. The case follows (a). The surface contract says nothing of a command a route cites; \
-    it is the gate's third question and the pilot's fourth. **Ruled by the human on 2026-10-13: such a line is held to its \
-    words — it passes when its output says what the route promised, whatever it exits with — \
-    and this case is to be followed again once the frame holds a cited line to a witness**";
+/// **What the route promises of the list it cites** — *`jigc config list` shows the value
+/// in force and the layer it wins from* — for the knob the refused command named: after a
+/// set that was refused, the pack's default and the layer `pack-default`, on that knob's
+/// line and no other's.
+macro_rules! in_force {
+    ("docs-root") => {
+        &[Promise::Line(&[Says::Text(
+            "docs-root = docs/  (pack-default)",
+        )])]
+    };
+    ("placement-root") => {
+        &[Promise::Line(&[Says::Text(
+            "placement-root =   (pack-default)",
+        )])]
+    };
+}
 
 /// **A root refused at the door, followed the one way the frame can follow it**: the
-/// command the route cites, run as printed — its span by index, which differs by refusal.
+/// command the route cites, run as printed — its span by index, which differs by refusal —
+/// and held to what the route says it shows.
 macro_rules! root {
-    ($site:expr, $name:literal, $cause:literal, state: $state:expr, $knob:literal, $value:expr, list: $list:literal $(,)?) => {
+    ($site:expr, $name:literal, $cause:literal, state: $state:expr, $knob:tt, $value:expr, list: $list:literal $(,)?) => {
         [Case {
             name: concat!($name, "-config-list-read-as-printed"),
             site: $site,
             cause: $cause,
             state: $state,
             refusing: &["config", "set", $knob, $value],
-            acts: &[Act::Run($list)],
+            acts: &[Act::RunCited(Cited {
+                line: $list,
+                promised: in_force!($knob),
+            })],
             untouched: &[MANIFEST],
-            doubt: Some(THE_CITED_LIST),
             ..C
         }]
     };

@@ -26,7 +26,9 @@
 //! ([`Act::MoveAway`]).
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+};
 
 // The site, as the committed list of refusal sites names it.
 const HOME_SHAPE: &str =
@@ -350,15 +352,20 @@ const AN_EDITED_DOC_OVER_A_LINK_TO_NOTHING: [Case; 1] = [Case {
 /// complete — and a link at the home it promotes to.
 const THE_MIGRATION: &str = "migrate-adr-notes-old-e1a7d84cafc2";
 const THE_MIGRATIONS_COMMIT_DOC: [Step; 3] = commit_doc!("migrate-adr-notes-old-e1a7d84cafc2");
-/// The two readings of a command a route cites for what it shows.
-const THE_REVIEW_STEP: &str = "*then re-run `jigc task finalize <id>` to review the fidelity \
-    diff and `jigc task finalize <id> --approve` to land it*: (a) both backticked lines are \
-    steps, each held to exit 0 like every printed command — the first exits 4 by design, the \
-    review's hold; (b) the first is there for what it shows, and the step that must succeed \
-    is the second. The case follows (a). The surface contract is silent; it is the gate's \
-    third question and the pilot's fourth — a command cited for what it prints. **Ruled by the human on 2026-10-13: such a line is held to its \
-    words — it passes when its output says what the route promised, whatever it exits with — \
-    and this case is to be followed again once the frame holds a cited line to a witness**";
+/// What the route promises of the review it cites — *re-run `jigc task finalize <id>` to
+/// review the fidelity diff*: the diff itself, the foreign note's own line against the
+/// rewrite's, under the home the doc promotes to. The review exits 4 by design, and a
+/// cited line is held to its words (the human's ruling of 2026-10-13); the approval behind
+/// it is held to exit 0.
+const THE_FIDELITY_DIFF: &[Promise] = &[
+    Promise::Line(&[Says::Text(
+        "+++ canonical rewrite → docs/decisions/use-tabs.md",
+    )]),
+    Promise::Line(&[Says::Text(
+        "- Some text that is long enough to be worth migrating, really.",
+    )]),
+    Promise::Line(&[Says::Text("+ Because.")]),
+];
 const A_MIGRATIONS_DOC_OVER_A_LINK: [Case; 1] = [Case {
     name: "home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed",
     cause: "`jigc task finalize` of a migration: the home the migrated doc promotes to holds \
@@ -391,11 +398,13 @@ const A_MIGRATIONS_DOC_OVER_A_LINK: [Case; 1] = [Case {
     refusing: &["task", "finalize", THE_MIGRATION],
     acts: &[
         Act::MoveLinkOut(Operand::Span(2)),
-        Act::Run(3),
+        Act::RunCited(Cited {
+            line: 3,
+            promised: THE_FIDELITY_DIFF,
+        }),
         Act::Run(4),
     ],
     holds: &[Check::RegularFile(Place::Repo(THE_ADR))],
-    doubt: Some(THE_REVIEW_STEP),
     ..H
 }];
 

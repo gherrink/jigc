@@ -26,7 +26,9 @@
 //! the way has its reason in [`READINGS`].
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+};
 
 // The sites, as the committed list of refusal sites names them.
 const COLLISION: &str = "crates/cli/src/combine.rs::collision_finding::combine.code-collision#1";
@@ -980,10 +982,11 @@ const DISCARD_OVER_A_GIT_ENTRY_THAT_LEADS_NOWHERE: [Case; 2] = [
         refusing: DISCARD,
         acts: &[
             Act::MoveOut(Operand::Unprinted(".jigc/worktrees/do-a-thing/.git")),
-            Act::Run(0),
+            Act::RunCited(Cited {
+                line: 0,
+                promised: THE_LINE_THAT_RE_LINKS,
+            }),
         ],
-        holds: &[Check::Absent(Place::Repo(AREA))],
-        doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
         ..M
     },
     Case {
@@ -1237,16 +1240,34 @@ const PROVISION_OVER_AN_UNLINKED_CHECKOUT: [Case; 1] = [Case {
 
 // `unlanded_work_finding` · `milestone.unlanded-work` — `jigc milestone finalize`
 
-/// The two readings of a re-run a route sends its reader to for the next command.
-const WHAT_THE_RE_RUN_IS_FOR: &str = "*move it aside and re-run for the command that brings \
-    the checkout back* · *move that entry aside, and this door then prints the one line \
-    that re-links the checkout* · *or abandon the milestone with `jigc milestone discard \
-    <id>`, which answers for the same path with its own route*: (a) the printed command is a \
-    step of the route, held to exit 0 like every printed command — it is refused again, \
-    under this code or the next door's, as the route says it will be; (b) it is run for \
-    what it prints, the next line, and its exit owes nothing. The case follows (a). The \
-    surface contract is silent on what a line owes that a route cites for its output: the \
-    gate's third question and the pilot's fourth";
+/// **What a worktree door promises of a command it cites for what it prints** — held to
+/// its words, whatever the command exits with (the human's ruling of 2026-10-13). The
+/// promise is the refusal's own, on the line of the path or in its route, and the cited
+/// command is refused again, as the refusal says it will be.
+///
+/// *Move that entry aside, and this door then prints the one line that re-links the
+/// checkout*: the door's own re-run, and the line — git's registration written into the
+/// checkout's `.git`, by both paths.
+const THE_LINE_THAT_RE_LINKS: &[Promise] = &[Promise::Line(&[
+    Says::Text("printf 'gitdir: %s\\n' "),
+    Says::Path(Place::Repo(".git/worktrees/do-a-thing")),
+    Says::Path(Place::Repo(".jigc/worktrees/do-a-thing/.git")),
+])];
+/// *Move it aside and re-run for the command that brings the checkout back*: the door's
+/// own re-run, and the recipe — the directory made, the registration written into its
+/// `.git`, the files restored.
+const THE_COMMAND_THAT_BRINGS_THE_CHECKOUT_BACK: &[Promise] = &[Promise::Line(&[
+    Says::Text("mkdir -p "),
+    Says::Text("printf 'gitdir: %s\\n' "),
+    Says::Path(Place::Repo(".git/worktrees/do-a-thing")),
+    Says::Path(Place::Repo(".jigc/worktrees/do-a-thing/.git")),
+    Says::Text(" restore ."),
+])];
+/// *Or abandon the milestone with `jigc milestone discard <id>`, which answers for the
+/// same path with its own route*: a finding at that path that carries a route of its own.
+const A_ROUTE_OF_ITS_OWN_AT_THE_SAME_PATH: &[Promise] = &[Promise::Route(&[Says::Text(
+    "at: .jigc/worktrees/do-a-thing",
+)])];
 
 const A_COMMIT_WHERE_STAGED_PATHS_WERE_WANTED: &str = "a sub-agent committed its work in its \
     worktree instead of staging it: the worktree's `HEAD` holds a commit no ref reaches, and \
@@ -1295,9 +1316,10 @@ const FINALIZE_OVER_A_REGISTRATION_WITH_STAGED_PATHS: [Case; 1] = [Case {
     cause: "a sub-task's worktree directory is gone and git's registration of it still \
             holds the staged path the boundary was to land",
     state: fan![WORK, STAGED, THE_WORKTREE_GONE],
-    acts: &[Act::Run(1)],
-    holds: &[Check::Absent(Place::Repo(AREA))],
-    doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
+    acts: &[Act::RunCited(Cited {
+        line: 1,
+        promised: A_ROUTE_OF_ITS_OWN_AT_THE_SAME_PATH,
+    })],
     ..M
 }];
 const FINALIZE_OVER_A_REGISTRATION_WITH_A_COMMIT: [Case; 1] = [Case {
@@ -1376,9 +1398,10 @@ const FINALIZE_OVER_AN_UNREADABLE_REGISTRATION: [Case; 1] = [Case {
     cause: "a sub-task's worktree directory is gone and the index of git's registration of \
             it is no index: nothing says what it holds",
     state: fan![WORK, STAGED, THE_WORKTREE_GONE, ITS_INDEX_GARBAGE],
-    acts: &[Act::Run(1)],
-    holds: &[Check::Absent(Place::Repo(AREA))],
-    doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
+    acts: &[Act::RunCited(Cited {
+        line: 1,
+        promised: A_ROUTE_OF_ITS_OWN_AT_THE_SAME_PATH,
+    })],
     ..M
 }];
 const FINALIZE_OVER_A_FILE_IN_THE_WAY: [Case; 1] = [Case {
@@ -1392,9 +1415,13 @@ const FINALIZE_OVER_A_FILE_IN_THE_WAY: [Case; 1] = [Case {
         THE_WORKTREE_MOVED_AWAY,
         Step::File(Place::Repo(WT), "x\n")
     ],
-    acts: &[Act::MoveOut(Operand::Unprinted(WT)), Act::Run(0)],
-    holds: &[Check::RegularFile(Place::Repo("work.txt"))],
-    doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
+    acts: &[
+        Act::MoveOut(Operand::Unprinted(WT)),
+        Act::RunCited(Cited {
+            line: 0,
+            promised: THE_COMMAND_THAT_BRINGS_THE_CHECKOUT_BACK,
+        }),
+    ],
     ..M
 }];
 const FINALIZE_OVER_A_GIT_ENTRY_THAT_LEADS_NOWHERE: [Case; 1] = [Case {
@@ -1412,10 +1439,11 @@ const FINALIZE_OVER_A_GIT_ENTRY_THAT_LEADS_NOWHERE: [Case; 1] = [Case {
     ],
     acts: &[
         Act::MoveOut(Operand::Unprinted(".jigc/worktrees/do-a-thing/.git")),
-        Act::Run(0),
+        Act::RunCited(Cited {
+            line: 0,
+            promised: THE_LINE_THAT_RE_LINKS,
+        }),
     ],
-    holds: &[Check::RegularFile(Place::Repo("work.txt"))],
-    doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
     ..M
 }];
 const FINALIZE_OVER_AN_UNLINKED_CHECKOUT: [Case; 1] = [Case {
@@ -1428,9 +1456,10 @@ const FINALIZE_OVER_AN_UNLINKED_CHECKOUT: [Case; 1] = [Case {
         STAGED,
         sh!("mv .jigc/worktrees/do-a-thing/.git ../outside/dotgit")
     ],
-    acts: &[Act::Run(1)],
-    holds: &[Check::Absent(Place::Repo(AREA))],
-    doubt: Some(WHAT_THE_RE_RUN_IS_FOR),
+    acts: &[Act::RunCited(Cited {
+        line: 1,
+        promised: A_ROUTE_OF_ITS_OWN_AT_THE_SAME_PATH,
+    })],
     ..M
 }];
 

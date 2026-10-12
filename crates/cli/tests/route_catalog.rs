@@ -586,14 +586,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["setup-change-hidden-by-skip-worktree-forced"],
     ),
     (
-        THE_QUESTION_THAT_FAILED,
-        Classification::AnotherFailure,
-        &[
-            "setup-git-refuses-the-repository-asked-as-printed-and-resolved",
-            "setup-git-status-fails-asked-as-printed-and-resolved",
-        ],
-    ),
-    (
         UNSTAGING_LINE_REFUSED,
         Classification::SameRefusalAgain,
         &["setup-unborn-install-path-staged-and-deleted-unstaged-as-printed"],
@@ -725,16 +717,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed"],
     ),
     (
-        POINTER_REFUSES,
-        Classification::SameRefusalAgain,
-        &["linked-doc-second-write-refused-the-preview-asked-where-it-lands"],
-    ),
-    (
-        POINTER_REFUSES,
-        Classification::AnotherFailure,
-        &["linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route"],
-    ),
-    (
         MANIFEST_ROUTE_SAYS_PERMISSIONS,
         Classification::SameRefusalAgain,
         &[
@@ -781,14 +763,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
             "clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
-        ],
-    ),
-    (
-        REVIEW_STEP_EXITS_4,
-        Classification::AnotherFailure,
-        &[
-            "clobber-held-in-head-migration-doc-renamed-reviewed-and-approved-as-printed",
-            "clobber-held-in-the-index-migration-doc-renamed-reviewed-and-approved-as-printed",
         ],
     ),
     (
@@ -845,24 +819,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "area-io-task-list-not-json-at-add-task-workbench-made-writable",
             "area-io-task-list-not-json-at-the-finalize-workbench-made-writable",
             "area-io-task-list-not-json-at-the-join-workbench-made-writable",
-        ],
-    ),
-    (
-        RE_RUN_FOR_THE_NEXT_COMMAND,
-        Classification::SameRefusalAgain,
-        &[
-            "dirty-worktree-a-git-entry-that-leads-nowhere-moved-out-and-discarded-as-printed",
-            "unlanded-a-file-where-the-worktree-was-moved-out-and-finalized-as-printed",
-            "unlanded-a-git-entry-that-leads-nowhere-moved-out-and-finalized-as-printed",
-        ],
-    ),
-    (
-        UNLANDED_ABANDON_LINE_REFUSED,
-        Classification::AnotherFailure,
-        &[
-            "unlanded-checkout-with-no-git-link-milestone-discarded-as-printed",
-            "unlanded-no-directory-and-a-registration-git-cannot-read-milestone-discarded-as-printed",
-            "unlanded-no-directory-and-staged-paths-in-the-registration-milestone-discarded-as-printed",
         ],
     ),
     (
@@ -935,11 +891,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
         ],
     ),
-    (
-        HOME_SHAPE_REVIEW_STEP_EXITS_4,
-        Classification::AnotherFailure,
-        &["home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed"],
-    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -1000,10 +951,6 @@ const NO_RECORD: &str = "r1-setup-settings-record-refused-rerun-installs-without
 /// The dirty gate's consent, `--force`, over a change a skip-worktree flag hides: the install
 /// runs over the file and git then refuses to stage it — no install commit is made.
 const FORCE_CANNOT_COMMIT: &str = "r1-setup-force-over-skip-worktree-path-cannot-commit";
-/// Where git cannot answer, the route's first step is to run the question that failed. Rests
-/// on a reading — every case under it is marked.
-const THE_QUESTION_THAT_FAILED: &str =
-    "r1-setup-unverified-route-opens-with-the-question-that-failed";
 /// Where there is no commit yet and the refusal comes behind the install's writes, the
 /// dirty route's line to unstage a file — `git -C <repo> rm --cached -- <path>`, filled
 /// with the path the refusal lists — is refused by git: the staged bytes differ from the
@@ -1070,10 +1017,6 @@ const STAGE_ROUTE_NAMES_OTHER_CAUSES: &str =
 const START_LINE_MINTS_NOTHING: &str =
     "r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows";
 
-/// A route cites a command for what it prints — *names where it lands*, *names that
-/// route* — and the command is itself refused.
-const POINTER_REFUSES: &str = "r1-linked-doc-route-cites-a-command-that-is-itself-refused";
-
 /// The finalize cannot read the task's provenance manifest — text that is no JSON, a
 /// directory, a link to itself — and the route names the task's area and *a disk or
 /// permissions problem*.
@@ -1104,11 +1047,6 @@ const CLOBBER_LINES_NOBODY_CAN_FILL: &str = "r1-clobber-task-and-migration-route
 /// The fixed-identity arm says to move a staged file out of the doc's home *with `git mv`*
 /// and prints the verb with no path. Rests on a reading — the case under it is marked.
 const GIT_MV_WITHOUT_A_PATH: &str = "r1-clobber-fixed-route-prints-git-mv-without-a-path";
-
-/// The held arm's route in a migration ends *re-run `jigc task finalize <id>` to review
-/// the fidelity diff and `… --approve` to land it*: the review exits 4 by design. Rests on
-/// a reading — both cases under it are marked.
-const REVIEW_STEP_EXITS_4: &str = "r1-clobber-held-migration-route-review-step-exits-4";
 
 /// The clobber guard's route for a sub-task's doc under a fixed identity says to drop the
 /// sub-task and re-run the milestone's finalize: where that sub-task was the milestone's
@@ -1141,15 +1079,6 @@ const ABANDON_LINE_REFUSED: &str =
 /// problem*.
 const MILESTONE_AREA_ROUTE_SAYS_PERMISSIONS: &str =
     "r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind";
-/// A worktree door's line says to move an entry aside *and re-run for the command* that
-/// re-links or brings back the checkout: the re-run is the same refusal, with the next
-/// line. Rests on a reading — every case under it is marked.
-const RE_RUN_FOR_THE_NEXT_COMMAND: &str = "r1-worktree-doors-route-re-run-is-for-the-next-command";
-/// The unlanded-work route's other way, `jigc milestone discard <id>`, *answers for the
-/// same path with its own route*: it is refused. Rests on a reading — every case under it
-/// is marked.
-const UNLANDED_ABANDON_LINE_REFUSED: &str =
-    "r1-unlanded-route-abandon-line-is-refused-by-the-discard-door";
 /// `jigc milestone provision --force`, the consent the leftover refusal prints, over a
 /// link that leads nowhere: refused under `milestone.provision-failed`.
 const CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED: &str =
@@ -1183,9 +1112,6 @@ const ANOTHER_SLUG_LINE: &str =
 /// copy of the file it points at*; over a link that leads nowhere there is no such file.
 const COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT: &str =
     "r1-home-shape-edited-doc-route-says-copy-what-the-link-points-at-over-a-link-to-nothing";
-/// The route of a migration whose doc's home is no regular file ends in the review, which
-/// exits 4 by design, and the approval. Rests on a reading — the case under it is marked.
-const HOME_SHAPE_REVIEW_STEP_EXITS_4: &str = "r1-home-shape-migration-route-review-step-exits-4";
 
 // The key of `config`, minted with the dynamic sites: a cause the commit before had given a
 // reason, found constructible.
@@ -5737,12 +5663,12 @@ blocking · setup.install-hook — refused, with `jigc -c 'exit 9'` in its head:
 
 /// A shell that stands in for a refusal whose route cites a line for what it prints, then
 /// names the step that clears the refusal and the re-run. The refusal's own head carries
-/// the words the cited line is promised to say, and the route spells seven lines more for
+/// the words the cited line is promised to say, and the route spells eight lines more for
 /// the arm below: what each of them prints and exits with is its script's, in the state.
 const CITES: &str = r#"test -e held || exit 0
 cat <<'END'
 blocking · setup.install-hook — refused over `held`, and the review of held is what `jigc review` prints
-  route: run `jigc review` to read the review, remove `held`, then re-run `jigc -c "test ! -e held"`. Beside it: `jigc other`, `jigc quiet`, `jigc again`, `jigc two`, `jigc one`, `jigc -c true <held>`
+  route: run `jigc review` to read the review, remove `held`, then re-run `jigc -c "test ! -e held"`. Beside it: `jigc other`, `jigc quiet`, `jigc again`, `jigc two`, `jigc one`, `jigc -c true <held>`, `jigc where`
 END
 exit 1"#;
 
@@ -5774,6 +5700,11 @@ const WHAT_THE_LINES_SAY: &[Step] = &[
         "printf '%s\\n' \"blocking · setup.third — refused over \\`$PWD/held\\`\" \
          '  at: held' '  route: move it aside'\nexit 1\n",
     ),
+    // The repository's root, as a command prints a directory: nothing behind its name.
+    Step::Script(
+        Place::Repo("where"),
+        "echo \"the main checkout at \\`$PWD\\`: here\"\n",
+    ),
 ];
 
 /// **A line a route cites for what it prints is held to its words, and not to its exit** —
@@ -5791,7 +5722,9 @@ const WHAT_THE_LINES_SAY: &[Step] = &[
 /// says the words, and so does a line cited before or after, and neither stands in; a
 /// cited line that repeats the refusal is read for its words too; a promise of *a route of
 /// its own* is kept by one finding that names the path and carries a route, never by two
-/// findings that have one each; a cited line no shell can split is what it was; and a
+/// findings that have one each; a piece that is a place of the sandbox is that place's
+/// path as a command prints it, the repository's root with nothing behind its name; a
+/// cited line no shell can split is what it was; and a
 /// cited line with no promise, a promise with no piece and a cited span that is no command
 /// line are faults of the case.
 #[test]
@@ -5990,6 +5923,20 @@ fn a_line_a_route_cites_is_held_to_its_words_and_not_to_its_exit() {
                 )],
             ),
             Classification::CitedLineUnsaid,
+        ),
+        // A piece that is the repository's root is its path as a command prints it.
+        (
+            planted(
+                "planted-a-cited-line-that-names-the-repositorys-root",
+                &[cited!(
+                    9,
+                    &[Promise::Line(&[
+                        Says::Text("the main checkout at"),
+                        Says::Path(Place::Repo("")),
+                    ])],
+                )],
+            ),
+            Classification::Holds,
         ),
         // A cited line no shell can split is what it was.
         (

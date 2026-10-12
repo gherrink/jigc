@@ -48,7 +48,9 @@
 //! task was minted in the main checkout, which is all the guard asks of a state.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Operand, Place, Step};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
+};
 
 // The sites, as the committed list of refusal sites names them.
 const NOTHING_STAGED: &str =
@@ -619,16 +621,6 @@ macro_rules! decided {
     };
 }
 
-/// The two readings of a printed command a route sends its reader to for its words.
-const WHAT_A_POINTER_OWES: &str = "*`jigc task validate <task>` names where it lands* · \
-    *`jigc task finalize <task>` names that route*: (a) the backticked line is a step of \
-    the route, held to exit 0 like every printed command — it is refused, under this \
-    refusal's own code or another; (b) the line is there for what it prints — the next \
-    route — and its exit owes nothing. The case follows (a). The surface contract holds a \
-    backticked `jigc` span to shell-safe tokens and says nothing of what a line owes that a \
-    route cites for its output; the pilot's fourth question is the same one, over a `git` \
-    line";
-
 /// The write door, asked from a linked worktree whose task commits code there — nothing
 /// staged in the worktree.
 const A_WRITE_FROM_A_LINKED_WORKTREE: [Case; 1] = [Case {
@@ -697,7 +689,10 @@ const A_WRITE_FROM_A_LINKED_WORKTREE_WITH_CODE_STAGED: [Case; 3] = [
 ];
 
 /// The same door where the task already stages a doc that promotes: it does not finalize
-/// from the worktree, and the route says which command names where it lands.
+/// from the worktree, and the route says which command names where it lands — a line cited
+/// for what it prints, and held to its words (the human's ruling of 2026-10-13): the path
+/// the doc promotes to, and the checkout that is — the main one, by its place. The cited
+/// command is itself refused, under this refusal's own code, and says it there.
 const A_SECOND_WRITE: &str = "a `jigc doc` write is asked from a linked worktree in a task \
     that already stages a doc that promotes — staged from the main checkout";
 const AN_EDIT_OF_THE_STAGED_LOG: &[&str] = &[
@@ -727,13 +722,23 @@ const A_WRITE_WHERE_THE_TASK_STAGES_A_DOC: [Case; 2] = [
         state: decided![THE_LOG_CREATED, A_LINKED_WORKTREE],
         refusing: AN_EDIT_OF_THE_STAGED_LOG,
         from: THERE,
-        acts: &[Act::Run(3)],
-        doubt: Some(WHAT_A_POINTER_OWES),
+        acts: &[Act::RunCited(Cited {
+            line: 3,
+            promised: &[Promise::Line(&[
+                Says::Text("`docs/decisions-log.md`"),
+                Says::Text("the main checkout at"),
+                Says::Path(Place::Repo("")),
+            ])],
+        })],
         ..FINALIZE
     },
 ];
 
-/// The same door from a worktree whose `HEAD` is detached.
+/// The same door from a worktree whose `HEAD` is detached: the task *commits nothing from
+/// here until it is on a branch*, and the route cites the finalize, which *names that
+/// route* — held to its words: a finding over the detached `HEAD` whose own route names
+/// the way onto a branch. It is another refusal's, `repo.head-detached`, and it is the
+/// route the citing one promised.
 const A_WRITE_FROM_A_DETACHED_HEAD: &str = "a `jigc doc` write of a doc that promotes is \
     asked from a linked worktree whose `HEAD` is detached";
 const A_WRITE_FROM_A_DETACHED_WORKTREE: [Case; 2] = [
@@ -754,8 +759,13 @@ const A_WRITE_FROM_A_DETACHED_WORKTREE: [Case; 2] = [
         state: decided![A_DETACHED_WORKTREE],
         refusing: THE_CREATE,
         from: THERE,
-        acts: &[Act::Run(3)],
-        doubt: Some(WHAT_A_POINTER_OWES),
+        acts: &[Act::RunCited(Cited {
+            line: 3,
+            promised: &[Promise::Route(&[
+                Says::Text("HEAD is detached"),
+                Says::Text("`git switch <branch>`"),
+            ])],
+        })],
         ..FINALIZE
     },
 ];
@@ -1921,21 +1931,21 @@ const THE_LOG_MINTED_OVER_A_FILE_GIT_HOLDS: [Case; 2] = [
 
 // The held arm in a migration: the rename's exit ends at the migration's own boundary.
 
-/// The two readings of a printed command a route sends its reader to for a review.
-const WHAT_A_REVIEW_STEP_OWES: &str = "*re-run `jigc task finalize <id>` to review the \
-    fidelity diff and `jigc task finalize <id> --approve` to land it*: (a) both backticked \
-    lines are steps of the route, each held to exit 0 like every printed command — the \
-    first exits 4, *migration review required — nothing committed*, which is what a \
-    migration's plain finalize does by design; (b) the first line is there for what it \
-    prints, the diff, and its exit owes nothing. The case follows (a); the case beside it \
-    runs the rename and the approval, and holds. The surface contract is silent on what a \
-    line owes that a route cites for its output: it is the question of the linked-worktree \
-    route's pointer and of the pilot's fourth, here over a line whose non-zero exit is its \
-    design";
+/// What the held arm's route promises of the review it cites in a migration — *re-run
+/// `jigc task finalize <id>` to review the fidelity diff*: the diff itself, the foreign
+/// source's own line against the rewrite's, under the home the rename gave the doc. A
+/// migration's plain finalize exits 4 by design, and a cited line is held to its words.
+const THE_FIDELITY_DIFF_OF_THE_RENAMED_ADR: &[Promise] = &[
+    Promise::Line(&[Says::Text(
+        "+++ canonical rewrite → docs/decisions/title.md",
+    )]),
+    Promise::Line(&[Says::Text("- We use tabs.")]),
+    Promise::Line(&[Says::Text("+ Because.")]),
+];
 
 /// **A migration's doc over a path git holds and the disk does not, followed two ways**:
-/// every printed line in the route's order, the review among them; and the rename and the
-/// approval alone.
+/// every printed line in the route's order, the review among them — cited for the diff it
+/// prints, the approval behind it held to exit 0; and the rename and the approval alone.
 macro_rules! a_migrations_doc_held {
     ($holder:literal, $cause:literal, state: $state:expr $(,)?) => {
         [
@@ -1947,13 +1957,19 @@ macro_rules! a_migrations_doc_held {
                 cause: $cause,
                 state: $state,
                 refusing: THE_ADRS_MIGRATIONS_FINALIZE,
-                acts: &[Act::Run(0), Act::Run(1), Act::Run(2)],
+                acts: &[
+                    Act::Run(0),
+                    Act::RunCited(Cited {
+                        line: 1,
+                        promised: THE_FIDELITY_DIFF_OF_THE_RENAMED_ADR,
+                    }),
+                    Act::Run(2),
+                ],
                 holds: &[
                     Check::Contains(Place::Repo(THE_RENAMED_ADRS_HOME), "Because."),
                     Check::Absent(Place::Repo(THE_ADRS_MIGRATION_AREA)),
                     Check::Absent(Place::Repo("notes/old.md")),
                 ],
-                doubt: Some(WHAT_A_REVIEW_STEP_OWES),
                 ..FINALIZE
             },
             Case {

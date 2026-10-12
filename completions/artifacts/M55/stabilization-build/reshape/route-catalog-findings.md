@@ -8,6 +8,8 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **[2026-10-12: and of every other family the ruling takes in, beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6), the `jigc doc` verbs that write (§7), `jigc config` and composition (§8), the store's own refusals (§9) and the dynamic sites no family has (§10), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
+**[2026-10-13: six keys left this file.** The human ruled that a line a route cites for what it prints is held to its words and not to exit 0 ([DECISIONS.md](../../../../../DECISIONS.md) → *A command a route cites for what it prints is held to its words*). Every case under these six was red by the other reading alone; each was followed again with what its route promised as the witness of the cited line's output, and holds: `r1-setup-unverified-route-opens-with-the-question-that-failed` (2 cases) · `r1-linked-doc-route-cites-a-command-that-is-itself-refused` (2) · `r1-clobber-held-migration-route-review-step-exits-4` (2) · `r1-worktree-doors-route-re-run-is-for-the-next-command` (3) · `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door` (3) · `r1-home-shape-migration-route-review-step-exits-4` (1). Their sections are gone with them; the witness of each case and what it came to on both binaries is [route-catalog-doubts.md](route-catalog-doubts.md) → R. A record dated before this day that names one of the six names a key that stood then.**]**
+
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
 ## 1. Keyed — cases are listed under each
@@ -162,21 +164,6 @@ The first way out — remove the link — holds at every end a link was driven a
 - **What was done:** the route's last way out — `jigc setup --force`.
 - **What went wrong:** exit 1 with `setup.install-commit`: *the jigc install files were written, but `git add` was rejected* — git does not stage a path its sparse-checkout rules skip, and says so. The route says the consent *lets the install run and commit those paths*: the install ran — `.jigc/AGENT.md` holds jigc's text now, and the change that stood there is in no commit — and nothing was committed.
 - **Beside it, and green:** the route's first way — both flag lines run, the change committed, the command again (`setup-change-hidden-by-skip-worktree-flags-cleared-and-committed`); and the same consent over an entry flagged assume-unchanged (`setup-change-hidden-by-assume-unchanged-forced`), which git stages.
-
-### `r1-setup-unverified-route-opens-with-the-question-that-failed`
-
-- **Classification:** followed, another failure. **Marked `doubt`** — both cases rest on a reading the human has not given. **Two cases:** `setup-git-refuses-the-repository-asked-as-printed-and-resolved`, `setup-git-status-fails-asked-as-printed-and-resolved`.
-- **State:** a repository with one commit and no install, in which git cannot answer: its `.git/config` is no configuration file in the first case, its `.git/index` no index in the second.
-- **Refusing command:** `jigc setup` — exit 1, `setup.unverified-install-path`, with git's own words quoted.
-- **Printed route** (the first case; the second prints `git -C <sandbox>/repo status`):
-
-  ```text
-  route: run `git -C <sandbox>/repo rev-parse --is-inside-work-tree` to see what git reports, resolve that (or put `git` on `PATH`), then re-run `jigc setup`. `--force` does not change this: it consents to the paths git names, and git named none
-  ```
-
-- **What was done:** the printed `git` line run — exit 128, with the words the refusal had quoted; the file git's words name removed; `jigc setup` again — exit 0, the install complete.
-- **What went wrong:** nothing but the first step. The frame holds every command a route prints to exit 0, and this one is the question that failed, printed so that the reader sees it fail.
-- **The two readings:** (a) the printed `git` line is a step of the route like any other — followed here, red; (b) it is there to show git's words, and the route's steps are *resolve that* and the re-run — `…-resolved`, two cases, *followed, holds, operand implied*: what resolves the failure is in git's words and never in the route.
 
 ### `r1-setup-unborn-dirty-route-unstaging-line-is-no-command-line`
 
@@ -479,23 +466,6 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What went wrong:** exit 0, and no task was minted: under the shipped default the front door presents the workflows to pick one from. The route says the line *mints an ordinary task*. The linked-worktree refusal's route says of the same line *the front door there, which mints a task or presents the workflows to pick one from*.
 - **The doubt:** whether *mints* is said of the printed line or of the door the reader then goes through.
 
-### `r1-linked-doc-route-cites-a-command-that-is-itself-refused`
-
-- **Classification:** followed, the same refusal again (one case) · followed, another failure (one case). **Both marked `doubt`.**
-- **State:** a task minted in the main checkout that may create the decisions log; a linked worktree of the user's beside the repository. (1) the task already stages the log, staged from the main checkout; (2) the worktree's `HEAD` is detached.
-- **Refusing command:** a `jigc doc` write of the log, asked from the worktree — exit 1, `finalize.linked-worktree-doc`.
-- **Printed route**, its last sentence in each:
-
-  ```text
-  (1) … Task `write-a-note` already stages a managed doc, so it does not finalize from here — `jigc task validate write-a-note` names where it lands
-  (2) … This worktree's HEAD is detached, so task `write-a-note` commits nothing from here until it is on a branch — `jigc task finalize write-a-note` names that route
-  ```
-
-- **What was done:** the cited line, run where the case stands.
-- **What went wrong:** (1) `jigc task validate write-a-note` exits 3 under `finalize.linked-worktree-doc` — it does name where the task lands, in that refusal's route; (2) `jigc task finalize write-a-note` exits 1 under `repo.head-detached`, whose route is the one meant. The frame holds every printed command to exit 0.
-- **The doubt:** whether a line a route cites for what it prints owes an exit of 0. The pilot's fourth question is the same one, over a `git` line (`r1-setup-unverified-route-opens-with-the-question-that-failed`).
-- **Cases `linked-doc-second-write-refused-the-preview-asked-where-it-lands`, `linked-doc-write-refused-on-a-detached-head-the-finalize-asked-for-its-route`.**
-
 ### `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind`
 
 - **Classification:** followed, the same refusal again. **Three cases:** `finalize-provenance-manifest-not-json-area-made-readable`, `…-a-directory-…`, `…-a-link-to-itself-…`.
@@ -585,22 +555,6 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **The doubt:** the pilot's sixth question, over another verb — a `git` span with no operand is a line to run, or the name of a verb. The surface contract says such a span *names a command rather than a file*.
 - **Driven by hand under the second reading:** `git mv docs/decisions-log.md kept.md`, then the finalize — exit 0; the commit holds the log **and `kept.md`**, the moved file, which was staged. Moved by a plain file move instead, the index entry stays behind and the finalize is refused under the same code by the held arm.
 - **Beside it, and green:** the same route over a file in no index — moved out by the runner, the finalize lands (`clobber-fixed-file-at-the-logs-home-moved-out-and-finalized-as-printed`, and the sub-task's).
-
-### `r1-clobber-held-migration-route-review-step-exits-4`
-
-- **Classification:** followed, another failure. **Two cases, both marked `doubt`:** `clobber-held-in-head-migration-doc-renamed-reviewed-and-approved-as-printed`, `clobber-held-in-the-index-migration-doc-renamed-reviewed-and-approved-as-printed`.
-- **State:** a migration of a foreign file to an ADR, authored; git holds a file at the ADR's home that is not on disk — committed and deleted from the working tree, or staged and taken out of it.
-- **Refusing command:** `jigc task finalize <the migration>` — exit 3, `finalize.promote-clobber`.
-- **Printed route** (`HEAD` holds the file):
-
-  ```text
-  route: nothing was committed and this task's staged docs are intact: give this task's doc an id whose home is free (`jigc doc rename adr:use-tabs --to "<title>" --task migrate-adr-notes-old-e1a7d84cafc2`), then re-run `jigc task finalize migrate-adr-notes-old-e1a7d84cafc2` to review the fidelity diff and `jigc task finalize migrate-adr-notes-old-e1a7d84cafc2 --approve` to land it. The file git holds at `docs/decisions/use-tabs.md` is left exactly as it is: `git -C <sandbox>/repo checkout HEAD -- docs/decisions/use-tabs.md` brings it back into the worktree, and that is no commit
-  ```
-
-- **What was done:** the three printed lines in order. The rename exits 0; the plain finalize exits 4 — *migration review required — nothing committed* — and prints the diff; the approval exits 0 and lands the commit.
-- **What went wrong:** nothing but the second line's exit. The frame holds every printed command to exit 0, and a migration's plain finalize exits 4 by design.
-- **The doubt:** a command a route cites for what it prints — the gate's third question and the pilot's fourth, here over a line whose non-zero exit is its design.
-- **Beside it, and green:** the rename and the approval alone (`…-migration-doc-renamed-and-approved-as-printed`, two cases).
 
 ### `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision`
 
@@ -713,32 +667,6 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What was done:** the consent, as printed.
 - **What went wrong:** exit 1 under `milestone.provision-failed` — *`git worktree add --detach …` failed: … already exists*. The consent's clearing step asks whether the path exists by following the link, sees nothing and removes nothing; git then refuses the path. The second refusal's route prints the same line again.
 - **Beside it, and green:** the same consent over a regular file at the path, and the link removed by hand before the consent (`provision-failed-forced-over-a-link-to-nothing-link-removed-and-provisioned-as-printed`).
-
-### `r1-worktree-doors-route-re-run-is-for-the-next-command`
-
-- **Classification:** followed, the same refusal again. **Three cases, all marked `doubt`:** `dirty-worktree-a-git-entry-that-leads-nowhere-moved-out-and-discarded-as-printed`, `unlanded-a-git-entry-that-leads-nowhere-moved-out-and-finalized-as-printed`, `unlanded-a-file-where-the-worktree-was-moved-out-and-finalized-as-printed`.
-- **State:** a sub-task's worktree whose `.git` entry leads nowhere git can read — or a file where the worktree was — beside a registration that still holds a staged path.
-- **Refusing command:** `jigc milestone discard fan-out` (exit 1, `milestone.dirty-worktree`) · `jigc milestone finalize fan-out` (exit 3, `milestone.unlanded-work`).
-- **What the line and the route say** (the finalize):
-
-  ```text
-    .jigc/worktrees/do-a-thing: git's registration of this path still holds 1 staged path in no commit (work.txt) — what stands there has a `.git` entry git reads no repository through, and no printed command overwrites one: move that entry aside, and this door then prints the one line that re-links the checkout, its files untouched — …
-  route: that line carries no command, because none is safe to print over what stands at the path — take the step it names by hand (a path brought back or re-linked is a live worktree again, whose staged paths the boundary lands), then re-run `jigc milestone finalize fan-out` — or abandon the milestone with `jigc milestone discard fan-out`, which answers for the same path with its own route
-  ```
-
-- **What was done:** the entry moved out of its path by the runner; the printed re-run.
-- **What went wrong:** the same refusal, now with the line that re-links the checkout — as the line said it would be. The frame holds every printed command to exit 0.
-- **The doubt:** a command a route cites for what it prints — the gate's third question and the pilot's fourth.
-
-### `r1-unlanded-route-abandon-line-is-refused-by-the-discard-door`
-
-- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `unlanded-no-directory-and-staged-paths-in-the-registration-milestone-discarded-as-printed`, `unlanded-no-directory-and-a-registration-git-cannot-read-milestone-discarded-as-printed`, `unlanded-checkout-with-no-git-link-milestone-discarded-as-printed`.
-- **State:** a sub-task's worktree directory gone and its registration holding a staged path, or unreadable; or the checkout standing with no `.git` link.
-- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.unlanded-work`.
-- **What was done:** the route's other way — *or abandon the milestone with `jigc milestone discard fan-out`, which answers for the same path with its own route* — as printed. The first way is a shell line on the listed line, or no line at all, which no case runs.
-- **What went wrong:** exit 1 under `milestone.dirty-worktree`: the discard door asks the same path the same question, as the route says it will.
-- **The doubt:** the same question as the key above.
-- **Driven by hand, the first way:** the recipe the line prints for a directory that is gone — `mkdir -p … && printf 'gitdir: %s\n' … > …/.git && git -C … restore .` — exits 0, and the finalize then lands the commit.
 
 ### `r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution`
 
@@ -875,17 +803,6 @@ Each was driven for this section, on this tree's binary.
 - **The doubt:** what the pilot's first question left open, over a value nobody but the reader has.
 - *Why one key for two functions:* `rename.rs::foreign_destination` and `doc.rs::free_destination` print the same sentence for the same state at the two renames. *Why no key that stands:* the distinct-identity key of §7 is another function's line, with other placeholders.
 - **Beside it, and green:** the route's other way at both doors — the link moved out, and at `jigc rename` the printed re-run; a committed link moved out and the move committed; a directory moved away.
-
-### `r1-home-shape-migration-route-review-step-exits-4`
-
-- **Classification:** followed, another failure. **One case, marked `doubt`:** `home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed`.
-- **State:** a foreign note migrated into an ADR, authored, its commit doc complete; a link that leads nowhere at the home the ADR promotes to.
-- **Refusing command:** `jigc task finalize migrate-adr-notes-old-…` — exit 3, `store.home-not-regular-file`.
-- **What the route says, behind its two ways:** *then re-run `jigc task finalize <id>` to review the fidelity diff and `jigc task finalize <id> --approve` to land it*.
-- **What was done:** the link moved out; the printed review; the printed approval.
-- **What went wrong:** the review exits 4 by design — *migration review required — nothing committed* — and the frame holds every printed command to exit 0.
-- **The doubt:** a command cited for what it shows — the gate's third question and the pilot's fourth, **ruled by the human on 2026-10-13: held to its words**. The case is to be followed again once the frame holds a cited line to a witness; the review's output, as recorded, says what the route promised.
-- *Why no key that stands:* `r1-clobber-held-migration-route-review-step-exits-4` is the clobber guard's arm, another function of the same file; a neighbour.
 
 ### Under a key that stands — `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice`
 

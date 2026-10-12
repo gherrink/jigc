@@ -21,7 +21,7 @@
 //!     taken*. A reason: it takes a pack of the reader's own.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Place, Step};
+use crate::support::route_case::{Act, Case, Check, Cited, Place, Promise, Says, Step};
 
 // The sites, as a claim names each: the dynamic site's function, and the code minted there.
 const RENAME_NO_SUCH_DOC: &str = "crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1";
@@ -128,15 +128,13 @@ const THE_DESTINATION: &str = "docs/decisions/use-spaces.md";
 // `jigc rename` · `store.not-found` — no doc to rename at the id's home
 // ---------------------------------------------------------------------------
 
-/// The two readings of a command a route cites for what it prints.
-const THE_CITED_SURFACE: &str = "*`jigc describe` lists the doctype surface — check the id you \
-    typed against it*: (a) the backticked line is a step of the route, a command line to run \
-    as printed and held to exit 0; (b) it is cited for what it prints, and the route's act is \
-    the reader's own — another id, an argument of the refused command, for which the route \
-    prints no line. The case follows (a). It is the gate's third question and the pilot's \
-    fourth. **Ruled by the human on 2026-10-13: such a line is held to its words — it passes \
-    when its output says what the route promised, whatever it exits with — and this case is \
-    to be followed again once the frame holds a cited line to a witness**";
+/// What the route promises of the command it cites — *`jigc describe` lists the doctype
+/// surface — check the id you typed against it*: the surface, with the doctype of the id
+/// that was typed in it. Held to its words (the human's ruling of 2026-10-13): the line
+/// that opens the doc-types `jigc describe` lists, with `adr`, the first of them, on it.
+const THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE: &[Promise] = &[Promise::Line(&[Says::Text(
+    "The doc-types you can author. adr is ",
+)])];
 
 const NO_DOC_OF_THAT_ID: [Case; 1] = [Case {
     name: "rename-not-found-no-doc-of-that-id-surface-read-as-printed",
@@ -144,9 +142,11 @@ const NO_DOC_OF_THAT_ID: [Case; 1] = [Case {
     cause: "the id names a doc the store does not hold: nothing stands at its home",
     state: an_adr_committed![],
     refusing: &["rename", "adr:no-such-doc", "--to", "Use spaces"],
-    acts: &[Act::Run(0)],
+    acts: &[Act::RunCited(Cited {
+        line: 0,
+        promised: THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE,
+    })],
     untouched: &[THE_ADR],
-    doubt: Some(THE_CITED_SURFACE),
     ..U
 }];
 const THE_DOC_GONE_FROM_THE_WORKING_TREE: [Case; 1] = [Case {
@@ -159,9 +159,11 @@ const THE_DOC_GONE_FROM_THE_WORKING_TREE: [Case; 1] = [Case {
         "alias.plant=!rm docs/decisions/use-tabs.md",
         "plant"
     ])],
-    acts: &[Act::Run(0)],
+    acts: &[Act::RunCited(Cited {
+        line: 0,
+        promised: THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE,
+    })],
     holds: &[Check::Absent(Place::Repo(THE_DESTINATION))],
-    doubt: Some(THE_CITED_SURFACE),
     ..U
 }];
 
