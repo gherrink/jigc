@@ -6,7 +6,7 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **Three of the keys are about a state only a variable reaches** — `JIGC_ADAPTERS_DIR` for two, `$HOME` taken away for one. **Whether a route owes anything there is ruled** ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-11 — Which states a route must work in*): a state only `JIGC_ADAPTERS_DIR` reaches is a declared bound of the catalog — a red case that stands on one is recorded, stays red, and does not block; `$HOME` taken away is no bound.
 
-**[2026-10-12: and of two families beyond the pilot's two commands** — the gate (§5) and `jigc milestone` (§6), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
+**[2026-10-12: and of three families beyond the pilot's two commands** — the gate (§5), `jigc milestone` (§6) and the `jigc doc` verbs that write (§7), the sites of each that the fix pass touched.**]** **The cases are those of every blocking site of `jigc setup`** — thirty-six sites, four of them with a reason and no case — **and of every blocking site of `jigc uninstall`** (§4), eighteen, each with a case: the door, the four guards over what `.jigc/` holds the only copy of, and the seven steps that remove.
 
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
@@ -766,3 +766,44 @@ Each was driven once more for this section, on this tree's binary.
 - **`combine.code-collision` exits 1 at the finalize**, where the boundary's other blocks exit 3.
 - **The conflict block at the milestone's finalize ends *then re-run the join***, and `jigc milestone join fan-out` exits 0 with the conflict standing (a committed doc edited by hand under a sub-task's staged copy).
 - **Four doors answer a broken file of the area with a plain error and no code**: `jigc milestone provision` and `discard` over a `tasks.json` that is no JSON (add-task, the join and the finalize refuse under `milestone.area-io`); `jigc milestone finalize` over a live worktree whose index is no index; and the finalize, the discard and a sub-task's discard over a record whose bytes are no text where jigc holds no hash for it — the first two naming the record by its absolute path.
+
+## 7. `doc write` — the sites the fix pass touched
+
+*Added 2026-10-12, with the cases of [route_catalog/doc_write.rs](../../../../../crates/cli/tests/route_catalog/doc_write.rs): the three sites of the family taken in by the human's ruling of 2026-10-11, 18 cases. Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task, made by the binary under test.
+
+### `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids`
+
+- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `record-retitle-from-the-sub-task-…`, `record-retitle-from-an-ordinary-task-…`, `record-retitle-an-item-the-record-does-not-hold-…`, each ending `-the-milestone-verbs-run-as-printed`.
+- **State:** a milestone `fan-out` with the sub-task `do-a-thing`; the retitle is asked by that sub-task, by an ordinary task beside it, and of an item the record does not hold.
+- **Refusing command:** `jigc doc retitle-item milestone-record:fan-out#tasks/do-a-thing --title "Another name" --task <id>` — exit 1, `write.machine-maintained`: *item `tasks/do-a-thing` lives in a milestone-record — the record is machine-maintained and an item's heading IS the sub-task's work-unit id*.
+- **Printed route:**
+
+  ```text
+  route: leave the record to the milestone verbs — `jigc milestone add-task` appends sub-tasks and `jigc milestone finalize` advances their status; no manual retitle applies
+  ```
+
+- **What was done:** the two printed lines, as printed.
+- **What went wrong:** each exits 2 — *the following required arguments were not provided: `<MILESTONE_ID>`* — the argument parser's own refusal. The refusal's `at:` line carries the milestone's id; the two spans do not.
+- **The doubt:** the gate's first question — a product command printed without the id it requires is a line to run, or the name of a command. Under the second reading the route names no act of the reader's, and there is nothing to follow: the refused retitle has no way out, which is what the route says.
+- *Why no key that stands:* `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is the same question over another function's route, which does tell its reader to run the command again; a neighbour.
+
+### `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice`
+
+- **Classification:** followed, a printed line no shell can split. **Seven cases, all marked `doubt`:** `title-ignored-committed-create-line-run-as-printed`, `title-ignored-committed-create-under-a-slug-line-run-as-printed`, `title-ignored-committed-author-line-run-as-printed`, `title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed`; `already-exists-create-line-run-as-printed`, `already-exists-create-under-a-slug-line-run-as-printed`, `already-exists-author-line-run-as-printed`.
+- **State:** a create whose id is taken. Four over a committed ADR titled *Use tabs*, where the new call carries another title and mints the same id — by `jigc doc create`, by `create --slug`, by `jigc doc author`, and by an `author` in a migration that recorded the slug. Three in a task of `report-jigc-feedback`, whose entry only creates, over a file at the finding's home.
+- **Refusing command:** `jigc doc create …` · `jigc doc author …` — exit 1, `write.title-ignored` (*is already committed and would be copied in for update as `# Use tabs`, and this call mints the same id*) or `create.already-exists` (*already exists on disk at its home, and this workflow's `allows-create` entry … carries `new: true`*).
+- **Printed routes** (one of each kind):
+
+  ```text
+  route: choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint beside the existing doc: `jigc doc create adr --title <title> --slug <slug> --task again`
+  route: the id comes from `--slug use-tabs`, not the title, so pass a distinct `--slug`: `jigc doc create adr --title <title> --slug <slug> --task again`
+  route: set the payload's `title:` to a distinct title (its slug becomes the doc id) and re-run the same `jigc doc author adr --from-file <payload> --task again`
+  route: the id comes from this migration's recorded `--slug use-tabs`, not the payload's `title:`, so no payload changes it — discard this task with `jigc task discard migrate-adr-notes-old-e1a7d84cafc2 --force` (…), then re-migrate under a distinct slug: `jigc migrate <sandbox>/repo/notes/old.md --as adr --slug <slug>`
+  ```
+
+- **What was done:** the printed command line, as printed — behind the printed discard, in the migration's case, which exits 0.
+- **What went wrong:** no shell splits the line: a bare word in angle brackets is a redirection. The refusal lists nothing a placeholder could be filled with, and could not: the title, the slug and the payload are the reader's own to choose.
+- **The doubt:** what the pilot's first question left open, over a value nobody but the reader has — a line to run as printed, or a shape the reader fills.
+- **Driven by hand, the second reading:** `jigc doc create adr --title 'Use spaces' --task again` exits 0 (`adr:use-spaces`); the printed line with the title kept and `--slug other` exits 0 (`adr:other`); a payload titled *Use spaces* exits 0; `jigc doc create jigc-feedback --title 'Another' --task report-a-bug` and the same with `--slug other` exit 0. The migration's line was not driven filled.
+- *Why no key that stands:* `r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for` is the clobber guard's — another function, at the finalize, whose placeholders are an id and a doctype the product knows; `r1-uninstall-routes-print-lines-with-a-placeholder-for-the-id` is `jigc uninstall`'s. Neighbours.
+- **Beside it, and green:** the same refusal over the task's own staged doc, whose route prints the rename whole — `jigc doc rename adr:use-tabs --to 'Use Tabs!' --task decide-tabs` — four cases; and `create.already-exists` in a task that holds its doc already, whose route prints the task's exits and the next task's start — four cases, a milestone's sub-task among them.

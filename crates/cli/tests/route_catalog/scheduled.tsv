@@ -19,9 +19,16 @@ crates/cli/src/config.rs::check_not_already_forked::config.step-id-collision#1	u
 crates/cli/src/config.rs::resolve_fork_bytes::config.anchor-absent#1	unchanged	-
 crates/cli/src/config.rs::undeclared_key_finding::config.undeclared-key#1	unchanged	-
 crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	unchanged	-
+crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_doc_rename` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; the first decides nothing and the second stands behind this refusal, which turns on the provenance the copy-in recorded — recorded as it was. In `read_or_copy_in`, beside the path, a guard over a linked worktree's docs and the copy-in's own read of the baseline now answer earlier, each as its own refusal: states taken from this one, none brought
+crates/cli/src/doc.rs::fixed_identity_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_doc_rename` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; this refusal is by doctype and returns before both
+crates/cli/src/doc.rs::fixed_title_refusal::write.title-ignored#1	unchanged	caller: `crates/cli/src/doc.rs::title_pre_check` changed — the create-only gate ahead of this rank is built by a new function and asked a second time, both only under an entry that carries `new: true`; no singleton of the shipped packs stands under one, and this rank's own lines are the previous release's
 crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	unchanged	-
 crates/cli/src/doc.rs::id_from_field_guard::write.id-from-field#1	unchanged	-
+crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::title_pre_check` changed — the create-only gate ahead of this rank is built by a new function, and asked a second time of the same home: the second look differs from the first only where a file arrives between two reads of one command; this rank's own lines are the previous release's
 crates/cli/src/doc.rs::machine_maintained_field_guard::write.machine-maintained-field#1	unchanged	-
+crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1	unchanged	caller: the eight write leaves of `crates/cli/src/doc.rs` changed (`run_set_field`, `run_unset_field`, `run_set_slot`, `run_add_item`, `run_remove_item`, `run_doc_rename`, `run_create`, `run_author`) — in each this guard is the first check behind the address's parse, ahead of every changed line
+crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1	unchanged	caller: `crates/cli/src/doc.rs::free_destination` changed — a new arm behind both calls of this refusal, reached only where neither answered: a destination whose home holds an entry that is no regular file, refused there by the store's own site. `state::create_incumbent`, which the second call turns on, changed in one line that answers as it did: a regular file, or a link that leads to one
+crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_retitle_item` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; the first decides nothing and the second stands behind this refusal. In `read_or_copy_in`, beside the path, a guard over a linked worktree's docs and the copy-in's own read of the baseline now answer earlier, each as its own refusal: states taken from this one, none brought
 crates/cli/src/doc.rs::slug_override_enum_refusal::write.identity-change#1	unchanged	-
 crates/cli/src/doc.rs::trailer_key_refusal::schema-conformance.field-value-conformant#1	unchanged	-
 crates/cli/src/doc_code_probe/mod.rs::dangling::dynamic#1	unchanged	-
@@ -63,6 +70,7 @@ crates/cli/src/task.rs::discard_unverified_prose_finding::task-discard.staged-pr
 crates/cli/src/task.rs::no_committed_doc::store.not-found#1	unchanged	-
 crates/cli/src/task.rs::reject_malformed_slug_head::store.malformed-slug#1	unchanged	-
 crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	unchanged	-
+crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` and `crates/cli/src/rename.rs::run` changed — at the first, a binding ahead of this refusal and a guard over a linked worktree behind it; at the second, the question of what stands at the doc's own home is asked of the entry and no longer through a link, ahead of this refusal, and answers earlier under the store's code. The slug's length is asked as it was at all four doors
 crates/cli/src/task.rs::retire_untrackable_finding::finalize.retire-untrackable#1	unchanged	-
 crates/engine/src/cascade.rs::into_finding::dynamic#1	unchanged	-
 crates/engine/src/cascade.rs::into_finding::dynamic#2	unchanged	-
@@ -122,7 +130,9 @@ crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	u
 crates/engine/src/state.rs::collision_finding::task.serial-collision#1	unchanged	-
 crates/engine/src/state.rs::empty_title_finding::create.empty-title#1	unchanged	-
 crates/engine/src/state.rs::gate_blocked_finding::create.gate-blocked#1	unchanged	-
+crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1	unchanged	caller: `crates/engine/src/state.rs::stage_minted` is new — `create`'s steps 3 to 5, moved out so that the one probe of the home is handed down; this refusal is its first statement, as it was `create`'s third step, and no line ahead of it refuses
 crates/engine/src/state.rs::residual_collision_finding::task.serial-collision#1	unchanged	-
+crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1	unchanged	caller: `crates/engine/src/state.rs::create` changed — two parameters more and the one probe of the home, all behind this refusal, which is its first statement; the other caller, `create_admission`, is the previous release's
 crates/engine/src/state.rs::unslugable_title_finding::write.unslugable-title#1	unchanged	-
 crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	unchanged	-
 crates/engine/src/validate.rs::blocking_conformance::dynamic#1	unchanged	-

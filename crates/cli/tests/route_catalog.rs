@@ -9,7 +9,7 @@
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
 //! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
-//! `uninstall.rs`, `task_finalize.rs` and `milestone.rs`.
+//! `uninstall.rs`, `task_finalize.rs`, `milestone.rs` and `doc_write.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
 //! committed list of refusal sites: a suite file beside a directory of its own name makes
 //! the directory an aggregation for the registration fence
@@ -77,7 +77,10 @@
 //! is taken out of the index of the checkout it stands in
 //! ([`a_path_is_taken_out_of_the_index_of_the_checkout_it_stands_in`]), and a state step
 //! runs the binary under test in another place of the sandbox
-//! ([`a_state_step_runs_the_binary_under_test`]).
+//! ([`a_state_step_runs_the_binary_under_test`]). **The third is `doc_write.rs`** — the
+//! `jigc doc` verbs that write: three sites with a reading, and ten more whose caller's
+//! diff against the previous release was read and found off the path, each a row of the
+//! scheduled list with which change that is. The frame grew by nothing for it.
 //!
 //! **A site with a case says what was read to count its causes**
 //! ([`Reading`], a command's `READINGS`): the functions, the count with its derivation,
@@ -309,6 +312,8 @@ tables! {
     mod task_finalize;
     #[path = "route_catalog/milestone.rs"]
     mod milestone;
+    #[path = "route_catalog/doc_write.rs"]
+    mod doc_write;
 }
 
 use setup::{HOOK, HOOK_LINK_SITE};
@@ -839,6 +844,28 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::AnotherFailure,
         &["unlanded-a-commit-kept-on-a-branch-and-finalized-as-printed"],
     ),
+    (
+        RECORD_VERBS_WITHOUT_THEIR_IDS,
+        Classification::AnotherFailure,
+        &[
+            "record-retitle-an-item-the-record-does-not-hold-the-milestone-verbs-run-as-printed",
+            "record-retitle-from-an-ordinary-task-the-milestone-verbs-run-as-printed",
+            "record-retitle-from-the-sub-task-the-milestone-verbs-run-as-printed",
+        ],
+    ),
+    (
+        A_LINE_FOR_THE_READERS_OWN_CHOICE,
+        Classification::UnsplittableLine,
+        &[
+            "already-exists-author-line-run-as-printed",
+            "already-exists-create-line-run-as-printed",
+            "already-exists-create-under-a-slug-line-run-as-printed",
+            "title-ignored-committed-author-line-run-as-printed",
+            "title-ignored-committed-create-line-run-as-printed",
+            "title-ignored-committed-create-under-a-slug-line-run-as-printed",
+            "title-ignored-committed-under-a-migrations-slug-discarded-and-re-migrated-as-printed",
+        ],
+    ),
 ];
 
 // The canary's keys — the route of the hook's link refusal names where the link leads, and
@@ -1058,6 +1085,19 @@ const CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED: &str =
 /// `milestone.zero-contribution`.
 const KEPT_THE_ONLY_COMMIT: &str =
     "r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution";
+
+// The keys of `doc write`.
+/// The record's retitle refusal says to leave the record to the milestone verbs and
+/// prints two of them, each without the milestone's id its command requires. Rests on a
+/// reading — every case under it is marked.
+const RECORD_VERBS_WITHOUT_THEIR_IDS: &str =
+    "r1-record-retitle-route-names-two-milestone-verbs-without-their-ids";
+/// A create whose id is taken — by a committed doc under another title, or, under an entry
+/// that only creates, by any file — is routed at a distinct identity, and the one command
+/// line the route prints leaves the title, the slug or the payload to its reader, as a
+/// bare word in angle brackets. Rests on a reading — every case under it is marked.
+const A_LINE_FOR_THE_READERS_OWN_CHOICE: &str =
+    "r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice";
 
 /// **The keys the human admitted by name** — a row a key, and the heading of the entry of
 /// `DECISIONS.md` that holds the ruling. Every red case under an admitted key can block,
@@ -1513,8 +1553,8 @@ fn every_case_names_a_site_of_the_list_and_has_a_name_of_its_own() {
 
 /// **The code prefixes whose vocabulary the catalog is held to** — the families of
 /// `jigc setup` (`setup`, `adapter-guide`) and of `jigc uninstall`, the eleven of the gate
-/// (`task finalize`) and the three of `milestone` (`combine`, `join`, `milestone`), as
-/// [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
+/// (`task finalize`), the three of `milestone` (`combine`, `join`, `milestone`) and the two
+/// of `doc write` (`create`, `write`), as [`refusal_sites::FAMILIES`] assigns them. A prefix joins when its command's file does.
 /// The sites are held family or no family
 /// ([`every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row`]);
 /// this is the list for the arm beside it, which asks after every code a prefix spells.
@@ -1525,6 +1565,7 @@ const CATALOGUED: &[&str] = &[
     "combine",
     "commit-recording",
     "conformance",
+    "create",
     "doc-code",
     "file-state",
     "finalize",
@@ -1536,6 +1577,7 @@ const CATALOGUED: &[&str] = &[
     "setup",
     "task",
     "uninstall",
+    "write",
 ];
 
 /// Why a blocking site has no case. The three words are the plan's, and a reason is one of
@@ -1676,8 +1718,14 @@ const REPLACED_PATH: &str = "crates/cli/src/setup.rs::replaced_path_refusal::dyn
 const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dynamic#1";
 
 /// **The code-shaped literals of a catalogued prefix that are no finding's code**, each
-/// with why — a file name, say. None on this tree.
+/// with why — a file name, say.
 const NO_CODE: &[(&str, &str)] = &[
+    (
+        "create.singleton-copy-in",
+        "a declared contract identifier (`cli::pack::SINGLETON_COPY_IN_CODE`): the name of \
+         a constraint a migrate step's guide prose must state, which the pack-load fence \
+         checks for; its own comment says it is no minted finding code",
+    ),
     (
         "file-state.json",
         "a file's name — the record under `.jigc/state/` that the reconciliation keeps \
@@ -1765,11 +1813,103 @@ const MINTED_AT: &[MintedAt] = &[
         site: BLOCKING_CONFORMANCE,
         why: A_SCHEDULED_SITE_OF_SEVERAL_CHECKS,
     },
+    // `engine::write::blocking_write(code, …)`: the write path's rejects, a code a kind of
+    // reject, each spelled where the splice or the check hands it over.
+    MintedAt {
+        code: "write.list-overwrite",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.malformed-value",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.non-reparseable",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.not-present",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.slot-heading-depth",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.slot-setext-heading",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.target-escape",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.unknown-field",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.unknown-section",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.wrong-shape",
+        site: BLOCKING_WRITE,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    // `author::reject(kind, …)`: the batch payload's rejects — `PayloadReject::code()`
+    // hands over one of two codes the write path mints too.
+    MintedAt {
+        code: "write.malformed-value",
+        site: PAYLOAD_REJECT,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    MintedAt {
+        code: "write.wrong-shape",
+        site: PAYLOAD_REJECT,
+        why: A_SCHEDULED_SITE_OF_SEVERAL_REJECTS,
+    },
+    // `rename::refuse(kind, …)` and `relocate::refuse(refusal, …)`: each words every
+    // refusal of its door, a code a kind (`RefusalKind::code()`, `RelocateRefusal::code()`).
+    MintedAt {
+        code: "write.malformed-slug",
+        site: RENAME_REFUSE,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "write.untrackable-destination",
+        site: RENAME_REFUSE,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
+    MintedAt {
+        code: "write.untrackable-destination",
+        site: RELOCATE_REFUSE,
+        why: A_SITE_OF_A_DOORS_WHOLE_AXIS,
+    },
 ];
 
 const COMMIT_REJECTION: &str = "crates/cli/src/render.rs::commit_rejection_finding::dynamic#1";
 const ROLLBACK_CONFLICT: &str = "crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1";
 const BLOCKING_CONFORMANCE: &str = "crates/engine/src/validate.rs::blocking_conformance::dynamic#1";
+const BLOCKING_WRITE: &str = "crates/engine/src/write.rs::blocking_write::dynamic#1";
+const PAYLOAD_REJECT: &str = "crates/cli/src/author.rs::reject::dynamic#1";
+const RENAME_REFUSE: &str = "crates/cli/src/rename.rs::refuse::dynamic#1";
+const RELOCATE_REFUSE: &str = "crates/cli/src/relocate.rs::refuse::dynamic#1";
+const A_SCHEDULED_SITE_OF_SEVERAL_REJECTS: &str = "the site is the one constructor of a \
+    write door's rejects, a code a kind of reject; the count classes it unchanged and it \
+    stands whole on the scheduled list, to get a case a code it mints before the port";
+const A_SITE_OF_A_DOORS_WHOLE_AXIS: &str = "the site is the one function that words every \
+    refusal of its door, a code a kind of refusal, several of them codes other doors print \
+    too; it answers under its own id, where the ruling's two lists hold it, and a code it \
+    mints is asked about there";
 const A_SCHEDULED_SITE_OF_SEVERAL_DOORS: &str = "the site is one function that words the \
     refusal of several doors, some of them of families whose prefix is not catalogued; the \
     count classes it unchanged and it stands whole on the scheduled list, to get a case a \
@@ -1810,29 +1950,6 @@ const OWED: &[Owed] = &[
         sites: &[
             "crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1",
             "crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1",
-        ],
-    },
-    Owed {
-        task: "P7 · doc write — a case or a reason",
-        sites: &[
-            "crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1",
-            "crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1",
-        ],
-    },
-    Owed {
-        task: "P7 · doc write — the caller's diff is read: a case, or a scheduled row that says why the change is off the path",
-        sites: &[
-            "crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1",
-            "crates/cli/src/doc.rs::fixed_identity_refusal::write.identity-change#1",
-            "crates/cli/src/doc.rs::fixed_title_refusal::write.title-ignored#1",
-            "crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1",
-            "crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1",
-            "crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1",
-            "crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1",
-            "crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1",
-            "crates/engine/src/state.rs::already_exists_finding::create.already-exists#1",
-            "crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1",
-            "crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1",
         ],
     },
     Owed {

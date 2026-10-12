@@ -2,6 +2,113 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The route catalog's three sites of `doc write`, and ten whose caller's change is off the path: a retitle in the milestone's record, a create whose title would never be written, a create over a home that is taken — 18 cases, 10 of them red under two new keys; the family's two prefixes join the vocabulary the fence holds (the human's ruling of 2026-10-11, the sites of `doc write`)
+
+**What.** A fifth command's file, [route_catalog/doc_write.rs](crates/cli/tests/route_catalog/doc_write.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::doc_write`, exists by construction and stands in the runner's one-at-a-time group — with the cases of the three sites of `doc write` the ruling takes in; and ten rows moved from the owed list to the scheduled list, each with the change of a caller that was read and why it is off the path. **Nothing of `doc write` is on the owed list.** No product source changes; nothing is fixed; the frame grew by nothing.
+
+### How a caller's diff was read — the rule this task applied, pinned as an engineer
+
+The ruling takes a site in *where the caller's change lies on the path to the refusal*. Read against the two sites the tasks before this one disagreed on and the orchestrating session settled — `empty_commit_finding` in, `base_mismatch_finding` and `task_missing_finding` out — the rule that keeps both is:
+
+- **In**: a changed line computes the condition the refusal fires on, or a term of it, or what its route prints — whether it brings a cause or only takes one away. The site then gets every cause it has; a cause the change took away is driven by hand on both binaries and said in the site's reading.
+- **Out**: the change is a refusal of its own that now answers earlier (its own site has its cases), a binding that decides nothing, or a line behind the refusal. The site's row of the scheduled list says which change, and why.
+
+*Why not take in every site in front of which a new guard stands:* a guard in front changes no word of the refusal behind it and brings it no state; what it does is its own site's, and that site is catalogued. Reading `read_or_copy_in` — a callee of the caller, beside the path and not further out on it — was done where the refusal turns on what it leaves (the provenance a copy-in records), and is in the row.
+
+### The caller reading — 11 sites, 1 in and 10 out
+
+| site | the caller, and the changed lines read | | the reason |
+|---|---|---|---|
+| `engine/state.rs::already_exists_finding` | `doc.rs::already_exists_refusal` — new: the one builder of the refusal, called from the pre-check's ranked ask, from its second look and from the create itself | **in** | it decides whether this refusal or the store's is printed (an occupant that is no regular file), and picks the route |
+| `doc.rs::committed_reslug_refusal` | `run_doc_rename` — the binding of what `read_or_copy_in` hands back; one argument of the acknowledgement | out | neither decides whether the staged doc's identity is committed; in `read_or_copy_in`, two refusals of their own answer earlier |
+| `doc.rs::fixed_identity_refusal` | `run_doc_rename` — the same two | out | by doctype, ahead of both |
+| `doc.rs::retitle_id_from_refusal` | `run_retitle_item` — the same two | out | as the first |
+| `doc.rs::machine_maintained_guard` | the eight write leaves | out | the first check behind the address's parse in each |
+| `doc.rs::occupied_destination_refusal` | `free_destination` — a new arm behind both calls | out | reached only where neither answered; `state::create_incumbent`'s one changed line answers as it did |
+| `doc.rs::fixed_title_refusal` | `title_pre_check` — the create-only gate, built by a new function and asked twice | out | only under `new: true`, and no singleton stands under one |
+| `doc.rs::identity_divergence_refusal` | `title_pre_check` — the same | out | the second look differs from the first only by a race |
+| `task.rs::reject_slug_over_name_ceiling` | `migrate.rs::migrate_in_repo`, `rename.rs::run` | out | a binding and a guard behind, at the first; at the second the home's own entry is asked ahead and answers earlier under the store's code |
+| `engine/state.rs::instance_collision_finding` | `stage_minted` — new, `create`'s steps 3 to 5 moved out | out | its first statement, as it was `create`'s third step |
+| `engine/state.rs::unknown_doctype_finding` | `create` — parameters and the one probe of the home | out | the first statement of both callers |
+
+**The three most doubtful of the ten left out.** `committed_reslug_refusal` and `retitle_id_from_refusal`: each stands directly behind `read_or_copy_in`, which gained a guard and a read that can fail — both take states away and neither is this refusal's condition. `occupied_destination_refusal`: the question its second call turns on, `create_incumbent`, changed in one line; read, it answers the same for a regular file and for a link that leads to one, and what it no longer covers — an entry that is no regular file — is the new arm behind it, the store's.
+
+### The sites
+
+| site | class in the count | functions read | causes | followed | a reason | cases | red | minutes | new vocabulary |
+|---|---|---|---|---|---|---|---|---|---|
+| `doc.rs::run_retitle_item` · `write.machine-maintained` | function-changed | 2 | 3 | 3 | 0 | 3 | 3 | 3 | — |
+| `doc.rs::title_ignored_refusal` · `write.title-ignored` | function-changed | 4 | 9 | 8 | 1 `not-constructible` | 8 | 4 | 6 | — |
+| `engine/state.rs::already_exists_finding` · `create.already-exists` | unchanged · caller new, on the path | 5 groups | 9 | 5 | 4 `not-constructible` | 7 | 3 | 6 | — |
+| **three sites** | | | **21** | **16** | **5** | **18** | **10** | **15** | |
+
+The third site has seven cases over five causes: a task that holds its doc is followed two ways, landed and discarded, as an ordinary task and as a milestone's sub-task. What each count is derived from, the causes without a case and the ways not followed are the file's `READINGS`. *Minutes* are the machine's clock from the family's first probe to its arm green, about fifteen for the three together and split by estimate; the caller reading, the gate and the named-binary run are not in them. Of the 8 cases that hold, none holds with the operand implied.
+
+**How the states are made.** Every one by the binary under test and by file acts: a task of `record-decision`, of `report-jigc-feedback` — the one workflow of the shipped packs beside `report-inconsistency` whose entry carries `new: true` — and a migration with a recorded `--slug`; a doc authored whole in one payload or created and written leaf by leaf; a finding's home taken by a file somebody wrote, in no commit; a sub-task added under `--workflow report-jigc-feedback`.
+
+**A frame rule met, and not changed.** The record's retitle refusal prints a route that names no act of its reader's — *leave the record to the milestone verbs … no manual retitle applies* — and the frame refuses a case that follows a printed route with no act. So the three cases follow the route's two backticked spans as printed, as every `jigc` span is followed, and are marked.
+
+### The red cases — two keys, both new, in the pilot's findings file (§7)
+
+| key | cases | classification | `doubt` |
+|---|---|---|---|
+| `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` | 7 | followed, a printed line no shell can split | 7 |
+| `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids` | 3 | followed, another failure | 3 |
+
+- **All ten rest on a reading**, and under the other reading none is red: the seven lines hold once a title, a slug or a payload of the reader's own is put in (driven by hand, six of the seven; the migration's line not), and the record's route then names no act.
+- **None of the 18 cases stands on a declared bound.**
+
+### The doubts — each one of the questions already listed
+
+| cases | the route says | which question |
+|---|---|---|
+| 7 | `jigc doc create <type> --title <title> --slug <slug> --task <id>` · `jigc doc author <type> --from-file <payload> --task <id>` · `jigc migrate <path> --as <type> --slug <slug>` — the id and the address concrete, the reader's own choice left open | what the pilot's first question left open, over a value nobody but the reader has; the surface contract: *a `<placeholder>` the reader fills is legal bare or as a quoted span* |
+| 3 | *leave the record to the milestone verbs — `jigc milestone add-task` appends sub-tasks and `jigc milestone finalize` advances their status* | the gate's first — a product command printed without its id; the contract says of a `git` span with no operand that it *names a command rather than a file*, and of a `jigc` span nothing |
+
+No new question.
+
+### The previous release's binary, side by side — every line of the family
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 655.0 s, load average 53 at its start and 20 at its end, another lane's gate beside it, none of this branch's). What a line says and does not say is the pilot's record, §8.
+
+**All 18 lines have the same classification on both binaries, over the same printed route**: holds 8 · a printed line no shell can split 7 · another failure 3; the refusing command exits 1 on both in every one, and no witness changed. No red case of the family is *not provoked* on `rc.24`.
+
+### The fence
+
+- **`CATALOGUED` holds the family's two prefixes** — `create`, `write` — beside the seventeen it had. **Red by data when they joined: thirteen code-shaped literals no listed site spells.** Each was read where it is spelled:
+
+| literal | what it is | answered by |
+|---|---|---|
+| `write.list-overwrite` · `.malformed-value` · `.non-reparseable` · `.not-present` · `.slot-heading-depth` · `.slot-setext-heading` · `.target-escape` · `.unknown-field` · `.unknown-section` · `.wrong-shape` | a finding's code, handed to `engine::write::blocking_write` by the splice or the check that rejects | `MINTED_AT` — the site is scheduled, classed `unchanged` |
+| `write.malformed-value` · `write.wrong-shape`, again | handed to `author::reject` by `PayloadReject::code()` | `MINTED_AT`, a second row each — the site is scheduled |
+| `write.malformed-slug` · `write.untrackable-destination` | a kind of refusal of `jigc rename`'s door, and of `jigc relocate`'s for the second (`RefusalKind::code()`, `RelocateRefusal::code()`) | `MINTED_AT` at `rename.rs::refuse` and `relocate.rs::refuse` — two of the four dynamic sites still on the owed list |
+| `create.singleton-copy-in` | a declared contract identifier, checked for in a migrate step's guide prose at pack-load; its own comment says it is no minted finding code | `NO_CODE` |
+
+  **None is a site the list misses.**
+- **What the two lists hold when this commit lands.**
+
+| family | owed — a case or a reason | owed — the caller's diff to be read | scheduled |
+|---|---|---|---|
+| `task finalize` · `milestone` | 0 | 0 | 42 · 23 |
+| `doc write` | 0 | 0 | 20 |
+| `config` | 5 | 0 | 14 |
+| `start` | 1 | 2 | 7 |
+| `doc read` | 1 | 2 | 2 |
+| `migrate` | 0 | 2 | 0 |
+| `task discard` · `ingest` · `task bind` · `validate` | 0 | 0 | 11 |
+| `unassigned` — the dynamic sites | 0 | 4 | 16 |
+| **together** | **7** | **10** | **135** |
+
+*Red first:* with the family's thirteen rows taken off the owed list and nothing in their place, `every_blocking_refusal_site_has_a_case_a_reason_an_owed_row_or_a_scheduled_row` named all thirteen — *has no case, no reason, no owed row and no scheduled row*.
+
+**Not established.**
+
+- **The ten sites left out**: that a change is off the path is this task's reading, in each row's note; nothing holds it.
+- **The migration's printed line, filled**: `jigc migrate <path> --as adr --slug <slug>` behind the printed discard was not driven with a slug put in.
+- **A second create under an entry that only creates, over a committed finding** rather than a file in no commit: the refusal reads the disk, and the committed case was not run.
+- **A cause nobody constructed** beyond the five given a reason — two of them a file that arrives between two reads of one command.
+- **Linux**: the run follows the task's last commit.
+
 ## 2026-10-12 — The route catalog's eight sites of `milestone`: the three doors that ask what a sub-task's worktree path still holds, the id a record owns, a provision that stopped half-way, a boundary with nothing to land, one path staged twice and a file of the area that cannot be read — 84 cases, 32 of them red under eight new keys; a command the refusal lists is run by its place in the listing, and the pilot's two tables printed again (the human's ruling of 2026-10-11, the sites of `milestone`)
 
 **What.** A fourth command's file, [route_catalog/milestone.rs](crates/cli/tests/route_catalog/milestone.rs), wired through `tables!` — so its arm, `route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::milestone`, exists by construction and stands in the runner's one-at-a-time group — with the cases of all eight sites of `milestone` the ruling takes in. **Nothing of `milestone` is on the owed list.** No product source changes; nothing is fixed.
