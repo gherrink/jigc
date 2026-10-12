@@ -2,6 +2,50 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — The byte table's pilot is begun: the plan it is built to is on record, and its four acceptance rows are written from the design docs — 57 quoted sentences, six places where a doc is silent or says two things, and no line made up (the human's ruling of 2026-10-12; the pilot's task `B0`)
+
+**What.** The first task of the byte table's pilot, and a record only: no test, no product source, nothing run to learn what a command writes. Two files land beside the route catalog's records — the plan the pilot is built to, and the allowances of the four commands its acceptance needs, each line resting on a sentence quoted from the design doc that owns the command.
+
+**Under which ruling.** The human's of 2026-10-12, recorded on the branch `fix/rc24-tier1` in → *The reshaped `test` stage is run for real in parts*, ruling 3, and reaching this log when the two branches are joined: *the byte table for the exit rule's first clause is piloted now, bounded as the route catalog was bounded — only the writing commands the fix pass touched, against the prepared states; the rest before the port. Not taken: all of it before the port and none now; not built.* The orchestrating session's cut of it, which the plan carries: **the pilot's first cut is `B0` to `B4`, and at `B4` it stops — the numbers go to the human, who rules on the families after it.** The pending row it answers is `wf-pre-byte-matrix` ([decisions-pending.md](implementation/decisions-pending.md)); that file is annotated on the other branch and is not touched here.
+
+**The plan** — [byte-table-plan.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md): drafted and independently reviewed on 2026-10-12, committed as reviewed, with a head paragraph that says what it is. Its substance is not this task's to improve.
+
+**The rows** — [byte-table-acceptance-rows.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md), for `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize`: 15, 8, 8 and 10 numbered entries, each a place, what may happen there, when, and whether it holds on a refusal, over **57 quotations, each found under its heading by a search for its bytes**. What the docs say, in short:
+
+- **`setup`** — which files it writes whole, which it merges into, and which it writes only on a condition (the root `.gitignore`, *iff the repo has zero commits*); that its commit holds an enumerated set of paths and never the index; that a refusal before the first write installs nothing.
+- **`uninstall`** — that `.jigc/` is removed, with the import line, the recorded settings entries, the hook's block and the guide; that four states refuse and *remove nothing*; that a worktree's registration goes only at a path under `.jigc/worktrees/`.
+- **`task finalize`** — that a staged doc is copied to its canonical path as a regular file; that the commit is the index, whole, with what jigc staged; that the working area goes after the commit and what jigc did not write there is moved aside; that a failure before the commit leaves the working area and the canonical paths as they were.
+- **`milestone finalize`** — that `merged/` is cleared and rebuilt on every call, a refusal included; that the commit is made off-line from the sub-tasks' staged sets and the main checkout is not touched until it lands; that the record's flip rides that commit; that no aborted arm tears down; that every registration not under `.jigc/worktrees/` is left as it was.
+
+**And what they do not say** — the record's §6, a list for the human in the form of the route catalog's:
+
+1. whether a command that **refuses** may leave `.jigc/index/` or `.jigc/state/` rebuilt — `storage.md` says what those files are, and `finalize.md` says a refused finalize has *no side effects*;
+2. `setup` refuses in two ways with two different sets of allowed writes, told apart by the moment — before the first write, or after it — which no comparison of two trees shows, and one finding code serves both;
+3. where `setup` keeps the record of a failed run;
+4. where *the spawn launch-template* is written;
+5. what `uninstall` does to git's index, and whether it commits;
+6. where the rendered commit message's temporary file stands.
+
+Entries 1, 2 and 5 have two readings each; until one is ruled, a cell follows the one under which more is red, and is marked.
+
+**Decided here — as a builder, and open to being overturned.**
+
+- **A quotation is a run of the doc's own bytes, under a named heading** — markup included, and never a paraphrase: it is what the next task's fence can hold against the doc. A section ends at the next heading of its level or above, and a `#` line inside a fenced block is no heading (one quoted section holds such a block).
+- **A line whose doc gives a condition no tree shows keeps the condition as words** — *what stands there is jigc's own copy*, *where its install commit can carry the settings file*. Each lets the command do less, and the file it would spare is a plant, which no line excuses.
+- **The invocation log is no line of these rows**: every command appends to it while a knob is on, and no prepared state switches it on. A row gains the line when a cell does.
+- **A directory on the way to a covered write is covered with it**, and one that empties under a covered removal: the table reads a directory as an entry, and the docs name files.
+- **The vocabulary the next task builds is the record's §7** — eighteen things a line had to be able to say, each with the lines that needed it.
+
+**The plan against the tree — one sentence found false, and left as written.** Its §7, question 2, calls *a refusal that left the tree changed* **answered** by `design/storage.md` → *Source of truth* for `.jigc/index/`. That sentence says what the files are, not which command may write them at which exit, and `design/finalize.md` → *2. Validate* says of a blocked finalize *No side effects*. It is entry 1 of the list. One citation is short of its claim: the plan gives `design/finalize.md:218` for *a doc-only task's commit is path-scoped*, and the words stand at line 164 and under *The doc-only arm*. And one thing it lists as unread is read: what the docs declare `milestone finalize`'s commit to hold.
+
+**The acceptance's lines, read against the rows by hand** (the record's §5): six of the seven that the plan has red on `1.0.0-rc.24` are red by the rule that a planted entry is the user's, or by a sentence that names the state; the seventh, a link at a created doc's home, by the sentence that a promote lands *a regular file at exactly its canonical path*. None needed a line widened. `uninstall` is the row a wrong allowance could have turned green — its doc declares that `.jigc/` is removed — and it is held by the plant's rule.
+
+**Not established.**
+
+- **That the rows are complete.** Four sections named in the record's head were not read (`finalize.md` → *1. Preflight*, *The amend arm*, *Commit-doc rendering*; `reconciliation.md`, `validation.md`, `write-commands.md`): a write one of them declares is not a line, and would read red until the row gains it with its sentence.
+- **That any cell comes out as §5 says** — nothing was run; the frame is the next task's.
+- **That a quotation still stands tomorrow**: a script held all 57 once, in the session's scratch; the fence that holds them in the gate is the next task's.
+
 ## 2026-10-12 — A span that names a command without its operand is followed with the operand the route speaks of, a *re-run* is the reader's own command again, and a line the route says mints is held to the route's words — three more of the route catalog's questions, ruled and carried out (the human's rulings: question 7, option B of two; question 6, option C; question 8, option A of two)
 
 **What.** Three rulings of the human's, all of 2026-10-12, on three of the questions the route catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 6, 7 and 8), carried out in one commit because the second amends the first and the three meet in one piece of the frame. [route_case.rs](crates/cli/tests/support/route_case.rs) gains the act that runs a named command on its operand and a rule for what a name is; the re-run's rule is widened to one; a filled line can be held to what its route says of it. Eighteen cases are followed again or anew, nine entries and four keys leave the expected-red list, and the records follow. No product source changes; nothing is fixed.
