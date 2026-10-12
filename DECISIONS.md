@@ -2,6 +2,91 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — A cell of a round's triage record has one owner where two writers write the row: an entry that says no verdict writes triage's grade and leaves the verifier's three, and the ledger's grade follows from the row as the entry leaves it (a finding `K3`'s builder reported and did not touch; the fixer's choices inside it)
+
+**What.** In a run with a queue [`dev/stabilize-record`](dev/stabilize-record) `triage-set` no longer takes a verdict off a row. The script's header is the contract; in one place:
+
+- **Whose a cell is** — of a row of `r<N>/triage.md`, in a run with a queue, where two writers write one row: this call, and the record's take of a filed verdict (`T3b`). The side of the door is computed by whoever writes the row; **triage's grade and the disposition found with are the entry's**; **the verdict with its word, the regression and the fork are the verifier's** — written from its filed file by the record, or by an entry that says a verdict, **and by no entry that says none**. The three are a table of the script (`THE_VERIFIERS`), read off the columns by name.
+- **An entry recorded again without a verdict** writes triage's grade and leaves the three as the row holds them, whoever wrote them. **A verdict is replaced only by a verdict**: an entry that says one replaces all three, as it always did.
+- **The ledger's grade follows from the row as the entry leaves it** — one function, `graded_by_the_row`: the verdict where the row holds one (regression, confirmed, refuted; by `verify-real`), else triage's grade, also where the row keeps the verdict that nobody could drive the finding. `triage_entry` returns no grade of its own any more: what an entry's own cells give and what a kept verdict gives are one definition.
+- **In a run without an order nothing changes**: nothing is filed there, one caller says the whole row, and an entry recorded again replaces it whole — *that is how a round says that it found a finding again*, as the header has always said.
+
+**What was reported, and what the reproduction showed.** The report (an item of `K3`'s *What is not established*): *`triage-set` replaces a round's row for any entry it names. A found-again entry in the batch that also takes that finding's filed verdict wipes the verdict from the row, and a second filing in the round is then refused.* Driven on the parent's script through the calls a stage makes — the first record of attempt 1, two verdicts filed, the second record, then a later attempt whose triage names both findings `found: again`, its first record composed — and a second time with the stage killed between its verdicts and its second record, so that one batch takes the files and names their findings:
+
+```text
+                              r1/triage.md                    ledger.md                 state: the row              state: filed
+before the later attempt      | breaks | confirmed |          confirmed · verify-real   confirmed, route fix        recorded: true
+after its first record        | breaks | -         |          breaks · triage           confirmed, route fix        recorded: false
+a second filing for the key   refused `exists` (exit 6)
+after the next record         | breaks | confirmed |          confirmed · verify-real   confirmed, route fix        recorded: true
+```
+
+**Every clause of the report reproduced; one consequence drawn from it did not.** In both sequences the two tables end without the verdict and without the grade it gave — in the second the batch writes them and takes them off again — and a second filing is refused. **The row is not stranded**: the filed file stays and counts, so with the verdict off the row the state reads the file as held by no record again and overlays it — the finding is still read as verified, routed as before, spent once, in no queue, and nothing launches a verifier for it. What is false is the record: two committed tables say of a verified finding that nobody verified it, the state says of a file the round's own record names as taken (`verdicts`) that no record holds it, and the next record of the run takes that file a second time and prints it as taken — where a stage's last record is the one that wiped, the commit that is pushed holds the false tables. **By reading, and not driven:** the row *is* stranded where the filing counts no more by then — its verifier's report rewritten or gone after the record that took it, which `T3b` lets stand because *the record holds the verdict by then* — the verdict is then in the table alone, the wipe is final, the row is queued again, and its verifier can never file. That needs a tracked report changed by hand.
+
+**The class, and its count.** Handed: one site. *A writer that replaces a row, or a cell, that another writer owns cells of.* Read: every row of the script's own table of writers (`WRITERS`, fifteen), `apply`'s take, and the three helpers that write a fact for another call (`counted`, `census`, the view). Every pair of a table and a writer — one of them in two rows, for the two owners it meets:
+
+| Table | Writer | What it replaces | Cells another writer put there | Lost by calls a stage makes |
+|---|---|---|---|---|
+| `r<N>/triage.md` | `triage-set` | the whole row of every entry | the verifier's three: the take's, or an earlier entry's that said a verdict | **yes — fixed** |
+| `ledger.md` | `triage-set` | the grade and its grader, of every entry | the grade a taken verdict gave | **yes — fixed**: it follows from the row |
+| `ledger.md` | `triage-set` | the same two cells | a grade the human set (`ledger-set`, `graded_by: human`) | not by a stage: a ruling by grade, and then a triage that finds the finding again. As documented since the script was built — *the ledger's grade follows from the entry* — and the same in a run without an order. **Left** |
+| `r<N>/triage.md` | the take | the whole row | triage's grade, the disposition found with | no: it writes back what the state read off that very row, the same bytes. Where the round holds no row for the finding it writes the grade an *earlier* round's triage gave — a cell copied, none lost; round 2, whose queue is a row (`wf-round-two-queue`). **Left** |
+| `ledger.md` | the take | the grade and its grader | triage's grade | by design: a verdict grades, and triage's grade stays in the round's record |
+| `ledger.md` | `result-set` | one cell: `fixed` becomes `open` | the fixer's disposition | by design, documented: red after its fix |
+| `ledger.md` | `ledger-set` | the cells a patch names | — | no |
+| `classes.md` | `ledger-set` | kind, code, site, evidence; where the row comes from stands | the evidence the row was added with | a patch that names a kind without its evidence makes a lead: a kind and its evidence are one statement, refused once the row has a verdict. No stage patches a kind |
+| `test-set.md` | `item-set` | the whole row | none: its one writer | no |
+| `r<N>/round.md` | `round-set` | the facts it names | the counted facts, read and written back | no |
+| `r<N>/round.md` | `counted` (three callers) | one fact | — | no |
+| `run.md` | `run-set`, `census` | the facts it names; the census | — | no |
+| `bounds.md` | `bound-set` | the cells it names | — | no |
+| `r<N>/results.md`, `scope.md`, `gate.md`, a report, a filed verdict, a rendering | their one writer | appended, or written once | — | no |
+
+**Two pairs lose a cell — the round's triage record and the ledger, both under `triage-set` — both reached by a stage, both fixed.** Driven: `triage-set` after the take in one batch; after a record that took; typed and composed; over a verdict an entry said. Not driven: the three rows marked *left*, and the patch of a kind.
+
+**Seen beside it by the same builder, and not this class:** `round-set` prints `"recorded": []` inside the batch that then marks the attempt recorded. Nothing is replaced and nothing lost — a call of a batch prints the round's facts as that call leaves them, and the batch counts the attempt after its last call. Left as it is.
+
+**Chosen — and what was rejected.**
+
+- **One owner a cell, and not a guard on the verdict.** *Rejected:* keeping the verdict cell alone — a kept `confirmed` beside a regression cell reset to `-` grades the ledger `confirmed` where it was `regression`, and a fork nobody ruled would leave the human's list by a triage that found the finding again.
+- **Whoever wrote the verdict, it stands.** *Rejected:* keeping only a verdict the round's record names a taken file for (`verdicts`). It is the narrower rule, and it leaves a verdict an entry said to be taken off by the next entry — which refunds the budget, since *spent* counts the verdicts on record. In a run with a queue a verdict is filed once per finding and round, so there is no second one to wait for: a round's verdict is replaced by a verdict and by nothing else.
+- **The entry's grade is written.** *Rejected:* an entry that writes nothing on a verified row — triage's cell is triage's, and the later triage's grade would be in its rendering alone. So a row can read `no-break` beside `confirmed`, which no single entry may say: two writers said it, the ledger's grade is the verifier's, and the state reads the row as it reads any.
+- **The switch is the run's order**, as for every Phase A change: `"queue" in read`. *Rejected:* a flag of `triage-set` that the composer passes — a typed batch of the same entries would then differ from the composed one, which an arm holds equal.
+- **The take is not rewritten as a writer of three cells.** On a row that stands it writes what the state read off that row; cell-wise it would write the same bytes, and the edit would be one no arm can tell from the code as it is.
+- **No new file, fact or refusal word.** Who owns a cell is in the columns' names.
+- **A later record still sends no entry again** (`K3`). Its reason in the header — *an entry recorded again would take a verdict off its row* — is no longer so and is reworded: the entries are on record.
+
+**Phase A, shown.** `a_run_without_an_order_holds_the_bytes_it_held` is green **unmodified**, and so is `a_composed_batch_is_what_the_typed_one_was`. The second arm below drives a run without an order through the same call: the row is the entry's, whole.
+
+**Red first.** Two arms, written before the script changed and run on the parent's: two red, each at its first comparison of the tables — `["breaks", "-", "-", "-", "breaks", "triage"]` where `["breaks", "confirmed", "-", "-", "confirmed", "verify-real"]` stands. A probe arm, since removed, printed the table above first. **What followed its code, and says so:** one case, added after the first green where this entry said a thing was driven that was not — a row graded `no-break` beside the verdict it keeps, with its route. Both arms were then run on the parent's script again — two red, at the same comparisons — and the mutants again.
+
+**Mutants of the finished script** — twelve, each one edit, both arms run on each. All died.
+
+| The edit | The arm that went red |
+|---|---|
+| kept in a run without an order too | `a_verdict_on_a_rounds_row_is_replaced_only_by_a_verdict`, at its last comparison: the run without an order |
+| never kept · the verdict is not the verifier's · triage's grade is kept with them · the ledger's grade follows the entry and not the row · a refutation with its word is read as no verdict · a kept refutation grades the ledger as triage did | both arms — `a_finding_found_again_takes_no_verdict_off_its_row` at the comparison that names it |
+| kept where the entry says a verdict too · the regression is not the verifier's · the fork is not the verifier's · a verdict that nobody could drive grades the ledger · a kept regression does not grade the ledger | `a_verdict_on_a_rounds_row_is_replaced_only_by_a_verdict` |
+
+One died by a refusal and not by the comparison that names it, and it is said here: with *the verdict is not the verifier's* the second arm's entries leave a fork beside no verdict, which the state refuses as corrupt. The three sequences of the first arm are killed by the same edits: no edit tells the batch that takes a file from the record after it.
+
+**The assertions this task carried.** None: the whole `g_tooling` target ran on the changed script before the mutants — 520 of 520, the simulation's scenarios, the canary's suite, the step suite and the probe's among them. One comment of `K3`'s arm that gave the old reason was reworded with the header.
+
+**What the harness tasks owe because of this.**
+
+- `T5b`, the first record: nothing. A first attempt's rendering names no finding the round has verified.
+- `T6a`, the second record: nothing; it sends no entry.
+- `T6b`, the continuation: **a later attempt's first record may name a finding the round has verified** — its triage says `found: again`, and the record is composed as any first record. The verdict stays, the batch's `filed` is what was filed since and never a file a record already took, and the row is in no queue: no verifier is launched for it, and a second filing would be refused. A second record composed after it with nothing filed since is `no-change`, as after any first record.
+- `T10`: the workflow's document says *an entry recorded again in the same round replaces its row*; in a run with a queue that is *writes triage's grade, and leaves the verdict*. `wf-fix-verify-shape`: in a run with a queue the `fix` half verifies a finding again by an entry that says a verdict, and by nothing else — an audit's triage that grades a fixed finding `no-break` without a verdict leaves the verdict the `test` stage took, and the fix reads as one that did not hold. By reading, it read so before this change too, by the state's overlay of the filed file; neither was driven.
+
+**What is not established.**
+
+- **Nothing of a stage calls any of it.** No harness path and no scenario of the simulation composes a later attempt's record.
+- **The stranded row**, as above: read, not driven. With this change the verdict stays in the table, so the state needs no file to read it from.
+- **A human's grade** under a triage that finds the finding again; **a patched kind**; **the take in a round whose triage did not grade the finding** — the three rows marked *left*.
+- **A row that reads a grade the verifier is not sent under beside a verdict** (`no-break` beside `confirmed`) is driven by one arm: its tables, and that the state reads it and routes it as confirmed. What the stop's view says of such a row was not looked at.
+- **Not read whole for this task**: the record script between its header's sections on a report and on `triage-set`, its vet and its keepers; the record suite beyond its rig, its tables and the arms of `T3a` to `K3`; the step tool and the harness; [stabilization-workflow.md](implementation/stabilization-workflow.md) beyond its lines on a finding found again; [dev-workflow.md](implementation/dev-workflow.md) beyond what the project's instructions and the plan carry of it.
+
 ## 2026-10-12 — The lookup kit: one read prints what every agent of a role looks up, each part from the file that owns it and found by the line it opens with — and a run may name the entry its closing condition is stated in, a fact nothing will ever owe (the plan's `K1a`; the builder's choices inside it)
 
 **What.** [`dev/stabilize-record`](dev/stabilize-record) has one more read, `kit`, and the run one more fact, `condition` ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §5, `K1a`, the migration order's Phase A; the third count's candidate 1, [prebuild-census.md](completions/artifacts/M55/stabilization-build/reshape/prebuild-census.md): 283 of the verifiers' 2,095 turns did nothing but look up the report's rules, the opening, the repro format, the rig's help and the exit rule's text). The script's header is the contract; in one place:

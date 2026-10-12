@@ -23789,8 +23789,7 @@ fn a_test_stages_batch_is_composed_from_what_is_filed_and_from_plain_words() {
     stage.verifies();
 
     // A LATER RECORD: the reporters, and nothing else. No entry of the rendering is sent a
-    // second time — an entry recorded again would take the verdict the batch just took off
-    // its row — and what was filed since is the take's.
+    // second time — its entries are on record — and what was filed since is the take's.
     let later = Composing::later_words(&["review-f1", "review-f2"]);
     let second = stage.compose("1", &later);
     second.must(OK, "the second record, composed");
@@ -24510,6 +24509,408 @@ fn a_composed_second_record_is_the_same_whatever_order_the_verifiers_filed_in() 
         differing(&files(&typed), &ends[0]),
         Vec::<String>::new(),
         "and it is the record a step would have typed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Whose a cell of a round's triage record is (a finding of the build's own: an entry that
+// says no verdict took the verifier's off its row)
+// ---------------------------------------------------------------------------
+
+/// What round 1's two tables hold of one finding: of its row in the triage record triage's
+/// grade, the verdict, the regression and the fork — and the ledger's grade with its grader.
+fn held_of(rig: &Rig, key: &str) -> Value {
+    let row = |rel: &str, columns: &[&str]| {
+        table(&rig.read(rel), columns)
+            .into_iter()
+            .find(|row| row[0].trim_matches('`') == key)
+            .unwrap_or_else(|| panic!("no row `{key}` in {rel}"))
+    };
+    let triage = row(&triage_path("1"), &TRIAGE_COLUMNS);
+    let ledger = row(&ledger_path(), &LEDGER_COLUMNS);
+    json!([
+        triage[2], triage[3], triage[4], triage[6], ledger[6], ledger[7]
+    ])
+}
+
+/// A LATER ATTEMPT of [`a_stage_before_its_first_record`]'s stage, as an invocation that
+/// continues makes it: its marker, one instrument's report, and the entries of ITS triage —
+/// which finds the three findings of the first attempt AGAIN, two of them under another
+/// grade than the first triage gave. Returns the plain words of that attempt's first record.
+fn found_again_in_attempt_2(rig: &Rig) -> Vec<String> {
+    begun_attempt(rig, "2");
+    rig.run(&report(RUN, "1", "review-setup", "2"), BODY)
+        .must(OK, "the instrument's report of the second attempt");
+    hand_over(
+        rig,
+        "2",
+        &[("review-setup", 3)],
+        &json!([
+            again_entry("review-f1", "breaks", json!({"review-setup": [1]})),
+            again_entry("review-f2", "breaks", json!({"review-setup": [2]})),
+            again_entry("review-f3", "no-break", json!({"review-setup": [3]})),
+        ]),
+    )
+    .must(OK, "the entries of the second attempt's triage");
+    [
+        "reporter=attempt".to_owned(),
+        "reporter=review-setup".to_owned(),
+        format!("reporter={TRIAGE}"),
+    ]
+    .to_vec()
+}
+
+/// What the tables hold of the three findings once the second attempt's triage is on
+/// record: THE VERDICTS STAND — the two the verifiers filed — beside the grade the second
+/// triage gave; the ledger's grade is the verifier's where the row holds a verdict; and the
+/// lead, which nobody verifies, is graded again as any row without a verdict is.
+fn the_verdicts_stand() -> Value {
+    json!([
+        ["breaks", "confirmed", "-", "-", "confirmed", "verify-real"],
+        [
+            "breaks",
+            "refuted: intended",
+            "-",
+            "-",
+            "refuted",
+            "verify-real"
+        ],
+        ["no-break", "-", "-", "-", "no-break", "triage"],
+    ])
+}
+
+/// **A finding found again takes no verdict off its row** (reported by the builder of `K3`,
+/// who saw it and did not touch it: *`triage-set` replaces a round's row for any entry it
+/// names. A found-again entry in the batch that also takes that finding's filed verdict
+/// wipes the verdict from the row, and a second filing in the round is then refused*; `T3a`:
+/// *a verdict is filed once per finding and round*; `T3b`: *nothing the state says of a row
+/// moves at the record but where the verdict and the row are held*). In a run with a queue
+/// two writers write one row of a round's triage record: the triage's entry — its grade —
+/// and the record's take of the verifier's filed verdict. The arm drives the calls a stage
+/// makes, THREE WAYS, and holds the tables to the verdict each time:
+///
+/// 1. the stage's two records, and then A LATER ATTEMPT whose triage names the same
+///    findings `found: again` — its first record is composed from that attempt's rendering;
+/// 2. a stage KILLED BETWEEN ITS VERDICTS AND ITS SECOND RECORD: the later attempt's first
+///    record is the batch that takes the filed files AND names their findings;
+/// 3. that same record TYPED, as a step words it today — the same run to the byte.
+///
+/// In each the round's row keeps the verdict the verifier filed, the ledger's grade stays
+/// the verifier's, the state says that the record HOLDS the verdict — and so the next
+/// record, with nothing filed since, takes no file a second time and is a record that
+/// changes nothing.
+#[test]
+fn a_finding_found_again_takes_no_verdict_off_its_row() {
+    let keys = ["review-f1", "review-f2", "review-f3"];
+    let held = |rig: &Rig| json!(keys.map(|key| held_of(rig, key)));
+    let on_record = |rig: &Rig| {
+        let read = rig.state();
+        json!([
+            read["filed"]
+                .as_array()
+                .expect("what is filed")
+                .iter()
+                .map(|entry| json!([entry["key"], entry["counts"], entry["recorded"]]))
+                .collect::<Vec<_>>(),
+            finding(&read, "review-f1")["triage"]["filed"],
+            finding(&read, "review-f1")["triage"]["verdict"],
+            finding(&read, "review-f1")["grade"],
+            read["budget"]["spent"],
+        ])
+    };
+    let held_by_the_record = json!([
+        [["review-f1", true, true], ["review-f2", true, true]],
+        null,
+        "confirmed",
+        "confirmed",
+        2
+    ]);
+
+    // 1. BOTH RECORDS OF THE FIRST ATTEMPT, AND THEN A LATER ATTEMPT THAT FINDS THEM AGAIN.
+    let stage = a_stage_before_its_first_record("again-recorded", true);
+    let rig = &stage.rig;
+    stage
+        .compose("1", &stage.first_words())
+        .must(OK, "the first record");
+    settled(rig);
+    stage.verifies();
+    stage
+        .compose("1", &Composing::later_words(&["review-f1", "review-f2"]))
+        .must(OK, "the second record");
+    settled(rig);
+    assert_eq!(
+        held(rig),
+        json!([
+            ["breaks", "confirmed", "-", "-", "confirmed", "verify-real"],
+            [
+                "unclear",
+                "refuted: intended",
+                "-",
+                "-",
+                "refuted",
+                "verify-real"
+            ],
+            ["breaks", "-", "-", "-", "breaks", "triage"],
+        ]),
+        "a control: the stage's two records hold the two verdicts"
+    );
+    let taken = round_fact(rig, "verdicts");
+    let before = rows_said(&rig.state());
+    let words = found_again_in_attempt_2(rig);
+    let seen = stage.compose("2", &words);
+    seen.must(OK, "the first record of the second attempt");
+    let said = seen.json();
+    assert_eq!(
+        json!([
+            said["composed"]["record"],
+            said["composed"]["calls"],
+            said["filed"]
+        ]),
+        json!(["first", ["check-reports", "triage-set", "check-ledger"], []]),
+        "its triage's entries are sent, and no file is taken: a record holds each — {said}"
+    );
+    assert_eq!(
+        held(rig),
+        the_verdicts_stand(),
+        "an entry that says no verdict writes triage's grade, and takes no verdict off its row"
+    );
+    assert_eq!(on_record(rig), held_by_the_record, "the record holds them");
+    assert_eq!(round_fact(rig, "verdicts"), taken);
+    // Nothing the state says of the two verified rows moved but triage's own grade.
+    let after = rows_said(&rig.state());
+    for (was, is) in before.iter().zip(&after) {
+        let mut was = was.clone();
+        if is["key"] == "review-f2" {
+            was["triage"]["grade"] = json!("breaks");
+        }
+        if is["key"] == "review-f3" {
+            continue;
+        }
+        was.as_object_mut().expect("a row").remove("reporters");
+        let mut is = is.clone();
+        is.as_object_mut().expect("a row").remove("reporters");
+        assert_eq!(was, is, "the row of {}", is["key"]);
+    }
+    settled(rig);
+    // The verdict is filed once per finding and round — so nothing may ever take it off.
+    reported(rig, "review-f1", "2");
+    file(rig, "2", &filing("review-f1", "confirmed"))
+        .refused(EXISTS, "a second filing for the finding in the round");
+    // AND THE NEXT RECORD TAKES NO FILE A SECOND TIME: nothing was filed since.
+    let mut later = words.clone();
+    later.push("reporter=verify-review-f1".to_owned());
+    let snapshot = rig.snapshot();
+    stage
+        .compose("2", &later)
+        .refused(NO_CHANGE, "a later record with nothing filed since");
+    assert_eq!(rig.snapshot(), snapshot, "and nothing was written");
+
+    // 2. KILLED BETWEEN ITS VERDICTS AND ITS SECOND RECORD: the later attempt's first record
+    //    takes the filed files AND names their findings, in one batch.
+    let killed = a_stage_before_its_first_record("again-taken", true);
+    let rig = &killed.rig;
+    killed
+        .compose("1", &killed.first_words())
+        .must(OK, "the first record");
+    settled(rig);
+    killed.verifies();
+    let words = found_again_in_attempt_2(rig);
+    let seen = killed.compose("2", &words);
+    seen.must(
+        OK,
+        "the record that takes the files and names their findings",
+    );
+    let said = seen.json();
+    assert_eq!(
+        said["filed"]
+            .as_array()
+            .expect("what the record took")
+            .iter()
+            .map(|took| json!([took["key"], took["verdict"], took["rows"]]))
+            .collect::<Vec<_>>(),
+        [
+            json!(["review-f1", "confirmed", ["beside-f1"]]),
+            json!(["review-f2", "refuted", []])
+        ],
+        "{said}"
+    );
+    assert_eq!(
+        held(rig),
+        the_verdicts_stand(),
+        "the batch that takes a verdict from its file does not take it off again"
+    );
+    assert_eq!(on_record(rig), held_by_the_record, "the record holds them");
+    settled(rig);
+    let snapshot = rig.snapshot();
+    killed
+        .compose("2", &words)
+        .refused(NO_CHANGE, "a later record with nothing filed since");
+    assert_eq!(rig.snapshot(), snapshot, "and nothing was written");
+
+    // 3. THAT RECORD, TYPED: the same calls as a step words them today — the same run.
+    let typed = a_stage_before_its_first_record("again-typed", true);
+    let rig = &typed.rig;
+    typed
+        .compose("1", &typed.first_words())
+        .must(OK, "the first record");
+    settled(rig);
+    typed.verifies();
+    found_again_in_attempt_2(rig);
+    typed
+        .apply(&json!([
+            call(
+                check_reports(RUN, "1", "2", &["attempt", "review-setup", TRIAGE]),
+                ""
+            ),
+            call(
+                triage_set(RUN, "1"),
+                &json!([
+                    {"key": "review-f1", "grade": "breaks"},
+                    {"key": "review-f2", "grade": "breaks"},
+                    {"key": "review-f3", "grade": "no-break"},
+                ])
+                .to_string()
+            ),
+            call(check_ledger(RUN, &keys), ""),
+        ]))
+        .must(OK, "the same record, typed");
+    assert_eq!(held(rig), the_verdicts_stand(), "a typed batch too");
+    settled(rig);
+    assert_eq!(
+        differing(&typed.files(), &killed.files()),
+        Vec::<String>::new(),
+        "and it is the run the composed record left"
+    );
+}
+
+/// **A verdict on a round's row is replaced only by a verdict** — the cells of a row of a
+/// round's triage record, one owner each, in a run with a queue: triage's grade is the
+/// entry's, and the verdict, the regression and the fork are the VERIFIER'S — written from a
+/// filed file by the record, or by an entry that says a verdict, and by no entry that says
+/// none. So an entry recorded again without a verdict leaves all three as the row holds
+/// them, whoever wrote them; the ledger's grade follows from the row as the entry leaves it
+/// — the verdict where it holds one, and triage's NEW grade where nobody could drive the
+/// finding; and an entry that says a verdict replaces the verifier's cells as it always did:
+/// that is how the `fix` half verifies a finding again in its round. IN A RUN WITHOUT AN
+/// ORDER nothing is filed and one caller says the whole row: an entry recorded again replaces
+/// it whole, as it always did.
+#[test]
+fn a_verdict_on_a_rounds_row_is_replaced_only_by_a_verdict() {
+    let rig = a_queue_run("verifiers-cells", &ORDER, Some(9));
+    hunted(
+        &rig,
+        &[
+            ("r-fork", "route"),
+            ("r-old", "route"),
+            ("r-none", "route"),
+            ("r-open", "route"),
+        ],
+    );
+    let entry = |entry: Value| rig.run(&triage_set(RUN, "1"), &entry.to_string());
+    let fork = json!({"kind": "contested", "case": "robust-now", "drive": "differs"});
+    entry(json!([
+        {"key": "r-fork", "grade": "unclear", "verdict": "confirmed", "regression": true,
+         "fork": fork},
+        {"key": "r-old", "grade": "breaks", "verdict": "confirmed", "regression": false},
+        {"key": "r-none", "grade": "breaks", "verdict": "undrivable", "reason": "needs-linux"},
+    ]))
+    .must(OK, "three verdicts, as a caller says them");
+    let before = rig.state();
+    // EVERY ONE OF THEM AGAIN, AND NONE SAYS A VERDICT: under another grade each.
+    entry(json!([
+        {"key": "r-fork", "grade": "breaks"},
+        {"key": "r-old", "grade": "no-break"},
+        {"key": "r-none", "grade": "unclear"},
+        {"key": "r-open", "grade": "no-break"},
+    ]))
+    .must(OK, "the four, recorded again without a verdict");
+    assert_eq!(
+        json!(["r-fork", "r-old", "r-none", "r-open"].map(|key| held_of(&rig, key))),
+        json!([
+            // The verdict, the regression and the fork — the verifier's three — stand.
+            [
+                "breaks",
+                "confirmed",
+                "yes",
+                "contested: robust-now, differs",
+                "regression",
+                "verify-real"
+            ],
+            // … beside a grade the verifier is sent under by no triage: two writers wrote the
+            // row, and the ledger's grade is the verifier's.
+            [
+                "no-break",
+                "confirmed",
+                "no",
+                "-",
+                "confirmed",
+                "verify-real"
+            ],
+            // NOBODY COULD DRIVE IT: the verdict stands, and the grade is triage's new one.
+            [
+                "unclear",
+                "undrivable: needs-linux",
+                "-",
+                "-",
+                "unclear",
+                "triage"
+            ],
+            // A row without a verdict is graded again as it always was.
+            ["no-break", "-", "-", "-", "no-break", "triage"],
+        ])
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            routed(&read, "r-fork"),
+            routed(&read, "r-old"),
+            routed(&read, "r-none"),
+            read["budget"]["spent"],
+            before["budget"]["spent"]
+        ]),
+        json!([
+            at("human", "fork"),
+            at("fix", "inside"),
+            at("human", "undrivable"),
+            3,
+            3
+        ]),
+        "a fork nobody ruled stays the human's, a confirmed finding a blocker, and what was spent is spent — {read}"
+    );
+    // AN ENTRY THAT SAYS A VERDICT REPLACES THE VERIFIER'S CELLS, all three.
+    entry(
+        json!({"key": "r-fork", "grade": "breaks", "verdict": "refuted",
+                 "refutation": "does-not-reproduce"}),
+    )
+    .must(OK, "a verdict, said again");
+    assert_eq!(
+        held_of(&rig, "r-fork"),
+        json!([
+            "breaks",
+            "refuted: does-not-reproduce",
+            "-",
+            "-",
+            "refuted",
+            "verify-real"
+        ])
+    );
+
+    // PHASE A — a run without an order: an entry recorded again replaces its row whole.
+    let plain = triaged_once("verifiers-cells-plain");
+    assert_eq!(
+        held_of(&plain, "audit-f3"),
+        json!(["breaks", "refuted", "-", "-", "refuted", "verify-real"])
+    );
+    plain
+        .run(
+            &triage_set(RUN, "1"),
+            &json!({"key": "audit-f3", "grade": "unclear"}).to_string(),
+        )
+        .must(OK, "the entry, recorded again without its verdict");
+    assert_eq!(
+        held_of(&plain, "audit-f3"),
+        json!(["unclear", "-", "-", "-", "unclear", "triage"]),
+        "in a run without an order the row is the entry's, whole, as it always was"
     );
 }
 

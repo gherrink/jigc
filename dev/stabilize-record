@@ -384,22 +384,37 @@
 #       and the fork (`<kind>: <case>, <drive>`, or `-`).
 #       An entry recorded again replaces its row — that is how a verdict arrives later,
 #       and how a round says that it found a finding again: only then is it re-recorded.
+#       IN A RUN WITH A QUEUE A CELL OF THAT ROW HAS ONE OWNER, because two writers write
+#       the row there — this call, and the record's take of a filed verdict (apply). The
+#       side of the door is computed by whoever writes the row; TRIAGE'S GRADE and the
+#       disposition found with are THE ENTRY'S; THE VERDICT — with its word — THE
+#       REGRESSION AND THE FORK ARE THE VERIFIER'S: written from its filed file by the
+#       record, or by an entry that says a verdict, AND BY NO ENTRY THAT SAYS NONE. So an
+#       entry recorded again without a verdict writes triage's grade and leaves the three
+#       as the row holds them: a verdict is filed once per finding and round (verdict), so
+#       nothing takes one off its row — a later attempt's triage that finds the finding
+#       again, in the batch that takes the file or after it, grades it and no more. A
+#       verdict is replaced only by a verdict: an entry that says one replaces all three,
+#       as it always did. In a run without an order nothing is filed, one caller says the
+#       whole row, and an entry replaces it whole, as it always did.
 #       A VERDICT THAT IS FILED IS TAKEN FROM ITS FILE, AND FROM NO CALLER (the plan's T3b).
 #       In a run with a queue an entry that says a verdict for a finding whose verdict is
 #       filed in the round and held by no record yet (verdict; state: filed) is refused
 #       (exists), alone and as a call of the batch that takes the file: the stage's record
-#       names no verdict for it (apply). Once a record holds the verdict an entry records
-#       the finding again as it always could. AND THE ROW SUCH A RECORD WRITES FOR A
+#       names no verdict for it (apply). Once a record holds the verdict an entry that
+#       says one replaces it, as it always could. AND THE ROW SUCH A RECORD WRITES FOR A
 #       FINDING NO TRIAGE GRADED — an item a verifier handed on — says `-` in its grade
 #       cell, beside its verdict: no entry of a caller's takes a verdict beside no grade,
 #       and `-` beside no verdict, or in a run without an order, is refused by `state`
 #       (corrupt). The ledger's grade is then the verifier's, as for any verdict; where
 #       nobody could drive the item its row stays ungraded, and it is the human's at once.
-#       The ledger's grade follows from the same entry, so the two cannot disagree: the
-#       verdict where there is one (regression, confirmed, refuted; by verify-real),
-#       else triage's grade. A disposition is never touched: a finding found again
-#       inherits its row's. Its files are ONE batch: all are written or none is, and
-#       a call killed between them is finished by the next writer (the journal, below).
+#       The ledger's grade follows from the row as the entry leaves it, so the two
+#       cannot disagree: the verdict where the row holds one (regression, confirmed,
+#       refuted; by verify-real), else triage's grade — the entry's, also where the row
+#       keeps the verdict that nobody could drive the finding. A disposition is never
+#       touched: a finding found again inherits its row's. Its files are ONE batch: all
+#       are written or none is, and a call killed between them is finished by the next
+#       writer (the journal, below).
 #       THE PASSES ARE COUNTED BY THIS CALL, never by an invocation and never supplied:
 #       every finding the record LEAVES without a grade or a verdict — named by an entry or
 #       not — is named in the round's own record (round.md: awaiting, as `<key> ungraded
@@ -1645,8 +1660,10 @@
 #         a later one  the attempt has its record. Its calls: check-reports over the
 #                      launched reporters — and one for whatever else a word says, which
 #                      the state takes or refuses as it does for any caller. NO ENTRY OF
-#                      THE RENDERING IS SENT AGAIN: its entries are on record, and an
-#                      entry recorded again would take a verdict off its row.
+#                      THE RENDERING IS SENT AGAIN: its entries are on record. (An entry
+#                      recorded again would write its grade again and take no verdict
+#                      off its row — triage-set — so a later attempt's first record,
+#                      whose triage finds a verified finding again, leaves the verdict.)
 #       EITHER TAKES WHAT WAS FILED and writes what a stop shows, as every batch of such a
 #       run does (apply): a composed batch names no verdict, no handed-on row and no view.
 #       So a stage's second record is its report check and the take — and COMPOSED WHEN
@@ -2295,6 +2312,13 @@ BOUND_COLUMNS = ("bound", "reach", "ruling", "pin")
 SCOPE_COLUMNS = ("door", "test set", "registry", "derivation")
 SIDES = ("included", "excluded")
 TRIAGE_COLUMNS = ("key", "inside", "triage", "verdict", "regression", "found with", "fork")
+# WHOSE A CELL OF A ROW OF A ROUND'S TRIAGE RECORD IS, IN A RUN WITH A QUEUE — where two
+# writers write one row: a triage's entry (triage-set), and the record's take of a filed
+# verdict (take_filed). The side of the door is computed by whoever writes the row;
+# triage's grade and the disposition found with are the entry's; THESE THREE ARE THE
+# VERIFIER'S — written from its filed file, or by an entry that says a verdict, and by no
+# entry that says none (the header: triage-set).
+THE_VERIFIERS = tuple(TRIAGE_COLUMNS.index(name) for name in ("verdict", "regression", "fork"))
 # A FORK: a verdict the verifier found to contest a settled decision, as the round's triage
 # recorded it — its kind, the verdict of the advocate's case, and whether the independent
 # drive of the advocate's proposal found what the advocate reported.
@@ -4377,9 +4401,27 @@ def an_order(given):
     distinct(given, "order: the class")
 
 
+def graded_by_the_row(row):
+    """THE LEDGER'S GRADE AND ITS GRADER, AS THEY FOLLOW FROM A ROW OF A ROUND'S TRIAGE RECORD
+    — ITS ONE DEFINITION for an entry's writer (the header: triage-set): the verdict where the
+    row holds one — regression, confirmed, refuted; by verify-real — else triage's grade: also
+    where the verdict says that nobody could drive the finding, which established nothing of
+    it. It is read off the row AS IT STANDS ONCE THE ENTRY IS WRITTEN, so a verdict the row
+    keeps grades the ledger as the verdict an entry says does."""
+    grade, verdict, regression = (row[TRIAGE_COLUMNS.index(name)] for name in ("triage", "verdict", "regression"))
+    said_ = verdict.partition(": ")[0]
+    if said_ == "refuted":
+        return "refuted", "verify-real"
+    if said_ == "confirmed":
+        return ("regression" if regression == "yes" else "confirmed"), "verify-real"
+    return grade, "triage"
+
+
 def triage_entry(entry):
-    """(key, the entry's cells in the triage record after `inside`, the ledger's grade and
-    grader). Nothing of an entry says where the finding was found: that is computed."""
+    """(key, the entry's cells in the triage record after `inside` and without the
+    disposition found with: triage's grade, the verdict, the regression, the fork). Nothing
+    of an entry says where the finding was found: that is computed — and so is the ledger's
+    grade, from the row the entry leaves (graded_by_the_row)."""
     fields(entry, ("key", "grade"), ("bound", "verdict", "regression", "fork", "refutation", "reason"), "a triage entry")
     what = "entry %s" % shown(entry["key"])
     key = slug(entry["key"], "key")
@@ -4403,7 +4445,7 @@ def triage_entry(entry):
     if "verdict" not in entry:
         if "regression" in entry:
             refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed" % what)
-        return key, [grade, "-", "-", fork], (grade, "triage")
+        return key, [grade, "-", "-", fork]
     if grade not in SENT_ON:
         refuse("bad-value", "%s: a verdict is the verifier's, and the verifier is sent %s — not %s" % (what, " and ".join(SENT_ON), grade))
     if one_of(verdict, VERDICTS + (UNDRIVABLE,), what + ": verdict") != "confirmed" and "regression" in entry:
@@ -4415,11 +4457,11 @@ def triage_entry(entry):
         reason = entry.get("reason")
         if not isinstance(reason, str) or len(reason) > SLUG_MAX or not SLUG.fullmatch(reason):
             refuse("bad-value", "%s: %s says why nobody here can drive the finding, as `reason` — a word: a-z0-9 words joined by single `-`, at most %d characters — not %s" % (what, UNDRIVABLE, SLUG_MAX, shown(reason)))
-        return key, [grade, "%s: %s" % (UNDRIVABLE, reason), "-", fork], (grade, "triage")
+        return key, [grade, "%s: %s" % (UNDRIVABLE, reason), "-", fork]
     if verdict == "refuted":
         # Which of three it is, where the verifier says so; `refuted` alone where not.
         word = ": " + one_of(entry["refutation"], tuple(REFUTATIONS), what + ": refutation") if "refutation" in entry else ""
-        return key, [grade, "refuted" + word, "-", fork], ("refuted", "verify-real")
+        return key, [grade, "refuted" + word, "-", fork]
     regression = entry.get("regression")
     if regression is not None and not isinstance(regression, bool):
         refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too — and says nothing (the field absent, or null) where it does not: %s is none of the three" % (what, shown(regression)))
@@ -4428,51 +4470,57 @@ def triage_entry(entry):
         # door is one that release does not have, its return does not back the claim. The
         # cell says so (`-` beside `confirmed`), the finding is confirmed, and the state
         # names it: never `no`, which would be a fact nobody established.
-        return key, [grade, "confirmed", "-", fork], ("confirmed", "verify-real")
-    if regression:
-        return key, [grade, "confirmed", "yes", fork], ("regression", "verify-real")
-    return key, [grade, "confirmed", "no", fork], ("confirmed", "verify-real")
+        return key, [grade, "confirmed", "-", fork]
+    return key, [grade, "confirmed", "yes" if regression else "no", fork]
 
 
 def triage_set(args):
     run_dir = open_run(args.run)
     round_number = number(args.round, "round")
     given = [triage_entry(entry) for entry in json_rows("triage entry")]
-    distinct([key for key, _, _ in given], "finding")
+    distinct([key for key, _ in given], "finding")
     one_writer(run_dir)
     read = standing(run_dir, args.run)
     a_round(read, round_number, "the triage of round %s" % round_number)
     # A VERDICT THAT IS FILED IS TAKEN FROM ITS FILE, AND FROM NO CALLER (the plan's T3b): an
     # entry that says a verdict for a finding whose verdict is filed in the round and held
     # by no record yet — or that the batch this call is part of took from its file — is
-    # refused. Once a record holds the verdict an entry may record the finding again, as
-    # it always could.
+    # refused. Once a record holds the verdict an entry that says one replaces it, as it
+    # always could — and one that says none leaves it on its row (below).
     filed_for = {entry["key"]: entry["file"] for entry in read.get("filed", []) if entry["round"] == int(round_number) and entry["counts"] and (not entry["recorded"] or (entry["round"], entry["key"]) in TAKEN)}
-    for key, cells, _ in given:
+    for key, cells in given:
         if cells[1] != "-" and key in filed_for:
             refuse("exists", "entry %s: its verdict is filed — %s — and a record takes a filed verdict from its file, and from no caller: the batch of the stage's record names no verdict for it (apply). Nothing was written" % (key, filed_for[key]))
     ledger, ledger_above, ledger_rows = read_ledger(run_dir)
     keys = unique_rows(ledger, ledger_rows)
-    for key, _, _ in given:
+    for key, _ in given:
         if key not in keys:
             refuse("no-such-row", "the ledger has no row %s — a finding is added before it is triaged; nothing was written" % key)
-    hold_to_the_list(run_dir, [("entry %s" % key, cells[0]) for key, cells, _ in given])
+    hold_to_the_list(run_dir, [("entry %s" % key, cells[0]) for key, cells in given])
     scope = read_scope(run_dir, round_number)
     if scope is None:
         refuse("no-scope", "round %s has no scope yet: whether a finding is inside the test set is computed from the round's doors, which scope-set writes; nothing was written" % round_number)
     rel, above, rows = read_triage(run_dir, round_number)
     triaged = unique_rows(rel, rows)
-    for key, cells, grade in given:
+    for key, cells in given:
         row = ledger_rows[keys.index(key)]
         # The disposition the row carries into this round goes into the record with it:
         # a finding found again inherits it, and the record says what it inherited.
         entry = [tick(key), inside_cell(placed(row[4], scope[1]))] + cells[:3] + [row[8], cells[3]]
         if key in triaged:
+            if "queue" in read and cells[1] == "-":
+                # THE VERIFIER'S CELLS ARE NO ENTRY'S THAT SAYS NO VERDICT (THE_VERIFIERS) — in
+                # a run with a queue, where the record takes a verdict from its filed file
+                # and a verdict is filed once per finding and round: the row keeps the
+                # three as it holds them, and the entry writes triage's grade.
+                for at in THE_VERIFIERS:
+                    entry[at] = rows[triaged.index(key)][at]
             rows[triaged.index(key)] = entry
         else:
             triaged.append(key)
             rows.append(entry)
-        row[6], row[7] = grade
+        # THE LEDGER'S GRADE FOLLOWS FROM THE ROW AS THE ENTRY LEAVES IT.
+        row[6], row[7] = graded_by_the_row(entry)
     publish(run_dir, ["r" + round_number, "triage.md"], render_table(above, TRIAGE_COLUMNS, rows), replace=True)
     publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
     # THE PASSES ARE COUNTED HERE, never by an invocation: every finding this record leaves
@@ -4489,7 +4537,7 @@ def triage_set(args):
             why, passes = left.get(finding["key"], (None, 0))
             awaiting.append("%s %s %d" % (finding["key"], finding["awaits"]["why"], passes + 1 if why == finding["awaits"]["why"] else 1))
     counted(run_dir, round_number, "awaiting", awaiting)
-    say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _, _ in given]}))
+    say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _ in given]}))
 
 
 def verdict(args):
@@ -4695,7 +4743,7 @@ def entry_of(n, entry, round_number, handed, scratch):
     key = slug(entry["key"], "key")
     what = "entry %d (%s)" % (n, key)
     found = one_of(entry["found"], FOUND, what + ": found")
-    _, graded, _ = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
+    _, graded = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
     stored = dict.fromkeys(ENTRY_FIELDS)
     stored.update(key=key, found=found, grade=entry["grade"], bound=entry.get("bound"), why=as_data(said(entry, "why", what, scratch)), folds=folds_of(entry, what, handed))
     if found == "again":
@@ -6916,8 +6964,8 @@ def composed_calls(run_dir, run, round_number, attempt, held, scratch, read):
         calls.append({"argv": ["result-set"] + stage + ["--commit", held["commit"][0]] + within, "stdin": json.dumps(results)})
     # THE FIRST RECORD OF THE ATTEMPT, OR A LATER ONE: the round's record says which attempt of
     # its `test` stage reached a record. Only the first is composed from the triage's entries
-    # — they are on record after it, and an entry recorded again would take a verdict off
-    # its row.
+    # — they are on record after it. (An entry of it that names a finding the round has
+    # verified writes triage's grade, and takes no verdict off its row: triage-set.)
     marks = by_name(next((within_["facts"]["recorded"] for within_ in read["rounds"] if within_["round"] == int(round_number)), []))
     first = marks.get("test", ("", 0))[1] < int(attempt)
     rendering = None
