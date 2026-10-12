@@ -2,6 +2,137 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — A span that names a command without its operand is followed with the operand the route speaks of, a *re-run* is the reader's own command again, and a line the route says mints is held to the route's words — three more of the route catalog's questions, ruled and carried out (the human's rulings: question 7, option B of two; question 6, option C; question 8, option A of two)
+
+**What.** Three rulings of the human's, all of 2026-10-12, on three of the questions the route catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 6, 7 and 8), carried out in one commit because the second amends the first and the three meet in one piece of the frame. [route_case.rs](crates/cli/tests/support/route_case.rs) gains the act that runs a named command on its operand and a rule for what a name is; the re-run's rule is widened to one; a filled line can be held to what its route says of it. Eighteen cases are followed again or anew, nine entries and four keys leave the expected-red list, and the records follow. No product source changes; nothing is fixed.
+
+### The rulings — the human's, 2026-10-12
+
+**On question 7, *a product command printed without the id it requires*** — *`git add` your changes, then re-run `jigc task finalize`* · *leave the record to the milestone verbs — `jigc milestone add-task` appends sub-tasks and `jigc milestone finalize` advances their status* · *decide which one keeps the home, then `jigc rename` the other onto a free identity or `jigc unmanage` it* — the human took option B of two:
+
+> **A `jigc` span printed without the operand it requires is the name of a command, not a line to run as printed** — as the surface contract's line 71 already reads a bare `git add`. Where the route says to *re-run* it, the act is the reader's own earlier command run again; where the route only names verbs, it prints no act and there is nothing to follow.
+>
+> **Not taken:** *a line to run as printed* — under which all eight are red at the argument parser, for an id the reader has just typed.
+>
+> **Beside it, not a finding that blocks:** where the product knows the id and prints the command without it, that is logged as a wording note.
+
+**On question 6, *a `git` verb printed with no operand*** — *remove the worktrees yourself (`git worktree list`, then `git worktree remove`)* · *move the file out of the doc's home … with `git mv` if git has it staged* · *`git add` their work inside their worktrees*. That such a span is a command's name was settled by the surface contract's line 71 and by the ruling above; the question put was whether the catalog still follows the advice, and the human took option C:
+
+> **A span that names a command without its operand is followed with the operand the route speaks of**: the case names the path (or the target) as data, the catalog runs the named command on it, and the case is held to the outcome — the refusal that was drawn is gone when the route's steps are done.
+>
+> **Not taken:** *a name is nothing to follow* — under which nothing checks whether *move the file out with `git mv`* gets a reader past the refusal.
+>
+> **And the same for question 7**: its routes that only name verbs are followed with a target the case names, in place of being dropped as routes that print no act. The rest of that ruling stands: a *re-run* is the reader's own earlier command run again; where the product knows an id and leaves it out, that is a wording note that blocks nothing.
+
+**On question 8, *a line the route says mints*** — *`jigc start "<intent>"` mints an ordinary task, whose finalize commits the promoted doc* — the human took option A of two:
+
+> **The line is held to the route's words**: the intent is the reader's own and is filled by the case, and the filled line must then have minted a task. Run as printed it presents the workflows and mints nothing, so the case stays red and is a finding of the product.
+>
+> **Not taken:** *it is the front door, and the reader mints through it* — under which the route promises what its line does not do and nothing says so.
+
+**Questions 4 and 5 are not put to the human**: every one of their four cases stands inside a declared bound, so no reading of either can block. Their cases stay marked, and the list's head says so.
+
+### A line the route says mints is held to the route's words — question 8, in the frame
+
+`Chosen` gains `promised`: what the route says the filled line does, as promises over that line's own output — the witness a cited line has. **`Promise` carries it as it is**: the product prints `task minted: <id>` when a task is minted, and one `Promise::Line` holds the filled line to that; nothing was added to what a promise can state. Empty, the filled line is held to exit 0 as before. A filled line that does not say it is red under the tenth classification, *a cited line does not say what the route promised* — the word for a promise not kept; no eleventh was added. *Why the output, and not a check that the task's directory is there:* the old case held that directory, and was *another failure* — a word that says a check failed and not which promise.
+
+### What a name is — pinned, as an engineer
+
+**The frame asks the command, and takes no case's word.** A span is the name of a command where its own command, run bare, refuses the line for want of an operand: the product's argument parser at exit 2, naming *required arguments* that *were not provided*; git's usage at exit 129; or `git add`, which takes a bare line and does nothing, saying *Nothing specified, nothing added* (`wants_an_operand`).
+
+- *Why the command's own refusal, and three signals:* it is the one source that cannot drift from the binary under test — the same question is asked of the previous release's binary, in its own words. Three signals are three commands' own ways of saying one thing; each is read off the output and the exit code.
+- *Rejected — a table of verbs and their operands in the frame:* a second home for an argument grammar the product owns, wrong on the day a verb gains or loses an operand, and the same table for two releases.
+- *Rejected — the shape of the span's words:* `git switch main` and `git worktree list` are, word for word, the shape of `git worktree remove`; only the command knows which word is a verb and which an operand.
+- *Rejected — the case says so:* it is what the ruling excludes.
+- **The asking runs the bare line.** For a name that is a refusal and changes nothing. For a line that is complete it is the line, run — in a sandbox, and only where a case treated it as a name, which is then a fault of the case whatever the line did.
+- **A name is run by nobody as printed** — an act that does is a fault of the case, where it used to be *another failure* — and **operands named for a line that is complete are a fault too**: nothing loosens for a complete line, and a line refused any other way — an unknown flag, a value that is none, a refusal of the product's — is a line that was run and failed.
+
+### The named command, and the re-run — `Act::RunNamed`, and one rule
+
+- **`Act::RunNamed(Named { name, on, within, means })`.** The name is a span of the route, by index. Each operand is one word, from one of three places: a span the route prints (`Word::Span`), a value the refusal lists (`Word::Listed`) — where the refusal lists the path the route speaks of, it is taken from there and never typed — or a word of the case's own (`Word::Named`), for an operand the route speaks of and prints nowhere, or leaves to its reader. `within` is where the route says the command belongs — *inside their worktrees*. `means` says, in words, which operand the route means and why a word of the case's own is the one a reader would choose; a named command without it is a fault of the case. The command is held to exit 0 as any printed line, and the command that was run is in the record. The table's column `operand` says `chosen` for a case with a word of its own.
+- **The re-run, one rule.** Until now the refusing command was run again only where the route held no `jigc` span at all. **Now: wherever the route prints no line that the case passes over.** A span that names a command is no line; and a line the case itself runs as printed is passed over by nobody.
+  - *Why the second half.* The re-point's route names two verbs and cites `jigc doc list`, a complete line. Held to its outcome — the refusing command run again — the case could not be written under a rule that any `jigc` line forbids the re-run.
+  - *What the rule was for, and still does:* a case that ran its own command in the place of a printed one would pass over a route that prints a wrong one. A printed line is now either run by the case, and held, or it forbids the re-run.
+  - *Rejected — the re-run wherever the printed line is not the refusing command's own:* a route that printed the refusing command with a wrong id, or a misspelt flag, would be passed over by exactly the case it is there to catch.
+  - *Rejected — the outcome as a check that runs the refusing command:* a second way to run a command under test, beside the acts, for one site.
+
+### Red first
+
+`route_catalog::a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of`: eighteen planted cases over a shell that stands in for the binary, and real git. **Against a runner that declared the act and ran the span as printed, seventeen of the eighteen did not come out as planted**; the one that did is a filled line that does what its route says, which exits 0 either way. `no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed` named `RunNamed(Named)`, and now admits it and holds `Named`, `Word` and the wider `Chosen` to their shapes.
+
+**Eight mutants of the built frame, each named by the arm:**
+
+| the frame, changed | planted cases that did not come out as planted |
+|---|---|
+| a name run as printed is no fault | 2 |
+| the operands dropped | 6 |
+| a span is a name on the case's word | 2 — operands for a complete line ran; a re-run passed over a line |
+| the re-run beside a line the case passes over | 1 |
+| the place ignored | 1 |
+| the promise of a filled line not asked | 1 |
+| an operand split into words | 2 |
+| no span is a name | 7 |
+
+**And by the catalog itself:** with the frame built and the cases as they were, **fourteen cases were handed back as faults of the case** — *runs span …, as printed — and the span is the name of a command* — the twelve of questions 6 and 7 and two more whose last act ran `jigc task finalize` bare; no other case of the 627 ran a name. With the cases rewritten and the list as it was, the arms of three files named nine — six *listed as red … and is not red*, three whose classification moved — and nothing else; three more entries named the retitle's cases, which are gone with their names.
+
+### The cases, followed again
+
+| question | cases | what they are followed with | on this tree's binary, before → after |
+|---|---|---|---|
+| 6 — `git mv` | 2 | `git mv`, on the file at the doc's home — the path the route prints one clause earlier — and a destination of the reader's own; then the printed finalize | the same refusal again → **holds** |
+| 6 — `git add`, *inside their worktrees* | 1 | the printed provision; `git add` on the sub-task's work, started in its worktree; the printed finalize | the same refusal again → **holds** |
+| 6 — `git worktree remove`, inside a declared bound | 1 | `git worktree list`, as printed — it names the main checkout alone, so there is no worktree to hand the name; the printed re-run | the same refusal again → the same refusal again |
+| 7 — *`git add` your changes, then re-run `jigc task finalize`* | 3 | `git add` on the path the state changed; the reader's own finalize, run again | another failure → **holds, operand implied** |
+| 7 — the record's retitle: two verbs named | 3 → **6** | a case a verb: `jigc milestone add-task` on the milestone whose record it is, with an intent of the reader's own; `jigc milestone finalize` on it, the sub-task's work staged | another failure → **holds**, all six |
+| 7 — the re-point: *`jigc rename` the other … or `jigc unmanage` it* | 2 → **4** | a case a verb, behind the cited `jigc doc list`: the rename, on the one doc that list names; the unmanage, on the path the route prints; then the refusing command again | another failure → **the same refusal again** (the rename, 2) · new, **holds, operand implied** (the unmanage, 2) |
+| 8 — the front door | 1 | the line with an intent the case names, held to `task minted: <id>` in its own output | another failure → **a cited line does not say what the route promised** |
+
+- **Held to the outcome.** Where the route prints its re-run, that line is run as printed; where it names the reader's own command, the refusing command is run again; where its words promise something else — *no manual retitle applies*, and what each milestone verb does to the record — the case is held to that: the sub-task appended, the status advanced.
+- **The two re-point cases stay red for the reason that rests on no reading** — the refusal says *two managed docs claim* a home at which nothing managed stands. **What following them showed:** the one managed doc there is has an identity fixed to its type, so *rename the other onto a free identity* is refused under `write.identity-change`, and the re-point refuses again. **And the route's second verb is a way out**: `jigc unmanage`, with the path the route prints, drops the stale key; the re-point then lands the log and parks what stood at the home. Two new cases hold it. By hand, a third thing a reader might unmanage — the doc the list names — is a no-op, beside a list that says `managed`.
+- **The state of three retitle cases is wider than the cause needs**: the finalize is followed where the sub-task's work is staged, since with nothing to land it would itself be refused — the route says what the verb does, and not that it can be run at once.
+
+### What left the expected-red list, and the findings file
+
+Nine entries, and **four keys, each of which held cases of these two questions alone**; none of the four stayed:
+
+| key | cases |
+|---|---|
+| `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` | 3 |
+| `r1-clobber-fixed-route-prints-git-mv-without-a-path` | 2 |
+| `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place` | 1 |
+| `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids` | 3 |
+
+**Three keys stayed, their rows rewritten to what is now true**: `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path` (1 case, the same refusal again, inside its bound: the name has nothing to be run on) · `r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home` (2 cases, the same refusal again where they were another failure) · `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows` (1 case, under the word for a promise not kept; with what would make the route true, as an observation).
+
+**The wording notes** — where the product knows an operand and prints the command without it — are one list, [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md) → §11, marked as notes that block nothing: the task's id at `finalize.nothing-staged` and in the clobber guard's task arm; the milestone's id at the record's retitle; the path of the home at the re-point, one clause before `jigc unmanage`; the path one clause before `git mv`; the sub-task's worktree. Not known at the site: *the other* doc and its new identity; a worktree where none could be listed.
+
+### The previous release's binary, side by side
+
+From one run of the named-binary arm over the whole catalog, on the cases and the frame of this commit (the binary of `jigc 1.0.0-rc.24`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; 608.7 s over 632 cases, load average 51.2 at its start and 43.9 at its end, no gate of this branch beside it).
+
+- **Question 6 on `rc.24`**: `git mv` at the task's door *not followed* — that binary's route under the code is another, whose second span is `--slug`, a word and no name — and at the milestone's *not provoked*; `git add` in the sub-task's worktree *holds*; the route with the bare `git worktree remove` *the same refusal again*.
+- **Question 7 on `rc.24`**: the three of `finalize.nothing-staged` *hold, operand implied*; the six of the record's retitle *hold*; the re-point over a file is *the same refusal again* by the rename and *holds, operand implied* by the unmanage — and over a link to nothing *not followed* either way: that binary does not read a link to nothing as an occupant, and the route it prints there is the door's own, with the re-run as a line.
+- **Question 8 on `rc.24`**: *a cited line does not say what the route promised*, as here.
+- **One line beside them reads in the frame's new words on `rc.24`**: a case of the clobber guard's fixed arm was *not followed* there for a span its acts do not fit, and is *not followed* now for running what that binary's route prints as a name.
+
+- **The catalog after this commit**: 632 cases · 209 red · 43 keys, of which 33 can block with 140 cases (the arm's block `bounds`); 4 cases are marked `doubt`, where there were 17. **53 red cases stand at a refusal `rc.24` does not provoke**, under 14 keys, where there were 54 under 15 — the record's §18 has them by key.
+
+### The records
+
+- **[route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md)**: 4 cases marked under two questions, neither put to the human; sections 6, 7 and 8 as carried out, beside the other four that are ruled. The 4 lines of questions 4 and 5 were held against this run: each came to what its table says.
+- **[route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md)**: four keys cut, with one dated note at its head; three rows rewritten; the wording notes, §11.
+- **[route-catalog-pilot.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-pilot.md) → §18**, and one dated line at its head. **The two committed tables are that run's blocks `cases` and `sites`, byte for byte, printed after the last edit to anything the arm reads.**
+- **[pinning.md](implementation/pinning.md) → §6** says what a name is, what a named command is held to, and the re-run's rule.
+
+**Not established.**
+
+- **That the operand a case hands a name is the one its route speaks of**, and that *the other* is what a case took it for: stated by the case in its `means`, read by one person.
+- **The three signals of a name** are read off three commands' own words; a command that refuses a bare line in other words is read as a line that failed, which is the strict side. No verb of the product was found that takes a bare line and does nothing, as `git add` does.
+- **A name whose operand the route speaks of and the state does not hold** — `git worktree remove` where no worktree is listed: the case hands it none, and nothing holds that there was none to hand.
+- **A named command the route says belongs elsewhere than a directory of the sandbox**, and **a name beside a placeholder** in one span: no case asked.
+- **Questions 4 and 5**: 4 cases, marked and red as they were, inside their bounds.
+- **Linux**: the run follows this commit and is in the task's return.
+
 ## 2026-10-12 — Two more questions ruled for the reading their cases already follow: *the route is held to any file in the checkout*, and *the route owes every value it needs that is not the reader's own to choose* — sixteen cases lose their mark and stay red, as findings of the product (the human's rulings, option A of two each)
 
 **What.** Two rulings of the human's, both of 2026-10-12, on two of the questions the route catalog's marked cases hang on ([route-catalog-doubts.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-doubts.md) → 3 and 1). Neither changes the frame or what any case comes to: the cases followed the words already. Sixteen cases lose their `doubt` mark and stay on the expected-red list under the word they had; the four keys they stand under are findings of the product, and their rows say so. No product source changes; nothing is fixed.

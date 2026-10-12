@@ -26,9 +26,7 @@
 //! the way has its reason in [`READINGS`].
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{
-    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
-};
+use crate::support::route_case::{Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word};
 
 // The sites, as the committed list of refusal sites names them.
 const COLLISION: &str = "crates/cli/src/combine.rs::collision_finding::combine.code-collision#1";
@@ -286,16 +284,6 @@ const THE_RECORD_IS_IN_THE_INDEX_AND_NOT_ON_DISK: [Case; 1] = [Case {
 // land no work
 // ---------------------------------------------------------------------------
 
-/// The two readings of a `git` verb a route names with no operand, and a place to run it.
-const WHERE_GIT_ADD_RUNS: &str = "*execute the sub-tasks, `git add` their work inside their \
-    worktrees, then re-run `jigc milestone finalize <id>`*: (a) the backticked `git add` is a \
-    command line to run as printed, like every `git` line a route prints — it has no \
-    operand, adds nothing, and is run where the reader stands; (b) it is the name of a git \
-    verb, to be run in each sub-task's worktree on that sub-task's files — then the route \
-    prints no line for it. The case follows (a). The surface contract says of a `git` span \
-    with no operand that it *names a command rather than a file* (the printed-path fence), \
-    and names `git add` as one; it is the pilot's sixth question, over another verb";
-
 const NO_WORKTREE_WAS_EVER_PROVISIONED: [Case; 1] = [Case {
     name: "zero-contribution-never-provisioned-milestone-discarded-as-printed",
     site: ZERO,
@@ -326,9 +314,22 @@ const THE_WORK_IS_NOT_STAGED: [Case; 2] = [
         site: ZERO,
         cause: WORK_STANDS_UNSTAGED,
         state: fan![WORK],
-        acts: &[Act::Run(0), Act::Run(1), Act::Run(2)],
+        // The provision, as printed; `git add`, which names a command, on the work and
+        // where the route says it belongs; the finalize, as printed.
+        acts: &[
+            Act::Run(0),
+            Act::RunNamed(Named {
+                name: 1,
+                on: &[Word::Named("work.txt")],
+                within: Some(Word::Named(WT)),
+                means: "*their work inside their worktrees*: the file the sub-task wrote, \
+                        in the sub-task's worktree — the directory the provision gives it, \
+                        `.jigc/worktrees/<the sub-task's id>`; the refusal lists the \
+                        milestone and neither, so the case names both",
+            }),
+            Act::Run(2),
+        ],
         holds: &[Check::RegularFile(Place::Repo("work.txt"))],
-        doubt: Some(WHERE_GIT_ADD_RUNS),
         ..M
     },
     Case {

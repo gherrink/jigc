@@ -512,15 +512,6 @@ const A_REGISTERED_AND_AN_UNREGISTERED_PATH: [Case; 2] = [
 // `unverified_worktrees_finding` · `uninstall.dirty-worktree` — the guard could not look
 // ---------------------------------------------------------------------------
 
-/// The two readings of the route's parenthesis.
-const WHICH_GIT_LINES: &str = "*or remove the worktrees yourself (`git worktree list`, then \
-                               `git worktree remove`) and re-run*: (a) two command lines to \
-                               run as printed — followed here: git refuses the second, \
-                               which wants a worktree's path; (b) the names of two git \
-                               verbs, the second to be run once for each path the first \
-                               lists — then the route prints no line to run, and here the \
-                               first lists no worktree under `.jigc/worktrees/` at all";
-
 const WORKTREES_ROOT_UNREADABLE: &str = "`.jigc/worktrees/` is there and cannot be listed";
 const THE_WORKTREES_ROOT_UNREADABLE: [Case; 3] = [
     Case {
@@ -543,10 +534,14 @@ const THE_WORKTREES_ROOT_UNREADABLE: [Case; 3] = [
             Step::Dir(Place::Repo(".jigc/worktrees")),
             shut!("000", ".jigc/worktrees"),
         ],
-        acts: &[Act::Run(3), Act::Run(4), Act::Run(2)],
+        // `git worktree list`, a line that is complete, as printed. `git worktree
+        // remove` names a command, and the operand the route speaks of is a worktree
+        // the list names: here it names the main checkout and no other, so there is none
+        // to hand it, and a name the case names no operand for is no act. Then the
+        // printed re-run.
+        acts: &[Act::Run(3), Act::Run(2)],
         holds: torn_down![],
         untouched: STANDING,
-        doubt: Some(WHICH_GIT_LINES),
         ..UNINSTALL
     },
     Case {

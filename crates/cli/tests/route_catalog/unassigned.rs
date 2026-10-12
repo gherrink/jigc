@@ -188,6 +188,7 @@ const THE_RENAME_UNDER_ANOTHER_SLUG: &[Act] = &[Act::RunChosen(Chosen {
               which the title slugs to and something else holds — no doc is `adr:spaces`, \
               and nothing stands at its home",
     }],
+    promised: &[],
 })];
 /// What must hold behind it: the ADR at the home of the id that was named, under the
 /// title of the rename, and gone from the home it had.

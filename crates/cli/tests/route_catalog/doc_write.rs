@@ -28,7 +28,7 @@
 //! doc staged under the value that was named.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Chosen, Own, Place, Step};
+use crate::support::route_case::{Act, Case, Check, Chosen, Named, Own, Place, Step, Word};
 
 // The sites, as the committed list of refusal sites names them.
 const RETITLE_IN_THE_RECORD: &str =
@@ -105,67 +105,119 @@ const A_MILESTONE_OF_ONE: [Step; 3] = [
     Step::Jigc(&["milestone", "add-task", "fan-out", "do a thing"]),
 ];
 
-/// The two readings of a product command a route names without the operands it requires.
-const WHICH_VERBS: &str = "*leave the record to the milestone verbs — `jigc milestone add-task` \
-    appends sub-tasks and `jigc milestone finalize` advances their status; no manual retitle \
-    applies*: (a) the two backticked spans are command lines to run as printed, like every \
-    `jigc` line a route prints — neither has the milestone's id, which both commands require; \
-    (b) they name the two verbs that maintain the record, and the route names no act of the \
-    reader's at all — then there is nothing to follow, and the frame has no case: it refuses \
-    a case that follows a printed route with no act. The case follows (a). The surface \
-    contract says of a `git` span with no operand that it *names a command rather than a \
-    file* (the printed-path fence), and of a `jigc` span nothing of the kind; it is the \
-    gate's first question — a product command printed without its id";
+/// The sub-task's worktree, and its work staged there: what `jigc milestone finalize`
+/// lands.
+const THE_SUB_TASKS_WORK_STAGED: [Step; 3] = [
+    Step::Jigc(&["milestone", "provision", "fan-out"]),
+    Step::File(Place::Repo(".jigc/worktrees/do-a-thing/work.txt"), "work\n"),
+    Step::Git(&["-C", ".jigc/worktrees/do-a-thing", "add", "work.txt"]),
+];
 
-/// **The record's retitle refusal, followed the one way the frame can follow it**: the
-/// two verbs the route names, run as printed.
+/// Which milestone the route's two verbs are run on.
+const THE_MILESTONE_OF_THE_RECORD: &str = "*the milestone verbs* of *the record*: the milestone \
+    whose record the refused retitle addressed — its id is the head of the address on the \
+    refusal's `at:` line, `milestone-record:fan-out#…`, and stands whole in no word of the \
+    refusal, so the case names it";
+
+/// **The record's retitle refusal, followed by each verb its route names** — *leave the
+/// record to the milestone verbs — `jigc milestone add-task` appends sub-tasks and `jigc
+/// milestone finalize` advances their status; no manual retitle applies*. Both spans name
+/// a command (the human's rulings of 2026-10-12, `DECISIONS.md` → *A span that names a command without its operand is followed with the operand the route speaks of*),
+/// and the route promises no way past the refusal — *no manual retitle applies* — but
+/// says what each verb does to the record: a case a verb, each held to that. The first
+/// appends a sub-task of the reader's own wording; the second lands the milestone, from a
+/// state in which the sub-task's work is staged, and the record says `joined`.
 macro_rules! retitle {
-    ($name:literal, $cause:literal, state: $state:expr, $address:literal, $task:literal $(,)?) => {
-        [Case {
-            name: concat!("record-retitle-", $name, "-the-milestone-verbs-run-as-printed"),
-            site: RETITLE_IN_THE_RECORD,
-            cause: $cause,
-            state: $state,
-            refusing: &[
-                "doc",
-                "retitle-item",
-                $address,
-                "--title",
-                "Another name",
-                "--task",
-                $task,
-            ],
-            acts: &[Act::Run(0), Act::Run(1)],
-            untouched: &[RECORD],
-            doubt: Some(WHICH_VERBS),
-            ..W
-        }]
+    ($name:literal, $cause:literal, state: [$($plant:expr),* $(,)?], $address:literal, $task:literal $(,)?) => {
+        [
+            Case {
+                name: concat!("record-retitle-", $name, "-a-sub-task-appended-by-the-named-verb"),
+                site: RETITLE_IN_THE_RECORD,
+                cause: $cause,
+                state: &[
+                    A_MILESTONE_OF_ONE[0],
+                    A_MILESTONE_OF_ONE[1],
+                    A_MILESTONE_OF_ONE[2],
+                    $($plant,)*
+                ],
+                refusing: &[
+                    "doc",
+                    "retitle-item",
+                    $address,
+                    "--title",
+                    "Another name",
+                    "--task",
+                    $task,
+                ],
+                acts: &[Act::RunNamed(Named {
+                    name: 0,
+                    on: &[Word::Named("fan-out"), Word::Named("another name")],
+                    within: None,
+                    means: "*the milestone verbs* of *the record*: the milestone whose \
+                            record the refused retitle addressed — its id is the head of \
+                            the address on the refusal's `at:` line and stands whole in no \
+                            word of the refusal, so the case names it; and an intent of \
+                            the reader's own, the name the retitle asked for",
+                })],
+                holds: &[Check::Contains(Place::Repo(RECORD), "### another-name")],
+                ..W
+            },
+            Case {
+                name: concat!("record-retitle-", $name, "-the-milestone-finalized-by-the-named-verb"),
+                site: RETITLE_IN_THE_RECORD,
+                cause: $cause,
+                state: &[
+                    A_MILESTONE_OF_ONE[0],
+                    A_MILESTONE_OF_ONE[1],
+                    A_MILESTONE_OF_ONE[2],
+                    THE_SUB_TASKS_WORK_STAGED[0],
+                    THE_SUB_TASKS_WORK_STAGED[1],
+                    THE_SUB_TASKS_WORK_STAGED[2],
+                    $($plant,)*
+                ],
+                refusing: &[
+                    "doc",
+                    "retitle-item",
+                    $address,
+                    "--title",
+                    "Another name",
+                    "--task",
+                    $task,
+                ],
+                acts: &[Act::RunNamed(Named {
+                    name: 1,
+                    on: &[Word::Named("fan-out")],
+                    within: None,
+                    means: THE_MILESTONE_OF_THE_RECORD,
+                })],
+                holds: &[
+                    Check::Contains(Place::Repo(RECORD), "- status: joined"),
+                    Check::RegularFile(Place::Repo("work.txt")),
+                ],
+                ..W
+            },
+        ]
     };
 }
-const RETITLED_FROM_THE_SUB_TASK: [Case; 1] = retitle!(
+const RETITLED_FROM_THE_SUB_TASK: [Case; 2] = retitle!(
     "from-the-sub-task",
     "a sub-task of the milestone retitles its own item of the milestone's record",
-    state: &A_MILESTONE_OF_ONE,
+    state: [],
     "milestone-record:fan-out#tasks/do-a-thing",
     "do-a-thing",
 );
-const RETITLED_FROM_AN_ORDINARY_TASK: [Case; 1] = retitle!(
+const RETITLED_FROM_AN_ORDINARY_TASK: [Case; 2] = retitle!(
     "from-an-ordinary-task",
     "an ordinary task, no part of the milestone, retitles an item of the milestone's record",
-    state: &[
-        A_MILESTONE_OF_ONE[0],
-        A_MILESTONE_OF_ONE[1],
-        A_MILESTONE_OF_ONE[2],
-        Step::Jigc(&["start", "--workflow", "dev-task", "write a note"]),
-    ],
+    state: [Step::Jigc(&["start", "--workflow", "dev-task", "write a note"])],
     "milestone-record:fan-out#tasks/do-a-thing",
     "write-a-note",
 );
-const AN_ITEM_THE_RECORD_DOES_NOT_HOLD: [Case; 1] = retitle!(
+const AN_ITEM_THE_RECORD_DOES_NOT_HOLD: [Case; 2] = retitle!(
     "an-item-the-record-does-not-hold",
     "the addressed item is one the milestone's record does not hold: the refusal is by \
      doctype, ahead of the question whether the item is there",
-    state: &A_MILESTONE_OF_ONE,
+    state: [],
     "milestone-record:fan-out#tasks/no-such-task",
     "do-a-thing",
 );
@@ -432,6 +484,7 @@ const COMMITTED_AND_A_CREATE: [Case; 1] = [Case {
                  `adr:use-tabs`, and the title alone slugs to its id"
             ),
         ],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_ADR_BESIDE_THE_COMMITTED_ONE),
@@ -472,6 +525,7 @@ const COMMITTED_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
                  slugs to"
             ),
         ],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_ADR_UNDER_A_DISTINCT_SLUG),
@@ -508,6 +562,7 @@ const COMMITTED_AND_AN_AUTHOR: [Case; 1] = [Case {
                   distinct title, as the route asks: *Use spaces*, whose slug nothing \
                   answers to",
         }],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_ADR_UNDER_A_DISTINCT_TITLE),
@@ -552,6 +607,7 @@ const COMMITTED_AND_AN_AUTHOR_UNDER_A_MIGRATIONS_SLUG: [Case; 1] = [Case {
                 "a slug of the migration's own, distinct as the route asks: other than \
                  `use-tabs`, which the committed doc answers to, and nothing answers to it"
             )],
+            promised: &[],
         }),
     ],
     holds: &[Check::Contains(
@@ -610,6 +666,7 @@ const TAKEN_AND_A_CREATE: [Case; 1] = [Case {
                  that file stands at the home of `slow-start`, which the title alone slugs to"
             ),
         ],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_FINDING_BESIDE_THE_FILE),
@@ -649,6 +706,7 @@ const TAKEN_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
                  holds the file, and nothing stands at its own — it is what the title slugs to"
             ),
         ],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_FINDING_UNDER_A_DISTINCT_SLUG),
@@ -690,6 +748,7 @@ const TAKEN_AND_AN_AUTHOR: [Case; 1] = [Case {
                   with its `title:` set to a distinct title, as the route asks: *Slow start \
                   again*, at whose slug's home nothing stands",
         }],
+        promised: &[],
     })],
     holds: &[Check::Contains(
         Place::Repo(THE_FINDING_BESIDE_THE_FILE),

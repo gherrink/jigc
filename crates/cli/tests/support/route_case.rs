@@ -73,7 +73,11 @@
 //! [`Classification::HoldsOperandImplied`], and [`follow`] **refuses it wherever the
 //! printed route holds a command line of the product** ([`command_spans`]) — there the
 //! command is the route's to give, by [`Act::Run`], and a case that ran its own in its
-//! place would pass over a route that prints a wrong one.
+//! place would pass over a route that prints a wrong one. **So the rule is over the lines
+//! the case passes over** (the human's ruling of 2026-10-12 on a product command printed
+//! without its id): a line the case itself runs as printed is passed over by nobody, and
+//! a span that names a command — *re-run `jigc task finalize`*, with no id — is no line at
+//! all: there the re-run is the reader's own command, run again as they ran it.
 //!
 //! **Every repository of a sandbox has the sandbox's identity, and no other.** The mask
 //! leaves git no identity to read and none to invent, so the runner supplies one — in the
@@ -139,6 +143,29 @@
 //! back — the case's own refusal again apart, which is read first — the runner hands back
 //! a fault of the case, which no classification covers and no list can hold. A value that
 //! is a path out of the sandbox is handed to no command.
+//!
+//! **A span that names a command without its operand is no line to run, and is followed
+//! with the operand the route speaks of** ([`Act::RunNamed`], [`Named`], [`Word`]) — the
+//! human's rulings of 2026-10-12 (`DECISIONS.md` → *A span that names a command without its operand is followed with the operand the route speaks of*).
+//! *With `git mv` if git has it staged*, *`git add` your changes*, *`jigc unmanage` it*:
+//! the span names a command, as the surface contract already reads a bare `git add`.
+//! **What a name is, is the command's own word and never a case's**: run bare, its command
+//! refuses the line for want of an operand — the product's argument parser at exit 2,
+//! naming required arguments that were not provided; git's usage at exit 129, or `git
+//! add`'s *Nothing specified, nothing added*. The runner asks the command; it holds no
+//! copy of an argument grammar. A case hands a name its operand, a word each: a span the
+//! route prints, a value the refusal lists, or a word of the case's own for the operand the
+//! route speaks of and prints nowhere — with, in words, which operand the route means. The
+//! command is started where the route says it belongs, is held to exit 0 like any line,
+//! and the command that was run is in the record. **A name is run by nobody as printed**:
+//! an act that does is a fault of the case, and so is one that names operands for a line
+//! that is complete. Nothing loosens for a complete line, or for one that fails any other
+//! way.
+//!
+//! **And a filled line the route says something of is held to those words**
+//! ([`Chosen::promised`]) — *`jigc start "<intent>"` mints an ordinary task*: the intent is
+//! the reader's own, and the filled line's own output must say what the route said the
+//! line does, as a cited line's must; a line that does not is red under the same word.
 //!
 //! **A line a route cites for what it prints is held to its words, and not to its exit**
 //! ([`Act::RunCited`], [`Cited`], [`Promise`]) — the human's ruling of 2026-10-12
@@ -350,6 +377,43 @@ pub struct Own {
 pub struct Chosen {
     pub line: usize,
     pub own: &'static [Own],
+    /// **What the route says the filled line does, where it says so** — *`jigc start
+    /// "<intent>"` mints an ordinary task*: the filled line is then held to those words as
+    /// a cited line is ([`Promise`]), its own output asked for each. Empty for a line the
+    /// route says nothing of but to run it, which is held to exit 0.
+    pub promised: &'static [Promise],
+}
+
+/// **One word a case hands a command its route names without the operand** ([`Named`]).
+#[derive(Clone, Copy, Debug)]
+pub enum Word {
+    /// The printed route's backticked span of this index: an operand the route prints, a
+    /// clause away from the command it belongs to.
+    Span(usize),
+    /// A value the refusal's own output lists, by index ([`listed_in`]) — where the
+    /// refusal lists the path the route speaks of, it is taken from there.
+    Listed(usize),
+    /// A word of the case's own: the operand the route speaks of and prints nowhere, or
+    /// one it leaves to its reader — *the other*, *a free identity*.
+    Named(&'static str),
+}
+
+/// **A span that names a command without its operand, followed with the operand the route
+/// speaks of** — the human's rulings of 2026-10-12 (`DECISIONS.md` → *A span that names a
+/// command without its operand is followed with the operand the route speaks of*). The
+/// name is a span of the printed route, by index; each operand is one word; and the case
+/// says in words which operand the route means, and why a word of its own is the one a
+/// reader would choose.
+#[derive(Clone, Copy, Debug)]
+pub struct Named {
+    pub name: usize,
+    /// The operands, in the command's order, each put in as one word.
+    pub on: &'static [Word],
+    /// Where the route says the command belongs — *inside their worktrees* — where it
+    /// says so: the directory the command is started in, read from where the case stands.
+    pub within: Option<Word>,
+    /// Which operand the route means, in words, and why each word of the case's own.
+    pub means: &'static str,
 }
 
 /// One piece of what a cited line's output must hold ([`Promise`]).
@@ -409,6 +473,12 @@ pub enum Act {
     /// quotes the value back — is the case's mistake and a fault of the case: it says
     /// nothing of the route.
     RunChosen(Chosen),
+    /// **Run the command a span names, on the operand the route speaks of** ([`Named`]).
+    /// The span must be the name of a command — the bare line is refused by its own
+    /// command for want of an operand; a line that is complete is run as printed, and an
+    /// act that names operands for one is a fault of the case. The command is held to
+    /// exit 0 as any line a route prints.
+    RunNamed(Named),
     /// **Run a printed line the route cites for what it prints, and hold its output to
     /// what the route promised** ([`Cited`]) — the human's ruling of 2026-10-12: such a
     /// line *is held to its words*. It is run as [`Act::Run`] runs one; its exit code is
@@ -473,7 +543,8 @@ pub enum Act {
     /// **Run the refusing command again**, where the case stands — what *re-run* and *run
     /// jigc* ask for where the route prints no command line. It takes nothing from the
     /// case; it is refused wherever the printed route holds a command line of the product
-    /// ([`command_spans`]), and where it stands the case can come out no better than
+    /// ([`command_spans`]) that the case does not itself run as printed — a span that names
+    /// a command is no such line — and where it stands the case can come out no better than
     /// [`Classification::HoldsOperandImplied`].
     Rerun,
     /// [`Act::Rerun`], inside the sandbox's repository — what *run jigc from inside the
@@ -530,6 +601,7 @@ impl Act {
             Act::Run(_)
             | Act::RunFilled(_)
             | Act::RunChosen(_)
+            | Act::RunNamed(_)
             | Act::RunCited(_)
             | Act::RunListed(_)
             | Act::Cd(_)
@@ -1101,6 +1173,43 @@ fn one_word(value: &str) -> String {
     }
 }
 
+/// **Whether a command, run bare, refused the line for want of an operand** — the command's
+/// own word that the line is a name and not a line to run. Of the product: the argument
+/// parser's refusal, exit 2, naming *required arguments* that *were not provided*. Of git:
+/// its usage refusal, exit 129 — or, for `git add`, which takes a bare line and does
+/// nothing, its own *Nothing specified, nothing added*. Three signals, each the command's
+/// own; a line refused any other way — an unknown flag, a value that is none, a refusal of
+/// the product's — is a line that was run and failed.
+fn wants_an_operand(program: &str, ran: &Ran) -> bool {
+    if ran.held.is_some() {
+        return false;
+    }
+    match program {
+        "jigc" => ran.code == Some(2) && ran.said.contains("required arguments were not provided"),
+        "git" => {
+            (ran.code == Some(129) && ran.said.trim_start().starts_with("usage: git"))
+                || ran.said.contains("Nothing specified, nothing added")
+        }
+        _ => false,
+    }
+}
+
+/// `Err` where a promise of the line span `line` names holds no piece, or a piece of no
+/// bytes — a fault of the case as written: a witness any output satisfies is no witness.
+fn stated(line: usize, promised: &[Promise]) -> Result<(), String> {
+    for promise in promised {
+        let (Promise::Line(pieces) | Promise::Route(pieces)) = promise;
+        let empty = |piece: &Says| matches!(piece, Says::Text(text) if text.trim().is_empty());
+        if pieces.is_empty() || pieces.iter().any(empty) {
+            return Err(format!(
+                "an act cites span {line} for what it prints, and a promise of it holds no \
+                 piece, or a piece of no bytes: a witness any output satisfies is no witness"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// What every mark of the runner's opens with ([`mark`]).
 const MARK: &str = "route-case-own-value-";
 
@@ -1560,6 +1669,7 @@ impl Sandbox {
                 Act::Run(_)
                 | Act::RunFilled(_)
                 | Act::RunChosen(_)
+                | Act::RunNamed(_)
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
@@ -1633,6 +1743,7 @@ impl Sandbox {
                 Act::Run(_)
                 | Act::RunFilled(_)
                 | Act::RunChosen(_)
+                | Act::RunNamed(_)
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
@@ -1711,6 +1822,7 @@ impl Sandbox {
                     Act::Run(at) => (at, span(at)?.to_string(), String::new()),
                     Act::RunChosen(chosen) => {
                         let printed = span(chosen.line)?;
+                        stated(chosen.line, chosen.promised)?;
                         let (line, how) = self.marked(chosen, printed)?;
                         if let Some(own) =
                             chosen.own.iter().find(|own| !self.stays(&stand, own.value))
@@ -1732,18 +1844,7 @@ impl Sandbox {
                                 cited.line
                             ));
                         }
-                        for promise in cited.promised {
-                            let (Promise::Line(pieces) | Promise::Route(pieces)) = promise;
-                            let empty = |piece: &Says| matches!(piece, Says::Text(text) if text.trim().is_empty());
-                            if pieces.is_empty() || pieces.iter().any(empty) {
-                                return Err(format!(
-                                    "an act cites span {} for what it prints, and a promise \
-                                     of it holds no piece, or a piece of no bytes: a witness \
-                                     any output satisfies is no witness",
-                                    cited.line
-                                ));
-                            }
-                        }
+                        stated(cited.line, cited.promised)?;
                         (cited.line, span(cited.line)?.to_string(), String::new())
                     }
                     Act::RunListed(at) => {
@@ -1816,9 +1917,156 @@ impl Sandbox {
                     self.under_test,
                 );
                 if let Act::RunCited(cited) = act {
-                    return Ok(self.held_to_its_words(line, cited, &ran, seen));
+                    return Ok(self.held_to_its_words(
+                        format!("run the cited line `{line}` (span {})", cited.line),
+                        cited.promised,
+                        &ran,
+                        seen,
+                    ));
+                }
+                // A span that names a command is no line to run as printed.
+                if matches!(act, Act::Run(_)) && wants_an_operand(&words[0], &ran) {
+                    return Err(format!(
+                        "an act runs span {at}, `{line}`, as printed — and the span is the \
+                         name of a command: run bare, its command refuses it for want of an \
+                         operand. A name is followed with the operand the route speaks of \
+                         (`Act::RunNamed`), or is the refusing command's, to be run again \
+                         (`Act::Rerun`); as printed it is run by nobody\n{}",
+                        self.shown(&ran.said)
+                    ));
+                }
+                // A filled line the route says something of is held to those words.
+                if let Act::RunChosen(chosen) = act
+                    && !chosen.promised.is_empty()
+                {
+                    return Ok(self.held_to_its_words(
+                        format!("run `{line}` ({of} {at}{how}), held to what the route says of it"),
+                        chosen.promised,
+                        &ran,
+                        seen,
+                    ));
                 }
                 (format!("run `{line}` ({of} {at}{how})"), ran)
+            }
+            Act::RunNamed(named) => {
+                let name = span(named.name)?;
+                let fault = |what: &str| {
+                    Err(format!(
+                        "an act runs the command span {} names, `{name}`, and {what}",
+                        named.name
+                    ))
+                };
+                if named.on.is_empty() {
+                    return fault(
+                        "names no operand for it: a name the case names no operand for is \
+                         no act",
+                    );
+                }
+                if named.means.trim().is_empty() {
+                    return fault("does not say which operand the route means");
+                }
+                let word = |word: &Word| match *word {
+                    Word::Span(at) => {
+                        span(at).map(|bytes| (bytes.to_string(), format!("span {at}")))
+                    }
+                    Word::Listed(at) => listed
+                        .get(at)
+                        .map(|value| (value.clone(), format!("listed value {at}")))
+                        .ok_or_else(|| {
+                            format!(
+                                "an act hands a named command listed value {at}, and the \
+                                 refusal lists {}",
+                                listed.len()
+                            )
+                        }),
+                    Word::Named("") => {
+                        Err("an act hands a named command a word of no bytes".to_string())
+                    }
+                    Word::Named(bytes) => Ok((bytes.to_string(), "the case's".to_string())),
+                };
+                let on: Vec<(String, String)> =
+                    named.on.iter().map(&word).collect::<Result<_, _>>()?;
+                let within = named.within.as_ref().map(word).transpose()?;
+                let how = on
+                    .iter()
+                    .map(|(bytes, from)| format!("{from} `{bytes}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let what = |line: &str| {
+                    format!(
+                        "run the named command `{line}` (span {}, `{name}`, on {how}{} — {})",
+                        named.name,
+                        within
+                            .as_ref()
+                            .map(|(bytes, _)| format!(", inside `{bytes}`"))
+                            .unwrap_or_default(),
+                        named.means
+                    )
+                };
+                let shape = format!("{name} …");
+                // Where the route says the command belongs: a directory of the sandbox.
+                let there = match &within {
+                    None => stand.clone(),
+                    Some((bytes, _)) => {
+                        let there = stand.join(bytes);
+                        let inside = fs::canonicalize(&there)
+                            .is_ok_and(|there| there.is_dir() && there.starts_with(&self.root));
+                        if !inside {
+                            seen.failed = true;
+                            return Ok(format!(
+                                "{}: not done — `{bytes}` names no directory inside the \
+                                 case's sandbox",
+                                what(&shape)
+                            ));
+                        }
+                        there
+                    }
+                };
+                if let Some((bytes, _)) = on.iter().find(|(bytes, _)| !self.stays(&there, bytes)) {
+                    seen.failed = true;
+                    return Ok(format!(
+                        "{}: not done — `{bytes}` names nothing inside the case's sandbox",
+                        what(&shape)
+                    ));
+                }
+                let mut words = match super::shell_words_or(name, &there, &self.home()) {
+                    Ok(words) => words,
+                    Err(said) => {
+                        seen.unsplit = true;
+                        return Ok(format!(
+                            "{}: not run — no shell splits the name into words\n{}",
+                            what(&shape),
+                            said.trim_end()
+                        ));
+                    }
+                };
+                // A name by its shape: its own command refuses the bare line for want of
+                // an operand. A line that is complete is the route's to run as printed.
+                if !self.names_a_command(binary, case, &words, &there) {
+                    return fault(
+                        "names operands for it — but the span is a command line as it \
+                         stands: run bare, its command does not refuse it for want of an \
+                         operand. A line that is complete is run as printed",
+                    );
+                }
+                let program = if words[0] == "jigc" {
+                    binary
+                } else {
+                    Path::new("git")
+                };
+                words.extend(on.iter().map(|(bytes, _)| bytes.clone()));
+                let line = words
+                    .iter()
+                    .map(|word| one_word(word))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                (
+                    what(&line),
+                    self.run(
+                        self.tested(case, program, &there).args(&words[1..]),
+                        self.under_test,
+                    ),
+                )
             }
             Act::Cd(at) => {
                 let line = span(at)?;
@@ -1921,6 +2169,31 @@ impl Sandbox {
         })
     }
 
+    /// **Whether `words` is the name of a command and no line to run**: run bare, where the
+    /// act stands, its own command refuses it for want of an operand
+    /// ([`wants_an_operand`]). It is asked of the command and of no table: the frame holds
+    /// no copy of an argument grammar. A line that is complete is *run* by the asking — in
+    /// a sandbox, and only where a case treats it as a name, which is then a fault of the
+    /// case whatever the line did.
+    fn names_a_command(&self, binary: &Path, case: &Case, words: &[String], at: &Path) -> bool {
+        let program = match words.first().map(String::as_str) {
+            Some("jigc") => binary,
+            Some("git") => Path::new("git"),
+            _ => return false,
+        };
+        let ran = self.run(
+            self.tested(case, program, at).args(&words[1..]),
+            self.under_test,
+        );
+        wants_an_operand(&words[0], &ran)
+    }
+
+    /// [`Self::names_a_command`], for a printed span: one no shell can split is no name.
+    fn names(&self, binary: &Path, case: &Case, span: &str, at: &Path) -> bool {
+        super::shell_words_or(span, at, &self.home())
+            .is_ok_and(|words| self.names_a_command(binary, case, &words, at))
+    }
+
     /// **A printed line with a mark where each placeholder the case names stands**, and
     /// what the record says of the values — `Err` is a fault of the case as written. A
     /// mark is a word no shell changes; the value takes its place once the shell has split
@@ -2009,14 +2282,18 @@ impl Sandbox {
     /// promise is asked of, and no other command's. A line that did not end said nothing
     /// that can be read as its answer, and is a command that did not end. What the line
     /// printed is kept in the record either way: it is what the case is about.
-    fn held_to_its_words(&self, line: &str, cited: Cited, ran: &Ran, seen: &mut Seen) -> String {
-        let what = format!("run the cited line `{line}` (span {})", cited.line);
+    fn held_to_its_words(
+        &self,
+        what: String,
+        promised: &[Promise],
+        ran: &Ran,
+        seen: &mut Seen,
+    ) -> String {
         if ran.held.is_some() {
             seen.did_not_end = true;
             return format!("{what}: {}\n{}", ran.exit(), ran.said);
         }
-        let unkept: Vec<String> = cited
-            .promised
+        let unkept: Vec<String> = promised
             .iter()
             .filter_map(|promise| self.kept(&ran.said, promise).err())
             .collect();
@@ -2603,12 +2880,30 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
                 Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
             ) {
                 seen.implied = true;
-                if let Some(at) = command_spans(&spans).first() {
+                // The command is the route's to give wherever the route prints a line to
+                // run that the case does not run: a line the case runs as printed is
+                // passed over by nobody, and a span that names a command is no line.
+                let run_as_printed = |at: usize| {
+                    case.acts.iter().any(|act| {
+                        matches!(
+                            act,
+                            Act::Run(line)
+                                | Act::RunFilled(Filled { line, .. })
+                                | Act::RunChosen(Chosen { line, .. })
+                                | Act::RunCited(Cited { line, .. })
+                                if *line == at
+                        )
+                    })
+                };
+                if let Some(at) = command_spans(&spans).into_iter().find(|at| {
+                    !run_as_printed(*at) && !sandbox.names(binary, case, spans[*at], &stand)
+                }) {
                     return Err(sandbox.shown(&format!(
                         "an act runs the refusing command again, and the printed route \
-                         holds a command line — span {at}, `{}`. Where a route prints the \
-                         command, the command is the route's to give: nothing was done",
-                        spans[*at]
+                         holds a command line — span {at}, `{}` — that no act of the case \
+                         runs. Where a route prints the command, the command is the route's \
+                         to give: nothing was done",
+                        spans[at]
                     )));
                 }
             }

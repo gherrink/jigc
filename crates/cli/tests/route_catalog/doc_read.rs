@@ -793,6 +793,7 @@ const THE_DESTINATION_A_LINK_AT_THE_RENAME: [Case; 2] = [
         acts: &[Act::RunChosen(Chosen {
             line: 0,
             own: &[ANOTHER_SLUG],
+            promised: &[],
         })],
         holds: &[
             Check::RegularFile(Place::Repo(THE_ADR_UNDER_ANOTHER_SLUG)),
@@ -875,6 +876,7 @@ const THE_DESTINATION_A_LINK_AT_THE_IN_TASK_RENAME: [Case; 2] = [
         acts: &[Act::RunChosen(Chosen {
             line: 0,
             own: &[ANOTHER_SLUG],
+            promised: &[],
         })],
         holds: &[
             Check::Contains(
@@ -951,6 +953,7 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
                           slugs to",
                 },
             ],
+            promised: &[],
         })],
         holds: &[Check::Contains(
             Place::Repo(THE_FINDING_BESIDE_THE_LINK),
@@ -993,6 +996,7 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
                       second file of the state, where a reader may as well have edited \
                       the first: the frame has no act that edits one",
             }],
+            promised: &[],
         })],
         holds: &[Check::Contains(
             Place::Repo(THE_FINDING_BESIDE_THE_LINK),

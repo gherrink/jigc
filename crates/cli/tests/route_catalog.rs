@@ -189,6 +189,16 @@
 //! A placeholder the case does not name is not filled, and a filled line that is refused
 //! for the value is the case's mistake — a fault of the case, never a red case.
 //!
+//! **And a span that names a command without its operand is followed with the operand the
+//! route speaks of** — the human's rulings of 2026-10-12 on a `git` verb printed with no
+//! operand and on a product command printed without its id (`DECISIONS.md` → *A span that names a command without its operand is followed with the operand the route speaks of*). What a name is, the runner asks of the command
+//! itself; a case hands it the operand, a word each, and says which operand the route
+//! means; a name is run by nobody as printed; and the refusing command is run again
+//! wherever the route prints no line that the case passes over
+//! ([`a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of`]).
+//! The same arm holds a filled line to what its route says it does — the ruling on *a
+//! line the route says mints*.
+//!
 //! **And with the sites behind those**, each piece again with an arm that was red first: a
 //! case stands where it says, in the environment it says
 //! ([`a_case_stands_where_it_says_in_the_environment_it_says`]); the refusing command is run
@@ -276,7 +286,7 @@ use std::path::Path;
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
     self, Act, Bound, Case, Check, Chosen, Cited, Classification, ExpectedRed, Filled, Followed,
-    Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing, Step, Var,
+    Named, Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing, Step, Var, Word,
 };
 use crate::support::rust_source;
 
@@ -710,22 +720,13 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
-        FINALIZE_WITHOUT_ITS_ID,
-        Classification::AnotherFailure,
-        &[
-            "finalize-nothing-staged-a-new-file-added-and-finalized-as-printed",
-            "finalize-nothing-staged-a-tracked-file-deleted-added-and-finalized-as-printed",
-            "finalize-nothing-staged-a-tracked-file-modified-added-and-finalized-as-printed",
-        ],
-    ),
-    (
         STAGE_ROUTE_NAMES_OTHER_CAUSES,
         Classification::SameRefusalAgain,
         &["finalize-stage-failed-the-docs-home-ignored-re-run-as-printed"],
     ),
     (
         START_LINE_MINTS_NOTHING,
-        Classification::AnotherFailure,
+        Classification::CitedLineUnsaid,
         &["finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed"],
     ),
     (
@@ -770,14 +771,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
-        GIT_MV_WITHOUT_A_PATH,
-        Classification::SameRefusalAgain,
-        &[
-            "clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
-            "clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed",
-        ],
-    ),
-    (
         DROPPED_THE_ONLY_SUB_TASK,
         Classification::AnotherFailure,
         &[
@@ -793,11 +786,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         CONTINUE_OVER_NO_RECORD,
         Classification::AnotherFailure,
         &["record-exists-a-draft-by-hand-continued-with-a-sub-task-as-printed"],
-    ),
-    (
-        GIT_ADD_WITH_NO_PATH_AND_NO_PLACE,
-        Classification::SameRefusalAgain,
-        &["zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed"],
     ),
     (
         ABANDON_LINE_REFUSED,
@@ -844,15 +832,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["unlanded-a-commit-kept-on-a-branch-and-finalized-as-printed"],
     ),
     (
-        RECORD_VERBS_WITHOUT_THEIR_IDS,
-        Classification::AnotherFailure,
-        &[
-            "record-retitle-an-item-the-record-does-not-hold-the-milestone-verbs-run-as-printed",
-            "record-retitle-from-an-ordinary-task-the-milestone-verbs-run-as-printed",
-            "record-retitle-from-the-sub-task-the-milestone-verbs-run-as-printed",
-        ],
-    ),
-    (
         COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT,
         Classification::SameRefusalAgain,
         &[
@@ -866,7 +845,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     ),
     (
         TWO_MANAGED_DOCS_OVER_A_STALE_KEY,
-        Classification::AnotherFailure,
+        Classification::SameRefusalAgain,
         &[
             "repoint-failed-a-stale-key-and-a-file-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
             "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
@@ -964,7 +943,9 @@ const READ_BIT_NOT_THE_CAUSE: &str =
 /// directory that may be neither read nor written cannot be moved.
 const MOVE_ASIDE_UNREADABLE: &str = "r1-uninstall-worktree-route-move-aside-over-unreadable-path";
 /// Where `.jigc/worktrees/` cannot be listed, the route's second way is `git worktree
-/// remove`, printed with no path. Rests on a reading — the case under it is marked.
+/// remove`, printed with no path: the name of a command, and in this state there is no
+/// worktree to hand it — the list names the main checkout alone. The printed re-run refuses
+/// as before.
 const WORKTREE_REMOVE_NO_PATH: &str =
     "r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path";
 /// The canary's key for the teardown's hook step: *ensure the repo's git hooks directory is
@@ -985,12 +966,6 @@ const LATE_REFUSAL: &str =
 /// command does not end, with `.jigc/` already removed.
 const UNINSTALL_HELD: &str = "r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command";
 
-/// `jigc task finalize` refuses over a dirty tree with an empty index, and the route's
-/// second printed line is `jigc task finalize` with no task id: run as printed it is
-/// refused by the argument parser.
-const FINALIZE_WITHOUT_ITS_ID: &str =
-    "r1-finalize-nothing-staged-route-prints-finalize-without-its-id";
-
 /// git refuses to stage a promoted doc whose home an ignore rule covers; the route names
 /// a lock and a rule over three other paths, and the printed re-run refuses again.
 const STAGE_ROUTE_NAMES_OTHER_CAUSES: &str =
@@ -998,6 +973,8 @@ const STAGE_ROUTE_NAMES_OTHER_CAUSES: &str =
 
 /// An edit refused in an amend task: the route says the printed front-door line mints an
 /// ordinary task, and under the shipped default it presents the workflows and mints none.
+/// The line is held to those words by the human's ruling of 2026-10-12: filled with an
+/// intent, its output is asked for the mint, and does not say it.
 const START_LINE_MINTS_NOTHING: &str =
     "r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows";
 
@@ -1028,10 +1005,6 @@ const REVERT_DRAWS_THE_CONFLICT: &str =
 /// values the product knows, and the route owes them by the human's ruling of 2026-10-12.
 const CLOBBER_LINES_NOBODY_CAN_FILL: &str = "r1-clobber-task-and-migration-routes-print-lines-with-placeholders-the-refusal-lists-nothing-for";
 
-/// The fixed-identity arm says to move a staged file out of the doc's home *with `git mv`*
-/// and prints the verb with no path. Rests on a reading — the case under it is marked.
-const GIT_MV_WITHOUT_A_PATH: &str = "r1-clobber-fixed-route-prints-git-mv-without-a-path";
-
 /// The clobber guard's route for a sub-task's doc under a fixed identity says to drop the
 /// sub-task and re-run the milestone's finalize: where that sub-task was the milestone's
 /// only one, the re-run is refused under `milestone.zero-contribution`.
@@ -1049,11 +1022,6 @@ const RENAME_DRAWS_THE_COLLISION: &str =
 /// says to continue the milestone with `add-task`, which is refused — there is none.
 const CONTINUE_OVER_NO_RECORD: &str =
     "r1-record-exists-route-says-continue-over-a-file-that-is-no-record";
-/// The zero-contribution route says to `git add` the sub-tasks' work *inside their
-/// worktrees* and prints the verb with no path and no place. Rests on a reading — the case
-/// under it is marked.
-const GIT_ADD_WITH_NO_PATH_AND_NO_PLACE: &str =
-    "r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place";
 /// The zero-contribution route's other way, `jigc milestone discard <id>`, is refused by
 /// that door's own guards where a sub-task holds unstaged work or a staged commit doc.
 const ABANDON_LINE_REFUSED: &str =
@@ -1073,13 +1041,6 @@ const CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED: &str =
 const KEPT_THE_ONLY_COMMIT: &str =
     "r1-unlanded-route-keeps-the-only-commit-and-the-re-run-draws-zero-contribution";
 
-// The keys of `doc write`.
-/// The record's retitle refusal says to leave the record to the milestone verbs and
-/// prints two of them, each without the milestone's id its command requires. Rests on a
-/// reading — every case under it is marked.
-const RECORD_VERBS_WITHOUT_THEIR_IDS: &str =
-    "r1-record-retitle-route-names-two-milestone-verbs-without-their-ids";
-
 // The keys of `doc read` — the store's refusal over a home that is no regular file.
 /// A task that edits a committed doc whose home became a link is told to put there *a
 /// copy of the file it points at*; over a link that leads nowhere there is no such file.
@@ -1090,8 +1051,9 @@ const COPY_WHAT_A_LINK_TO_NOTHING_POINTS_AT: &str =
 // reason, found constructible.
 /// A re-point over a new home the record still holds a key for, where a file or a link to
 /// nothing stands: the refusal it carries says *two managed docs claim* the home and names
-/// `jigc rename` and `jigc unmanage` without an id. Rests on a reading for its
-/// classification — every case under it is marked — and on none for what it says.
+/// `jigc rename` and `jigc unmanage` without an id — at a home where nothing managed
+/// stands. Followed with *the other* renamed, as the route names first: the one managed
+/// doc there is has a fixed identity, the rename is refused, and so is the re-point again.
 const TWO_MANAGED_DOCS_OVER_A_STALE_KEY: &str =
     "r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home";
 
@@ -3618,7 +3580,11 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 /// file, and nothing the runner runs or touches. **One word of a case's own does reach a
 /// command, by the human's ruling of 2026-10-12**: a value of the reader's own, which goes
 /// where the route prints a placeholder of the name the case gives and nowhere else — it
-/// stands in for no operand the route prints. An operand is a
+/// stands in for no operand the route prints. **And words of a case's own reach a command
+/// the route names without its operand** ([`Named`]), by the rulings of the same day: the
+/// operand the route speaks of, where neither the route nor the refusal prints it — and
+/// only for a span its own command refuses bare for want of one, which the runner asks of
+/// the command and takes no case's word for. An operand is a
 /// span's index or the one marked form; a [`Case`] holds no function, so it cannot act around the runner; and
 /// neither this file nor a command's names a filesystem or a process API at all — what the
 /// existing test did by hand (`fs::remove_file` on a path it spelled) has no place to be
@@ -3637,13 +3603,38 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
                 || variant.ends_with("(usize)")
                 || variant.ends_with("(Filled)")
                 || variant.ends_with("(Chosen)")
+                || variant.ends_with("(Named)")
                 || variant.ends_with("(Cited)")
                 || !variant.contains('('),
             "the act `{variant}` takes something that is neither an operand, a span's index, \
              a line with the indices of what fills it, a line with the reader's own values \
-             for its placeholders nor a cited line with its promise",
+             for its placeholders, a named command with its operands nor a cited line with \
+             its promise",
         );
     }
+    assert_eq!(
+        (
+            variants(body_of(&frame, "pub struct Named {")),
+            variants(body_of(&frame, "pub enum Word {")),
+        ),
+        (
+            vec![
+                "pub name: usize".to_string(),
+                "pub on: &'static [Word]".to_string(),
+                "pub within: Option<Word>".to_string(),
+                "pub means: &'static str".to_string(),
+            ],
+            vec![
+                "Span(usize)".to_string(),
+                "Listed(usize)".to_string(),
+                "Named(&'static str)".to_string(),
+            ],
+        ),
+        "a named command is a span of the route by index, and what it carries beside is its \
+         operands, a word each — a span of the route, a value the refusal lists, or a word \
+         of the case's for the operand the route speaks of — with where the route says it \
+         belongs and what the route means, in words",
+    );
     assert_eq!(
         (
             variants(body_of(&frame, "pub struct Chosen {")),
@@ -3653,6 +3644,7 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
             vec![
                 "pub line: usize".to_string(),
                 "pub own: &'static [Own]".to_string(),
+                "pub promised: &'static [Promise]".to_string(),
             ],
             vec![
                 "pub placeholder: &'static str".to_string(),
@@ -6216,6 +6208,7 @@ fn a_placeholder_for_a_value_of_the_readers_own_is_filled_with_the_value_the_cas
             Act::RunChosen(Chosen {
                 line: $line,
                 own: $own,
+                promised: &[],
             })
         };
     }
@@ -6479,6 +6472,7 @@ fn a_value_outside_what_its_route_says_is_read_as_what_it_is_on_this_trees_binar
                     value: $value,
                     why: WHY,
                 }),+],
+                promised: &[],
             })
         };
     }
@@ -6582,6 +6576,375 @@ fn a_value_outside_what_its_route_says_is_read_as_what_it_is_on_this_trees_binar
     assert!(
         wrong.is_empty(),
         "{} of the 8 second cases did not come out as planted:\n\n{}",
+        wrong.len(),
+        wrong.join("\n\n"),
+    );
+}
+
+/// A script that is the name of a command when it is run bare: the argument parser's own
+/// refusal, exit 2 — and, handed words, what `$then` does with them.
+macro_rules! a_name {
+    ($script:literal, $then:literal) => {
+        Step::Script(
+            Place::Repo($script),
+            concat!(
+                "test $# -gt 0 || { printf '%s\\n' 'error: the following required arguments \
+                 were not provided:' '  <ID>'; exit 2; }\n",
+                $then,
+                "\n"
+            ),
+        )
+    };
+}
+
+/// The state of the planted refusals below: the path they are over, staged; a file their
+/// listing names; and a script a command the routes name — `jigc <script>` is the shell
+/// running it where the act stands.
+const WHAT_THE_NAMED_COMMANDS_DO: &[Step] = &[
+    Step::File(Place::Repo("held"), "held\n"),
+    Step::Git(&["add", "held"]),
+    Step::File(Place::Repo("listed too"), "listed\n"),
+    Step::File(Place::Repo("sub/work.txt"), "work\n"),
+    a_name!("clears", "rm -- \"$@\""),
+    a_name!("refuses", "echo 'not here'; exit 3"),
+    a_name!("again", "exit 0"),
+    Step::Script(Place::Repo("mints"), "echo \"task minted: $1\"\n"),
+    Step::Script(
+        Place::Repo("presents"),
+        "echo 'these are the workflows to pick from'\n",
+    ),
+];
+
+/// A shell that stands in for a refusal whose route names commands without their operand —
+/// a `git` verb, three of the product's — beside the path they belong to, and says to
+/// re-run by the refusing command's name.
+const NAMES_COMMANDS: &str = r#"test -e held || exit 0
+cat <<'END'
+blocking · setup.install-hook — refused over `held`
+  held: `listed too`
+  route: move `held` out with `git mv`, or clear it and what is listed with `jigc clears`; `jigc refuses` is refused; then re-run `jigc again`
+END
+exit 1"#;
+
+/// The same, over a route that also prints a line that is complete.
+const NAMES_A_COMMAND_BESIDE_A_LINE: &str = r#"test -e held || exit 0
+cat <<'END'
+blocking · setup.install-hook — refused over `held`
+  route: read `jigc -c true` first, then clear `held` with `jigc clears` and run this again
+END
+exit 1"#;
+
+/// A refusal over work that is not staged, whose route says where the named command
+/// belongs.
+const NAMES_A_COMMAND_AND_ITS_PLACE: &str = r#"git diff --cached --name-only | grep -q work.txt && exit 0
+cat <<'END'
+blocking · setup.install-hook — refused: nothing of the work is staged
+  route: `git add` the work inside `sub`, then run this again
+END
+exit 1"#;
+
+/// A refusal whose route says what a line with a placeholder does.
+const SAYS_WHAT_A_LINE_DOES: &str = r#"cat <<'END'
+blocking · setup.install-hook — refused
+  route: `jigc mints "<intent>"` mints a task; of `jigc presents "<intent>"` the route says the same
+END
+exit 1"#;
+
+/// **A span that names a command without its operand is followed with the operand the
+/// route speaks of, and a re-run is the reader's own command again** — the human's rulings
+/// of 2026-10-12 (`DECISIONS.md` → *A span that names a command without its operand is
+/// followed with the operand the route speaks of*).
+///
+/// *What a name is* is the command's own word and no case's: run bare, it refuses the line
+/// for want of an operand. Planted, kind by kind: a named `git` verb is run on a span the
+/// route prints and a word of the case's, each one word, and the record holds the command
+/// that was run; a named command of the product is run on a printed span and a value the
+/// refusal lists; a named command that is refused is red as any line, and the record says
+/// which; the command is started where the route says it belongs; an operand out of the
+/// sandbox is handed to no command. **A name is run by nobody as printed** — a fault of
+/// the case, for a `jigc` name and a `git` one alike — and an act that names operands for
+/// a line that is complete is a fault too. **The refusing command is run again wherever
+/// the route prints no line to run that the case does not run**: beside names alone,
+/// beside a complete line the case runs as printed — and never beside one it passes over.
+/// And **a filled line the route says something of is held to those words**: its own
+/// output must say them, or the case is red under the word a cited line has.
+#[test]
+fn a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of() {
+    const MEANS: &str = "planted: the path the refusal is over";
+    macro_rules! named {
+        ($name:expr, $on:expr $(,)?) => {
+            Act::RunNamed(Named {
+                name: $name,
+                on: $on,
+                within: None,
+                means: MEANS,
+            })
+        };
+        ($name:expr, $on:expr, within: $within:expr $(,)?) => {
+            Act::RunNamed(Named {
+                name: $name,
+                on: $on,
+                within: Some($within),
+                means: MEANS,
+            })
+        };
+    }
+    const AN_INTENT: &[Own] = &[Own {
+        placeholder: "<intent>",
+        value: "a thing",
+        why: "planted: any intent",
+    }];
+    const IT_MINTED: &[Promise] = &[Promise::Line(&[Says::Text("task minted: a thing")])];
+    const OVER_NAMES: &[&str] = &["-c", NAMES_COMMANDS];
+    const BESIDE_A_LINE: &[&str] = &["-c", NAMES_A_COMMAND_BESIDE_A_LINE];
+    const AND_ITS_PLACE: &[&str] = &["-c", NAMES_A_COMMAND_AND_ITS_PLACE];
+    const WHAT_A_LINE_DOES: &[&str] = &["-c", SAYS_WHAT_A_LINE_DOES];
+    let planted =
+        |name: &'static str, refusing: &'static [&'static str], acts: &'static [Act]| Case {
+            name,
+            state: WHAT_THE_NAMED_COMMANDS_DO,
+            refusing,
+            acts,
+            ..PLANTED
+        };
+    let sh = Path::new("/bin/sh");
+    let mut wrong: Vec<String> = Vec::new();
+    let mut comes_out =
+        |case: Case, expected: Classification, record: &[&str]| match route_case::follow(sh, &case)
+        {
+            Ok(followed)
+                if followed.classification == expected
+                    && record.iter().all(|piece| followed.detail.contains(piece)) => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {}, where `{expected}` was planted with a record that holds \
+                 {record:?}\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        };
+
+    // A named `git` verb, on a span the route prints and a word of the case's — one word
+    // each — and the re-run by the refusing command's name.
+    comes_out(
+        Case {
+            holds: &[Check::RegularFile(Place::Repo("kept here"))],
+            ..planted(
+                "planted-a-named-git-verb-run-on-the-path-the-route-speaks-of",
+                OVER_NAMES,
+                &[
+                    named!(1, &[Word::Span(0), Word::Named("kept here")]),
+                    Act::Rerun,
+                ],
+            )
+        },
+        Classification::HoldsOperandImplied,
+        &[
+            "run the named command `git mv held 'kept here'` (span 1, `git mv`, on span 0 \
+             `held`, the case's `kept here` — planted: the path the refusal is over): exit 0",
+            "run the refusing command again",
+        ],
+    );
+    // A named command of the product, on a printed span and a value the refusal lists.
+    comes_out(
+        Case {
+            holds: &[Check::Absent(Place::Repo("listed too"))],
+            ..planted(
+                "planted-a-named-command-run-on-a-span-and-a-listed-value",
+                OVER_NAMES,
+                &[named!(2, &[Word::Span(0), Word::Listed(1)]), Act::Rerun],
+            )
+        },
+        Classification::HoldsOperandImplied,
+        &[
+            "run the named command `jigc clears held 'listed too'` (span 2, `jigc clears`, on \
+           span 0 `held`, listed value 1 `listed too`",
+        ],
+    );
+    // A named command that is refused is red as any line, and the record says which.
+    comes_out(
+        planted(
+            "planted-a-named-command-that-is-refused",
+            OVER_NAMES,
+            &[named!(3, &[Word::Span(0)])],
+        ),
+        Classification::AnotherFailure,
+        &[
+            "run the named command `jigc refuses held` (span 3, `jigc refuses`",
+            "): exit 3\nnot here",
+        ],
+    );
+    // An operand that is a path out of the sandbox is handed to no command.
+    comes_out(
+        planted(
+            "planted-a-named-command-and-an-operand-out-of-the-sandbox",
+            OVER_NAMES,
+            &[named!(2, &[Word::Named("../../elsewhere")])],
+        ),
+        Classification::AnotherFailure,
+        &["not done — `../../elsewhere` names nothing inside the case's sandbox"],
+    );
+    // Beside names alone the refusing command is run again — here with nothing done.
+    comes_out(
+        planted(
+            "planted-a-re-run-beside-names-alone",
+            OVER_NAMES,
+            &[Act::Rerun],
+        ),
+        Classification::SameRefusalAgain,
+        &["run the refusing command again"],
+    );
+    // Beside a complete line the case runs as printed, too.
+    comes_out(
+        planted(
+            "planted-a-re-run-beside-a-complete-line-the-case-runs",
+            BESIDE_A_LINE,
+            &[Act::Run(0), named!(2, &[Word::Span(1)]), Act::Rerun],
+        ),
+        Classification::HoldsOperandImplied,
+        &["run the named command `jigc clears held` (span 2"],
+    );
+    // The command is started where the route says it belongs.
+    comes_out(
+        planted(
+            "planted-a-named-command-run-where-the-route-says",
+            AND_ITS_PLACE,
+            &[
+                named!(0, &[Word::Named("work.txt")], within: Word::Span(1)),
+                Act::Rerun,
+            ],
+        ),
+        Classification::HoldsOperandImplied,
+        &[
+            "run the named command `git add work.txt` (span 0, `git add`, on the case's \
+           `work.txt`, inside `sub`",
+        ],
+    );
+    // Started where the case stands, the same command does not find the work.
+    comes_out(
+        planted(
+            "planted-the-same-command-run-where-the-case-stands",
+            AND_ITS_PLACE,
+            &[named!(0, &[Word::Named("work.txt")])],
+        ),
+        Classification::AnotherFailure,
+        &["run the named command `git add work.txt` (span 0"],
+    );
+    comes_out(
+        planted(
+            "planted-a-named-command-and-a-place-out-of-the-sandbox",
+            AND_ITS_PLACE,
+            &[named!(0, &[Word::Named("work.txt")], within: Word::Named("../.."))],
+        ),
+        Classification::AnotherFailure,
+        &["not done — `../..` names no directory inside the case's sandbox"],
+    );
+    // A filled line the route says something of is held to those words.
+    comes_out(
+        planted(
+            "planted-a-filled-line-that-does-what-the-route-says",
+            WHAT_A_LINE_DOES,
+            &[Act::RunChosen(Chosen {
+                line: 0,
+                own: AN_INTENT,
+                promised: IT_MINTED,
+            })],
+        ),
+        Classification::Holds,
+        &["run `jigc mints 'a thing'` (span 0, `<intent>` filled by the case's `a thing`"],
+    );
+    comes_out(
+        planted(
+            "planted-a-filled-line-that-does-not-do-what-the-route-says",
+            WHAT_A_LINE_DOES,
+            &[Act::RunChosen(Chosen {
+                line: 1,
+                own: AN_INTENT,
+                promised: IT_MINTED,
+            })],
+        ),
+        Classification::CitedLineUnsaid,
+        &[
+            "run `jigc presents 'a thing'` (span 1",
+            "its output does not say what the route promised",
+            "these are the workflows to pick from",
+        ],
+    );
+
+    // What the runner hands back as a fault of the case.
+    let mut is_a_fault = |name: &'static str,
+                          refusal: &'static [&'static str],
+                          acts: &'static [Act],
+                          says: &[&str]| {
+        match route_case::follow(sh, &planted(name, refusal, acts)) {
+            Err(fault) if says.iter().all(|piece| fault.contains(piece)) => {}
+            Err(fault) => wrong.push(format!(
+                "`{name}` is a fault of the case that does not say {says:?}: {fault}"
+            )),
+            Ok(followed) => wrong.push(format!(
+                "`{name}` — {}, where a fault of the case that says {says:?} was \
+                     planted\n{}",
+                followed.classification, followed.detail
+            )),
+        }
+    };
+    // A name is run by nobody as printed — the product's, and git's.
+    is_a_fault(
+        "planted-the-products-name-run-as-printed",
+        OVER_NAMES,
+        &[Act::Run(4)],
+        &["span 4, `jigc again`", "the name of a command"],
+    );
+    is_a_fault(
+        "planted-a-git-verbs-name-run-as-printed",
+        OVER_NAMES,
+        &[Act::Run(1)],
+        &["span 1, `git mv`", "the name of a command"],
+    );
+    // A line that is complete is run as printed: no act names operands for it.
+    is_a_fault(
+        "planted-operands-named-for-a-line-that-is-complete",
+        BESIDE_A_LINE,
+        &[named!(0, &[Word::Named("more")])],
+        &["`jigc -c true`", "a command line as it stands"],
+    );
+    // The refusing command is not run again beside a complete line the case passes over.
+    is_a_fault(
+        "planted-a-re-run-beside-a-complete-line-the-case-passes-over",
+        BESIDE_A_LINE,
+        &[named!(2, &[Word::Span(1)]), Act::Rerun],
+        &["span 0, `jigc -c true`", "that no act of the case runs"],
+    );
+    is_a_fault(
+        "planted-a-name-with-no-operand",
+        OVER_NAMES,
+        &[named!(2, &[])],
+        &["names no operand"],
+    );
+    is_a_fault(
+        "planted-a-named-command-with-no-word-on-what-the-route-means",
+        OVER_NAMES,
+        &[Act::RunNamed(Named {
+            name: 2,
+            on: &[Word::Span(0)],
+            within: None,
+            means: " ",
+        })],
+        &["does not say which operand the route means"],
+    );
+    is_a_fault(
+        "planted-a-filled-line-with-a-promise-of-no-piece",
+        WHAT_A_LINE_DOES,
+        &[Act::RunChosen(Chosen {
+            line: 0,
+            own: AN_INTENT,
+            promised: &[Promise::Line(&[])],
+        })],
+        &["holds no piece"],
+    );
+
+    assert!(
+        wrong.is_empty(),
+        "{} of the 18 planted cases did not come out as planted:\n\n{}",
         wrong.len(),
         wrong.join("\n\n"),
     );
@@ -7429,14 +7792,15 @@ fn on_two_binaries<'a>(
 /// **Where a case's acts take what they act on, in one word.** `implied`: an object or a
 /// command the route does not print — the marked form, or the refusing command run again.
 /// `chosen`: the route prints a placeholder for a value of the reader's own, and the value
-/// is the case's ([`Act::RunChosen`]). `printed`: every operand is the route's. A case
+/// is the case's ([`Act::RunChosen`]) — or names a command without its operand, and a word
+/// of the operand is the case's ([`Word::Named`]). `printed`: every operand is the route's. A case
 /// that does both of the first two is `implied`. Read off the acts as they print
 /// themselves, so an act added to the frame later is read without a list of acts here.
 fn operand(case: &Case) -> &'static str {
     let acts = format!("{:?}", case.acts);
     if acts.contains("Unprinted(") || acts.contains("Rerun") {
         "implied"
-    } else if acts.contains("RunChosen(") {
+    } else if acts.contains("RunChosen(") || acts.contains("Named(\"") {
         "chosen"
     } else {
         "printed"
@@ -7819,6 +8183,7 @@ fn the_table_follows_each_binary_with_the_state_that_binary_built() {
                 value: "a-slug",
                 why: "planted: any slug",
             }],
+            promised: &[],
         })],
         ..PLANTED
     };

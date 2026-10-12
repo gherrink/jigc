@@ -28,8 +28,7 @@
 //! **A route of the clobber guard prints the rename with the title left to its reader** —
 //! `jigc doc rename <address> --to "<title>" --task <id>`, the id and the address concrete.
 //! The quoted placeholder is a word a shell hands on as it stands, so the line is run as
-//! printed and the doc's title is `<title>`: no word of a case's goes into it, as none
-//! does into `jigc start "<intent>"` above.
+//! printed and the doc's title is `<title>`: no word of a case's goes into it.
 //!
 //! **Every case starts from an install and an open task whose commit doc is complete**
 //! ([`ready!`]) — made by the binary under test: `jigc setup`, `jigc start --workflow
@@ -41,15 +40,18 @@
 //! finalize with `--carry-staged`*, *`git add` your changes, then re-run `jigc task
 //! finalize`*. Where it prints a flag and no command line, the runner runs the refusing
 //! command again with the printed flag ([`Act::RerunWith`]); where it prints the product's
-//! command without the id the command requires, the case runs the line as printed and is
-//! marked `doubt` ([`WHICH_LINE`]). **And a route of the linked-worktree guard sends its
+//! command without the id the command requires, the span is the name of the command the
+//! reader has just run, and the act is that command run again ([`Act::Rerun`]) — and a
+//! `git` verb printed without its operand is run on the path the route speaks of
+//! ([`Act::RunNamed`]): the human's rulings of 2026-10-12 (`DECISIONS.md` → *A span that names a command without its operand is followed with the operand the route speaks of*).
+//! **And a route of the linked-worktree guard sends its
 //! reader to the main checkout** — *`cd <there>`, then `jigc …`* — so the runner goes
 //! there before the next line ([`Act::Cd`]): such a case stands in the worktree, and its
 //! task was minted in the main checkout, which is all the guard asks of a state.
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Chosen, Cited, Operand, Own, Place, Promise, Says, Step,
+    Act, Case, Check, Chosen, Cited, Named, Operand, Own, Place, Promise, Says, Step, Word,
 };
 
 // The sites, as the committed list of refusal sites names them.
@@ -189,30 +191,30 @@ const FINALIZE: Case = Case {
 // `nothing_staged_finding` · `finalize.nothing-staged`
 // ---------------------------------------------------------------------------
 
-/// The two readings of a product command printed without the id it requires.
-const WHICH_LINE: &str = "*`git add` your changes, then re-run `jigc task finalize`*: (a) the \
-    second backticked span is a command line to run as printed, like every `jigc` line a \
-    route prints — it has no task id, and the command requires one; (b) it names the command \
-    the reader has just run, to be run again as they ran it — then the route prints no line \
-    for it, and the frame has no act: it runs the refusing command again only where a route \
-    prints no command line of the product. The case follows (a). The surface contract says \
-    of a `git` span with no operand that it *names a command rather than a file* (the \
-    printed-path fence), and of `jigc` spans nothing of the kind; `jigc task finalize` over \
-    the neighbouring refusal, `finalize.empty-commit`, is printed with the id";
-
 /// **The tree has changes and the index none of them**, by the three kinds of change git
-/// reports: the route is one, and it is followed as printed — `git add`, which adds
-/// nothing without an operand, and `jigc task finalize`, which is refused without an id.
+/// reports: the route is one — *`git add` your changes, then re-run `jigc task finalize`*
+/// — and both its spans name a command. `git add` is run on the change, the path the
+/// state changed: the refusal lists the task and no path, so the case names it. And the
+/// finalize is the reader's own command, run again.
 macro_rules! nothing_staged {
-    ($name:literal, $cause:literal, $dirt:expr) => {
+    ($name:literal, $cause:literal, $dirt:expr, $changed:literal) => {
         [Case {
             name: concat!("finalize-nothing-staged-", $name, "-added-and-finalized-as-printed"),
             site: NOTHING_STAGED,
             cause: $cause,
             state: ready![$dirt],
-            acts: &[Act::Run(0), Act::Run(1)],
+            acts: &[
+                Act::RunNamed(Named {
+                    name: 0,
+                    on: &[Word::Named($changed)],
+                    within: None,
+                    means: "*your changes*: the one path the state changed — the refusal \
+                            lists the task and no path, so the case names it, as a reader \
+                            who made the change would",
+                }),
+                Act::Rerun,
+            ],
             holds: &[Check::Absent(Place::Repo(TASK_AREA))],
-            doubt: Some(WHICH_LINE),
             ..FINALIZE
         }]
     };
@@ -220,17 +222,20 @@ macro_rules! nothing_staged {
 const A_TRACKED_FILE_MODIFIED: [Case; 1] = nothing_staged!(
     "a-tracked-file-modified",
     "a tracked file is modified in the working tree and nothing is staged",
-    Step::File(Place::Repo("README.md"), "changed\n")
+    Step::File(Place::Repo("README.md"), "changed\n"),
+    "README.md"
 );
 const A_NEW_FILE_NO_INDEX_HAS: [Case; 1] = nothing_staged!(
     "a-new-file",
     "the working tree holds a file git does not track and nothing is staged",
-    Step::File(Place::Repo("new.txt"), "new\n")
+    Step::File(Place::Repo("new.txt"), "new\n"),
+    "new.txt"
 );
 const A_TRACKED_FILE_DELETED: [Case; 1] = nothing_staged!(
     "a-tracked-file-deleted",
     "a tracked file is deleted from the working tree and the deletion is not staged",
-    Step::Git(&["-c", "alias.gone=!rm README.md", "gone"])
+    Step::Git(&["-c", "alias.gone=!rm README.md", "gone"]),
+    "README.md"
 );
 
 // ---------------------------------------------------------------------------
@@ -452,19 +457,21 @@ macro_rules! amending_over_a_committed_log {
     };
 }
 
-/// The two readings of a route that says a line mints a task.
-const WHAT_THE_FRONT_DOOR_DOES: &str = "*`jigc start \"<intent>\"` mints an ordinary task, \
-    whose finalize commits the promoted doc*: (a) the printed line, run with an intent, \
-    mints a task — the case runs it and holds that a task's working area is there; (b) the \
-    line is the front door, where the reader picks a workflow and mints with a second line \
-    the door prints — then the route prints no line that mints, and the frame has no case. \
-    The case follows (a), with the placeholder's own bytes for the intent: the refusal \
-    lists none and the intent is the reader's own words. The surface contract makes a \
-    quoted `<placeholder>` in a `jigc` span legal and the reader's to fill; it does not say \
-    what a line must do that a route says *mints*. The linked-worktree refusal's route \
-    words the same line as *the front door there, which mints a task or presents the \
-    workflows to pick one from*";
-
+/// **The front door, held to what its route says of it** — *`jigc start "<intent>"` mints
+/// an ordinary task*: the human's ruling of 2026-10-12 (`DECISIONS.md` → *A line the route
+/// says mints is held to the route's words*). The intent is the reader's own and the case
+/// names it; the filled line must then have minted a task, and says so where it has: the
+/// product prints `task minted: <id>` when a task is minted, the id slugged from the
+/// intent — and prints the workflows to pick from, with no such line, where none is.
+const AN_INTENT_OF_THE_READERS_OWN: &[Own] = &[Own {
+    placeholder: "<intent>",
+    value: "record a decision",
+    why: "what the reader came to do — the refused edit was an entry of the decisions \
+          log; any words of the reader's own are an intent",
+}];
+const A_TASK_WAS_MINTED_FOR_THE_INTENT: &[Promise] = &[Promise::Line(&[Says::Text(
+    "task minted: record-a-decision",
+)])];
 /// The staged form of the log, hand-placed in the amend task's area: a file of the name a
 /// staged `decisions-log` has, with the committed doc's bytes.
 const THE_LOG_HAND_PLACED: Step = Step::File(
@@ -488,13 +495,16 @@ const A_PROMOTING_DOC_IN_AN_AMEND: [Case; 3] = [
             "--title",
             "A decision",
         ],
-        acts: &[Act::Run(0)],
+        acts: &[Act::RunChosen(Chosen {
+            line: 0,
+            own: AN_INTENT_OF_THE_READERS_OWN,
+            promised: A_TASK_WAS_MINTED_FOR_THE_INTENT,
+        })],
         holds: &[
-            Check::Directory(Place::Repo(".jigc/tasks/intent")),
+            Check::Directory(Place::Repo(".jigc/tasks/record-a-decision")),
             Check::Directory(Place::Repo(AMEND_AREA)),
         ],
         untouched: &[LOG],
-        doubt: Some(WHAT_THE_FRONT_DOOR_DOES),
         ..FINALIZE
     },
     Case {
@@ -1591,6 +1601,12 @@ const THE_ADR_TASKS_FINALIZE: &[&str] = &["task", "finalize", "pick-tabs"];
 // knows — `<doctype>`, the task's `<id>` — is the refusal's to list, is listed nowhere,
 // and is filled by nobody. So each line below stays one no shell can split, for the
 // product's placeholders and for no other.
+//
+// The task arm's last span, `jigc task finalize`, names the command the reader has just
+// run: by the ruling on a product command printed without its id it is no line to run, and
+// the re-run it stands for is the reader's own. No case of the arm reaches it — each is
+// red at the line before — and none runs the refusing command again in its place: the
+// route prints a line of the other way, which the case does not run.
 
 /// A slug nothing answers to, where a route says *re-create it with an explicit `--slug`*
 /// or *re-mint with … `--slug <different-slug>`*: the occupied home is `use-tabs`'s.
@@ -1627,8 +1643,8 @@ const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
                         why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
                     },
                 ],
+                promised: &[],
             }),
-            Act::Run(4),
         ],
         holds: &[Check::Absent(Place::Repo(ADR_AREA))],
         untouched: &[THE_ADRS_HOME],
@@ -1640,7 +1656,7 @@ const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
         cause: A_FILE_AT_THE_HOME_OF_A_TASKS_DOC,
         state: an_adr_task_after!([], by_hand_at!(THE_ADRS_HOME)),
         refusing: THE_ADR_TASKS_FINALIZE,
-        acts: &[Act::Run(3), Act::Run(4)],
+        acts: &[Act::Run(3)],
         holds: &[Check::Absent(Place::Repo(ADR_AREA))],
         untouched: &[THE_ADRS_HOME],
         ..FINALIZE
@@ -1703,6 +1719,7 @@ const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
                     value: "tabs",
                     why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
                 }],
+                promised: &[],
             }),
             Act::Run(5),
             Act::Run(6),
@@ -1726,17 +1743,20 @@ const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
 
 // The fixed-identity arm at the task's door: the decisions log, whose home is one path.
 
-/// The two readings of a `git` verb a route names with no operand.
-const WHAT_GIT_MV_IS: &str = "*move the file out of the doc's home … — with `git mv` if git \
-    has it staged, since the index entry has to move with it*: (a) the backticked span is a \
-    command line to run as printed, like every `git` line a route prints — it has no \
-    operand, and git answers with its usage; (b) it is the name of a git verb, to be run on \
-    the file's path with a destination of the reader's own — then the route prints no line \
-    for the move, and the frame's move is a file act that leaves the index entry behind. \
-    The case follows (a). The surface contract says of a `git` span with no operand that it \
-    *names a command rather than a file* (the printed-path fence); it is the pilot's sixth \
-    question, over another verb";
-
+/// **A staged file at the log's home, moved with the verb the route names** — *move the
+/// file out of the doc's home, so that `docs/decisions-log.md` is free — with `git mv` if
+/// git has it staged*: `git mv` names a command, and the operand the route speaks of is
+/// the file at the doc's home, which the route prints one clause before the verb. Where it
+/// goes is the reader's own: any path that is not the doc's home.
+const WHERE_THE_FILE_WAS_MOVED_TO: &str = "kept.md";
+const THE_STAGED_FILE_MOVED_WITH_GIT_MV: Act = Act::RunNamed(Named {
+    name: 1,
+    on: &[Word::Span(0), Word::Named(WHERE_THE_FILE_WAS_MOVED_TO)],
+    within: None,
+    means: "*the file* at the doc's home, by the path the route prints one clause before \
+            the verb; and where it goes, which the route leaves to its reader: a path that \
+            is not the doc's home, at the repository's root",
+});
 const A_FILE_AT_THE_LOGS_HOME: &str = "an ordinary task minted the decisions log — a doc \
     whose home is one fixed path — and a file in no commit stands at that home, written \
     after the mint";
@@ -1776,12 +1796,12 @@ const A_FIXED_DOC_OVER_A_STAGED_FILE: [Case; 1] = [Case {
     cause: "an ordinary task minted the decisions log, and a file stands at its home that \
             was written and staged after the mint — in git's index, in no commit",
     state: decided![THE_LOG_CREATED, by_hand_at!(LOG), staged_at!(LOG)],
-    acts: &[Act::Run(1), Act::Run(2)],
+    acts: &[THE_STAGED_FILE_MOVED_WITH_GIT_MV, Act::Run(2)],
     holds: &[
         Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+        Check::RegularFile(Place::Repo(WHERE_THE_FILE_WAS_MOVED_TO)),
         Check::Absent(Place::Repo(TASK_AREA)),
     ],
-    doubt: Some(WHAT_GIT_MV_IS),
     ..FINALIZE
 }];
 
@@ -2477,12 +2497,12 @@ const A_SUB_TASKS_LOG_OVER_A_STAGED_FILE_IN_THE_MAIN_CHECKOUT: [Case; 1] = [Case
             created — in git's index, in no commit",
     state: a_sub_task_minted_the_log_after!([], by_hand_at!(LOG), staged_at!(LOG)),
     refusing: THE_MILESTONES_FINALIZE,
-    acts: &[Act::Run(1), Act::Run(3)],
+    acts: &[THE_STAGED_FILE_MOVED_WITH_GIT_MV, Act::Run(3)],
     holds: &[
         Check::Contains(Place::Repo(LOG), "# Decisions Log"),
+        Check::RegularFile(Place::Repo(WHERE_THE_FILE_WAS_MOVED_TO)),
         Check::RegularFile(Place::Repo("work.txt")),
     ],
-    doubt: Some(WHAT_GIT_MV_IS),
     ..FINALIZE
 }];
 const A_SUB_TASKS_LOG_OVER_A_COMMITTED_FILE: [Case; 1] = [Case {

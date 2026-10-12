@@ -12,6 +12,8 @@ What a case of the route catalog ([route_catalog.rs](../../../../../crates/cli/t
 
 **[2026-10-12: three more keys left this file.** The human ruled that a printed line which carries a placeholder for a value of the reader's own is followed with the placeholder filled ([DECISIONS.md](../../../../../DECISIONS.md) → *A printed line that carries a placeholder for a value of the reader's own is followed with the placeholder filled*). Every case under these three was red by the other reading alone — the line run as it stands, which no shell can split; each was followed again with a value a reader would choose in its state, named by the case with its reason, and holds: `r1-distinct-identity-routes-print-a-line-with-placeholders-for-the-readers-own-choice` (9 cases) · `r1-home-shape-destination-routes-print-a-line-with-a-placeholder-for-another-slug` (2) · `r1-rename-occupied-route-prints-a-line-with-a-placeholder-for-another-slug` (2). Their sections are gone with them; the value of each case, why that one, and what it came to on both binaries is [route-catalog-doubts.md](route-catalog-doubts.md) → 2. A record dated before this ruling was carried out that names one of the three names a key that stood then.**]**
 
+**[2026-10-12: four more keys left this file.** The human ruled that a span which names a command without its operand is no line to run as printed: it is followed with the operand the route speaks of, and where the route says *re-run* beside the name of the command the reader has just run, the act is that command run again ([DECISIONS.md](../../../../../DECISIONS.md) → *A span that names a command without its operand is followed with the operand the route speaks of*). Every case under these four was red by the other reading alone — the name run as printed; each was followed again under the rule, and holds: `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` (3 cases: `git add` on the changed path, then the reader's own finalize) · `r1-clobber-fixed-route-prints-git-mv-without-a-path` (2: `git mv` on the file at the doc's home, then the printed finalize) · `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place` (1: `git add` on the work, inside the sub-task's worktree) · `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids` (3, now 6 cases: each of the two verbs, on the milestone whose record it is). Their sections are gone with them; what each case was handed and what it came to on both binaries is [route-catalog-doubts.md](route-catalog-doubts.md) → 6 and 7. Where the product knows the operand such a route leaves out, that is a **wording note**, which blocks nothing: §11 lists them.**]**
+
 **A case's name says its cause and its way.** The cases of one cause are a group, and a name ends with the way the route was followed: `-removed`, `-pointed-at-a-committed-file`, `-pointed-at-a-new-file`, and each of those again with `-committed-and-` in front where the link was committed and the change was committed as the route's clause says.
 
 ## 1. Keyed — cases are listed under each
@@ -372,7 +374,8 @@ Every case starts from one state: somebody's repository — their `CLAUDE.md`, t
 
 ### `r1-uninstall-worktrees-route-prints-git-worktree-remove-without-a-path`
 
-- **Classification:** followed, the same refusal again. **Marked `doubt`.** **One case:** `uninstall-worktrees-root-unreadable-worktrees-removed-as-printed`.
+- **Classification:** followed, the same refusal again. **One case, not marked, inside a declared bound** (a permission bit changed by hand — it cannot block): `uninstall-worktrees-root-unreadable-worktrees-removed-as-printed`.
+- **The reading is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *A span that names a command without its operand is followed with the operand the route speaks of*): `git worktree remove`, printed with no operand, names a command and is no line to run; it is followed with the operand the route speaks of.
 - **State:** the install, and an empty `.jigc/worktrees` of mode 000.
 - **Refusing command:** `jigc uninstall` — exit 1, `uninstall.dirty-worktree`: *cannot check `.jigc/worktrees/` for uncommitted fan-out work*.
 - **Printed route:**
@@ -381,9 +384,8 @@ Every case starts from one state: somebody's repository — their `CLAUDE.md`, t
   route: make sure `.jigc/worktrees/` is readable — this failure is a `read_dir` of that directory, not a git fault — then re-run `jigc uninstall`; or remove the worktrees yourself (`git worktree list`, then `git worktree remove`) and re-run — or, once you have confirmed the fan-out worktrees hold nothing you need, `jigc uninstall --force` deletes them with the install
   ```
 
-- **What was done:** the route's second way — `git worktree list`, exit 0, listing the main checkout alone; `git worktree remove`, exit 129, git's usage line; `jigc uninstall` again.
-- **What went wrong:** the second line is no command as printed, and no worktree removal reaches the cause the route's own first clause names — the directory cannot be listed. The re-run refuses the same way.
-- **The two readings:** (a) two command lines to run as printed — followed here; (b) the names of two git verbs, the second to be run for each path the first lists — then the route prints no line, and in this state there is nothing for it to be run on.
+- **What was done:** the route's second way — `git worktree list`, a line that is complete, as printed: exit 0, and it names the main checkout alone. **The operand the route speaks of for `git worktree remove` is a worktree that list names, and there is none**: the case hands the name no operand, and a name with no operand is no act. Then the printed `jigc uninstall`.
+- **What went wrong:** the re-run refuses the same way. No worktree removal reaches the cause the route's own first clause names — the directory cannot be listed — and in this state the route's second way has nothing to be run on.
 - **Beside it, and green:** the route's first way, `uninstall-worktrees-root-unreadable-made-readable`.
 
 ### Under the canary's `r1-p3-uninstall-writability-route-not-driven` — the seven steps that remove
@@ -455,21 +457,6 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 *Added 2026-10-12, with the cases of [route_catalog/task_finalize.rs](../../../../../crates/cli/tests/route_catalog/task_finalize.rs): the sites of the family taken in by the human's ruling of 2026-10-11 — fourteen on that day, and its last two, the clobber guard and the empty commit, with the commit after ([DECISIONS.md](../../../../../DECISIONS.md) → *Which families the route catalog takes in*). Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task whose `commit` doc is complete, made by the binary under test.
 
-### `r1-finalize-nothing-staged-route-prints-finalize-without-its-id`
-
-- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `finalize-nothing-staged-a-tracked-file-modified-added-and-finalized-as-printed`, `…-a-new-file-…`, `…-a-tracked-file-deleted-…`.
-- **State:** the working tree holds a change — a tracked file modified, a file git does not track, a tracked file deleted — and nothing is staged.
-- **Refusing command:** `jigc task finalize write-a-note` — exit 3, `finalize.nothing-staged`.
-- **Printed route:**
-
-  ```text
-  route: `git add` your changes, then re-run `jigc task finalize`
-  ```
-
-- **What was done:** the two printed lines, as printed: `git add` — exit 0, *Nothing specified, nothing added* — and `jigc task finalize`.
-- **What went wrong:** exit 2 — *error: the following required arguments were not provided: `<ID>`*. The command requires the task's id and the route prints the command without it. The refusal one step on, `finalize.empty-commit`, prints `jigc task finalize write-a-note`.
-- **The doubt:** whether the second span is a line to run or the name of the command the reader has just run. Driven by hand under the second reading — the change added by its path, the finalize run with its id — it exits 0 with one commit.
-
 ### `r1-finalize-stage-failed-route-names-a-lock-and-three-paths-and-the-docs-home-is-ignored`
 
 - **Classification:** followed, the same refusal again. **One case:** `finalize-stage-failed-the-docs-home-ignored-re-run-as-printed`.
@@ -486,7 +473,8 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 ### `r1-finalize-amend-staged-doc-route-says-the-start-line-mints-and-it-presents-the-workflows`
 
-- **Classification:** followed, another failure. **One case, marked `doubt`:** `finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed`.
+- **Classification:** followed, a cited line does not say what the route promised — the word for a line that does not keep what its route says of it. **One case, not marked:** `finalize-amend-staged-doc-an-edit-refused-and-the-front-door-run-as-printed`.
+- **The reading is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *A line the route says mints is held to the route's words*): the intent is the reader's own and is filled by the case, and the filled line must then have minted a task. The case is a finding of the product. Until that day it was marked `doubt`, and red as *another failure* for a check of the task's directory.
 - **State:** a committed decisions log, and an amend task minted over the commit that landed it.
 - **Refusing command:** `jigc doc add-item decisions-log:decisions-log#entries --task fix-the-message --title "A decision"` — exit 1, `finalize.amend-staged-doc`.
 - **Printed route:**
@@ -495,9 +483,9 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
   route: `jigc start "<intent>"` mints an ordinary task, whose finalize commits the promoted doc; this amend task keeps its own job, repairing `HEAD`'s message
   ```
 
-- **What was done:** the printed line, with the placeholder's own bytes as the intent — the refusal lists no value for it.
-- **What went wrong:** exit 0, and no task was minted: under the shipped default the front door presents the workflows to pick one from. The route says the line *mints an ordinary task*. The linked-worktree refusal's route says of the same line *the front door there, which mints a task or presents the workflows to pick one from*.
-- **The doubt:** whether *mints* is said of the printed line or of the door the reader then goes through.
+- **What was done:** the printed line with the intent the case names in the placeholder's place, one word — `jigc start 'record a decision'` — and its own output asked for what the product prints when a task is minted: the line `task minted: record-a-decision`, the id slugged from the intent.
+- **What went wrong:** exit 0, and the output says no such thing: under the shipped default the front door presents the workflows to pick one from — *These are the selectable work-workflows …* — and mints nothing. With a workflow named, the same door prints `task minted: …` on its first line. The linked-worktree refusal's route says of the same line *the front door there, which mints a task or presents the workflows to pick one from*.
+- **What would make the route true** — an observation, and no fix: the route printing the line that does mint — the front door with a workflow named — or not saying *mints* of the line it prints.
 
 ### `r1-finalize-provenance-io-route-says-disk-or-permissions-over-a-manifest-of-another-kind`
 
@@ -578,28 +566,11 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 - **What was done:** each printed line of a way, as printed. No shell splits a line that holds a bare word in angle brackets; and the task arm's last line, `jigc task finalize`, exits 2 — *the following required arguments were not provided: `<ID>`*.
 - **What went wrong:** every line these two routes print for a way out holds a placeholder the refusal lists no value for — the task's id, the doctype, the slug — and the one line without a placeholder is the finalize without its id. Every other arm of the same function prints the id and the address concrete (`jigc doc rename adr:use-tabs --to "<title>" --task pick-tabs`, `jigc task finalize pick-tabs`).
-- **What was the doubt, until the ruling:** what the pilot's first question left open — a placeholder is the reader's to fill, and the contract does not say from where when the refusal lists no value. And, for the task arm's last line, the gate's first question: a product command printed without the id it requires (`r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is that question at another site).
+- **What was the doubt, until the ruling:** what the pilot's first question left open — a placeholder is the reader's to fill, and the contract does not say from where when the refusal lists no value. And, for the task arm's last line, `jigc task finalize`, the gate's first question — a product command printed without the id it requires — which the human ruled the same day: the span names the command the reader has just run, and is no line. No case of this arm reaches it; that the product knows the id there and leaves it out is a wording note (§11).
 - **Driven by hand, the lines filled with the reader's own values — the task arm's three ways:**
   - *re-create it with an explicit `--slug`*: `jigc doc create adr --title "Use tabs" --slug other --task pick-tabs` exits 1 under `write.identity-change` — *this task's `decision` is already `adr:use-tabs` … a second document beside the first, not a correction of it* — whose own route prints `jigc doc rename adr:use-tabs --to 'Use tabs' --slug other --task pick-tabs`. The way the route prints a line for is refused.
   - *retitle this task's doc*, for which no line is printed: `jigc doc rename adr:use-tabs --to "Use spaces" --task pick-tabs`, then `jigc task finalize pick-tabs` — exit 0, one commit.
   - *bring it under management with `jigc migrate … --as adr` in its own task*: exit 1 under `migrate.source-untracked` — the file is in no index; that refusal's route says to `git add` it. Staged, the line mints a migration task; `jigc task finalize pick-tabs` is then refused as before. Not driven further.
-
-### `r1-clobber-fixed-route-prints-git-mv-without-a-path`
-
-- **Classification:** followed, the same refusal again. **Two cases, both marked `doubt`:** `clobber-fixed-file-staged-at-the-logs-home-moved-with-git-mv-as-printed`, `clobber-fixed-sub-task-file-staged-at-the-logs-home-moved-with-git-mv-as-printed`.
-- **State:** a task — or a milestone's sub-task — minted the decisions log, whose home is the one path `docs/decisions-log.md`; a file was then written there and staged.
-- **Refusing command:** `jigc task finalize write-a-note` · `jigc milestone finalize fan-out` — exit 3, `finalize.promote-clobber`.
-- **Printed route** (the task's door, its first way):
-
-  ```text
-  route: nothing was committed and this task's staged docs are intact. A doc of this doctype has one fixed home, so it cannot be given another id. Either move the file out of the doc's home, so that `docs/decisions-log.md` is free — with `git mv` if git has it staged, since the index entry has to move with it — and re-run `jigc task finalize write-a-note`, which lands this task's doc there; or keep the file and drop this task (…)
-  ```
-
-- **What was done:** `git mv`, as printed — exit 129, git's usage; then the printed finalize.
-- **What went wrong:** the same refusal: the file is where it was. The route says which verb moves a staged file and prints neither the path, which it prints one clause earlier, nor a destination.
-- **The doubt:** the pilot's sixth question, over another verb — a `git` span with no operand is a line to run, or the name of a verb. The surface contract says such a span *names a command rather than a file*.
-- **Driven by hand under the second reading:** `git mv docs/decisions-log.md kept.md`, then the finalize — exit 0; the commit holds the log **and `kept.md`**, the moved file, which was staged. Moved by a plain file move instead, the index entry stays behind and the finalize is refused under the same code by the held arm.
-- **Beside it, and green:** the same route over a file in no index — moved out by the runner, the finalize lands (`clobber-fixed-file-at-the-logs-home-moved-out-and-finalized-as-printed`, and the sub-task's).
 
 ### `r1-clobber-staged-by-two-worktrees-rename-way-draws-code-collision`
 
@@ -674,21 +645,6 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What went wrong:** exit 1 under `milestone.record-read-back` — *could not re-derive milestone state from its record: required section heading `## tasks` is missing*. There is no milestone to continue: the refusal reads the file's presence, the route its absence of a settled status. The source says the status is *decoration on the block*.
 - **Beside it, and green:** the same line over a record that is one — with its workbench and without (`record-exists-live-…`, two cases).
 
-### `r1-zero-contribution-route-prints-git-add-with-no-path-and-no-place`
-
-- **Classification:** followed, the same refusal again. **One case, marked `doubt`:** `zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed`.
-- **State:** the sub-task's worktree is provisioned and holds its work, a file written and not staged.
-- **Refusing command:** `jigc milestone finalize fan-out` — exit 3, `milestone.zero-contribution`.
-- **Printed route:**
-
-  ```text
-  route: `jigc milestone provision fan-out` gives every sub-task a working area (a fresh clone has none; an existing one is reused); execute the sub-tasks, `git add` their work inside their worktrees, then re-run `jigc milestone finalize fan-out` — or settle the milestone as abandoned with `jigc milestone discard fan-out`
-  ```
-
-- **What was done:** the three printed lines of the first way, where the case stands: the provision (exit 0, the worktree reused), `git add` (exit 0, *Nothing specified, nothing added*), the finalize.
-- **What went wrong:** the same refusal: nothing was staged. The route says where the `git add` belongs — *inside their worktrees* — and prints neither a path nor a line that goes there.
-- **The doubt:** the pilot's sixth question, over another verb — a `git` span with no operand is a line to run, or the name of a verb.
-
 ### `r1-zero-contribution-route-abandon-line-is-refused-by-the-discard-doors-guards`
 
 - **Classification:** followed, another failure. **Three cases:** `zero-contribution-work-unstaged-milestone-discarded-as-printed`, `zero-contribution-only-a-commit-doc-milestone-discarded-as-printed`, `zero-contribution-no-record-doctype-only-a-commit-doc-milestone-discarded-as-printed`.
@@ -742,23 +698,7 @@ Each was driven once more for this section, on this tree's binary.
 
 ## 7. `doc write` — the sites the fix pass touched
 
-*Added 2026-10-12, with the cases of [route_catalog/doc_write.rs](../../../../../crates/cli/tests/route_catalog/doc_write.rs): the three sites of the family taken in by the human's ruling of 2026-10-11, 18 cases. Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task, made by the binary under test.
-
-### `r1-record-retitle-route-names-two-milestone-verbs-without-their-ids`
-
-- **Classification:** followed, another failure. **Three cases, all marked `doubt`:** `record-retitle-from-the-sub-task-…`, `record-retitle-from-an-ordinary-task-…`, `record-retitle-an-item-the-record-does-not-hold-…`, each ending `-the-milestone-verbs-run-as-printed`.
-- **State:** a milestone `fan-out` with the sub-task `do-a-thing`; the retitle is asked by that sub-task, by an ordinary task beside it, and of an item the record does not hold.
-- **Refusing command:** `jigc doc retitle-item milestone-record:fan-out#tasks/do-a-thing --title "Another name" --task <id>` — exit 1, `write.machine-maintained`: *item `tasks/do-a-thing` lives in a milestone-record — the record is machine-maintained and an item's heading IS the sub-task's work-unit id*.
-- **Printed route:**
-
-  ```text
-  route: leave the record to the milestone verbs — `jigc milestone add-task` appends sub-tasks and `jigc milestone finalize` advances their status; no manual retitle applies
-  ```
-
-- **What was done:** the two printed lines, as printed.
-- **What went wrong:** each exits 2 — *the following required arguments were not provided: `<MILESTONE_ID>`* — the argument parser's own refusal. The refusal's `at:` line carries the milestone's id; the two spans do not.
-- **The doubt:** the gate's first question — a product command printed without the id it requires is a line to run, or the name of a command. Under the second reading the route names no act of the reader's, and there is nothing to follow: the refused retitle has no way out, which is what the route says.
-- *Why no key that stands:* `r1-finalize-nothing-staged-route-prints-finalize-without-its-id` is the same question over another function's route, which does tell its reader to run the command again; a neighbour.
+*Added 2026-10-12, with the cases of [route_catalog/doc_write.rs](../../../../../crates/cli/tests/route_catalog/doc_write.rs): the three sites of the family taken in by the human's ruling of 2026-10-11, 18 cases. Every case here stands at a site the fix pass touched; what the previous release's binary does with each is not said in this file.* Each state starts from `jigc setup` and an open task, made by the binary under test. **[2026-10-12: no key of this family stands any more** — both left with the rulings named at the head of this file, and every case of the family holds.**]**
 
 ## 8. `config` and `start` — the sites the fix pass touched
 
@@ -774,9 +714,9 @@ Each was driven for this section, on this tree's binary.
 
 ### `r1-repoint-over-a-stale-record-key-says-two-managed-docs-claim-the-home`
 
-*Added with the commit after this section's: a cause that commit gave a reason — *a managed doc stands at the new home* — and that was then found constructible.*
+*Added with the commit after this section's: a cause that commit gave a reason — *a managed doc stands at the new home* — and that was then found constructible. Rewritten 2026-10-12, with the ruling on a product command printed without its id carried out.*
 
-- **Classification:** followed, another failure. **Two cases, both marked `doubt`:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`.
+- **Classification:** followed, the same refusal again. **Two cases, not marked:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`.
 - **State:** the committed decisions log; `jigc config set placement-root handbook`, committed; then the re-point undone by hand — `git mv handbook/decisions-log.md docs/decisions-log.md`, the project layer's manifest removed, both committed. The record of what jigc manages still holds the key `handbook/decisions-log.md`. A file somebody wrote, or a symbolic link that leads nowhere, stands at that path.
 - **Refusing command:** `jigc config set placement-root handbook` — exit 1, `config.repoint-failed`, whose message carries the relocation's refusal whole: *blocking · write.already-present — the destination `handbook/decisions-log.md` is occupied by a managed instance — a managed move-INTO the destination is deferred*.
 - **Printed route** (the first of the finding's two `route:` lines, the relocation's):
@@ -785,10 +725,12 @@ Each was driven for this section, on this tree's binary.
   route: two managed docs claim `handbook/decisions-log.md` — decide which one keeps the home, then `jigc rename` the other onto a free identity or `jigc unmanage` it; `jigc doc list` names what is managed there — the re-point was undone
   ```
 
-- **What was done:** `jigc doc list`, as printed (exit 0); `jigc rename`, as printed.
-- **What went wrong:** `jigc rename` exits 2 — *the following required arguments were not provided* — the classification, which rests on the reading below. **And what the refusal says of the state rests on none**: nothing managed stands at the home. `jigc doc list` names one doc, `decisions-log:decisions-log` at `docs/decisions-log.md`; what stands at `handbook/decisions-log.md` is a file nobody manages, or a link to nothing, over a key the record kept. *Two managed docs claim* it, and *occupied by a managed instance*, are both said of that.
-- **The doubt:** the gate's first question — a product command printed without its id.
-- **Driven by hand:** with the entry moved out of `handbook/`, the same `jigc config set placement-root handbook` exits 0 and the doc lands. And `jigc unmanage decisions-log:decisions-log` in that state prints *no-op: … is not managed (nothing to drop)* beside a `jigc doc list` that says `managed`.
+- **What the refusal says of the state rests on no reading, and is what these two cases are red for**: nothing managed stands at the home. `jigc doc list`, which the route cites, names one doc, `decisions-log:decisions-log` at `docs/decisions-log.md`; what stands at `handbook/decisions-log.md` is a file nobody manages, or a link to nothing, over a key the record kept. *Two managed docs claim* it, and *occupied by a managed instance*, are both said of that.
+- **The reading that was doubted is ruled — the human's, 2026-10-12** ([DECISIONS.md](../../../../../DECISIONS.md) → *A span that names a command without its operand is followed with the operand the route speaks of*): `jigc rename` and `jigc unmanage`, printed without an operand, name a command; each is followed with the operand the route speaks of, the case choosing *the other* as a reader would. **What following them showed:**
+  - ***`jigc rename` the other onto a free identity*** — the two cases of this key. *The other* a reader can find is the one doc `jigc doc list` names: `jigc rename decisions-log:decisions-log --to 'Decisions Log Two'` — **exit 1, `write.identity-change`**: *this doctype's identity is fixed to its type … only a retitle is supported*. The one managed doc there is cannot be renamed onto a free identity at all. The refusing command, run again, refuses as before: *the same refusal again*.
+  - ***or `jigc unmanage` it*** — two more cases, **green**, ending `-and-the-home-unmanaged`. With the path the route itself prints as the operand — `jigc unmanage handbook/decisions-log.md` — the command exits 0 (*dropped its file-state baseline; the file is left on disk*), and the refusing command, run again, goes through: the log moves to `handbook/decisions-log.md`, and what stood there is parked at `.jigc/displaced/decisions-log.md`, the link to nothing included. So the route's second verb is a way out — for a reader who takes *it* to be the entry at the home, which is no managed doc.
+  - **And by hand, the third thing a reader might take *the other* for**: `jigc unmanage docs/decisions-log.md`, the doc the list names — exit 0, *no-op: … is not managed (nothing to drop)*, beside a `jigc doc list` that says `managed`; the re-point then refuses as before.
+- **Driven by hand, earlier:** with the entry moved out of `handbook/`, the same `jigc config set placement-root handbook` exits 0 and the doc lands.
 - **The link to nothing is a cause the fix pass brought**: the previous release's relocation asked whether the destination exists by following the link, saw nothing and moved on to `git mv`.
 
 ## 9. `doc read` — the store's refusal over a home that is no regular file
@@ -837,3 +779,19 @@ Each was driven for this section, on this tree's binary.
 ### Seen by hand, and no case
 
 - **`store.not-found` at `jigc rename` over a committed doc that is gone from the working tree routes at the id.** `rm docs/decisions/use-tabs.md; jigc rename adr:use-tabs --to "Use spaces"`: exit 1, *no managed doc `adr:use-tabs` to rename*, route *`jigc describe` lists the doctype surface — check the id you typed against it*. The id is right; the doc is in `HEAD`. The case of this state runs the cited `jigc describe`, which exits 0.
+
+## 11. Wording notes — a command printed without an operand the product knows
+
+*Added 2026-10-12, with the ruling on a product command printed without its id carried out. **These are notes, and block nothing**: the human ruled that a span which names a command without its operand is no line to run, and — beside it — that where the product knows the id and prints the command without it, that is logged as a wording note. A row is a route, the name it prints, and whether the product knows the operand at the site.*
+
+| the route, at | the name it prints | the operand | does the product know it at the site? |
+|---|---|---|---|
+| `finalize.nothing-staged` — three cases | `jigc task finalize` | the task's id | **yes**: the finding's own `at:` line is `task:<id>`, and the neighbouring refusal, `finalize.empty-commit`, prints `jigc task finalize <id>` whole |
+| the same route | `git add` | the changed paths | the refusal is that the tree has changes and the index none of them; it lists the task and no path |
+| `write.machine-maintained` — the record's retitle, three causes | `jigc milestone add-task` · `jigc milestone finalize` | the milestone's id | **yes**: the refused address is `milestone-record:<id>#…`, printed on the finding's `at:` line. The intent `add-task` also takes is the reader's own |
+| `config.repoint-failed`, carrying the relocation's refusal — two causes | `jigc unmanage` | the path of the home in dispute | **yes**: the same route prints that path one clause earlier, and the command with it goes through |
+| the same route | `jigc rename` | *the other* doc, and a free identity | no: which doc is the reader's to decide, and the identity the reader's to choose — and the one managed doc there is has an identity that cannot move |
+| `finalize.promote-clobber`, the task arm — two cases of another key | `jigc task finalize` | the task's id | **yes**: it is the refused command's own argument; every other arm of the function prints it |
+| `finalize.promote-clobber`, the fixed arm — two cases | `git mv` | the file at the doc's home; a destination | the path: **yes**, printed one clause before the verb. The destination is the reader's own |
+| `milestone.zero-contribution` — one case | `git add` | the sub-task's work, inside its worktree | the worktree: **yes** — `.jigc/worktrees/<sub-task>`, which the provision the same route prints makes. The work is the sub-task's own |
+| `uninstall.dirty-worktree`, where the worktrees' directory cannot be listed — one case | `git worktree remove` | a worktree | no: it could not list them, which is what the refusal is about |

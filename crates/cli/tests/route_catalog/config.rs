@@ -30,9 +30,7 @@
 //! itself put in the link's place, committed, and the refused command again.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{
-    Act, Case, Check, Cited, Operand, Place, Promise, Says, Step,
-};
+use crate::support::route_case::{Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word};
 
 // The sites, as the committed list of refusal sites names them.
 const REPOINT_FAILED: &str = "crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1";
@@ -554,42 +552,83 @@ macro_rules! a_stale_key_at_the_new_home {
         ]
     };
 }
-/// The two readings of a product command a route names without the operands it requires.
-const WHICH_VERBS: &str = "*decide which one keeps the home, then `jigc rename` the other onto \
-    a free identity or `jigc unmanage` it; `jigc doc list` names what is managed there*: (a) \
-    the backticked spans are command lines to run as printed, like every `jigc` line a route \
-    prints — `jigc rename` and `jigc unmanage` have no id, which both require; (b) they name \
-    two verbs, to be run on the doc the reader decides for — then the route prints no line \
-    for either. The case follows (a): the cited list, then the rename. The surface contract \
-    says of a `git` span with no operand that it *names a command rather than a file* (the \
-    printed-path fence), and of a `jigc` span nothing of the kind; it is the gate's first \
-    question — a product command printed without its id";
+/// **The relocation's route, followed by each verb it names** — *two managed docs claim
+/// `handbook/decisions-log.md` — decide which one keeps the home, then `jigc rename` the
+/// other onto a free identity or `jigc unmanage` it; `jigc doc list` names what is managed
+/// there*. `jigc rename` and `jigc unmanage` name a command (the human's rulings of
+/// 2026-10-12, `DECISIONS.md` → *A span that names a command without its operand is followed with the operand the route speaks of*); `jigc doc list` is a line, and is run as printed. A case a verb, the reader
+/// choosing *the other* as the route lets them: the one doc `jigc doc list` names, for the
+/// rename onto a free identity — and, for the unmanage, the entry at the home the route
+/// prints, which is what else claims it. Each is then held to the outcome: the refusing
+/// command, run again.
 macro_rules! over_a_stale_key {
     ($name:literal, $cause:literal, $($plant:expr),+ $(,)?) => {
-        [Case {
-            name: concat!(
-                "repoint-failed-a-stale-key-and-",
-                $name,
-                "-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed"
-            ),
-            site: REPOINT_FAILED,
-            cause: $cause,
-            state: a_stale_key_at_the_new_home![$($plant,)+],
-            refusing: PLACEMENT_ROOT,
-            acts: &[Act::Run(3), Act::Run(1)],
-            holds: THE_LOG_AT_ITS_NEW_HOME,
-            doubt: Some(WHICH_VERBS),
-            ..C
-        }]
+        [
+            Case {
+                name: concat!(
+                    "repoint-failed-a-stale-key-and-",
+                    $name,
+                    "-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed"
+                ),
+                site: REPOINT_FAILED,
+                cause: $cause,
+                state: a_stale_key_at_the_new_home![$($plant,)+],
+                refusing: PLACEMENT_ROOT,
+                acts: &[
+                    Act::Run(3),
+                    Act::RunNamed(Named {
+                        name: 1,
+                        on: &[
+                            Word::Named("decisions-log:decisions-log"),
+                            Word::Named("--to"),
+                            Word::Named("Decisions Log Two"),
+                        ],
+                        within: None,
+                        means: "*the other*, renamed *onto a free identity*: the one doc \
+                                `jigc doc list` names as managed, by the id that list \
+                                prints for it — the refusal lists a path and no doc — and \
+                                a title of the reader's own that nothing answers to",
+                    }),
+                    Act::Rerun,
+                ],
+                holds: THE_LOG_AT_ITS_NEW_HOME,
+                ..C
+            },
+            Case {
+                name: concat!(
+                    "repoint-failed-a-stale-key-and-",
+                    $name,
+                    "-at-the-new-home-what-is-managed-listed-and-the-home-unmanaged"
+                ),
+                site: REPOINT_FAILED,
+                cause: $cause,
+                state: a_stale_key_at_the_new_home![$($plant,)+],
+                refusing: PLACEMENT_ROOT,
+                acts: &[
+                    Act::Run(3),
+                    Act::RunNamed(Named {
+                        name: 2,
+                        on: &[Word::Span(0)],
+                        within: None,
+                        means: "*the other*, unmanaged: the doc `jigc doc list` names keeps \
+                                the home it is being moved to, and what else claims that \
+                                home is the entry at the path the route prints",
+                    }),
+                    Act::Rerun,
+                ],
+                holds: THE_LOG_AT_ITS_NEW_HOME,
+                ..C
+            },
+        ]
     };
 }
-const A_FILE_AT_A_HOME_THE_RECORD_HOLDS: [Case; 1] = over_a_stale_key!(
+const A_FILE_AT_A_HOME_THE_RECORD_HOLDS: [Case; 2] = over_a_stale_key!(
     "a-file",
     "`placement-root`: the record holds a key for the new home, where a file somebody wrote \
      stands — the relocation reads it as a managed doc's",
     Step::File(Place::Repo(THE_LOG_MOVED), "mine\n"),
 );
-const A_LINK_AT_A_HOME_THE_RECORD_HOLDS: [Case; 1] = over_a_stale_key!(
+const A_LINK_AT_A_HOME_THE_RECORD_HOLDS: [Case; 2] = over_a_stale_key!(
     "a-link-to-nothing",
     "`placement-root`: the record holds a key for the new home, where a symbolic link that \
      leads nowhere stands — the relocation reads it as a managed doc's",
