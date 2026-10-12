@@ -2,6 +2,59 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-12 — A file of a held command is under its name whole or not at all, and a hold's two stamps say how long it was held: two arms that went red in a full gate on a loaded machine and passed alone, each traced to the tool and not to the arm (a finding two builders reported; the fixer's choices inside it)
+
+**What was reported.** Two arms of the tooling suites went red in a full gate while two lanes' gates ran side by side, and each passed alone: `dev_stabilize_step::what_the_tool_leaves_running_ends_when_the_command_does`, on *EOF while parsing a value*, and `dev_stabilize_probe::a_hold_ends_only_after_its_seconds_is_started_once_and_is_answered_within_a_slice`, on a hold of two seconds whose own stamps were 1.99995 s apart. A run of the workflow is at least as loaded as that machine was, so what the load showed of the tools is what a run meets. **In both the tool was wrong, and the arm read what it should.**
+
+**The first: a kept file was created under its name and written afterwards.** [`dev/stabilize-step`](dev/stabilize-step) wrote each file it keeps of a held command through one helper, `kept_once`, which opened the file exclusively under its name and then wrote it — so between the two the file was there and empty. The tool's own acts never met that: a job's record is read under the lock of `<scratch>/hold`, how the command ended once its supervisor is gone, and the verdict under the job's lock. Whoever holds no lock did — the arm reads `job.json` the moment the file is there — and so did every act **after a kill**: a wait killed while it kept the verdict left `verdict.json` there and empty, and every later wait refused the job (`missing`: *written by something else*), a gate of ten minutes done and green and never judged.
+
+- *Seen, on the unchanged tool:* a reader that opens `job.json` in a tight loop while `hold-start` runs read it empty in **14 of 60** starts; against the fix, 0 of 200. No pause was planted.
+- *The fix:* what is kept goes to a name of the writer's own beside it, `<file>.w<n>` — the first that is free, created exclusively and never followed — and only when every byte is in that file and it is closed is it given its name, by a link, which fails where the name is taken. A writer that is killed leaves nothing under the name, and the next wait reads the output and keeps the verdict.
+
+**The class, counted: every write site of a file a held command leaves, in both tools — ten, five of them not whole under their name; the finding named one.**
+
+| File | Written | Before | Now |
+|---|---|---|---|
+| `hold/<name>/job.json` | `hold-start`, through `kept_once` | created, then written | converted |
+| `hold/<name>/exit.json` | the supervisor, through `kept_once` | created, then written | converted |
+| `hold/<name>/verdict.json` | the first wait, through `kept_once` | created, then written | converted |
+| `<to>`, the binary of a build | `build`, by a line of its own | created read-only under its name, then written | converted: it goes through `kept_once` |
+| `probe/hold/<name>.json` of [`dev/stabilize-probe`](dev/stabilize-probe) | `hold`, which takes its name by it | created, then written — and a `held` or a `verdict` that read it empty ended on a traceback, with no line | converted (`taken_once`) |
+| `probe/hold/<name>.done` | `hold` | beside its place, then moved into it | whole already |
+| `hold/<name>/lock` | `hold-start` | empty by design | out: there is nothing to be whole |
+| `hold/<name>/output`, `probe/hold/<name>.out` | the command | a stream | out: believed only once the command's end is on record |
+| `hold/<name>/work/` | a build: the archive, the tree, cargo's target and log | in place | out: read by the build that writes them |
+
+**The second: a hold waited on one clock and stamped itself with another.** The probe's hold counts its seconds on the monotonic clock, and printed `started` and `ended` as two readings of the wall clock. That clock is set and slewed while a hold runs, so the two were no duration.
+
+- *Seen:* the machine's time daemon logged **36 corrections in the 24 hours before, 20 of them backward, the largest 48.8 ms**. Two were watched as they were applied, with the unchanged tool holding two seconds in waves of ten and of twenty holds, one wave after another: +14.4 ms, slewed in over some forty seconds in which the wall clock ran up to **808 parts in a million** against the monotonic one — 1.6 ms over a hold of two seconds — and +50.0 ms, set at once. Between corrections the wall clock ran a few parts in a million behind. Over 18,780 such holds the two stamps were as little as 179 µs over the seconds, and in 347 of 570 quiet waves of twenty at least one hold was under 1.6 ms over. So a backward correction of the size that was watched forward is the red that was reported, within seconds.
+- *Not seen:* the red itself on the unchanged tool. Both corrections that fell in the watch were forward ones — they stamp a hold too long, which the arm does not ask — and a correction cannot be asked for. Its stand-in is the wall clock set back an hour at the hold's first sleep, under which the unchanged tool stamps a hold of one second as −3598.99 s long.
+- *The fix:* `started` is the wall clock's reading when the hold began, and `ended` is `started` plus the time the hold ran on the monotonic clock, counted in whole nanoseconds by the reading that ended the wait. So `ended − started`, and the `held_for` printed from the two, is how long the hold was held, and is never under its seconds. The line's fields are the ones it had.
+
+**Chosen where nothing was ruled — and what was rejected.**
+
+- **The writer's own name stays beside the file.** The tool removes and renames nothing, which its suite holds by scanning the source for `os.remove`, `os.unlink`, `os.rename` and `os.replace`; a link needs none of them. So a job's directory holds `job.json` and `job.json.w0`, one file under two names. *Rejected:* a rename into place — it replaces whatever is there, where the first writer must win, and the scan forbids it; removing the writer's own name after the link — one exception to a ban that has none; a subdirectory for those names — one more directory to make, resolve and document. **This is the human's to reverse** if a tidy directory is worth an exception to the ban.
+- **The binary of a build is in the class**, although no reader meets it half written today: every reader is handed its path by a verdict that is written after it. It is the one file of a job that is executed, and it now goes through the same helper, which the source scan lists (`THROUGH`). `<to>.w<n>` lies beside it.
+- **`ended` is no longer the wall clock's reading at the end.** *Rejected:* waiting until both clocks say the seconds are over — a wall clock set back an hour holds every hold for an hour; a field for the monotonic duration — the line would change its shape; a margin in the arm — a hold that ends early would pass.
+- **The arm compares the stamps as the doubles the tool printed.** `serde_json` is built here without `float_roundtrip` and may read a number one unit in the last place off — a quarter of a microsecond at a wall clock's reading — so the arm parses the two with the standard library, and the comparison is `>=` with no slack.
+- **Nothing is synced to the disk.** Whole means whole for whoever reads it while the machine runs.
+- **How the window is driven without a clock.** A stand-in runs the unmodified tool and stops it inside the write of a named file — after its bytes were handed over, before it is closed — until the test lets go, or kills it there (`WRITER`, in the step suite; the probe suite uses it too). It is the kill harness of the record act (`KILLER`), stopped where that one counts.
+
+**Held by** `a_file_of_a_held_command_is_under_its_name_whole_or_not_at_all` (the three files and the binary stopped inside their write; a wait killed inside the verdict's, and the next wait judging the job; a link planted where a verdict would be written first), `the_file_that_takes_a_holds_name_is_there_whole_or_not_at_all` and `a_holds_stamps_say_how_long_it_was_held_whatever_the_wall_clock_did` (the wall clock set back, set ahead, and a sleep that wakes half a second late). All three were red against the parent commit's tools, for these reasons. Eleven mutants were applied one at a time; ten are red in the arm that names their decision. The eleventh — a writer that opens the file twice and names it between the two — survives: the stand-in stops at the first close.
+
+**Carried.** `dev_stabilize_step`'s source scan: the row of `OPENS` for the helper's own line, the row of the binary's line gone, a row of `THROUGH` for the binary, and `os.link(` held to standing once, in `kept_once`, with its planted offender. The arm that was reported red is unchanged.
+
+**Beside them, looked at once and left.**
+
+- In the reported step arm, three holds of 3, 3 and 5 seconds are each read off the process list two or three times while they run. A machine on which those listings take longer than the hold reddens the arm. The seconds are the arm's, not the tool's promise.
+- In the reported probe arm: a detached hold of four seconds must answer `started` inside four seconds, and be `running` after a slice of one. Both are margins of the arm.
+- `a_wait_answers_within_its_slice` holds a wait of two seconds to under sixty, and the stand-in's own end to fifteen: generous margins, and margins.
+- Three more files of the step tool are written in place, and are no file of a held command: `<scratch>/state/<tag>.json`, a commit step's kept answer, and the line a digest names — the last is named by its content's hash and truncated when the same line is written again. The first and the last are read by whoever is handed the path, after the act printed its line; the second by the commit step asked again, which takes a file it cannot read as no answer. Not converted.
+
+**What the next task owes.** Nothing by this entry. [stabilization-workflow.md](implementation/stabilization-workflow.md) names a job's files where it describes a held command and does not say that each is whole under its name; its next edit may.
+
+**Not established.** That the reported second red was a backward slew: it is what the daemon's log and the watched correction make of it, and no run showed it on the unchanged tool. That a kept file is whole after a power loss. That a scratch root on a file system without hard links can hold a job — the link fails there, and the act with it. And the two stamps of a hold that runs across the second 2³¹ of the epoch, in 2038, where the sum of a wall clock's reading and a whole number of seconds stops being exact.
+
 ## 2026-10-12 — The harness: the new path's triage — a run with a queue has one triage, handed every source under a number, a red result under the key its row is filed with, its entries one file the record script holds; and what of that path is built ends there, at a record that is not built yet (the plan's `T5a`; the builder's choices inside it, one of them a fork the brief did not see)
 
 **What.** [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) takes another path from a `test` stage's triage on where the run has a queue ([plan.md](completions/artifacts/M55/stabilization-build/reshape/plan.md) §4, `T5a`, the first task of the migration order's Phase B; its review's `B1`; the harness half of `K2`; the arithmetic half of the row `wf-triage-reads-harness`). The script's header holds it as one paragraph — *A RUN WITH A QUEUE TAKES ANOTHER PATH FROM ITS TRIAGE ON*. In one place:

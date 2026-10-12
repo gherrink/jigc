@@ -646,7 +646,14 @@
 # What a job leaves, all under DIR/hold/S/: `job.json` (its kind, what was asked, the
 # supervisor's pid), `lock`, `output`, `exit.json` (how the command ended — written by
 # the supervisor and by nobody else), `verdict.json`, and `work/`, the command's own
-# directory. EVERY PATH THE TOOL WRITES IS RESOLVED: DIR by its real path — which lies
+# directory. A FILE THE TOOL KEEPS IS UNDER ITS NAME WHOLE OR NOT AT ALL — the job's
+# record, how the command ended, the verdict, and the binary a build leaves: each is
+# written under a name of its writer's own beside it (`<file>.w<n>`) and given its name
+# by a link once every byte is in it, so whoever finds one finds all of it, at whatever
+# moment and after whatever was killed; the writer's own name stays, the same file twice
+# named. (The `output` is the command's stream and is whole when the supervisor has
+# recorded the command's end; the `lock` is empty.)
+# EVERY PATH THE TOOL WRITES IS RESOLVED: DIR by its real path — which lies
 # outside the repository (usage) — and every directory beneath it on the way to a file
 # is a directory and no link (usage), before anything is started or written. Nothing is
 # ever removed. WHAT IT DOES NOT DO: it kills nothing — a command whose supervisor died
@@ -863,13 +870,13 @@ KEPT = (
     {"file": "<scratch>/state/<tag>.json", "act": "state", "written": "by every `state`, once dev/stabilize-record printed the document", "read": "by whoever is handed the path: the state document, whole", "believed": "as that script's answer at that moment; nothing of this tool reads it back"},
     {"file": "<gate file>.recorded.json", "act": "record", "written": "by `record`, once its commit is made and BEFORE the batch is settled: {branch, commit, head, round, paths, applied, gate}", "read": "by `record` asked again where the journal holds no batch (the arrival state `recorded`)", "believed": "only where git agrees and the step is handed the commit the stage began on (--head): HEAD is the commit the file names, that commit's one parent is --head, the tree is clean, and the calls and checks are the ones the step is asked for. Without --head, or where any of it differs, the file says nothing and the answer is `no-batch`. A kill between the commit and this write leaves the batch in the journal and in HEAD, which is the arrival state `committed`: there is no moment after the commit at which neither says what was recorded"},
     {"file": "<digest root>/lines/<act>.<16 hex>.json", "act": "*", "written": "by every act that is asked for its digest (--digest), a refusal among them, before the digest is printed — and not by a `state` that read the document, whose file is the row above: the ONE line the act prints unasked, whole, named after the act and the first sixteen digits of the line's sha256", "read": "by whoever is handed the digest, which names it by its path under the root and by its sha256: what the digest leaves out — a refusal's halt report, a pending batch's subject and paths, the names a gate shows red", "believed": "as the line of that act at that moment; nothing of this tool reads it back"},
-    {"file": "<scratch>/hold/<name>/job.json", "act": "hold-start", "written": "by the `hold-start` that started the job, once, while it holds the lock of `<scratch>/hold`: {name, kind, asked, pid, started}", "read": "by every later `hold-start` and `hold-wait` of that name", "believed": "as what was asked: a start under the name with another kind or other arguments is refused (taken)"},
+    {"file": "<scratch>/hold/<name>/job.json", "act": "hold-start", "written": "by the `hold-start` that started the job, once, while it holds the lock of `<scratch>/hold`: {name, kind, asked, pid, started} — whole or not at all: written as `job.json.w<n>` beside it, and given its name by a link", "read": "by every later `hold-start` and `hold-wait` of that name", "believed": "as what was asked: a start under the name with another kind or other arguments is refused (taken)"},
     {"file": "<scratch>/hold/<name>/lock", "act": "hold-start", "written": "by `hold-start`, empty, and locked before the supervisor is forked: the supervisor holds that lock for as long as it lives, and nobody else ever holds it exclusively while it does", "read": "by `hold-wait`, which asks for the lock: refused, the supervisor lives", "believed": "always: the kernel frees it when the process is gone, however it went"},
     {"file": "<scratch>/hold/<name>/output", "act": "hold-start", "written": "by the supervisor and the command it runs: both streams of the command, whole", "read": "by the reader of the job's kind, for the verdict — and by whoever is handed the path: a record's gate is held to this file", "believed": "only once the supervisor has recorded how the command ended: what a file holds before that is no verdict"},
-    {"file": "<scratch>/hold/<name>/exit.json", "act": "hold-start", "written": "by the supervisor, once the command has ended: {exit, signal, began, ended}", "read": "by `hold-wait`, once the lock is free", "believed": "as how the command ended. Where it is missing the supervisor is gone without having seen the command end, and the job is dead"},
-    {"file": "<scratch>/hold/<name>/verdict.json", "act": "hold-wait", "written": "by the first `hold-wait` — or `hold-start` asked again — that finds the job done, under the job's lock: ONE line, {tool, name, kind, asked, exit, seconds, verdict, why, detail, facts, evidence, output, output_sha256}, ending in its sha256 as every line does", "read": "by every later read of the job, and by `dev/stabilize-record result-set`, which writes a scripted check's result from it", "believed": "as the tool's verdict: the line holds to its hash, and names the job and its kind"},
+    {"file": "<scratch>/hold/<name>/exit.json", "act": "hold-start", "written": "by the supervisor, once the command has ended: {exit, signal, began, ended} — whole or not at all: written as `exit.json.w<n>` beside it, and given its name by a link", "read": "by `hold-wait`, once the lock is free", "believed": "as how the command ended. Where it is missing the supervisor is gone without having seen the command end, and the job is dead"},
+    {"file": "<scratch>/hold/<name>/verdict.json", "act": "hold-wait", "written": "by the first `hold-wait` — or `hold-start` asked again — that finds the job done, under the job's lock: ONE line, {tool, name, kind, asked, exit, seconds, verdict, why, detail, facts, evidence, output, output_sha256}, ending in its sha256 as every line does — whole or not at all: written as `verdict.json.w<n>` beside it, and given its name by a link, so a wait that was killed while it kept the verdict leaves none, and the next wait reads the output and keeps it", "read": "by every later read of the job, and by `dev/stabilize-record result-set`, which writes a scripted check's result from it", "believed": "as the tool's verdict: the line holds to its hash, and names the job and its kind"},
     {"file": "<scratch>/<work>/", "act": "build", "written": "by `build`: the commit's archive (source.tar), its unpacked tree (source/), cargo's target directory (target/) and cargo's output (cargo.log). For a held build, <work> is hold/<name>/work", "read": "by cargo, and by whoever reads why a build was red", "believed": "as that build's own: a work directory that holds a build is refused (taken)"},
-    {"file": "<scratch>/<to>", "act": "build", "written": "by `build`, once, read-only: the binary, after it printed the version asked", "read": "by every agent that drives the binary, and by the verdict of a held build, which hashes it again", "believed": "where its hash is the one the build's line names"},
+    {"file": "<scratch>/<to>", "act": "build", "written": "by `build`, once, read-only: the binary, after it printed the version asked — whole or not at all: written as `<to>.w<n>` beside it, and given its name by a link", "read": "by every agent that drives the binary, and by the verdict of a held build, which hashes it again", "believed": "where its hash is the one the build's line names"},
 )
 # HOLDS: the kinds of held command (the header: A HELD COMMAND). `takes` are the flags
 # `hold-start` requires of the kind and `may` the ones it admits; `command` is what is
@@ -1831,10 +1838,29 @@ def whole(found):
         return file.read()
 
 
-def kept_once(at, text):
-    """A file of a held command, written by whoever is first: one that is there stands."""
-    with open(at, "x", encoding="utf-8") as file:
-        file.write(text)
+def kept_once(at, kept, mode=0o666):
+    """A file of a held command, written by whoever is first — one that is there stands —
+    and UNDER ITS NAME WHOLE OR NOT AT ALL. What is kept goes to a name of the writer's
+    own beside it, `<file>.w<n>`: the first that is free, created and never followed. Only
+    when every byte is in that file and it is closed is it given its name, by a link —
+    which fails where the name is taken (FileExistsError). So nobody finds the file empty
+    or half written: no act of this tool, with the job's lock or without it; nobody else
+    who looks the moment it is there; and nobody after its writer was killed, which leaves
+    no file under the name. The writer's own name stays beside it, the same file under a
+    second name: this tool removes nothing. (Until 2026-10-12 the file was created under
+    its name and written afterwards — DECISIONS.md -> 2026-10-12, "A file of a held
+    command is under its name whole or not at all".)"""
+    data = kept.encode("utf-8") if isinstance(kept, str) else kept
+    n = 0
+    while True:
+        own = "%s.w%d" % (at, n)
+        try:
+            with open(own, "xb", opener=lambda path, flags: os.open(path, flags | os.O_NOFOLLOW, mode)) as file:
+                file.write(data)
+            break
+        except FileExistsError:
+            n += 1
+    os.link(own, at)
 
 
 def hashed(body):
@@ -2169,8 +2195,7 @@ def build(args, facts):
     #    directory first on the PATH.
     data = whole(made)
     try:
-        with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o555), "wb") as file:
-            file.write(data)
+        kept_once(target, data, 0o555)
     except FileExistsError:
         refuse("taken", "`%s` is there already: a binary is written once" % target, "", "another build wrote it while this one ran: its own job answers for it")
     first = next((found for found in (os.path.join(directory, "jigc") for directory in [os.path.dirname(target)] + os.environ.get("PATH", "").split(os.pathsep)) if os.path.isfile(found) and os.access(found, os.X_OK)), None)

@@ -93,8 +93,12 @@
 //!   a return, a failed assertion and a panic — and the stand-in ends by itself where the
 //!   test process was killed. What the real tool leaves running, and for how long, is read
 //!   off the process list with the starter's whole process group killed
-//!   ([`what_the_tool_leaves_running_ends_when_the_command_does`]). What no arm shows: a
-//!   command that never ends, which no act of the tool ends, and anything with an agent.
+//!   ([`what_the_tool_leaves_running_ends_when_the_command_does`]). And a file the tool
+//!   keeps of a job is under its name whole or not at all: the unmodified tool is stopped,
+//!   and killed, inside each write ([`WRITER`];
+//!   [`a_file_of_a_held_command_is_under_its_name_whole_or_not_at_all`]). What no arm
+//!   shows: a command that never ends, which no act of the tool ends, and anything with an
+//!   agent.
 //!
 //! **Every arm runs under a shell-hostile root** — a space, a `'`, a `"` and a `#` in the
 //! repository's path — because the rig has no other kind.
@@ -6164,8 +6168,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
 /// for `--help`; the state it keeps under the scratch root and the line a digest leaves
 /// out (both `path`, written); a commit step's kept answer, read and written; the file a
 /// digest names, read back for its hash; and A HELD COMMAND'S FILES — read whole by one
-/// helper, written once by another, the supervisor's two streams, the two locks, a
-/// build's archive, cargo's output and the binary, which is created and never replaced.
+/// helper, written once by another — which is where the binary of a build is written too,
+/// under a name of the writer's own and never under the one it is found by — the
+/// supervisor's two streams, the two locks, a build's archive and cargo's output.
 const OPENS: &[(&str, usize)] = &[
     ("for line in open(__file__, encoding=\"utf-8\").read()", 1),
     ("with open(path, \"w\", encoding=\"utf-8\") as file:", 2),
@@ -6179,7 +6184,10 @@ const OPENS: &[(&str, usize)] = &[
     ),
     ("with open(path, \"rb\") as file:", 1),
     ("with open(found, \"rb\") as file:", 1),
-    ("with open(at, \"x\", encoding=\"utf-8\") as file:", 1),
+    (
+        "with open(own, \"xb\", opener=lambda path, flags: os.open(path, flags | os.O_NOFOLLOW, mode)) as file:",
+        1,
+    ),
     (
         "out = os.open(os.path.join(home, \"output\"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)",
         1,
@@ -6197,10 +6205,6 @@ const OPENS: &[(&str, usize)] = &[
     ("with tarfile.open(tarball) as archive:", 1),
     (
         "with open(os.path.join(work, \"cargo.log\"), \"x\", encoding=\"utf-8\") as log:",
-        1,
-    ),
-    (
-        "with os.fdopen(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o555), \"wb\") as file:",
         1,
     ),
 ];
@@ -6224,6 +6228,8 @@ const THROUGH: &[(&str, &str, &str)] = &[
         "os.path.join(home, \"exit.json\")",
     ),
     ("kept_once", "stands", "kept"),
+    // And the binary a build leaves, written once the same way.
+    ("kept_once", "build", "target"),
     // And read back: the job, how it ended, the verdict; the command's output, by the
     // reader of its kind; the binary a build made, and the one a verdict hashes again;
     // a file whose hash is asked of the tool.
@@ -6664,6 +6670,8 @@ fn offences(source: &str) -> Vec<String> {
         ("os.fork(", "hold_start"),
         ("os.setsid(", "supervise"),
         ("os._exit(", "supervise"),
+        // The one place a file is given the name it is found by: once it is whole.
+        ("os.link(", "kept_once"),
     ] {
         if code.matches(once).count() != 1
             || !code
@@ -6674,7 +6682,7 @@ fn offences(source: &str) -> Vec<String> {
                 .any(|line| line.contains(once))
         {
             found.push(format!(
-                "`{once}…)` stands somewhere else than once, in `{within}`: a second fork, or a session of somebody else's"
+                "`{once}…)` stands somewhere else than once, in `{within}`: a second fork, a session of somebody else's, or a file named somewhere else than where it is kept whole"
             ));
         }
     }
@@ -7047,6 +7055,10 @@ fn a_planted_offender_reddens_the_scan() {
             "a process is started somewhere else",
         ),
         ("os.kill(1, 9)", "`os.kill`"),
+        (
+            "os.link(args.branch, args.branch)",
+            "`os.link(…)` stands somewhere else",
+        ),
         (
             "open(args.branch, \"w\").write(\"\")",
             "the tool opens a file somewhere else",
@@ -10147,6 +10159,303 @@ fn what_the_tool_leaves_running_ends_when_the_command_does() {
     assert!(
         !held.kept("c", "exit.json").exists(),
         "and nothing recorded how it ended: the job stays dead"
+    );
+}
+
+/// Runs one of the two tools unmodified and STOPS IT INSIDE THE WRITE of a file it keeps:
+/// after the file was created and handed its bytes, and before it is closed — whatever
+/// name the tool created it under, the one it is found by or one beside it (`<name>.…`),
+/// and whichever way it opened it. `WRITE_STOPS` names the files; at each the process
+/// leaves `at-<name>` in the directory `WRITE_MARKS` and waits there for `go-<name>` — a
+/// file, never a number of seconds, so that no arm races a clock — or, where `WRITE_KILLS`
+/// names the file, sends itself SIGKILL: a writer killed inside its write, between two
+/// system calls of the committed code and never inside a copy of it (as [`KILLER`]). A
+/// process the tool forks stops the same way. Never let go, it ends by itself — status 70 —
+/// once that directory is gone, or after ten minutes: longer than a test may run, as the
+/// stand-in for a held command does ([`LONG_COMMAND`]).
+pub(crate) const WRITER: &str = r#"import builtins
+import os
+import runpy
+import signal
+import sys
+import time
+
+names = os.environ["WRITE_STOPS"].split(",")
+kills = os.environ.get("WRITE_KILLS", "")
+marks = os.environ["WRITE_MARKS"]
+real_open, real_os_open, real_fdopen = builtins.open, os.open, os.fdopen
+created = {}
+
+
+def watched(path):
+    base = os.path.basename(os.fsdecode(path))
+    return next((name for name in names if base == name or base.startswith(name + ".")), None)
+
+
+def stop(name):
+    real_open(os.path.join(marks, "at-" + name), "w").close()
+    if name == kills:
+        os.kill(os.getpid(), signal.SIGKILL)
+    polls = 0
+    while not os.path.exists(os.path.join(marks, "go-" + name)):
+        if polls >= 30000 or not os.path.isdir(marks):
+            os._exit(70)
+        time.sleep(0.02)
+        polls += 1
+
+
+class Written:
+    def __init__(self, file, name):
+        self.file, self.name = file, name
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *raised):
+        self.close()
+
+    def write(self, data):
+        return self.file.write(data)
+
+    def close(self):
+        stop(self.name)
+        self.file.close()
+
+
+def opened(path, mode="r", *args, **kwargs):
+    file = real_open(path, mode, *args, **kwargs)
+    if isinstance(path, int):
+        return file
+    by_opener = created.pop(file.fileno(), None)
+    name = by_opener or (watched(path) if "x" in mode or "w" in mode else None)
+    return Written(file, name) if name else file
+
+
+def os_opened(path, flags, *args, **kwargs):
+    fd = real_os_open(path, flags, *args, **kwargs)
+    name = watched(path) if flags & os.O_CREAT else None
+    if name:
+        created[fd] = name
+    return fd
+
+
+def fd_opened(fd, *args, **kwargs):
+    file = real_fdopen(fd, *args, **kwargs)
+    name = created.pop(fd, None)
+    return Written(file, name) if name else file
+
+
+builtins.open, os.open, os.fdopen = opened, os_opened, fd_opened
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"#;
+
+/// **A file the tool keeps of a held command is under its name whole or not at all**
+/// (DECISIONS.md → 2026-10-12, *A file of a held command is under its name whole or not at
+/// all*). Until then each was created under its name and written afterwards, and whoever
+/// looked in between found it there and empty — which is what
+/// [`what_the_tool_leaves_running_ends_when_the_command_does`] met on a loaded machine: it
+/// reads a job's record the moment the file is there. Driven here with no clock in it: the
+/// unmodified tool runs under [`WRITER`], which stops it inside each write, and at every
+/// stop THE NAME IS NOT THERE — the job's record, how the command ended, and the binary a
+/// build leaves; let go, the file is there and whole.
+///
+/// **And a writer that is killed inside its write leaves nothing under the name.** A wait
+/// killed while it keeps the verdict used to leave `verdict.json` there and empty, and the
+/// job — a gate of ten minutes, done and green — was refused by every later wait. Now the
+/// next wait reads the output and keeps the verdict. The name a writer writes under before
+/// the file has its own is the first that is free, and no link is followed to it: one
+/// planted where a verdict would be written first carries nothing elsewhere.
+///
+/// What it does not show: a file that is whole after a power loss. Nothing is synced.
+#[test]
+fn a_file_of_a_held_command_is_under_its_name_whole_or_not_at_all() {
+    let held = Held::new("hold-whole");
+    let rig = &held.rig;
+    rig.on_path("cargo", CARGO);
+    rig.write("version.txt", "1.0.0-rc.24\n");
+    let commit = rig.commit("chore: a version");
+    held.released(true);
+    let green = as_recorded("gate-green.txt");
+    let prints = rig.dir().join("prints-gate");
+    fs::write(&prints, &green).expect("what the command prints");
+    let marks = rig.dir().join("marks");
+    fs::create_dir(&marks).expect("where a stopped writer says so");
+    let writer = rig.dir().join("writer.py");
+    fs::write(&writer, WRITER).expect("write the writer's stop");
+    // The tool, unmodified, under the stop: `kills` names the file it dies at.
+    let stopped = |args: &[&str], kills: Option<&str>| -> std::process::Child {
+        let mut command = Command::new("python3");
+        command
+            .arg(&writer)
+            .arg(rig.root.join(TOOL))
+            .args(args)
+            .current_dir(rig.dir());
+        let mut command = rig.hermetic(command);
+        command
+            .env("HOLD_RAN", &held.ran)
+            .env("HOLD_RELEASE", &held.release)
+            .env("HOLD_PRINTS", &prints)
+            .env("HOLD_EXIT", "0")
+            .env("WRITE_STOPS", "job.json,exit.json,verdict.json,jigc")
+            .env("WRITE_MARKS", &marks)
+            .env("WRITE_KILLS", kills.unwrap_or(""))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+            .spawn()
+            .expect("spawn the tool under the writer's stop")
+    };
+    let at = |name: &str| {
+        until(
+            &format!("the writer of `{name}` is inside its write"),
+            || marks.join(format!("at-{name}")).exists(),
+        );
+    };
+    let go = |name: &str| fs::write(marks.join(format!("go-{name}")), "").expect("let go");
+    let ended = |child: std::process::Child| -> Value {
+        let out = child.wait_with_output().expect("the tool ends");
+        assert!(
+            out.status.success(),
+            "let go, the act runs to its end: {out:?}"
+        );
+        line_of(&String::from_utf8_lossy(&out.stdout))
+    };
+    // What is wrong is collected, so that one run names every file that is not kept whole.
+    let mut found: Vec<String> = Vec::new();
+    let absent = |what: &str, path: &Path| -> Option<String> {
+        fs::read(path).ok().map(|bytes| {
+            format!(
+                "{what}: its writer is inside its write, and the file is there under its name, {} byte(s) of it",
+                bytes.len()
+            )
+        })
+    };
+
+    // THE JOB'S RECORD and HOW THE COMMAND ENDED: the start stops inside the first, and the
+    // supervisor it forked — the command released, and over at once — inside the second.
+    let start = stopped(
+        &[
+            "hold-start",
+            "--scratch",
+            &held.scratch,
+            "--name",
+            "gate",
+            "--kind",
+            "gate",
+            "--run",
+            RUN,
+        ],
+        None,
+    );
+    at("job.json");
+    found.extend(absent("job.json", &held.kept("gate", "job.json")));
+    at("exit.json");
+    found.extend(absent("exit.json", &held.kept("gate", "exit.json")));
+    go("job.json");
+    let started = ended(start);
+    assert_eq!(started["status"], "started", "{started}");
+    let job: Value = serde_json::from_str(
+        &fs::read_to_string(held.kept("gate", "job.json")).expect("the job's record"),
+    )
+    .expect("let go, the job's record is whole");
+    assert_eq!(
+        json!([job["name"], job["kind"], job["pid"]]),
+        json!(["gate", "gate", started["pid"]]),
+        "{job}"
+    );
+    // The supervisor is still inside its write: the job runs, and is not dead.
+    held.wait("gate", Some(0)).done("hold-wait", "running");
+    go("exit.json");
+
+    // THE VERDICT, AND A WRITER KILLED INSIDE ITS WRITE: nothing is under the name, and
+    // the next wait judges the job.
+    let killed = stopped(
+        &[
+            "hold-wait",
+            "--scratch",
+            &held.scratch,
+            "--name",
+            "gate",
+            "--slice",
+            "60",
+        ],
+        Some("verdict.json"),
+    );
+    let killed = killed.wait_with_output().expect("the killed wait");
+    assert!(
+        killed.status.code().is_none() && marks.join("at-verdict.json").exists(),
+        "the control: the wait was killed, inside the verdict's write: {killed:?}"
+    );
+    found.extend(absent("verdict.json", &held.kept("gate", "verdict.json")));
+    let next = held.wait("gate", Some(60));
+    if next.code == 0 && next.line["status"] == "done" && next.line["verdict"] == "green" {
+        held.verdict_of(&next.line);
+    } else {
+        found.push(format!(
+            "verdict.json: after a wait was killed inside the verdict's write, the next wait does not judge the job: {} {}",
+            next.raw.trim_end(),
+            next.stderr.trim_end()
+        ));
+    }
+
+    // THE WRITER'S OWN NAME IS THE FIRST THAT IS FREE, AND NO LINK IS FOLLOWED TO IT: a
+    // link planted where a job's verdict would be written first carries nothing elsewhere,
+    // and the verdict is kept.
+    let elsewhere = rig.dir().join("elsewhere");
+    fs::create_dir(&elsewhere).expect("a directory that is not the scratch root");
+    held.start("gate-2", &GATE_KIND, &green, 0)
+        .done("hold-start", "started");
+    until("the second gate has ended", || {
+        held.kept("gate-2", "exit.json").exists()
+    });
+    std::os::unix::fs::symlink(
+        elsewhere.join("verdict"),
+        held.kept("gate-2", "verdict.json.w0"),
+    )
+    .expect("plant a link");
+    let second = held.wait("gate-2", Some(60));
+    assert_eq!(second.done("hold-wait", "done")["verdict"], "green");
+    held.verdict_of(&second.line);
+    assert_eq!(
+        fs::read_dir(&elsewhere).expect("elsewhere").count(),
+        0,
+        "nothing was written where the planted link leads"
+    );
+
+    // THE BINARY A BUILD LEAVES.
+    let build = stopped(
+        &[
+            "build",
+            "--scratch",
+            &held.scratch,
+            "--commit",
+            &commit,
+            "--work",
+            "work-whole",
+            "--to",
+            "bin/whole/jigc",
+        ],
+        None,
+    );
+    at("jigc");
+    let binary = rig.scratch.join("bin/whole/jigc");
+    found.extend(absent("the binary of a build", &binary));
+    go("jigc");
+    let built = ended(build);
+    assert_eq!(
+        json!([
+            built["status"],
+            sha256(&fs::read_to_string(&binary).expect("the binary"))
+        ]),
+        json!(["built", built["content_sha256"]]),
+        "let go, the binary is there and whole: {built}"
+    );
+    assert_eq!(
+        found,
+        Vec::<String>::new(),
+        "a file the tool keeps is under its name whole or not at all"
     );
 }
 

@@ -24,8 +24,11 @@
 //! - *hold* — a command that writes its last line only after its seconds, is started once
 //!   and is answered `running` within a slice
 //!   ([`a_hold_ends_only_after_its_seconds_is_started_once_and_is_answered_within_a_slice`]),
-//!   and what became of it judged from its own files
-//!   ([`a_held_command_is_judged_from_its_own_files`]);
+//!   whose two stamps say how long it was held whatever the wall clock did meanwhile
+//!   ([`a_holds_stamps_say_how_long_it_was_held_whatever_the_wall_clock_did`]), whose name
+//!   is taken by a file that is there whole or not at all
+//!   ([`the_file_that_takes_a_holds_name_is_there_whole_or_not_at_all`]), and what became
+//!   of it judged from its own files ([`a_held_command_is_judged_from_its_own_files`]);
 //! - *required* — the stand-in binary and its hash, and a return judged by the field it
 //!   came back with ([`a_return_is_judged_by_the_field_it_came_back_with`]).
 //!
@@ -62,7 +65,7 @@ use serde_json::{Value, json};
 use crate::support::child_stdin;
 
 use super::dev_stabilize_record::gitleaks_stub;
-use super::dev_stabilize_step::StepRig;
+use super::dev_stabilize_step::{StepRig, WRITER};
 use super::placed_executable;
 
 const TOOL: &str = "dev/stabilize-probe";
@@ -762,10 +765,10 @@ fn a_hold_ends_only_after_its_seconds_is_started_once_and_is_answered_within_a_s
     let said = ran.done("hold", "held");
     assert_eq!(said["name"], "a");
     assert_eq!(said["seconds"], 2);
-    assert!(
-        said["ended"].as_f64().expect("ended") - said["started"].as_f64().expect("started") >= 2.0,
-        "{said}"
-    );
+    // Its two stamps are at least its seconds apart — exactly: the tool counts the seconds
+    // on the monotonic clock and stamps the end by that count ([`stamps`]).
+    let (began, ended) = stamps(&ran.raw);
+    assert!(ended - began >= 2.0, "{said}");
     // Started once.
     hold(&["--name", "a", "--seconds", "1"]).refused("exists");
     hold(&["--name", "a", "--seconds", "1", "--detach"]).refused("exists");
@@ -811,6 +814,289 @@ fn a_hold_ends_only_after_its_seconds_is_started_once_and_is_answered_within_a_s
     // A slice is under five minutes, and a hold has a whole number of seconds.
     held(&["--name", "b", "--slice", "300"]).refused("usage");
     hold(&["--name", "d", "--seconds", "soon"]).refused("usage");
+}
+
+/// The two stamps of a hold's last line, each AS THE DOUBLE THE TOOL PRINTED. The tool
+/// prints the shortest text that reads back as its double, and the standard library reads
+/// it back correctly rounded; `serde_json`, as this workspace builds it (without
+/// `float_roundtrip`), may be one unit in the last place off — a quarter of a microsecond
+/// at a wall clock's reading — and a comparison of the two stamps has no room for that:
+/// what the tool promises of them it promises exactly.
+fn stamps(raw: &str) -> (f64, f64) {
+    let stamp = |field: &str| -> f64 {
+        let opens = format!("\"{field}\": ");
+        let at = raw
+            .find(&opens)
+            .unwrap_or_else(|| panic!("the line has `{field}`: {raw}"));
+        let rest = &raw[at + opens.len()..];
+        let text = &rest[..rest.find([',', '}']).expect("the value ends")];
+        text.parse()
+            .unwrap_or_else(|e| panic!("`{field}` is a number ({e}): {raw}"))
+    };
+    (stamp("started"), stamp("ended"))
+}
+
+/// Runs the probe tool unmodified under A WALL CLOCK THAT MOVES WHILE A HOLD RUNS, or under
+/// a sleep that wakes late — `WALL_CLOCK` says which. A machine's time daemon sets and
+/// slews the wall clock (on the machine the second red of 2026-10-12 was seen on: thirty-six
+/// corrections in a day, of up to 49 ms, and one watched as it was slewed in at up to 0.8 ms
+/// a second); a slew cannot be asked for, so its stand-in is a step, made large, taken at
+/// the hold's first sleep — after the hold has read when it started, and before it reads
+/// anything at its end:
+///
+/// - `set-back`: the wall clock is an hour behind from then on.
+/// - `set-ahead`: an hour ahead.
+/// - `late`: no clock moves; every sleep wakes half a second late, as on a loaded machine.
+const CLOCK: &str = r#"import os
+import runpy
+import sys
+import time
+
+how = os.environ["WALL_CLOCK"]
+wall, sleep = time.time, time.sleep
+moved = [0.0]
+
+
+def read():
+    return wall() + moved[0]
+
+
+def slept(seconds):
+    moved[0] = {"set-back": -3600.0, "set-ahead": 3600.0, "late": 0.0}[how]
+    sleep(seconds + (0.5 if how == "late" else 0.0))
+
+
+time.time, time.sleep = read, slept
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"#;
+
+/// **A hold's two stamps say how long it was held — never under its seconds, and never
+/// more than it ran — whatever the wall clock did meanwhile** (DECISIONS.md → 2026-10-12,
+/// *A file of a held command is under its name whole or not at all*, its second half). The
+/// hold waits on the monotonic clock. Until then it stamped its start and its end with the
+/// wall clock, which is set and slewed while a hold runs: a hold that ran its two seconds
+/// in full printed stamps 1.99995 s apart, on a machine whose time daemon was slewing the
+/// clock back. Each bound below is the tool's promise and holds with no margin:
+///
+/// - the wall clock set back during the hold: the stamps are still at least the seconds
+///   apart, and so is the `held_for` that `held` prints from the hold's files;
+/// - set ahead: they are no further apart than the whole call took, measured from outside
+///   on the clock the hold waits by — the hold ran inside the call;
+/// - a sleep that wakes half a second late: they are at least the seconds and that half
+///   second apart, because they say how long the hold ran, and not how long it was asked to.
+#[test]
+fn a_holds_stamps_say_how_long_it_was_held_whatever_the_wall_clock_did() {
+    let rig = ProbeRig::new("hold-clock");
+    let clock = rig.rig.dir().join("clock.py");
+    fs::write(&clock, CLOCK).expect("write the clock");
+    // One hold of one second under each clock: (the stamps' distance, the call's own
+    // length by this process's monotonic clock, the `held_for` a later read prints).
+    let held_under = |how: &str| -> (f64, f64, f64) {
+        let scratch = rig.scratch(&format!("scratch-{how}"));
+        rig.probe(&["begin", "--scratch", &scratch, "--probe", "hold"])
+            .done("begin", "begun");
+        let asked = Instant::now();
+        let out = rig
+            .command(Path::new("python3"))
+            .arg(&clock)
+            .arg(rig.rig.root.join(TOOL))
+            .args([
+                "hold",
+                "--scratch",
+                &scratch,
+                "--name",
+                "a",
+                "--seconds",
+                "1",
+            ])
+            .env("WALL_CLOCK", how)
+            .current_dir(rig.rig.dir())
+            .stdin(Stdio::null())
+            .output()
+            .expect("run the probe tool under the clock");
+        let took = asked.elapsed().as_secs_f64();
+        let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(out.status.success(), "`{how}`: {out:?}");
+        assert_eq!(line_of(&raw)["status"], "held", "`{how}`: {raw}");
+        let (started, ended) = stamps(&raw);
+        let read = rig.probe(&["held", "--scratch", &scratch, "--name", "a"]);
+        let held_for = read.done("held", "done")["held_for"]
+            .as_f64()
+            .expect("how long it was held");
+        (ended - started, took, held_for)
+    };
+    let (back, ahead, late) = std::thread::scope(|holds| {
+        let back = holds.spawn(|| held_under("set-back"));
+        let ahead = holds.spawn(|| held_under("set-ahead"));
+        let late = holds.spawn(|| held_under("late"));
+        (
+            back.join().expect("a hold"),
+            ahead.join().expect("a hold"),
+            late.join().expect("a hold"),
+        )
+    });
+    assert!(
+        back.0 >= 1.0 && back.2 >= 1.0,
+        "the wall clock set back an hour while it ran, a hold of one second is stamped at least a second long: {} s, and read as held for {} s",
+        back.0,
+        back.2
+    );
+    assert!(
+        ahead.0 <= ahead.1 && ahead.2 <= ahead.1 + 0.0005,
+        "the wall clock set ahead an hour while it ran, a hold is stamped no longer than its call took ({} s): {} s, and read as held for {} s",
+        ahead.1,
+        ahead.0,
+        ahead.2
+    );
+    assert!(
+        late.0 >= 1.5,
+        "a hold whose sleep woke half a second late is stamped as long as it ran, which is at least a second and a half: {} s",
+        late.0
+    );
+}
+
+/// **The file that takes a hold's name is there whole or not at all** (the same entry, the
+/// probe tool's share of its first half). The hold created that file to take the name and
+/// wrote it afterwards; a `held` or a `verdict` that asked in between read an empty record
+/// and ended on a traceback, with no line — and a hold killed in between left the name
+/// taken by an empty file for good. Driven with no clock in it, under the step suite's
+/// [`WRITER`]: stopped inside that write the name is not there, and a read is answered —
+/// nobody has started such a hold; let go, the file is whole. Killed inside it, the name is
+/// not taken: a read is answered the same, and a hold of that name is held.
+#[test]
+fn the_file_that_takes_a_holds_name_is_there_whole_or_not_at_all() {
+    let rig = ProbeRig::new("hold-whole");
+    let scratch = rig.scratch("scratch-hold");
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", "hold"])
+        .done("begin", "begun");
+    let marks = rig.rig.dir().join("marks");
+    fs::create_dir(&marks).expect("where a stopped writer says so");
+    let writer = rig.rig.dir().join("writer.py");
+    fs::write(&writer, WRITER).expect("write the writer's stop");
+    let stopped = |name: &str, seconds: &str, kills: bool| -> std::process::Child {
+        let file = format!("{name}.json");
+        rig.command(Path::new("python3"))
+            .arg(&writer)
+            .arg(rig.rig.root.join(TOOL))
+            .args([
+                "hold",
+                "--scratch",
+                &scratch,
+                "--name",
+                name,
+                "--seconds",
+                seconds,
+            ])
+            .env("WRITE_STOPS", &file)
+            .env("WRITE_MARKS", &marks)
+            .env("WRITE_KILLS", if kills { file.as_str() } else { "" })
+            .current_dir(rig.rig.dir())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn the probe tool under the writer's stop")
+    };
+    let at = |name: &str| {
+        let mark = marks.join(format!("at-{name}.json"));
+        let asked = Instant::now();
+        while !mark.exists() {
+            assert!(
+                asked.elapsed() < Duration::from_secs(60),
+                "after a minute the hold `{name}` is still not inside the write that takes its name"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let record = |name: &str| Path::new(&scratch).join(format!("probe/hold/{name}.json"));
+    // What is wrong is collected, so that one run names all of it.
+    let mut found: Vec<String> = Vec::new();
+    let absent = |name: &str| -> Option<String> {
+        fs::read(record(name)).ok().map(|bytes| {
+            format!(
+                "`{name}`: the hold is inside the write that takes its name, and the file is there, {} byte(s) of it",
+                bytes.len()
+            )
+        })
+    };
+    // A call of the tool that may end with no line at all: the line, or what it left.
+    let asked = |args: &[&str]| -> Result<(i32, Value), String> {
+        let out = rig
+            .command(&rig.rig.root.join(TOOL))
+            .args(args)
+            .current_dir(rig.rig.dir())
+            .stdin(Stdio::null())
+            .output()
+            .expect("run the probe tool");
+        let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+        if raw.ends_with('\n') && raw.trim_end().lines().count() == 1 {
+            Ok((out.status.code().unwrap_or(-1), line_of(&raw)))
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            Err(format!(
+                "`{}` printed no line and exited {:?}: {}",
+                args[..1].join(" "),
+                out.status.code(),
+                stderr.trim_end().lines().last().unwrap_or("")
+            ))
+        }
+    };
+    let unstarted = |name: &str, when: &str| -> Option<String> {
+        match asked(&["held", "--scratch", &scratch, "--name", name]) {
+            Ok((6, line)) if line["refused"] == "missing" => None,
+            Ok((code, line)) => Some(format!(
+                "`{name}`, {when}: a read is answered {code} {line}, and nobody has started such a hold"
+            )),
+            Err(said) => Some(format!("`{name}`, {when}: {said}")),
+        }
+    };
+
+    // STOPPED INSIDE THE WRITE: the name is not there, and a read is answered.
+    let a = stopped("a", "1", false);
+    at("a");
+    found.extend(absent("a"));
+    found.extend(unstarted("a", "while the hold takes its name"));
+    fs::write(marks.join("go-a.json"), "").expect("let go");
+    let out = a.wait_with_output().expect("the hold ends");
+    let raw = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "let go, the hold is held: {out:?}");
+    assert_eq!(line_of(&raw)["status"], "held", "{raw}");
+    let kept: Value = serde_json::from_str(&fs::read_to_string(record("a")).expect("the record"))
+        .expect("let go, the record is whole");
+    assert_eq!(kept["pid"], line_of(&raw)["pid"], "{kept}");
+    rig.probe(&["held", "--scratch", &scratch, "--name", "a"])
+        .done("held", "done");
+
+    // KILLED INSIDE THE WRITE: the name was never taken.
+    let k = stopped("k", "600", true);
+    let out = k.wait_with_output().expect("the killed hold");
+    assert!(
+        out.status.code().is_none() && marks.join("at-k.json").exists(),
+        "the control: the hold was killed, inside the write that takes its name: {out:?}"
+    );
+    found.extend(absent("k"));
+    found.extend(unstarted("k", "after the hold was killed taking its name"));
+    match asked(&[
+        "hold",
+        "--scratch",
+        &scratch,
+        "--name",
+        "k",
+        "--seconds",
+        "1",
+    ]) {
+        Ok((0, line)) if line["status"] == "held" => {}
+        Ok((code, line)) => found.push(format!(
+            "`k`: a hold of the name is answered {code} {line}, and no hold ever had the name"
+        )),
+        Err(said) => found.push(format!("`k`: {said}")),
+    }
+    assert_eq!(
+        found,
+        Vec::<String>::new(),
+        "the file that takes a hold's name is there whole or not at all"
+    );
 }
 
 #[test]

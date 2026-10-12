@@ -68,10 +68,21 @@
 #
 #   dev/stabilize-probe hold --scratch DIR --name S --seconds N [--detach]
 #       THE LONG COMMAND. It prints NOTHING for N seconds and then its ONE line,
-#       {status: held, name, seconds, pid, started, ended}. A name is held ONCE — exists.
+#       {status: held, name, seconds, pid, started, ended}. A name is held ONCE — exists —
+#       and the file that takes it, `DIR/probe/hold/S.json`, is there WHOLE OR NOT AT ALL:
+#       no `held` and no `verdict` finds it empty, whenever it asks.
 #       With --detach the same command is started in a session of its own, its output in
 #       `DIR/probe/hold/S.out`, and this call answers at once: {status: started, name,
 #       seconds, pid, out}.
+#       THE STAMPS. A hold waits on the MONOTONIC clock, and its two stamps say how long it
+#       waited there: `started` is the wall clock's time when the hold began, and `ended`
+#       is `started` plus the time the hold ran on the monotonic clock — so `ended -
+#       started`, and the `held_for` that `held` and `verdict` print from the two, is how
+#       long the hold was held and is NEVER UNDER ITS SECONDS. `ended` is therefore not
+#       the wall clock's reading at the end: that clock is set and slewed while a hold
+#       runs (a machine's time daemon corrects it by tens of milliseconds at a time, and
+#       slews each correction in at several hundred microseconds a second), and two
+#       readings of it are no duration.
 #
 #   dev/stabilize-probe held --scratch DIR --name S [--slice SECONDS]
 #       What became of a hold, asked within a slice (under five minutes; none: at once):
@@ -246,6 +257,22 @@ def write_whole(path, text):
     with open(staged, "w", encoding="utf-8") as file:
         file.write(text)
     os.replace(staged, path)
+
+
+def taken_once(path, text):
+    """A name taken ONCE, by a file that is WHOLE when it has the name: written beside its
+    place under a name of this process's own, and given its name by a link — which fails
+    where the name is taken (FileExistsError). Whoever finds the file finds every byte of
+    it: a reader that asks the moment it is there, and one that asks after its writer was
+    killed. Creating the file under its name and writing it afterwards left it there
+    empty in between, and a reader of an empty record has no answer."""
+    staged = "%s.%d.taking" % (path, os.getpid())
+    with open(staged, "w", encoding="utf-8") as file:
+        file.write(text)
+    try:
+        os.link(staged, path)
+    finally:
+        os.unlink(staged)
 
 
 # --- the scratch root -----------------------------------------------------------
@@ -462,21 +489,24 @@ def hold(args, facts):
             refuse("tool", "the detached hold `%s` did not start" % args.name, read_bytes(files["out"]).decode("utf-8", "replace")[:2000])
         facts.update(status="started", pid=child.pid, out=files["out"])
         return
+    # THE TWO CLOCKS (the header: THE STAMPS). The wall clock says when the hold started,
+    # and nothing else is asked of it: it is set and slewed while a hold runs. The seconds
+    # are counted on the monotonic clock, in whole nanoseconds, from this reading.
+    started, began = time.time(), time.monotonic_ns()
     try:
-        marker = os.open(files["json"], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        taken_once(files["json"], json.dumps({"pid": os.getpid(), "started": started, "seconds": seconds}))
     except FileExistsError:
         refuse("exists", "a hold named `%s` was started under `%s` already: a name is held once" % (args.name, args.scratch))
-    started = time.time()
-    with os.fdopen(marker, "w", encoding="utf-8") as file:
-        json.dump({"pid": os.getpid(), "started": started, "seconds": seconds}, file)
     # The hold itself: nothing is printed until its seconds are over.
-    until = time.monotonic() + seconds
+    until = began + seconds * 10**9
     while True:
-        left = until - time.monotonic()
-        if left <= 0:
+        now = time.monotonic_ns()
+        if now >= until:
             break
-        time.sleep(min(left, 1.0))
-    ended = time.time()
+        time.sleep(min((until - now) / 1e9, 1.0))
+    # WHEN IT ENDED is when it started and how long it ran — by the reading that ended the
+    # wait, so the two stamps are never closer than the seconds.
+    ended = started + (now - began) / 1e9
     write_whole(files["done"], json.dumps({"ended": ended}))
     facts.update(status="held", pid=os.getpid(), started=started, ended=ended)
 
