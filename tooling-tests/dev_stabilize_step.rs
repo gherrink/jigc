@@ -10117,10 +10117,7 @@ fn what_the_tool_leaves_running_ends_when_the_command_does() {
     let mut starter = starter.spawn().expect("spawn the starter's shell");
     let hold = running("b");
     assert_ne!(hold[0].group, starter.id(), "{hold:?}");
-    let killed = Command::new("kill")
-        .args(["-9", &format!("-{}", starter.id())])
-        .output()
-        .expect("run kill");
+    let killed = rig_processes::end_group(starter.id());
     assert!(killed.status.success(), "{killed:?}");
     assert_eq!(
         starter.wait().expect("the starter is gone").signal(),

@@ -9,7 +9,8 @@ name: CI
 #                    the private denylist over the pushed range
 #                    (implementation/public-hygiene.md)
 #   fmt · clippy · build
-#   test             one row per `[[test]]` group target
+#   test             one row per `[[test]]` group target — and for `g_tooling`, whose one
+#                    row outgrew a leg, one row per part of it (below)
 #   unit             the lib and bin unit tests of every workspace member, and doctests
 #   manifest-freeze  the CI-only manifest-freeze fence
 #   publish-dry-run  `cargo publish --workspace --dry-run`
@@ -22,10 +23,12 @@ name: CI
 # job added here and not to its `needs` reddens tooling-tests/ci_matrix_fence.rs
 # instead of going unrequired. Every leg checks out full history, prints `nproc` in its
 # `CPU count` step, and is bounded by `timeout-minutes` at max(10, 2 x its leg's
-# measured four-CPU proxy) — completions/artifacts/M54/ci-runtime.md. The `test`
-# matrix is fenced to the targets `cargo metadata` reports
+# measured four-CPU proxy) — completions/artifacts/M54/ci-runtime.md, and for the parts
+# of `g_tooling` DECISIONS.md -> 2026-10-12, *The tooling leg runs in three parts*. The
+# `test` matrix is fenced to the targets `cargo metadata` reports
 # (tooling-tests/ci_matrix_fence.rs), so a group root added to the manifest and not
-# here reddens instead of going unrun.
+# here reddens instead of going unrun, and a group that runs in parts is fenced to run
+# whole: every part but one names its suites, and the last skips exactly those.
 #
 # Nothing here publishes. M36 F4's "internal-only, no external publish" was reversed on
 # 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2), and the only publish
@@ -229,13 +232,17 @@ jobs:
         run: cargo build
 
   test:
+    # `test (g_flow)` for a group that runs whole, `test (g_tooling, record)` for a part.
+    name: test (${{ matrix.group }}${{ matrix.part && format(', {0}', matrix.part) || '' }})
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # A part's own bound; ten minutes for a row that names none.
+    timeout-minutes: ${{ matrix.minutes || 10 }}
     strategy:
       fail-fast: false
       matrix:
-        # Exactly the `[[test]]` targets of crates/cli/Cargo.toml — fenced to
-        # `cargo metadata` by tooling-tests/ci_matrix_fence.rs.
+        # Exactly the `[[test]]` targets of crates/cli/Cargo.toml, this list and the
+        # groups of `include` together — fenced to `cargo metadata` by
+        # tooling-tests/ci_matrix_fence.rs.
         group:
           - g_flow
           - g_migrate
@@ -249,7 +256,31 @@ jobs:
           - g_doc
           - g_solo_store_sweep
           - g_solo_trial_corpus
-          - g_tooling
+        # `g_tooling` in three parts, because as one row it no longer ends inside a leg:
+        # it was cancelled at ten minutes on every push from 2026-10-07 to 2026-10-12, and
+        # by the measure of 2026-10-12 it would take about 23 minutes here, past the fifteen
+        # a green push reports in
+        # (DECISIONS.md -> 2026-10-12, *The tooling leg runs in three parts*). It stays one
+        # target — a target per part is a test binary more for every local gate to link —
+        # so a part is the group's row with libtest's own arguments behind it: the two
+        # heaviest suites are a part each, by name, and `rest` is every test of neither,
+        # so a suite added to the group runs there without a line here. `minutes` is the
+        # part's bound by the header's rule, from its own four-CPU proxy. The group is NOT
+        # in the list above: an `include` row whose group the list names is added to that
+        # row instead of making one, and the group would run as its last part alone.
+        include:
+          - group: g_tooling
+            part: record
+            tests: "-- dev_stabilize_record::"
+            minutes: 14
+          - group: g_tooling
+            part: simulation
+            tests: "-- stabilize_simulation::"
+            minutes: 12
+          - group: g_tooling
+            part: rest
+            tests: "-- --skip dev_stabilize_record:: --skip stabilize_simulation::"
+            minutes: 11
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -269,8 +300,9 @@ jobs:
           workspaces: |
             . -> target
 
+      # `matrix.tests` is empty for a group that runs whole.
       - name: cargo test --test ${{ matrix.group }}
-        run: cargo test -p jigc --test ${{ matrix.group }} --no-fail-fast
+        run: cargo test -p jigc --test ${{ matrix.group }} --no-fail-fast ${{ matrix.tests }}
 
   unit:
     runs-on: ubuntu-latest
