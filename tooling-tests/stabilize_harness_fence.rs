@@ -1228,8 +1228,8 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
     );
     assert_eq!(
         source.matches("ledgerSource(v.run, state)").count(),
-        3,
-        "and each of the three is handed the ledger's rows"
+        4,
+        "and each of the three is handed the ledger's rows — the test stage's on either of its two paths, which is the fourth: the one triage of a run with a queue (arm (r), 9)"
     );
     assert!(
         test_stage.contains("for (const source of ledgerSource(v.run, state)) sources.push(source)\n  const tri = await triagePasses(ctx, launch, built, sources, [])"),
@@ -2857,6 +2857,130 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             .contains("{ item: h.item, status: 'void', reason: heldVoid(h) }"),
         "a held check that left no verdict is recorded void, by that word"
     );
+
+    // (9) IN A RUN WITH A QUEUE THE STAGE'S ONE TRIAGE HANDS ITS ENTRIES TO THE RECORD SCRIPT,
+    // AND NONE OF THEM PASSES THROUGH THIS SCRIPT (the reshape's plan, `T5a`; `K2`). Which
+    // run that is, is asked of the state's digest in ONE place; the return's schema holds a
+    // path, a hash and the counts, and no entry; nothing that reads the return reads one;
+    // and the prompt hands the rows nobody graded over as the read, a red result as its key
+    // and where its evidence lies — never a word a preflight returned.
+    assert!(
+        function(&full, "hasQueue").contains("return plain(state.queue)")
+            && declared.contains("queue"),
+        "a run with a queue is one whose state's digest says `queue`"
+    );
+    assert_eq!(
+        without(&full, &["selfTest"]).matches("hasQueue(").count(),
+        2,
+        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked once"
+    );
+    let test_stage = function(&full, "runTest");
+    let branch = test_stage
+        .find("\n  if (hasQueue(state)) {\n")
+        .expect("the `test` stage takes the new path where the run has a queue");
+    let old_path = test_stage
+        .find("\n  const tri = await triagePasses(ctx, launch, built, sources, [])\n")
+        .expect("the other path's triage");
+    let instruments = test_stage
+        .find("await runUnits(")
+        .expect("the stage's instruments");
+    assert!(
+        instruments < branch && branch < old_path,
+        "the branch stands after the instruments and before the other path's triage: both paths run the same preflight, builds, held checks and instruments"
+    );
+    let new_path = &test_stage[branch..old_path];
+    let new_path = &new_path[..new_path.find("\n  }\n").expect("the branch closes")];
+    assert!(
+        new_path.contains("await triageOnce(ctx, launch, ")
+            && new_path.contains("redSources(")
+            && new_path.contains("ledgerSource(v.run, state)")
+            && new_path
+                .lines()
+                .last()
+                .is_some_and(|line| line.starts_with("    return haltAfter('record', "))
+            && !new_path.contains("triagePasses(")
+            && !new_path.contains("recordStep(")
+            && !new_path.contains("triageRecord("),
+        "on the new path the one triage is handed the red results and the rows nobody graded beside the reporters' findings, and the branch ends in a return — the halt at the record that is not built: nothing of the other path's triage, verification or record runs for a run with a queue"
+    );
+    let filed = &full[full
+        .find("\nconst FILED_SCHEMA = {\n")
+        .expect("the schema the one triage of a run with a queue returns under")..];
+    let filed = &filed[..filed.find("\n}\n").expect("the schema closes")];
+    let fields: BTreeSet<String> = filed
+        .lines()
+        .filter_map(|line| line.strip_prefix("    "))
+        .filter(|line| !line.starts_with(' '))
+        .map(|line| line[..line.find(':').expect("a field")].to_owned())
+        .collect();
+    assert_eq!(
+        fields,
+        ["halt", "handed", "report", "sha256", "status"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>(),
+        "what the one triage returns: the path and the hash its call printed, what each source handed, and no entry"
+    );
+    assert!(
+        filed.contains("required: ['status'],"),
+        "and its schema requires the status alone: a return that omits a required field is a call that failed"
+    );
+    let once = function(&full, "triageOnce");
+    assert!(
+        once.contains("oneTriagePrompt(ctx, launch, tName, handed), FILED_SCHEMA)")
+            && once.contains("filedFault(ctx, tName, handed, t)")
+            && once.contains("await settleReports(ctx, launch, 'check-reports:triage', 'Triage')")
+            && once.contains("settled.missing.includes(tName)"),
+        "the one triage is launched under that schema, its return is held before anything of it is taken, and its report is the report check's word"
+    );
+    for (name, body) in [
+        ("triageOnce", once),
+        ("filedFault", function(&full, "filedFault")),
+    ] {
+        for of_an_entry in [
+            ".entries",
+            ".to_verify",
+            ".grade",
+            ".key",
+            ".door",
+            ".repro",
+            ".kind",
+        ] {
+            assert!(
+                !code(body).contains(of_an_entry),
+                "`{name}` reads `{of_an_entry}` of a return: no entry of a triage passes through this script"
+            );
+        }
+    }
+    let held_to = function(&full, "filedFault");
+    assert!(
+        held_to.contains("t.report !== testReport(ctx, name)")
+            && held_to.contains("SHA256_RE.test(String(t.sha256))")
+            && held_to.contains("h.source === s.reporter && h.count === findingsOf(s)"),
+        "the return is held to the path a report of that reporter and attempt has, to a hash, and to what each source handed"
+    );
+    let one = function(&full, "oneTriagePrompt");
+    assert!(
+        one.contains("typed(RECORD_TOOL, 'triage --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + entriesFile(ctx) + ' -- ' + sources.map((s) => s.reporter + '=' + findingsOf(s)).join(' '))")
+            && one.contains("launch.line(name)")
+            && one.contains("s.read")
+            && one.contains("(i + 1) + '. '"),
+        "the prompt spells the call whole — one word a source, by the count it hands — carries the report line, hands the rows nobody graded as the read, and numbers every other finding"
+    );
+    let red = function(&full, "redSources");
+    assert!(
+        red.contains("reporter: RED_PREFIX + r.item")
+            && !red.contains(".evidence")
+            && source.contains("\nconst RED_PREFIX = 'red-'\n")
+            && record.contains("\nRED = \"red-\"\n"),
+        "a red result is a source under the key the record script files its row with, and its evidence is a file's path — no word a preflight returned"
+    );
+    assert!(
+        function(&full, "testReport").contains(
+            "runDir(ctx.run) + '/r' + ctx.round + '/reports/test/' + name + '.a' + ctx.attempt + '.md'"
+        ) && record.contains("parts = [\"r\" + round_number, \"reports\", \"test\", \"%s.a%s.md\" % (reporter, attempt)]"),
+        "where a `test` report lies is the record script's layout, spelled once here"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -3332,6 +3456,11 @@ const PROMPTS: &[(&str, &str, &str)] = &[
         "triagePrompt(CTX, launcher(CTX), 'triage-p2', [{ reporter: 'verify-p1-a-key', report: null, findings: ['left open 1 — a thing'] }], 2)",
     ),
     (
+        "oneTriagePrompt",
+        "the one triage of a run with a queue, every source kind",
+        "oneTriagePrompt(CTX, launcher(CTX), 'triage', [{ reporter: 'row-a-source', report: 'a/report.md', findings: ['F1 — a title · door: a door · clause: a-clause · repro: a block', 'F2 — another'] }, { reporter: 'scope', report: 'a/scope.md', findings: ['left open 1 — a thing'] }].concat(redSources([{ item: 'regression-set', clause: 'a-clause', verdict: '/s/hold/regression-set-c1-a1/verdict.json', output: '/s/hold/regression-set-c1-a1/output' }, { item: 'ci', clause: 'a-clause', report: testReport(CTX, 'preflight') }]), ledgerSource('rc24', { untriaged: { count: 2 } })))",
+    ),
+    (
         "verifyPrompt",
         "",
         "verifyPrompt(CTX, launcher(CTX), 'verify-p1-a-key', { key: 'a-key', door: 'a door', clause: 'a-clause', grade: 'breaks', repro: 'a block' }, 'what to drive again', BUILT)",
@@ -3439,7 +3568,7 @@ function schemaWords() {
     if (typeof value.description === 'string') said.push(value.description)
     for (const inner of Object.values(value)) walk(inner)
   }
-  for (const schema of [STEP_SCHEMA, CARRY_SCHEMA, PREFLIGHT_SCHEMA, SCOPE_SCHEMA, UNIT_SCHEMA, PROBE_UNIT_SCHEMA, TRIAGE_SCHEMA, VERIFY_SCHEMA, ADVOCATE_SCHEMA, PROPOSAL_SCHEMA, FIXER_SCHEMA, RECORD_SCHEMA]) walk(schema)
+  for (const schema of [STEP_SCHEMA, CARRY_SCHEMA, PREFLIGHT_SCHEMA, SCOPE_SCHEMA, UNIT_SCHEMA, PROBE_UNIT_SCHEMA, TRIAGE_SCHEMA, FILED_SCHEMA, VERIFY_SCHEMA, ADVOCATE_SCHEMA, PROPOSAL_SCHEMA, FIXER_SCHEMA, RECORD_SCHEMA]) walk(schema)
   return said.join('\\n')
 }
 `
@@ -3993,6 +4122,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
     for helper in [
         "runUnits",
         "triagePasses",
+        "triageOnce",
         "driveFork",
         "settleReports",
         "preflightOf",

@@ -128,6 +128,18 @@
 //! (`L11`, below), is recorded as CONFIRMED WITH ITS REGRESSION FACT UNKNOWN — never as
 //! unverified and never as *not a regression* — and the state names the finding.
 //!
+//! **A run with a queue takes another path from its triage on** (the build plan of the
+//! reshaped `test` stage, §4, Phase B; its task `T5a`): the scenarios on an opening WITH AN
+//! ORDER ([`Sim::queued`]) — every other scenario opens without one and runs the path it ran,
+//! unmodified. There the stage has ONE triage, and its stand-in does what the prompt spells:
+//! it holds the prompt to numbering every finding the call names, writes the scripted entries
+//! to ONE file, and hands it over by the prompt's own `dev/stabilize-record triage` call — so
+//! the partition, the rendered report and every refusal are the real script's. **What of that
+//! path is built ends with the entries handed over**: its first record is the next task's, so
+//! each of these scenarios asserts the refusal of that path ([`ends_before_its_record`]) —
+//! the stage halts at its record, names the rendering, and records nothing — and the task
+//! that builds the record turns that helper.
+//!
 //! **The `fix` stage refuses to start**, and that is all that is asserted of it; the rig,
 //! the scenario and the stand-in are shaped so that its half's tasks add its agents here.
 //!
@@ -446,18 +458,24 @@ impl Sim {
     /// bounds and the ledger's opening rows — each by the record script's own call — then
     /// ONE commit, pushed. Ready when the state says so.
     fn open(&self, opening: &Opening) {
+        self.open_with(opening, &json!({}));
+    }
+
+    /// The opening, with `more` facts of the run beside those every opening writes: the
+    /// order, the budget and the hand-on number of A RUN WITH A QUEUE (`Sim::queued`).
+    fn open_with(&self, opening: &Opening, more: &Value) {
         self.rig.write(
             &format!("{RUN_DIR}/opening.md"),
             "# the opening record\n\nThe closing condition, the candidate and the test set of a simulated run.\n",
         );
         let previous = self.rig.rev("main");
-        self.record(
-            &["run-set", "--run", RUN],
-            &json!({"stop": "every-round", "previous": PREVIOUS,
-                    "previous-commit": previous, "scope": "delta",
-                    "clauses": opening.clauses})
-            .to_string(),
-        );
+        let mut facts = json!({"stop": "every-round", "previous": PREVIOUS,
+                               "previous-commit": previous, "scope": "delta",
+                               "clauses": opening.clauses});
+        for (name, value) in more.as_object().expect("more facts are an object") {
+            facts[name] = value.clone();
+        }
+        self.record(&["run-set", "--run", RUN], &facts.to_string());
         self.record(&["item-set", "--run", RUN], &opening.items.to_string());
         for bound in &opening.bounds {
             self.record(
@@ -6209,6 +6227,799 @@ fn a_records_gate_with_no_verdict_leaves_the_batch_applied_and_the_next_invocati
         2,
         "nothing was applied"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A run with a queue: the new path, from its triage on (the reshape's plan, Phase B)
+// ---------------------------------------------------------------------------
+
+/// The order a simulated run WITH A QUEUE is opened with: the classes its queue is ranked by.
+/// What the order ranks is no subject of these scenarios — that a run holds one is: it is what
+/// the state's digest says of the run (`queue`), and what the harness chooses its path by.
+const ORDER: [&str; 2] = ["route hunt", "behaviour hunt"];
+
+/// Where the record script renders the entries of a stage's one triage: the path a `test`
+/// report of the reporter `triage` and that attempt has.
+fn rendering(round: u32, attempt: u32) -> String {
+    format!("{RUN_DIR}/r{round}/reports/test/triage.a{attempt}.md")
+}
+
+/// The line a rendered report opens with — what says that the record script rendered the file
+/// from the entries a triage handed over, and that no agent wrote it.
+const RENDERED: &str = "<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->";
+
+/// A NEW finding as a triage hands it over in its one file: what its ledger row needs, the
+/// grade, why, its kind — and the handed findings it folds, each by its source and its number.
+/// The kind's evidence is the caller's to add: without it the entry is a lead.
+fn keyed(key: &str, kind: &str, grade: &str, folds: Value) -> Value {
+    json!({"key": key, "found": "new", "doctype": "jigc-feedback", "door": "jigc doc set",
+           "clause": "audit-clean", "repro": format!("the block of {key}"), "grade": grade,
+           "kind": kind, "why": format!("why {key} is graded {grade}"), "folds": folds})
+}
+
+/// A finding FOUND AGAIN: the row it is, by its key, the grade, why and what it folds — and
+/// none of a row's cells.
+fn found_again(key: &str, grade: &str, folds: Value) -> Value {
+    json!({"key": key, "found": "again", "grade": grade,
+           "why": format!("{key} is a row the run holds, and this is it again"), "folds": folds})
+}
+
+impl Sim {
+    /// A rig whose run is opened WITH AN ORDER — a run with a queue, as its state says.
+    fn queued(label: &str, opening: &Opening) -> Self {
+        let sim = Sim::new(label);
+        sim.open_with(
+            opening,
+            &json!({"order": ORDER, "budget": 30, "hand-on": 2}),
+        );
+        let state = sim.state();
+        assert!(
+            state["queue"].is_object(),
+            "a run that holds an order has a queue: {state}"
+        );
+        sim
+    }
+
+    /// The entries a rendered report holds as data: its one fenced block.
+    fn rendered(&self, round: u32, attempt: u32) -> Value {
+        let text = self.rig.read(&rendering(round, attempt));
+        assert!(
+            text.starts_with(&format!("{RENDERED}\n")),
+            "the triage's report is the record script's rendering of its entries:\n{text}"
+        );
+        let (_, rest) = text
+            .split_once("\n```json\n")
+            .unwrap_or_else(|| panic!("a rendered report holds its entries as data:\n{text}"));
+        let (block, _) = rest
+            .rsplit_once("\n```\n")
+            .unwrap_or_else(|| panic!("the block closes:\n{text}"));
+        serde_json::from_str(block).unwrap_or_else(|e| panic!("the block is JSON ({e}):\n{block}"))
+    }
+}
+
+/// The prompt the stage's one triage was handed.
+fn one_triage(ran: &Ran) -> &str {
+    &ran.prompts
+        .iter()
+        .find(|(label, _)| label == "triage")
+        .unwrap_or_else(|| panic!("the stage's one triage was launched: {:?}", ran.agents()))
+        .1
+}
+
+/// The ONE line the call the triage's prompt spells printed: the record script's digest.
+fn filed_line(ran: &Ran) -> Value {
+    let (_, _, printed) = ran
+        .reads
+        .iter()
+        .find(|(label, command, _)| {
+            label == "triage" && command.starts_with("dev/stabilize-record triage ")
+        })
+        .unwrap_or_else(|| panic!("the triage handed its entries over: {:?}", ran.reads));
+    serde_json::from_str(printed).expect("the call prints one line of JSON")
+}
+
+/// The line of a prompt that hands the source `name` over, with the numbered lines under it.
+fn handed_under(prompt: &str, name: &str) -> Vec<String> {
+    let lines: Vec<&str> = prompt.lines().collect();
+    let at = lines
+        .iter()
+        .position(|line| line.starts_with(&format!("- {name} — ")))
+        .unwrap_or_else(|| panic!("the prompt hands the source `{name}` over:\n{prompt}"));
+    let mut block = vec![lines[at].to_owned()];
+    block.extend(
+        lines[at + 1..]
+            .iter()
+            .take_while(|line| line.starts_with("   "))
+            .map(|line| (*line).to_owned()),
+    );
+    block
+}
+
+/// WHERE THE NEW PATH ENDS AT THIS COMMIT — a refusal of that path, never of the stage (the
+/// reshape's plan, §4, Phase B: *on the new path, a step that is not built yet is a refusal of
+/// that path, which the task's own scenario asserts*): the one triage handed its entries over,
+/// its report is on disk, and THE STAGE'S FIRST RECORD IS NOT BUILT — so the stage halts at
+/// its record, names the rendering by its path and its hash, and RECORDS NOTHING: no batch, no
+/// commit, no verifier, and no agent of the other path.
+fn ends_before_its_record(sim: &Sim, ran: &Ran, candidate: &str) {
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["not_built"]
+        ]),
+        json!(["halted", "record", "record"]),
+        "{result}"
+    );
+    let line = filed_line(ran);
+    let on_disk = sim.rig.read(&rendering(1, 1));
+    assert_eq!(
+        result["halted"]["triage"],
+        json!({"reporter": "triage", "report": rendering(1, 1), "sha256": sha256(&on_disk)}),
+        "the halt names the rendering by the path and the hash its call printed: {result}"
+    );
+    assert_eq!(
+        json!([line["triage"], line["sha256"]]),
+        json!([rendering(1, 1), sha256(&on_disk)]),
+        "{line}"
+    );
+    // NOTHING IS RECORDED: the candidate is the branch's tip, no batch is applied, and what
+    // the attempt wrote is untracked under the run's directory.
+    assert_eq!(sim.rig.rev("HEAD"), candidate, "no commit was made");
+    assert!(
+        sim.rig.status().lines().all(|line| line.starts_with("?? ")),
+        "nothing is staged or changed: {}",
+        sim.rig.status()
+    );
+    let agents = ran.agents();
+    for other in [
+        "triage:p",
+        "verify:",
+        "advocate:",
+        "proposal:",
+        "record:",
+        "git:record:",
+        "git:push",
+    ] {
+        assert!(
+            !agents.iter().any(|label| label.starts_with(other)),
+            "`{other}…` is of the other path, or of a step this path has not built: {agents:?}"
+        );
+    }
+    assert_eq!(
+        agents[agents.len() - 2..],
+        ["triage", "git:check-reports:triage"],
+        "the path ends with its one triage and the check of its report: {agents:?}"
+    );
+}
+
+/// The opening of the fullest scenario of the new path: an audit area that finds things, the
+/// gate and the regression set as held checks, one row the opening seeded and nobody graded,
+/// and a declared bound that row is graded under.
+fn held_and_seeded() -> Opening {
+    Opening {
+        clauses: vec!["audit-clean", "working-product", "adoptable"],
+        items: json!([
+            item("area-a", "audit-area", "audit-clean"),
+            item("gate", "held-gate", "working-product"),
+            item("regression-set", "held-regression", "working-product"),
+        ]),
+        bounds: vec!["windows"],
+        rows: json!([{
+            "key": SEEDED, "doctype": "jigc-feedback", "round": 0,
+            "source": "known at the opening", "door": "jigc setup", "clause": "adoptable",
+            "repro": "the opening record", "kind": "behaviour", "origin": "seed",
+            "commands": "jigc setup, on a machine nobody here has",
+        }]),
+    }
+}
+
+const ROUTE: &str = "doc-set-prints-a-dead-route";
+const HUNCH: &str = "doc-set-may-drop-a-slot";
+
+/// **A red held check is graded by the stage's one triage, under its own key** (the reshape's
+/// plan, `T5a`; its review's `B1`: *a row that appears after the one triage has no grader* —
+/// the record call files a red result as `red-<item>`, ungraded, in the batch that follows
+/// triage). IN A RUN WITH A QUEUE the one triage is handed EVERY SOURCE KIND, each finding
+/// under a number: what the reporters returned, what the scope step left open, THE RED RESULT
+/// AS A SOURCE UNDER THE KEY ITS ROW IS FILED WITH — graded from the tool's verdict, by its
+/// file — and the rows nobody graded, by the read that prints them. It hands its entries over
+/// as ONE FILE, by the call the prompt spells whole, and its return holds a path, a hash and
+/// the counts: no entry passes through the harness.
+#[test]
+fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-red-held", &held_and_seeded());
+    let candidate = sim.rig.rev("HEAD");
+    let scratch = sim.rig.scratch.display().to_string();
+    let mut route = keyed(ROUTE, "route", "breaks", json!({"area-a-review": [1]}));
+    route["route"] = json!("Run: jigc doc set --repair");
+    route["code"] = json!("doc.set-slot");
+    // A MERGE: the reviewer's second finding and what the scope step left open are one entry.
+    let hunch = keyed(
+        HUNCH,
+        "lead",
+        "unclear",
+        json!({"area-a-review": [2], "scope": [1]}),
+    );
+    let mut seeded = found_again(SEEDED, "out-of-scope", json!({"ledger": [1]}));
+    seeded["bound"] = json!("windows");
+    let mut scope = one_door();
+    scope["left_open"] = json!(["a slot may be dropped where nobody listed a door"]);
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({
+            "held": {"regression-set": {"status": "red"}},
+            "scope": scope,
+            "agents": {
+                "area-a:review": found(&[
+                    finding("s-1", "a refusal prints a route that leads nowhere", "jigc doc set", "audit-clean"),
+                    finding("s-2", "a slot may be dropped", "jigc doc set", "audit-clean"),
+                ]),
+                "triage": {"entries": [
+                    route,
+                    hunch,
+                    found_again("red-regression-set", "breaks", json!({"red-regression-set": [1]})),
+                    seeded,
+                ]},
+            },
+        }),
+    );
+
+    // (1) THE PROMPT, WHOLE IN WHAT IT HANDS OVER: every source under its name, every finding
+    // under its number, and the call with one word a source.
+    let prompt = one_triage(&ran);
+    let entries_file = format!("{scratch}/triage/r1.a1.json");
+    let call = format!(
+        "`dev/stabilize-record triage --run {RUN} --round 1 --reporter triage --attempt 1 --scratch {scratch} --from {entries_file} -- area-a-review=2 scope=1 red-regression-set=1 ledger=1`"
+    );
+    assert!(
+        prompt.contains(&call),
+        "the call, spelled whole ({call}):\n{prompt}"
+    );
+    assert!(
+        prompt.contains("Grade every finding below — 5 in all, from 4 source(s)."),
+        "{prompt}"
+    );
+    let reviewer = handed_under(prompt, "area-a-review");
+    assert_eq!(reviewer.len(), 3, "{reviewer:?}");
+    assert!(
+        reviewer[0].contains(&format!("`{RUN_DIR}/r1/reports/test/area-a-review.a1.md`"))
+            && reviewer[1].starts_with("   1. s-1 — a refusal prints a route that leads nowhere")
+            && reviewer[2].starts_with("   2. s-2 — a slot may be dropped"),
+        "a reporter's findings, numbered from 1 under its name: {reviewer:?}"
+    );
+    let left_open = handed_under(prompt, "scope");
+    assert!(
+        left_open.len() == 2
+            && left_open[1].starts_with("   1. left open 1 — a slot may be dropped"),
+        "what the scope step left open, numbered: {left_open:?}"
+    );
+    // THE RED RESULT: a source under the key its row will be filed with, and no reporter —
+    // its evidence the file the tool kept its verdict in, which is there.
+    let red = handed_under(prompt, "red-regression-set");
+    let verdict = format!("{scratch}/hold/regression-set-c1-a1/verdict.json");
+    assert_eq!(red.len(), 2, "{red:?}");
+    assert!(
+        red[0].contains("A RED RESULT")
+            && red[0].contains("under the key `red-regression-set`")
+            && red[0].contains(&format!("`{verdict}`"))
+            && red[1].starts_with("   1. the check `regression-set` is red")
+            && red[1].contains("clause: working-product"),
+        "{red:?}"
+    );
+    let kept: Value = serde_json::from_str(
+        fs::read_to_string(&verdict)
+            .unwrap_or_else(|e| panic!("read {verdict}: {e}"))
+            .trim_end(),
+    )
+    .expect("the tool's verdict is one line of JSON");
+    assert_eq!(
+        kept["verdict"], "red",
+        "the evidence the prompt names: {kept}"
+    );
+    // THE ROWS NOBODY GRADED: the read, and none of them — no cell of the seeded row is in
+    // the prompt, and the read the prompt names printed it.
+    let ledger = handed_under(prompt, "ledger");
+    assert!(
+        ledger.len() == 1
+            && ledger[0].contains(&format!("`dev/stabilize-record untriaged --run {RUN}`"))
+            && ledger[0].contains("NUMBERED 1 TO 1 IN THE ORDER THAT READ PRINTS THEM"),
+        "{ledger:?}"
+    );
+    for cell in [
+        "jigc setup",
+        "known at the opening",
+        "a machine nobody here has",
+    ] {
+        assert!(
+            !prompt.contains(cell),
+            "`{cell}` is text of a ledger row: {prompt}"
+        );
+    }
+    let (_, _, printed) = ran
+        .reads
+        .iter()
+        .find(|(label, command, _)| label == "triage" && command.contains(" untriaged "))
+        .expect("the triage ran the read its prompt names");
+    let printed: Value = serde_json::from_str(printed).expect("one line of JSON");
+    assert_eq!(
+        json!([printed["count"], printed["untriaged"][0]["key"]]),
+        json!([1, SEEDED])
+    );
+    // WHAT THE RETURN IS HELD TO is said, and the report line is a halt's road and no other.
+    assert!(
+        prompt.contains("WHAT YOUR RETURN IS HELD TO")
+            && prompt.contains(&format!("`{}`", rendering(1, 1)))
+            && prompt
+                .lines()
+                .filter(|line| line.starts_with("REPORT: "))
+                .count()
+                == 1
+            && prompt.contains("ONLY WHERE YOU HALT"),
+        "{prompt}"
+    );
+
+    // (2) WHAT WAS HANDED OVER: one file, and the report rendered from it — the red result
+    // under its own key, FOUND AGAIN, with the class its row will be filed with.
+    let written: Value = serde_json::from_str(
+        &fs::read_to_string(&entries_file).unwrap_or_else(|e| panic!("read {entries_file}: {e}")),
+    )
+    .expect("the entries are one JSON array");
+    assert_eq!(written.as_array().map(Vec::len), Some(4));
+    let data = sim.rendered(1, 1);
+    assert_eq!(
+        data["handed"],
+        json!({"area-a-review": 2, "scope": 1, "red-regression-set": 1, "ledger": 1})
+    );
+    assert_eq!(
+        json!([
+            data["entries"][2]["key"],
+            data["entries"][2]["found"],
+            data["entries"][2]["grade"],
+            data["entries"][2]["folds"],
+            data["entries"][1]["folds"]
+        ]),
+        json!([
+            "red-regression-set",
+            "again",
+            "breaks",
+            ["red-regression-set 1"],
+            ["area-a-review 2", "scope 1"]
+        ]),
+        "{data}"
+    );
+    let line = filed_line(&ran);
+    assert_eq!(
+        json!([
+            line["findings"],
+            line["counts"]["entries"],
+            line["entries"][2]
+        ]),
+        json!([5, 4, {"key": "red-regression-set", "found": "again", "grade": "breaks",
+                      "class": "behaviour hunt"}]),
+        "{line}"
+    );
+
+    // (3) THE STAGE ENDS WHERE THE PATH IS BUILT TO: at its record, with nothing recorded —
+    // the ledger holds the one seeded row, and no row of a red result yet.
+    ends_before_its_record(&sim, &ran, &candidate);
+    assert_eq!(ran.result["halted"]["findings_in"], 5, "{}", ran.result);
+    let state = sim.state();
+    assert_eq!(
+        state["ledger"]
+            .as_array()
+            .expect("the ledger")
+            .iter()
+            .map(|row| json!([row["key"], row["grade"]]))
+            .collect::<Vec<_>>(),
+        [json!([SEEDED, "ungraded"])],
+        "{state}"
+    );
+    assert!(
+        sim.reports(1).contains(&"triage.a1.md".to_owned())
+            && sorted(ran.reporters.clone())
+                == sorted(
+                    sim.reports(1)
+                        .iter()
+                        .map(|name| name.trim_end_matches(".a1.md").to_owned())
+                        .collect()
+                ),
+        "one report per launched reporter, the triage's rendered one among them: {:?}",
+        sim.reports(1)
+    );
+}
+
+/// **A red check that is not held is graded too, and its evidence is the preflight's report**
+/// (`T5a`; `B1`'s residual: *a check the preflight reads has no verdict file*). Each red check
+/// is a source under its own key, graded from THE REPORT OF THE PREFLIGHT THAT READ IT — the
+/// first preflight's for a check of every candidate, the second's for one the scope selected —
+/// named by its path: no word of what the preflight returned is in the prompt. AND THE STAGE
+/// STOPPED AFTER ITS TRIAGE returns the rendering by its path and its hash, and no entry.
+#[test]
+fn a_red_check_that_is_not_held_is_graded_too_and_its_evidence_is_the_preflights_report() {
+    if !can_run() {
+        return;
+    }
+    let opening = Opening {
+        clauses: vec!["gate-green", "audit-clean"],
+        items: json!([
+            item("gate", "check", "gate-green"),
+            in_scope("ci", "check", "gate-green", &["jigc doc set"], &[]),
+            item("area-a", "audit-area", "audit-clean"),
+        ]),
+        bounds: vec![],
+        rows: json!([]),
+    };
+    let sim = Sim::queued("queue-red-check", &opening);
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({"stopAfter": "triage"})),
+        json!({
+            "checks": {"gate": "red", "ci": "red"},
+            "scope": one_door(),
+            "agents": {
+                "area-a:review": nothing(),
+                "triage": {"entries": [
+                    found_again("red-gate", "unclear", json!({"red-gate": [1]})),
+                    found_again("red-ci", "breaks", json!({"red-ci": [1]})),
+                ]},
+            },
+        }),
+    );
+    let prompt = one_triage(&ran);
+    assert!(
+        prompt.contains(" -- red-gate=1 red-ci=1`")
+            && prompt.contains("Grade every finding below — 2 in all, from 2 source(s)."),
+        "a reporter that found nothing is no source, and each red check is one:\n{prompt}"
+    );
+    for (key, check, preflight) in [
+        ("red-gate", "gate", "preflight"),
+        ("red-ci", "ci", "preflight-second"),
+    ] {
+        let red = handed_under(prompt, key);
+        let report = format!("{RUN_DIR}/r1/reports/test/{preflight}.a1.md");
+        assert!(
+            red.len() == 2
+                && red[0].contains("A RED RESULT")
+                && red[0].contains(&format!("under the key `{key}`"))
+                && red[0].contains(&format!(
+                    "the report of the preflight that read it red, `{report}`"
+                ))
+                && red[1].starts_with(&format!("   1. the check `{check}` is red"))
+                && red[1].contains("clause: gate-green"),
+            "{red:?}"
+        );
+        assert!(
+            sim.rig.root.join(&report).is_file(),
+            "`{report}`, the evidence the prompt names, is there"
+        );
+    }
+    assert!(
+        !prompt.contains("scripted by the simulation") && !prompt.contains("verdict.json"),
+        "no word of what a preflight returned is in the prompt, and no verdict file is named for a check no tool held:\n{prompt}"
+    );
+    let data = sim.rendered(1, 1);
+    assert_eq!(
+        data["entries"]
+            .as_array()
+            .expect("the entries")
+            .iter()
+            .map(|entry| json!([entry["key"], entry["found"], entry["grade"], entry["folds"]]))
+            .collect::<Vec<_>>(),
+        [
+            json!(["red-gate", "again", "unclear", ["red-gate 1"]]),
+            json!(["red-ci", "again", "breaks", ["red-ci 1"]]),
+        ],
+        "{data}"
+    );
+
+    // THE STOP AFTER THE TRIAGE — the tuning stop, on this path: the rendering by its path
+    // and its hash, how many findings were handed, and no entry.
+    let result = &ran.result;
+    let on_disk = sim.rig.read(&rendering(1, 1));
+    assert_eq!(
+        json!([
+            result["status"],
+            result["after"],
+            result["triage"],
+            result["findings_in"],
+            result["entries"]
+        ]),
+        json!([
+            "stopped",
+            "triage",
+            {"reporter": "triage", "report": rendering(1, 1), "sha256": sha256(&on_disk)},
+            2,
+            null
+        ]),
+        "{result}"
+    );
+    assert_eq!(
+        sim.rig.rev("HEAD"),
+        candidate,
+        "a stopped stage records nothing"
+    );
+}
+
+/// **Triage that leaves a handed finding in no entry, or in two, halts by name** (`T5a`; the
+/// arithmetic half of `wf-triage-reads-harness`). THE PARTITION IS THE RECORD SCRIPT'S, held
+/// to the counts of the call — so three things are shown. A file that leaves a finding out
+/// and folds another twice is REFUSED, NAMING EACH BY ITS SOURCE AND ITS NUMBER, nothing is
+/// written, and a triage that does not correct it halts the stage with that line. A triage
+/// that corrects the file hands the same attempt over again, and the stage goes on. And A
+/// CALL TYPED WITH OTHER COUNTS THAN THE PROMPT SPELLS holds another partition: the harness
+/// holds what the call printed of each source to what it handed, and halts by the source's
+/// name.
+#[test]
+fn triage_that_leaves_a_handed_finding_in_no_entry_or_in_two_halts_by_name() {
+    if !can_run() {
+        return;
+    }
+    let two = || {
+        found(&[
+            finding("s-1", "one thing", "jigc doc set", "audit-clean"),
+            finding("s-2", "another", "jigc doc set", "audit-clean"),
+        ])
+    };
+    let once = |key: &str, numbers: Value| {
+        let mut entry = keyed(
+            key,
+            "behaviour",
+            "breaks",
+            json!({"area-a-review": numbers}),
+        );
+        entry["commands"] = json!("jigc doc set a b");
+        entry
+    };
+    let script =
+        |triage: Value| small_stage(json!({"agents": {"area-a:review": two(), "triage": triage}}));
+
+    // (1) IN NO ENTRY, AND IN TWO: refused by the script, by name — and the triage halts.
+    let sim = Sim::queued("queue-partition", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        script(json!({"entries": [once("first", json!([1])), once("second", json!([1]))]})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["not_built"]
+        ]),
+        json!(["halted", "triage", null]),
+        "{result}"
+    );
+    let evidence = text(&result["halted"]["halt"]["evidence"]);
+    assert!(
+        evidence.contains("refused bad-value")
+            && evidence.contains("in no entry: area-a-review 2")
+            && evidence.contains("area-a-review 1 (entries 1 and 2)"),
+        "the refusal names each finding by its source and its number: {evidence}"
+    );
+    assert!(
+        text(&result["halted"]["reason"]).starts_with("triage halted: "),
+        "{result}"
+    );
+    // NOTHING WAS WRITTEN by the refused call: what lies at the report's path is the halt's
+    // report, written by the call of the `REPORT:` line — and no rendering.
+    let left = sim.rig.read(&rendering(1, 1));
+    assert!(
+        !left.starts_with(RENDERED) && left.contains("Halted: the entries were refused"),
+        "{left}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), candidate);
+
+    // (2) THE FILE CORRECTED, THE SAME CALL MADE AGAIN: the same attempt is handed over, and
+    // the stage goes on to where the path ends.
+    let sim = Sim::queued("queue-partition-corrected", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        script(json!({
+            "entries": [once("first", json!([1]))],
+            "then": [once("first", json!([1])), once("second", json!([2]))],
+        })),
+    );
+    ends_before_its_record(&sim, &ran, &candidate);
+    let calls: Vec<&String> = ran
+        .commands
+        .iter()
+        .filter(|command| command.starts_with("dev/stabilize-record triage "))
+        .collect();
+    assert!(
+        calls.len() == 2 && calls[0] == calls[1] && calls[0].ends_with(" -- area-a-review=2"),
+        "one call, made twice as it stands: {calls:?}"
+    );
+    assert_eq!(
+        sim.rendered(1, 1)["entries"].as_array().map(Vec::len),
+        Some(2),
+        "the rendering is of the corrected file"
+    );
+
+    // (3) A CALL TYPED WITH ANOTHER COUNT: the script's partition holds — for the one finding
+    // the call names — and a finding is in no entry. The harness halts by the source's name.
+    let sim = Sim::queued("queue-partition-counts", &one_area());
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        script(json!({"entries": [once("first", json!([1]))], "counts": {"area-a-review": 1}})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["not_built"]
+        ]),
+        json!(["halted", "triage", null]),
+        "{result}"
+    );
+    let reason = text(&result["halted"]["reason"]);
+    assert!(
+        reason.contains("`area-a-review`: handed 2, and the call was typed with 1"),
+        "the source, by name, with both counts: {reason}"
+    );
+    assert!(
+        sim.rig.read(&rendering(1, 1)).starts_with(RENDERED),
+        "the script took the call it was typed: its rendering lies there, uncommitted, and the attempt is spent"
+    );
+
+    // (4) AND WHETHER THE RENDERED ENTRIES ARE THERE IS THE REPORT CHECK'S WORD, never the
+    // return's: a rendering a hand wrote in is not the text its entries render — the check
+    // sets it aside, the triage has left no report, and the stage halts there.
+    let sim = Sim::queued("queue-partition-overwritten", &one_area());
+    let mut overwritten = script(json!({"entries": [once("first", json!([1, 2]))]}));
+    overwritten["overwrites"] = json!({"triage": format!(
+        "{RENDERED}\n# Round 1 — the triage, as a hand left it\n\n<!-- end of report -->\n"
+    )});
+    let ran = sim.invoke(sim.args("test", json!({})), overwritten);
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["not_built"]
+        ]),
+        json!(["halted", "triage", null]),
+        "{result}"
+    );
+    let reason = text(&result["halted"]["reason"]);
+    assert!(
+        reason.contains("the report check finds no report of it there")
+            && reason.contains("was set aside"),
+        "{reason}"
+    );
+    assert!(
+        !sim.reports(1).contains(&"triage.a1.md".to_owned()),
+        "what was no rendering has left the tree: {:?}",
+        sim.reports(1)
+    );
+}
+
+/// **A stage with nothing to grade launches no triage** — of the builder's naming, beside the
+/// plan's four. Where no source hands a finding — the instruments found nothing, nothing came
+/// back red, and the ledger holds no row nobody graded — there is no call to spell and no
+/// entry to hand over: the one triage is not launched, and the stage ends where the path
+/// ends, saying so.
+#[test]
+fn a_stage_with_nothing_to_grade_launches_no_triage_on_the_new_path() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-nothing", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["not_built"],
+            result["halted"]["triage"],
+            result["halted"]["findings_in"]
+        ]),
+        json!(["halted", "record", "record", null, 0]),
+        "{result}"
+    );
+    assert!(
+        text(&result["halted"]["reason"]).contains("no source handed a finding, so no triage ran"),
+        "{result}"
+    );
+    let agents = ran.agents();
+    assert!(
+        !agents.iter().any(|label| label.starts_with("triage"))
+            && agents.last() == Some(&"git:check-reports"),
+        "no triage of either path is launched, and nothing follows the instruments' report check: {agents:?}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), candidate);
+}
+
+/// **An entry without its kind's evidence is recorded as a lead** (`T5a`; `T1`: *a kind
+/// without its evidence is a lead*; the definition: *the file is taken once: the evidence is
+/// in the file before you hand it over*). The filing takes it, and the report it renders
+/// holds the entry AS THE ROW IT WILL BE — a lead, with what it was given as — while an entry
+/// that brings its kind's evidence keeps its kind. The stage does not halt on it and does not
+/// read it: what the harness holds of the triage is the path, the hash and the counts.
+#[test]
+fn an_entry_without_its_kinds_evidence_is_recorded_as_a_lead() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-lead", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let mut evident = keyed(
+        "a-route-with-its-line",
+        "route",
+        "breaks",
+        json!({"area-a-review": [1]}),
+    );
+    evident["route"] = json!("Run: jigc doc set --force");
+    // Given as a route, and no route line: the reporter described the route and quoted none.
+    let bare = keyed(
+        "a-route-nobody-quoted",
+        "route",
+        "breaks",
+        json!({"area-a-review": [2]}),
+    );
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"agents": {
+            "area-a:review": found(&[
+                finding("s-1", "a route that is quoted", "jigc doc set", "audit-clean"),
+                finding("s-2", "a route that is described", "jigc doc set", "audit-clean"),
+            ]),
+            "triage": {"entries": [evident, bare]},
+        }})),
+    );
+    ends_before_its_record(&sim, &ran, &candidate);
+    let data = sim.rendered(1, 1);
+    assert_eq!(
+        data["entries"]
+            .as_array()
+            .expect("the entries")
+            .iter()
+            .map(|entry| json!([
+                entry["key"],
+                entry["kind"],
+                entry["given"],
+                entry["evidence"]
+            ]))
+            .collect::<Vec<_>>(),
+        [
+            json!([
+                "a-route-with-its-line",
+                "route",
+                null,
+                "Run: jigc doc set --force"
+            ]),
+            json!(["a-route-nobody-quoted", "lead", "route", null]),
+        ],
+        "{data}"
+    );
+    let line = filed_line(&ran);
+    assert_eq!(
+        json!([line["leads"], line["counts"]["classes"]]),
+        json!([["a-route-nobody-quoted"], {"route hunt": 1, "lead hunt": 1}]),
+        "the call says which key it entered as a lead: {line}"
+    );
+    // NO ENTRY PASSED THROUGH THE HARNESS: its return names no key, no grade and no kind.
+    let returned = ran.result.to_string();
+    for of_an_entry in [
+        "a-route-nobody-quoted",
+        "a-route-with-its-line",
+        "\"lead\"",
+        "Run: jigc doc set",
+    ] {
+        assert!(
+            !returned.contains(of_an_entry),
+            "`{of_an_entry}` is of an entry, and the harness's return holds it: {returned}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

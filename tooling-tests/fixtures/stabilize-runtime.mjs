@@ -88,6 +88,25 @@
 //                                  prompt's `dev/stabilize-probe hash`, its line relayed;
 //                                  a prompt that names the record script or a gate fails
 //                                  the run
+//   triage     finding-triage      THE STAGE'S ONE TRIAGE, IN A RUN WITH A QUEUE — the label
+//                                  is the bare word; a pass of the other path is `triage:p<n>`,
+//                                  a scripted reporter like any. What its definition has it do
+//                                  where the prompt spells a `dev/stabilize-record triage`
+//                                  call: the entries the scenario scripts (`entries`) written
+//                                  — ONE file, a JSON array — to the file that call names, and
+//                                  handed over by THE CALL AS THE PROMPT SPELLS IT. The prompt
+//                                  is held first: every source the call names has its findings
+//                                  in the prompt, numbered 1 to its count, or names the read
+//                                  that prints them — else the run fails. A call the script
+//                                  refuses is made again over the corrected file where the
+//                                  scenario scripts one (`then`); else it is the triage's
+//                                  HALT, the refusal's line verbatim, reported by the call of
+//                                  its `REPORT:` line. `counts` has it type the call with
+//                                  OTHER COUNTS than the prompt spells: a triage that did not
+//                                  type the call as it stands. `overwrites` is written over
+//                                  its rendered report, as over any. Its return is read off the
+//                                  ONE line the call printed, which is reported (`reads`):
+//                                  the path, the hash, what each source handed
 //   record:*   build-executor      the steps the prompt lists, in its order: the payload
 //                                  written to the file the prompt names — by a file write,
 //                                  as an agent's file tool writes one — and the batch
@@ -430,6 +449,57 @@ function recordStep(label, prompt) {
   return { status: 'applied' }
 }
 
+// ---- the stage's one triage, in a run with a queue ----
+// A source's findings, as the prompt hands them: the lines numbered under the source's name —
+// or null where the source names the read that prints its rows.
+function numberedUnder(prompt, source) {
+  const lines = prompt.split('\n')
+  const at = lines.findIndex((line) => line.startsWith('- ' + source + ' — '))
+  if (at < 0) return undefined
+  if (/`dev\/stabilize-record untriaged /.test(lines[at])) return null
+  const numbers = []
+  for (let i = at + 1; i < lines.length && /^ {3}[0-9]+\. /.test(lines[i]); i++) numbers.push(Number(/^ {3}([0-9]+)\. /.exec(lines[i])[1]))
+  return numbers
+}
+function oneTriage(label, prompt) {
+  used.add(label)
+  const said = scripted[label]
+  if (!said) fail('no agent is scripted for the label `' + label + '`')
+  const command = span(prompt, 'dev/stabilize-record triage --run ')
+  const file = command && / --from (\S+)/.exec(command)
+  const words = command && command.includes(' -- ') ? command.split(' -- ')[1].split(' ') : null
+  if (!file || !words) fail('the prompt of `' + label + '` spells no `dev/stabilize-record triage` call fed from a file, with a word for every source')
+  // EVERY HANDED FINDING HAS A NUMBER IN THE PROMPT, under its source's name: 1 to the count
+  // the call names for that source — or the source names the read, which printed that many.
+  for (const word of words) {
+    const [source, count] = [word.slice(0, word.lastIndexOf('=')), Number(word.slice(word.lastIndexOf('=') + 1))]
+    const numbers = numberedUnder(prompt, source)
+    if (numbers === undefined) fail('the call the prompt of `' + label + '` spells names the source `' + source + '`, and the prompt hands no findings under that name')
+    const printed = numbers === null ? JSON.parse((reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record untriaged ')) || { printed: '{}' }).printed).count : null
+    if (numbers === null ? printed !== count : numbers.length !== count || numbers.some((n, i) => n !== i + 1)) fail('the prompt of `' + label + '` names ' + count + ' finding(s) of `' + source + '` in its call, and ' + (numbers === null ? 'the read it names printed ' + printed : 'numbers them ' + JSON.stringify(numbers)))
+  }
+  // The call as the triage types it: as it stands — or with the counts the scenario has it type.
+  const typed = said.counts ? command.split(' -- ')[0] + ' -- ' + Object.entries(said.counts).map(([source, count]) => source + '=' + count).join(' ') : command
+  const handOver = (entries) => {
+    fileTool(file[1], JSON.stringify(entries))
+    return sh(typed)
+  }
+  let out = handOver(said.entries)
+  // A refusal about the file is corrected in the file, and the same call made again.
+  if (out.code !== 0 && said.then) out = handOver(said.then)
+  if (out.code !== 0) {
+    const line = out.stderr.trim()
+    const report = writeReport(label, prompt, 'Halted: the entries were refused — ' + line)
+    return Object.assign({ status: 'halted', halt: { root_cause: 'the entries were refused, and the refusal is not one a corrected file answers', evidence: typed + '\n' + line, tree_state: treeState(), recommendation: 'nothing was written: the stage is invoked again, and its triage hands its entries over as the next attempt' } }, report ? { report } : {})
+  }
+  const line = JSON.parse(out.stdout)
+  reads.push({ label, command: typed, printed: out.stdout.trim() })
+  reporters.push(/ --reporter (\S+)/.exec(command)[1])
+  // A text written OVER the rendered report, once the script has written it — as over any report.
+  if ((scenario.overwrites || {})[label] != null) writeFileSync(line.triage, scenario.overwrites[label])
+  return { status: 'filed', report: line.triage, sha256: line.sha256, handed: Object.entries(line.handed).map(([source, count]) => ({ source, count })) }
+}
+
 // ---- a probe's agents ----
 // What no probe's prompt may carry: a report to write, a command of the record script or of
 // the step tool, a gate, a git command, a branch.
@@ -496,6 +566,7 @@ const KINDS = [
   { labels: /^git:/, agentType: 'build-git', play: gitStep },
   { labels: /^preflight(-second)?$/, agentType: 'stabilize-preflight', play: preflight },
   { labels: /^scope$/, agentType: 'stabilize-scope', play: scopeStep },
+  { labels: /^triage$/, agentType: 'finding-triage', play: oneTriage },
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
   { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
   { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },

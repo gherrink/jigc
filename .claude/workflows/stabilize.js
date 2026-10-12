@@ -84,6 +84,28 @@
 // findings (`ledgerSource`): a row seeded at the opening, and an entry an earlier stage left
 // without a verdict, never wait for a stage of their own.
 //
+// A RUN WITH A QUEUE TAKES ANOTHER PATH FROM ITS TRIAGE ON (the build plan of the reshaped
+// `test` stage, completions/artifacts/M55/stabilization-build/reshape/plan.md, §4, Phase B;
+// DECISIONS.md -> 2026-10-12, "The harness: the new path's triage"). A run whose opening
+// holds an `order` has a queue, and its state's digest says so (`queue`; `hasQueue`, the ONE
+// place the two kinds of run are told apart). Up to its instruments such a run's `test`
+// stage is the stage above. Then THE STAGE HAS ONE TRIAGE (`triageOnce`), and it is handed
+// EVERY SOURCE, EACH FINDING UNDER A NUMBER: what the reporters returned and what the scope
+// step left open; EVERY RED RESULT OF THE INVOCATION, as a source of its own under the key
+// the record script files its row with (`red-<item>` — `redSources`), graded from the file
+// the tool kept its verdict in or, for a check an agent read, from that preflight's report;
+// and the rows nobody graded, by the read that prints them. ITS ENTRIES NEVER PASS THROUGH
+// THIS SCRIPT: the triage writes them to ONE file and hands it over by the call its prompt
+// spells whole (`dev/stabilize-record triage`, one `<source>=<count>` word a source), the
+// record script holds the partition — every number of every source in exactly one entry —
+// and renders the triage's report from the file. What comes back is that call's line, as
+// much of it as this script holds: the path, the hash, and what each source handed
+// (`filedFault`). WHAT OF THAT PATH IS BUILT ENDS THERE: its first record, its verification
+// and its return are the tasks that follow, and until the record is built a stage of a run
+// with a queue HALTS AT ITS RECORD, naming the rendered entries, with nothing recorded — a
+// refusal of that path, never of the stage. A RUN WITHOUT AN ORDER TAKES THE PATH ABOVE,
+// UNCHANGED.
+//
 // A STAGE THAT IS NOT FIT FOR USE REFUSES TO START (the human's ruling of 2026-10-06 on the
 // order of the repair: the `test` half first). The build was reviewed red, and the `fix`
 // stage is named in NOT_FIT: an invocation of it returns `refused` before any agent runs,
@@ -597,6 +619,10 @@ const PROBE_SLICE = 90
 // The name under which a triage is handed the rows of the ledger that still await it. No
 // reporter can carry it: an item's reporters are `<item>-<step>`.
 const LEDGER_SOURCE = 'ledger'
+// The key a red result's row is filed under, before the item's id (dev/stabilize-record
+// result-set: A RED RUN IS A FINDING, `red-<item>`) — and so the name the one triage of a run
+// with a queue is handed that result under, as a source. The fence holds it to that script's.
+const RED_PREFIX = 'red-'
 // The reporter an attempt's marker is written under (`dev/stabilize-step begin`). No agent
 // can carry it: an item's reporters are `<item>-<step>`, and no role is named so.
 const ATTEMPT = 'attempt'
@@ -818,8 +844,8 @@ const HALTS_AFTER = {
   'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote' },
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
-  'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read' },
-  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it' },
+  'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed' },
+  'record': { phase: 'record', when: 'the record step: the executor applied nothing or its batch was refused, the record\'s gate left no verdict, or the commit step refused — the batch stays applied where it was, and the next invocation finishes it. AND IN A RUN WITH A QUEUE, UNTIL IT IS BUILT, THE RECORD ITSELF: that path has none yet, and the stage ends there with its triage\'s entries handed over and nothing recorded' },
   'push': { phase: 'push', when: 'the push of the record\'s commit failed or was refused: the record is committed, the push is owed, and the next invocation\'s first read makes it' },
   'read-back': { phase: 'state', when: 'the state could not be read back once the record was committed and pushed: nothing is lost, and the next invocation reads it' },
 }
@@ -1285,6 +1311,59 @@ function findingsOf(source) {
   return source.read ? source.count : source.findings.length
 }
 
+// hasQueue — WHICH PATH A `test` STAGE TAKES FROM ITS TRIAGE ON: whether the run has a queue,
+// which is what its state's digest says of it (`queue`: null for a run without an order —
+// dev/stabilize-step: THE STATE'S DIGEST). The ONE place the two kinds of run are told apart.
+function hasQueue(state) {
+  return plain(state.queue)
+}
+// testReport — where a `test` report of a reporter lies in the run's directory, as the record
+// script lays it out (its header: `r<N>/reports/test/<reporter>.a<A>.md`; the fence holds the
+// two together). It is where that script renders the entries a triage hands over — so what
+// the one triage's return is held to — and where a preflight's report lies.
+function testReport(ctx, name) {
+  return runDir(ctx.run) + '/r' + ctx.round + '/reports/test/' + name + '.a' + ctx.attempt + '.md'
+}
+// The file the one triage of a run with a queue writes its entries to before it hands them over.
+function entriesFile(ctx) {
+  return ctx.scratch + '/triage/r' + ctx.round + '.a' + ctx.attempt + '.json'
+}
+// redSources — EVERY RED RESULT OF AN INVOCATION AS A SOURCE OF THE STAGE'S ONE TRIAGE, IN A
+// RUN WITH A QUEUE (the reshape's plan, T5a; its review's B1: the record call files a red
+// result as a row, ungraded, in the batch that FOLLOWS the triage — so no triage of the
+// stage graded it, and the round's triage was left unfinished by every red check). Each is
+// a source of ONE finding under THE KEY ITS ROW IS FILED WITH (`red-<item>`): triage returns
+// it under that key, found again, and the stage's first record files the row and then
+// grades it. `reds` is what the stage knows of each: the item, its clause, and WHERE ITS
+// EVIDENCE LIES — `verdict`, the file the tool kept a held check's verdict in (with
+// `output`, the command's whole output); or `report`, the report of the preflight that read
+// the check red. A path either way: no word a preflight returned is handed on.
+function redSources(reds) {
+  return reds.map((r) => ({ reporter: RED_PREFIX + r.item, red: r, findings: ['the check `' + r.item + '` is red · clause: ' + r.clause + ' · the door its row is filed with: the check `' + r.item + '`'] }))
+}
+// filedFault — WHY THE RETURN OF THE ONE TRIAGE IS NOT TAKEN, or null: what that return is
+// held to, which its prompt says in the same words (the arithmetic half of the row
+// `wf-triage-reads-harness`). The call that hands the entries over prints ONE line, and the
+// return carries three things of it: `report`, which must be the path a report of that
+// reporter and attempt has — the script renders the entries there and nowhere else; `sha256`,
+// a hash; and `handed`, what the call was typed with for each source — which must be the
+// sources and the counts this stage handed, each by name, BECAUSE THE PARTITION IS HELD TO
+// THE COUNTS OF THE CALL: typed with a smaller one, a finding is in no entry and nothing
+// refuses. NO ENTRY IS READ HERE, and none is in the return. What comes back is printed only
+// where it is a count: a return's text is an agent's.
+function filedFault(ctx, name, sources, t) {
+  if (t.report !== testReport(ctx, name)) return 'triage returned ' + (isText(t.report) ? 'a path' : 'no path') + ' that is not where its entries are rendered — `' + testReport(ctx, name) + '`, the path a report of `' + name + '`, attempt ' + ctx.attempt + ', has: the call was typed under another name, round or attempt, or was not made'
+  if (!SHA256_RE.test(String(t.sha256))) return 'triage returned no sha256 of its rendered entries — the hash its call printed beside their path: nothing says which text it handed over'
+  const said = Array.isArray(t.handed) ? t.handed.filter(plain) : []
+  const wrong = sources.filter((s) => !said.some((h) => h.source === s.reporter && h.count === findingsOf(s))).map((s) => {
+    const typedWith = said.find((h) => h.source === s.reporter)
+    return '`' + s.reporter + '`: handed ' + findingsOf(s) + ', and the call ' + (typedWith && Number.isInteger(typedWith.count) ? 'was typed with ' + typedWith.count : 'named no count for it')
+  })
+  const strangers = said.filter((h) => !sources.some((s) => s.reporter === h.source)).length
+  if (wrong.length || strangers) return 'the call triage handed its entries over by was not typed with the sources and counts this stage handed it — ' + wrong.concat(strangers ? [strangers + ' source(s) of the call that nobody handed'] : []).join('; ') + '. The record script holds the partition to the counts of the call, so a finding of a source named here may be in no entry: nothing is recorded on that'
+  return null
+}
+
 // previousOf — the release the run measures against, as its record names it: what the
 // second binary is built from, and what "a regression of the run" is green on.
 function previousOf(state) {
@@ -1657,6 +1736,21 @@ const TRIAGE_SCHEMA = {
     report: { type: 'string' },
   },
 }
+// What THE ONE TRIAGE OF A RUN WITH A QUEUE returns: no entry — its entries are one file, handed
+// to the record script by the call its prompt spells — and of the ONE line that call printed,
+// what `filedFault` holds. Nothing but the status is required: a return that omits a
+// required field is a call that failed, and what is missing here is that triage's ending.
+const FILED_SCHEMA = {
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['filed', 'halted'] },
+    halt: HALT,
+    report: { type: 'string', description: 'the path the call printed as `triage`: your report, rendered from your entries' },
+    sha256: { type: 'string', description: 'the hash that call printed beside the path, as `sha256`' },
+    handed: { type: 'array', description: 'what that call printed as `handed`: one entry a source, with the count the call named for it', items: { type: 'object', required: ['source', 'count'], properties: { source: { type: 'string' }, count: { type: 'number' } } } },
+  },
+}
 const VERIFY_SCHEMA = {
   type: 'object',
   required: ['status', 'key'],
@@ -1964,6 +2058,37 @@ function triagePrompt(ctx, launch, name, sources, pass) {
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.' + (pass > 1 ? ' This is pass ' + pass + ': it grades only what the agents of the pass before left open; every other finding of the stage was graded then, and is not handed to you again.' : ''),
     'Grade every finding below — ' + sources.reduce((n, s) => n + findingsOf(s), 0) + ' in all, from ' + sources.length + ' reporter(s). The reports are the files named; each list is that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.' + (sources.some((s) => s.reporter === LEDGER_SOURCE) ? ' The source `' + LEDGER_SOURCE + '` is no reporter of this stage: its entries are rows the ledger already holds, whose triage nobody finished. Grade each under its own key, found again — from the report its repro names, which this prompt hands you with it — and count the source in `findings_in` like any other.' : ''),
   ].concat(sources.map((s) => '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):' + (s.read ? ' the rows ' + s.read + ' prints — each whole, under its key, with why its triage is not finished (`ungraded`: nobody graded it; `unverified`: graded, and nobody verified it). Read them there: this prompt carries none of them.' : '\n' + s.findings.map((f) => '   - ' + f).join('\n')))).join('\n')
+}
+// oneTriagePrompt — THE PROMPT OF THE STAGE'S ONE TRIAGE, IN A RUN WITH A QUEUE (the reshape's
+// plan, T5a). The definition's paragraph for it binds on THE CALL, SPELLED WHOLE
+// (finding-triage.md: "Where your prompt spells a `dev/stabilize-record triage` call"): the
+// run, the round, the reporter and the attempt, the file it reads, and one `<source>=<count>`
+// word for every source — so this prompt spells it so, and NUMBERS EVERY HANDED FINDING, 1
+// to its source's count, under the source's name: the record script holds the partition to
+// those numbers. A SOURCE IS ONE OF THREE: a reporter (its findings, or what it left open);
+// A RED RESULT (`redSources`), under the key its row is filed with and with where its
+// evidence lies; and THE ROWS NOBODY GRADED (`ledgerSource`), which this prompt carries none
+// of — it names the read, and the rows are numbered in the order that read prints them. THE
+// `REPORT:` LINE STAYS, and says what it is for here: the call renders the report of a
+// triage that grades, so the line's own call is A HALT'S ROAD and no other. AND THE LAST
+// LINE SAYS WHAT THE RETURN IS HELD TO (`filedFault`) — the canary's triage read this
+// script's source to find that out.
+function oneTriagePrompt(ctx, launch, name, sources) {
+  const others = launch.names.filter((n) => n !== name)
+  const said = (s) => (s.red
+    ? '- ' + s.reporter + ' — A RED RESULT, and no reporter: the check `' + s.red.item + '` of this invocation came back red. The stage\'s record files its row under the key `' + s.reporter + '`, in the batch that records your grade — so it gets ONE entry, under that key, found again; you mint no key for it. Grade it from ' + (s.red.verdict ? 'the tool\'s verdict of the held command, the file `' + s.red.verdict + '`' + (s.red.output ? ' (the command\'s whole output is `' + s.red.output + '`)' : '') : 'the report of the preflight that read it red, `' + s.red.report + '`') + ' — 1 finding:'
+    : s.read ? '- ' + s.reporter + ' — THE ROWS NOBODY GRADED, and no reporter of this stage: rows the ledger already holds — ' + findingsOf(s) + ' finding(s): the rows ' + s.read + ' prints, NUMBERED 1 TO ' + findingsOf(s) + ' IN THE ORDER THAT READ PRINTS THEM — each whole, under its key. Each is found again, under its own key, graded from the report its repro names. Read them there: this prompt carries none of them.'
+      : '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):')
+    + (s.read ? '' : '\n' + s.findings.map((f, i) => '   ' + (i + 1) + '. ' + f).join('\n'))
+  return [
+    'TRIAGE — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage: THE STAGE\'S ONE TRIAGE. ' + opening(ctx),
+    launch.line(name) + ' UNDER THIS PROMPT THAT IS A HALT\'S ROAD, AND YOU TAKE IT ONLY WHERE YOU HALT: where you grade, the `triage` call below writes the file at the path a report of your name and attempt has — your report, rendered from your entries — and a report handed over beside it for the same attempt would be refused.',
+    'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.',
+    'Grade every finding below — ' + sources.reduce((n, s) => n + findingsOf(s), 0) + ' in all, from ' + sources.length + ' source(s). EVERY FINDING HAS A NUMBER, from 1 to its source\'s count, under its source\'s name, and an entry says what it folds by the source and those numbers. A reporter\'s report is the file named, its list that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.',
+  ].concat(sources.map(said)).concat([
+    'YOUR ENTRIES ARE ONE FILE, HANDED OVER ONCE. Write them — a JSON array, one object an entry — to the file `' + entriesFile(ctx) + '` WITH YOUR FILE TOOL, and hand it over by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'triage --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + entriesFile(ctx) + ' -- ' + sources.map((s) => s.reporter + '=' + findingsOf(s)).join(' ')) + '. Its last words say how many findings each source above handed you, and the record script holds every number of every source to being in exactly one entry.',
+    'WHAT YOUR RETURN IS HELD TO, and it holds no entry. That call prints ONE line of JSON. Return status = filed with three things of it: `report`, the path it printed as `triage` — held to `' + testReport(ctx, name) + '`, the path a report of your name and attempt has; `sha256`, the hash it printed beside that path — held to being one; and `handed`, what it printed under that name, one entry a source with its count — held to the sources and the counts of the call above, each by name: a call typed with another count held another partition, and the stage halts on it. Nothing else is read from your return: no entry, no grade and no key is typed a second time, and you name nothing to verify — what is verified is the record script\'s queue. Where you halt, return status = halted with the halt report, a refusal\'s line verbatim in it.',
+  ]).join('\n')
 }
 function verifyPrompt(ctx, launch, name, entry, redrive, built) {
   return [
@@ -2422,6 +2547,30 @@ function selfTest() {
   check('the preflight builds nothing and holds no gate: it is told so, and handed neither', prompts.preflight.includes('NO BUILD AND NO GATE IS YOURS') && prompts.preflight.includes('the tip of `fix/rc24-tier1`') && !/git archive|dev\/gate|cargo|built from commit|path_check/.test(prompts.preflight) && prompts.preflight.includes('   - ci: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item ci`') && PREFLIGHT_SCHEMA.properties.candidate === undefined && PREFLIGHT_SCHEMA.properties.previous === undefined)
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
   check('a triage is told what the ledger\'s rows are', triagePrompt(ctx, launcher(ctx), 'triage-p1', handed, 1).includes('The source `' + LEDGER_SOURCE + '` is no reporter') && !prompts.triage.includes('is no reporter'))
+  // IN A RUN WITH A QUEUE the stage has one triage: it is handed every source kind, every
+  // finding under a number, and the call that takes its entries spelled whole — and what
+  // comes back is held to that call's line, and holds no entry.
+  check('which run has a queue is what its state\'s digest says', hasQueue({ queue: { budget: 30, hand_on: 2, spent: 0, left: 30, length: 0, first: [], classes: [] } }) && hasQueue({ queue: {} }) && !hasQueue({ queue: null }) && !hasQueue({}) && !hasQueue({ queue: [] }))
+  const tested = Object.assign({}, ctx, { stage: 'test' })
+  const reds = redSources([{ item: 'regression-set', clause: 'working-product', verdict: '/tmp/scratch-1/hold/regression-set-c2-a4/verdict.json', output: '/tmp/scratch-1/hold/regression-set-c2-a4/output' }, { item: 'ci', clause: 'gate-green', report: testReport(tested, 'preflight-second') }])
+  const kinds = [{ reporter: 'row-3-source', report: 'a.md', findings: ['F1 — x', 'F2 — y'] }, leftOpenSource('scope', 's.md', ['a door nobody listed'])].concat(reds, handed)
+  const one = oneTriagePrompt(tested, launcher(tested), 'triage', kinds)
+  const under = (name) => one.split('\n').filter((line, i, all) => line.startsWith('- ' + name + ' — ') || (line.startsWith('   ') && all.slice(0, i).reverse().find((l) => l.startsWith('- ')).startsWith('- ' + name + ' — ')))
+  check('a red result is a source under the key its row is filed with, with where its evidence lies', reds.length === 2 && reds[0].reporter === RED_PREFIX + 'regression-set' && reds[1].reporter === 'red-ci' && reds.every((r) => findingsOf(r) === 1 && isSlug(r.reporter)) && testReport(tested, 'preflight-second') === 'completions/artifacts/rc24-tier1/r2/reports/test/preflight-second.a4.md')
+  check('the one triage\'s prompt names every source kind: a reporter, what was left open, a red held check, a red check an agent read, the rows nobody graded', ['row-3-source', 'scope', 'red-regression-set', 'red-ci', LEDGER_SOURCE].every((name) => under(name).length >= 1) && one.includes('Grade every finding below — 7 in all, from 5 source(s).'))
+  check('every handed finding has a number under its source\'s name, from 1', under('row-3-source').join('|') === '- row-3-source — report: `a.md` — 2 finding(s):|   1. F1 — x|   2. F2 — y' && under('scope').join('|') === '- scope — report: `s.md` — 1 finding(s):|   1. left open 1 — a door nobody listed' && under('red-ci').length === 2 && under('red-ci')[1].startsWith('   1. the check `ci` is red · clause: gate-green'))
+  check('a red held check is graded from the file the tool kept its verdict in, and a check an agent read from that preflight\'s report', under('red-regression-set')[0].includes('A RED RESULT') && under('red-regression-set')[0].includes('under the key `red-regression-set`') && under('red-regression-set')[0].includes('the tool\'s verdict of the held command, the file `/tmp/scratch-1/hold/regression-set-c2-a4/verdict.json`') && under('red-ci')[0].includes('the report of the preflight that read it red, `completions/artifacts/rc24-tier1/r2/reports/test/preflight-second.a4.md`') && !under('red-ci')[0].includes('verdict'))
+  check('the rows nobody graded are handed over as the read, numbered in the order it prints them, and none by this script', under(LEDGER_SOURCE).length === 1 && under(LEDGER_SOURCE)[0].includes('the rows `dev/stabilize-record untriaged --run rc24-tier1` prints, NUMBERED 1 TO 2 IN THE ORDER THAT READ PRINTS THEM'))
+  check('the call that takes the entries is spelled whole: the run, the round, the reporter, the attempt, the file, and one word a source', one.includes('to the file `/tmp/scratch-1/triage/r2.a4.json` WITH YOUR FILE TOOL') && one.includes('`dev/stabilize-record triage --run rc24-tier1 --round 2 --reporter triage --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/triage/r2.a4.json -- row-3-source=2 scope=1 red-regression-set=1 red-ci=1 ' + LEDGER_SOURCE + '=2`'))
+  check('the one triage carries its report line, as a halt\'s road, and is told what its return is held to', carries(one, 'report') && !carries(one, 'binary') && one.includes('YOU TAKE IT ONLY WHERE YOU HALT') && one.includes('WHAT YOUR RETURN IS HELD TO') && one.includes('held to `completions/artifacts/rc24-tier1/r2/reports/test/triage.a4.md`') && !one.includes('pass ') && !one.includes('to_verify'))
+  const back = { status: 'filed', report: testReport(tested, 'triage'), sha256: 'f'.repeat(64), handed: kinds.map((s) => ({ source: s.reporter, count: findingsOf(s) })) }
+  const backWith = (more) => filedFault(tested, 'triage', kinds, Object.assign({}, back, more))
+  check('a return of the one triage is taken where it is its call\'s line: the path of its report, a hash, what each source handed', backWith({}) === null && backWith({ handed: back.handed.slice().reverse() }) === null)
+  check('a return that names another path, or none, is not taken', backWith({ report: testReport(tested, 'triage-p1') }).includes('a path that is not where its entries are rendered') && backWith({ report: undefined }).includes('no path that is not where') && backWith({ report: testReport(Object.assign({}, tested, { attempt: 5 }), 'triage') }).includes('attempt 4'))
+  check('a return without a hash is not taken', [undefined, '', 'f'.repeat(63), 'F'.repeat(64)].every((hash) => backWith({ sha256: hash }).includes('no sha256')))
+  const typedWith = (source, count) => back.handed.map((h) => (h.source === source ? { source, count } : h))
+  check('a call typed with another count is named by its source, with both counts', backWith({ handed: typedWith('row-3-source', 1) }).includes('`row-3-source`: handed 2, and the call was typed with 1') && !backWith({ handed: typedWith('row-3-source', 1) }).includes('`scope`') && backWith({ handed: back.handed.filter((h) => h.source !== 'red-ci') }).includes('`red-ci`: handed 1, and the call named no count for it') && backWith({ handed: undefined }).includes('`' + LEDGER_SOURCE + '`: handed 2, and the call named no count for it') && backWith({ handed: back.handed.concat([{ source: 'nobody', count: 1 }]) }).includes('1 source(s) of the call that nobody handed') && backWith({ handed: typedWith('scope', '1') }).includes('`scope`: handed 1, and the call named no count for it'))
+  check('the one triage returns no entry, and its schema requires nothing but its status', JSON.stringify(Object.keys(FILED_SCHEMA.properties)) === JSON.stringify(['status', 'halt', 'report', 'sha256', 'handed']) && JSON.stringify(FILED_SCHEMA.required) === JSON.stringify(['status']))
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
@@ -3129,6 +3278,31 @@ async function triagePasses(ctx, launch, built, sources, forksIn) {
   return { entries, forks, handed, unverified, unreportedBy }
 }
 
+// triageOnce — THE STAGE'S ONE TRIAGE, IN A RUN WITH A QUEUE (the header: A RUN WITH A QUEUE
+// TAKES ANOTHER PATH). `sources` is every source of the stage; the ones that hand a finding
+// are handed on. No source hands a finding: no triage is launched, and there is nothing to
+// hand over. Else the triage is launched under the reporter `triage`, its return is held
+// (`filedFault`) BEFORE the reports are checked, and
+// THE REPORT CHECK SAYS WHETHER ITS RENDERED ENTRIES ARE THERE — never the return: a
+// rendering that is no rendering was set aside, and its triage has left none. It returns
+// `triage` — the reporter, the path and the hash — and how many findings were handed; or
+// `fault`, which the caller halts on. It halts nothing itself, and reads no entry.
+async function triageOnce(ctx, launch, sources) {
+  const handed = sources.filter((s) => findingsOf(s))
+  const count = handed.reduce((n, s) => n + findingsOf(s), 0)
+  if (!handed.length) return { triage: null, handed: 0 }
+  const tName = launch.add(['triage'])
+  log('the stage\'s one triage: ' + count + ' finding(s) from ' + handed.length + ' source(s) — ' + handed.map((s) => s.reporter + '=' + findingsOf(s)).join(' '))
+  const t = await roleStep('triage', 'triage', 'Triage', oneTriagePrompt(ctx, launch, tName, handed), FILED_SCHEMA)
+  if (!t || t.status !== 'filed') return { fault: t ? 'triage halted: ' + ((t.halt && t.halt.root_cause) || 'no reason given') : 'triage returned no result', transient: !t, halt: t ? t.halt : null }
+  const unheld = filedFault(ctx, tName, handed, t)
+  if (unheld) return { fault: unheld }
+  const settled = await settleReports(ctx, launch, 'check-reports:triage', 'Triage')
+  if (settled.fault) return { fault: settled.fault, transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null }
+  if (settled.missing.includes(tName)) return { fault: 'triage returned the path and the hash of its rendered entries, and the report check finds no report of it there' + (setAside(settled.aside, tName) ? ' — the file at that path is not the text its entries render (`' + setAside(settled.aside, tName) + '`), and was set aside' : '') + ': nothing is recorded on a return with no file behind it' }
+  return { triage: { reporter: tName, report: t.report, sha256: t.sha256 }, handed: count }
+}
+
 // driveFork — ruling 5: a contested fix, or one that needs a new mechanism, goes to the
 // human with a robust-advocate's case, and the proposal is driven before the human sees it —
 // by the advocate, as its definition has it, and then by an agent that is not the advocate.
@@ -3561,21 +3735,9 @@ async function runTest() {
   const crossRan = ran.filter((u) => u.crossModel === 'ran').map((u) => u.item)
   if (v.stopAfter === 'instruments') return { status: 'stopped', after: 'instruments', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, units: ran.map((u) => ({ item: u.item, status: u.status, findings: u.reporters.reduce((n, r) => n + (r.result && r.result.findings ? r.result.findings.length : 0), 0) })), reporters: launch.names }
 
-  // Triage of every finding; verify-real; the forks.
-  phase('Triage')
-  const sources = reporters.filter((r) => r.result && r.result.findings).map((r) => ({ reporter: r.name, report: r.report, findings: findingLines(r.result.findings) }))
-  if (sc.left_open && sc.left_open.length) sources.push(leftOpenSource(scopeName, sc.report, sc.left_open))
-  // And the rows whose triage nobody finished — seeded at the opening, or left without a
-  // verdict by an earlier stage: this triage is the next one that runs.
-  for (const source of ledgerSource(v.run, state)) sources.push(source)
-  const tri = await triagePasses(ctx, launch, built, sources, [])
-  if (tri.fault) return haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
-  if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
-
-  // The record step: the reports checked, what each item did, the rows, the round's facts.
-  // ONE RESULT PER ITEM THIS INVOCATION RAN — the record script derives every clause's
-  // status from them, and files a red check as a finding in the same call.
-  phase('Record')
+  // WHAT EACH ITEM THIS INVOCATION RAN DID — one result per item, which the record step
+  // records. It is read off what the instruments, the preflights and the held commands left,
+  // and it stands BEFORE the triage: in a run with a queue every red one is a source of it.
   const unitStatus = ran.map((u) => ({ item: u.item, status: u.status, reason: u.reason })).concat(hunting.filter(imageless).map((i) => ({ item: i.item, status: 'void', reason: 'no trial image: ' + unprovided })))
   // A check that is due again once the round's record lies on its candidate was not asked
   // for (above): it is void, with that reason — never run on the tip and recorded as the
@@ -3594,6 +3756,42 @@ async function runTest() {
   // leave `retest`: dead, its start refused, still running when the stage stopped asking,
   // or a gate that is not held off the candidate's tree.
   for (const h of heldRan) unitStatus.push(HELD_TAKES.check.includes(h.ends) ? { item: h.item, status: h.ends, verdict: h.verdict } : { item: h.item, status: 'void', reason: heldVoid(h) })
+
+  // Triage of every finding; verify-real; the forks.
+  phase('Triage')
+  const sources = reporters.filter((r) => r.result && r.result.findings).map((r) => ({ reporter: r.name, report: r.report, findings: findingLines(r.result.findings) }))
+  if (sc.left_open && sc.left_open.length) sources.push(leftOpenSource(scopeName, sc.report, sc.left_open))
+  // A RUN WITH A QUEUE TAKES ITS OWN PATH FROM HERE (the header: A RUN WITH A QUEUE TAKES
+  // ANOTHER PATH; the reshape's plan, T5a). THE STAGE HAS ONE TRIAGE, handed every source:
+  // the reporters' findings and what the scope step left open (above), EVERY RED RESULT OF
+  // THIS INVOCATION under the key the record files its row with — a held check's evidence
+  // the file the tool kept its verdict in, any other's the report of the preflight that
+  // read it: the second preflight's for a check the scope selected — and the rows nobody
+  // graded. WHAT OF THIS PATH IS BUILT ENDS WITH THAT TRIAGE'S ENTRIES HANDED OVER: its
+  // first record is the task that follows, and the stage halts there, at its record, with
+  // nothing recorded. EVERY WAY OUT OF THIS BLOCK IS A RETURN: nothing below it runs for a
+  // run with a queue.
+  if (hasQueue(state)) {
+    const reds = unitStatus.filter((u) => u.status === 'red').map((u) => {
+      const h = heldRan.find((x) => x.item === u.item)
+      return Object.assign({ item: u.item, clause: (selected.find((i) => i.item === u.item) || {}).clause }, h ? { verdict: h.verdict, output: h.output } : { report: testReport(ctx, late.some((i) => i.item === u.item) ? secondName : pre.name) })
+    })
+    const once = await triageOnce(ctx, launch, sources.concat(redSources(reds), ledgerSource(v.run, state)))
+    if (once.fault) return haltAfter('triage', once.fault, { transient: !!once.transient, halt: once.halt || null, step: once.step || null })
+    if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, triage: once.triage, findings_in: once.handed, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
+    return haltAfter('record', 'IN A RUN WITH A QUEUE THE STAGE\'S FIRST RECORD IS NOT BUILT YET: ' + (once.triage ? 'the stage\'s one triage handed its entries over — rendered at ' + once.triage.report + ', sha256 ' + once.triage.sha256 + ' — and ' : 'no source handed a finding, so no triage ran, and ') + 'nothing of this attempt is recorded.', { not_built: 'record', triage: once.triage, findings_in: once.handed, launched: launch.names, then: ' Nothing is to be repaired in the run: this path of the harness ends at its record until the record is built (the build plan of the reshaped `test` stage, T5b). What was committed stands; what the attempt wrote through the record script — its reports, the round\'s scope, the triage\'s rendered entries — is untracked under ' + runDir(v.run) + '/ and stays there, and the attempt counts as one that reached no record.' })
+  }
+  // And the rows whose triage nobody finished — seeded at the opening, or left without a
+  // verdict by an earlier stage: this triage is the next one that runs.
+  for (const source of ledgerSource(v.run, state)) sources.push(source)
+  const tri = await triagePasses(ctx, launch, built, sources, [])
+  if (tri.fault) return haltAfter('triage', tri.fault, { transient: !!tri.transient, halt: tri.halt || null, step: tri.step || null })
+  if (v.stopAfter === 'triage') return { status: 'stopped', after: 'triage', stage: 'test', run: v.run, round: ctx.round, candidate: built.candidate, entries: tri.entries, forks: tri.forks, reporters: launch.names, named: namedOf(state, doorsOf), arrived }
+
+  // The record step: the reports checked, what each item did, the rows, the round's facts.
+  // ONE RESULT PER ITEM THIS INVOCATION RAN — the record script derives every clause's
+  // status from them, and files a red check as a finding in the same call.
+  phase('Record')
   const rec = triageRecord(ctx, tri.entries)
   // A re-run writes no fact of the round: the round is tested, and its record stands.
   const facts = rerun ? null : { candidate: sha, binary: built.candidate.sha256 }
