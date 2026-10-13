@@ -2,6 +2,37 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The byte table's pilot is at its stop: its numbers are on record — 61 cells, five red on this tree under five keys and twenty on the previous release; a task cell in one to two seconds alone and a fan-out in four and a half; the family adds five to sixteen seconds to a gate; the count under each reading of *touched* — and the human rules from here on the families after it, on what *touched* means, and on the gate's share (the byte table's pilot, task `B4`, the last of its three commits)
+
+**What.** The record of the pilot's first cut — [byte-table-pilot.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-pilot.md) — and beside it the table as the arm on a named binary printed it, [byte-table-pilot-cells.tsv](completions/artifacts/M55/stabilization-build/reshape/byte-table-pilot-cells.tsv); a paragraph in [pinning.md](implementation/pinning.md) → §6 that says the byte table exists and where its record is. No cell, no row, no frame and no product source changes. **Nothing of the tasks `B5` to `B10` is built**: the plan's first cut ends here.
+
+**The numbers, each with its source in the record.**
+
+- **Cells**: 61 — the acceptance's 12 and the task family's 49; 49 run in the gate, in three arms, and 12 on demand. **Red**: 5 on this tree, under 5 new keys; 20 on the previous release. Two of the five stand on a declared bound; four carry a mark for an open question.
+- **One of the five the previous release does not show**: a hand edit before a task's first write, replaced by the task's write to the same part — the second declared bound. There the finalize refuses and the line stands. The other four come out the same on both.
+- **Seconds a cell**, in the frame, alone at a load of 12 to 14: a refusing cell 0.6 · `setup` or `uninstall` 0.8 to 0.9 · a task cell 1.2 to 2.0 · a sub-task cell 1.8 to 2.2 · a fan-out 4.2 to 4.7. Inside the last gate, at a load of 11 to 26, about twice that.
+- **What the family adds to a gate**: 5, 13 or 16 s, by the three ways the record counts it. The three arms were 32.0 s of the last gate's one-at-a-time chain, whose other part — the route catalog's arms — was 269.6 s.
+- **The whole table, projected from the one family**: under the plan's rule, 30 leaves, 555 gate cells, 1.6 minutes of the chain alone and 3.1 in a gate like the last — 2.3 and 4.3 with the eight `milestone` leaves at a fan-out's rate, and 1.8 times the cells if every need of every row is answered where the family answered two in three. **Arithmetic, and no measurement.**
+- **Linux**: 39 passed, 0 failed, 3 ignored in 23.9 s in the runner-shaped container, on the commit before this one; the expected-red list is the same there.
+- **The count**: 36, 30 or at most 26 of the 36 write leaves, by the reading of *touched*.
+
+**The plan's pattern at `B4`.** *The rows from the docs in a commit of their own, then the cells* held: the row of `task discard` was committed before a cell of it ran, and was not touched from what one showed. It bent in three places, each in the entry of the commit that bent it: a cell names its refusal; the rule for prose handed to jigc takes a consent; and a kind of plant is a letter at a position, so the plan's *about 17 planted cells* came to 31.
+
+**What `B5` to `B9` need that the plan does not name** — for the human's ruling, and decided by nobody here:
+
+1. **`B5` would hold four leaves, not two**: the count puts `ingest` and `unmanage` under the plan's rule, and they stand owed under it.
+2. **A plant put in the place of a file that stands** — a link, a directory, a file in or out of a commit — which fourteen needs of the task family wait for, and which `setup`'s row needs at every path the install merges into or replaces.
+3. **A word for *one leaf of one item, and every sibling byte-untouched*** — the milestone's record at every record door. `A5` and `M5` say *written whole*, which lets more than their sentences.
+4. **The two spellings as rows** — the doc-only arm of `task finalize` and `squash: false` — which a cell has to be able to name, and the comparison to switch on.
+5. **A cell that says which of a command's refusals it constructs**, where a doc tells two apart by the moment (`setup`, the record's entry 2): the named refusal is half of it.
+6. **`setup`'s row draws 86 needs**, where the median row draws 33: the install family is the largest of the five the fence has read, by a wide margin.
+7. **A fan-out a cell at the eight `milestone` leaves**: a cell there is two and a half times a task cell, and a state that holds worktrees is never copied — each cell provisions after the copy.
+8. **Plant M**, and a cell under a git configuration, which no cell of the first cut is.
+
+**Not edited in this lane, and owed at the join**: the pending row `wf-pre-byte-matrix` ([decisions-pending.md](implementation/decisions-pending.md)), which the plan would bracket as piloted to the stop. Its bracket would say: *piloted on 2026-10-12 and 2026-10-13 on the branch `fix/rc24-route-catalog`, tasks `B0` to `B4` — five rows, 61 cells, one family end to end; stopped for the human's ruling on the families after it, on what* touched *means, and on the gate's share; the record is `…/reshape/byte-table-pilot.md`.*
+
+**Not established** is the record's §9.
+
 ## 2026-10-13 — One family of the byte table end to end: `jigc task finalize` and `jigc task discard` have their cells — 49 beside the acceptance's, 37 in the gate and 12 on demand — and five are red on this tree, under five keys: four lose bytes the user staged or wrote, three of them on a declared bound or a silence, and one refusal leaves a file behind. A cell names its refusal, shows every class it is red in, and carries a mark for the question it turns on (the byte table's pilot, task `B4`, the second of its three commits)
 
 **What.** The cells of the task family ([task.rs](crates/cli/tests/byte_table/task.rs)), on the row the commit before this one wrote and on `task finalize`'s; what the frame needed for them ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)), each piece red first; and the lists ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §3, §8). No row was touched, and no product source changes. The route catalog's frame is byte for byte what it was: the byte frame uses only what was exposed to it before.

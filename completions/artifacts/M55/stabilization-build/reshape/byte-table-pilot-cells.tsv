@@ -1,0 +1,64 @@
+# The byte table's cells on two binaries, as the arm printed them — the block `cells` of `byte_table::the_cells_are_run_on_the_binary_a_variable_names`, byte for byte. Held by no gate.
+# Printed on 2026-10-13, macOS arm64: the named binary is the previous release's, `1.0.0-rc.24`, built from `91834b5e`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`; this tree's is its debug build at the commit that brought the task family's cells. The run took 88.6 s at a load average of 9.9 at its start and 6.6 at its end, no gate beside it. The seconds are a cell's in the frame, from the copy of its state to its verdict.
+cell	command	state	listed as	marks	key	the named binary	its exit	seconds	this tree's binary	its exit	seconds
+setup-head-unborn-a-file-at-the-bootstrap	jigc setup	bare	refuses: exit 1, `setup.dirty-install-path`	-	-	lost; also written outside its allowance; also not the listed outcome	exit 0	1.3	refuses, nothing changed	exit 1	0.9
+setup-head-born-a-file-at-the-bootstrap	jigc setup	bare	refuses: exit 1, `setup.dirty-install-path`	-	-	refuses, nothing changed	exit 1	0.9	refuses, nothing changed	exit 1	1.0
+uninstall-a-foreign-file-under-logs	jigc uninstall	fresh	refuses: exit 1, `uninstall.foreign-bytes`	-	-	lost; also written outside its allowance; also not the listed outcome	exit 0	1.3	refuses, nothing changed	exit 1	1.2
+uninstall-a-foreign-file-under-state	jigc uninstall	fresh	refuses: exit 1, `uninstall.foreign-bytes`	-	-	lost; also written outside its allowance; also not the listed outcome	exit 0	1.3	refuses, nothing changed	exit 1	1.1
+uninstall-a-foreign-file-under-index	jigc uninstall	fresh	refuses: exit 1, `uninstall.foreign-bytes`	-	-	lost; also written outside its allowance; also not the listed outcome	exit 0	1.3	refuses, nothing changed	exit 1	1.2
+uninstall-a-foreign-file-at-the-workbench-root	jigc uninstall	fresh	refuses: exit 1, `uninstall.untracked-workbench-file`	-	-	refuses, nothing changed	exit 1	1.2	refuses, nothing changed	exit 1	1.2
+task-finalize-no-baseline-a-hand-edit-after-the-first-write	jigc task finalize sharpen-the-open-questions	committed-singletons	refuses: exit 3, `reconciliation.conflict-block`	-	-	lost; also not the listed outcome	exit 0	2.2	refuses, nothing changed	exit 3	1.9
+task-finalize-a-baseline-a-hand-edit-after-the-first-write	jigc task finalize sharpen-the-open-questions	committed-singletons	refuses: exit 3, `reconciliation.conflict-block`	-	-	refuses, nothing changed	exit 3	1.7	refuses, nothing changed	exit 3	2.0
+task-finalize-a-link-to-nothing-at-the-created-docs-home	jigc task finalize file-a-finding	fresh	refuses: exit 3, `store.home-not-regular-file`	-	-	git's state moved outside its allowance; also not the listed outcome	exit 0	2.4	refuses, nothing changed	exit 3	2.2
+task-finalize-a-task-that-is-not-there	jigc task finalize a-task	fresh	refuses: exit 1, `finalize.no-task`	-	-	refuses, nothing changed	exit 1	0.9	refuses, nothing changed	exit 1	0.9
+task-finalize-a-created-decision	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-finalize-an-untracked-file-at-the-created-docs-home	jigc task finalize record-a-decision	fresh	refuses: exit 3, `finalize.promote-clobber`	-	-	refuses, nothing changed	exit 3	1.9	refuses, nothing changed	exit 3	2.1
+task-finalize-an-untracked-file-at-the-created-docs-home-run-again	jigc task finalize record-a-decision	fresh	refuses: exit 3, `finalize.promote-clobber`	-	-	refuses, nothing changed	exit 3	2.3	refuses, nothing changed	exit 3	2.8
+task-finalize-a-committed-file-at-the-created-docs-home	jigc task finalize record-a-decision	fresh	refuses: exit 3, `conformance.section-missing`	-	-	refuses, nothing changed	exit 3	2.0	refuses, nothing changed	exit 3	2.3
+task-finalize-a-link-to-a-file-in-the-repository-at-the-created-docs-home	jigc task finalize record-a-decision	fresh	refuses: exit 3, `store.home-not-regular-file`	-	-	not the listed outcome	exit 3	1.8	refuses, nothing changed	exit 3	2.1
+task-finalize-a-link-to-a-file-outside-at-the-created-docs-home	jigc task finalize record-a-decision	fresh	refuses: exit 3, `store.home-not-regular-file`	-	-	not the listed outcome	exit 3	1.9	refuses, nothing changed	exit 3	2.1
+task-finalize-a-directory-at-the-created-docs-home	jigc task finalize record-a-decision	fresh	refuses: exit 3, `store.home-not-regular-file`	-	-	not the listed outcome	exit 1	2.0	refuses, nothing changed	exit 3	2.1
+task-finalize-a-file-where-the-created-docs-directory-goes	jigc task finalize record-a-decision	fresh	refuses: exit 1, `to promote into`	-	-	refuses, nothing changed	exit 1	2.1	refuses, nothing changed	exit 1	2.3
+task-finalize-a-file-staged-at-the-created-docs-home-and-not-in-the-tree	jigc task finalize record-a-decision	fresh	refuses: exit 3, `finalize.promote-clobber`	-	-	lost (hangs on what *held* means); also not the listed outcome	exit 0	2.4	refuses, nothing changed	exit 3	2.1
+task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file	jigc task finalize sharpen-the-open-questions	committed-singletons	acts	bound 1 · what *held* means	r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced	lost (hangs on what *held* means)	exit 0	2.2	lost (hangs on what *held* means)	exit 0	2.5
+task-finalize-a-hand-edit-before-the-first-write-to-another-part	jigc task finalize sharpen-the-open-questions	committed-singletons	acts	-	-	not the listed outcome	exit 3	1.7	holds	exit 0	2.4
+task-finalize-a-hand-edit-before-the-first-write-to-the-same-part	jigc task finalize sharpen-the-open-questions	committed-singletons	acts	bound 2	r1-task-finalize-a-hand-edit-before-the-tasks-first-write-is-replaced-by-its-write-to-the-same-part	not the listed outcome	exit 3	1.8	lost	exit 0	2.5
+task-finalize-a-hand-edit-after-the-first-write-run-again	jigc task finalize sharpen-the-open-questions	committed-singletons	refuses: exit 3, `reconciliation.conflict-block`	-	-	refuses, nothing changed	exit 3	2.2	refuses, nothing changed	exit 3	2.4
+task-finalize-a-hand-edit-to-the-version-stamp	jigc task finalize record-a-decision	fresh	acts	-	-	lost	exit 0	2.3	holds	exit 0	2.7
+task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file	jigc task finalize record-a-decision	fresh	acts	what *held* means · silence 8	r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced	lost (hangs on what *held* means)	exit 0	2.5	lost (hangs on what *held* means)	exit 0	2.8
+task-finalize-a-file-staged-elsewhere	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.5	holds	exit 0	2.8
+task-finalize-a-staged-file-whose-name-git-quotes	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.5	holds	exit 0	2.8
+task-finalize-a-hook-that-rejects	jigc task finalize record-a-decision	fresh	refuses: exit 1, ``git commit` was rejected`	-	-	refuses, nothing changed	exit 1	2.3	refuses, nothing changed	exit 1	2.6
+task-finalize-a-foreign-file-under-the-edge-index	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-finalize-a-foreign-file-under-the-file-state-hashes	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-finalize-a-foreign-file-at-the-task-areas-root	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-finalize-a-foreign-file-under-the-task-areas-docs	jigc task finalize record-a-decision	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-finalize-a-created-decision-in-bare	jigc task finalize record-a-decision	bare	refuses: exit 1, `finalize.no-task`	-	-	refuses, nothing changed	exit 1	0.6	refuses, nothing changed	exit 1	0.6
+task-finalize-a-created-decision-in-committed-singletons	jigc task finalize record-a-decision	committed-singletons	acts	-	-	holds	exit 0	2.1	holds	exit 0	2.5
+task-finalize-a-created-decision-in-migrated	jigc task finalize record-a-decision	migrated	acts	-	-	holds	exit 0	1.7	holds	exit 0	1.9
+task-finalize-a-created-decision-in-refs-post-hoc	jigc task finalize record-a-decision	refs-post-hoc	acts	-	-	holds	exit 0	1.7	holds	exit 0	1.9
+task-finalize-a-created-decision-in-chatty-hooks	jigc task finalize record-a-decision	chatty-hooks	acts	-	-	holds	exit 0	1.5	holds	exit 0	1.7
+task-finalize-a-created-decision-in-vendored	jigc task finalize record-a-decision	vendored	acts	-	-	holds	exit 0	1.7	holds	exit 0	2.0
+task-discard-a-task-that-is-not-there	jigc task discard a-task	fresh	refuses: exit 1, `no task `a-task``	-	-	refuses, nothing changed	exit 1	0.8	refuses, nothing changed	exit 1	0.8
+task-discard-a-task-with-a-staged-decision	jigc task discard record-a-decision	fresh	refuses: exit 1, `task-discard.staged-prose`	-	-	refuses, nothing changed	exit 1	1.4	refuses, nothing changed	exit 1	1.6
+task-discard-a-task-with-a-staged-decision-under-the-consent	jigc task discard record-a-decision --force	fresh	acts	-	-	holds	exit 0	1.4	holds	exit 0	1.6
+task-discard-a-sub-task-nobody-re-entered	jigc task discard do-the-thing	fresh	acts	-	-	holds	exit 0	2.6	holds	exit 0	2.9
+task-discard-a-foreign-file-at-the-task-areas-root	jigc task discard record-a-decision	fresh	refuses: exit 1, `task-discard.foreign-bytes`	-	-	refuses, nothing changed	exit 1	1.5	refuses, nothing changed	exit 1	1.6
+task-discard-a-foreign-file-at-the-task-areas-root-under-the-consent	jigc task discard record-a-decision --force	fresh	acts	-	-	holds	exit 0	1.5	holds	exit 0	1.6
+task-discard-a-foreign-file-under-the-task-areas-docs	jigc task discard record-a-decision	fresh	refuses: exit 1, `task-discard.foreign-bytes`	-	-	refuses, nothing changed	exit 1	1.5	refuses, nothing changed	exit 1	1.6
+task-discard-a-foreign-file-under-the-task-areas-docs-under-the-consent	jigc task discard record-a-decision --force	fresh	acts	-	-	holds	exit 0	1.5	holds	exit 0	1.7
+task-discard-a-hand-edit-to-the-milestones-record	jigc task discard do-the-thing	fresh	refuses: exit 1, `reconciliation.conflict-block`	-	-	refuses, nothing changed	exit 1	2.3	refuses, nothing changed	exit 1	2.5
+task-discard-a-change-staged-at-the-record-and-not-in-the-file	jigc task discard do-the-thing	fresh	acts	what *held* means · silence 8	r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced	lost (hangs on what *held* means)	exit 0	2.6	lost (hangs on what *held* means)	exit 0	2.9
+task-discard-a-file-staged-elsewhere	jigc task discard do-the-thing	fresh	acts	-	-	holds	exit 0	2.5	holds	exit 0	2.9
+task-discard-a-staged-file-whose-name-git-quotes	jigc task discard do-the-thing	fresh	acts	-	-	holds	exit 0	2.5	holds	exit 0	2.8
+task-discard-a-hook-that-rejects	jigc task discard do-the-thing	fresh	refuses: exit 1, ``git commit` was rejected`	silence 6	r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area	refused, and changed what a refusal may not	exit 1	2.3	refused, and changed what a refusal may not	exit 1	2.6
+task-discard-a-foreign-file-under-the-file-state-hashes	jigc task discard do-the-thing	fresh	acts	-	-	holds	exit 0	2.4	holds	exit 0	2.7
+task-discard-a-sub-task-nobody-re-entered-in-bare	jigc task discard do-the-thing	bare	refuses: exit 1, `no task `do-the-thing``	-	-	refuses, nothing changed	exit 1	0.6	refuses, nothing changed	exit 1	0.6
+task-discard-a-sub-task-nobody-re-entered-in-committed-singletons	jigc task discard do-the-thing	committed-singletons	acts	-	-	holds	exit 0	2.3	holds	exit 0	2.5
+task-discard-a-sub-task-nobody-re-entered-in-migrated	jigc task discard do-the-thing	migrated	acts	-	-	holds	exit 0	1.8	holds	exit 0	2.0
+task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-the-thing	refs-post-hoc	acts	-	-	holds	exit 0	1.8	holds	exit 0	2.0
+task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	-	-	holds	exit 0	1.4	holds	exit 0	1.6
+task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	-	-	holds	exit 0	1.9	holds	exit 0	2.1
+milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto	jigc milestone finalize stage-reports	fresh	refuses: exit 3, `finalize.promote-clobber`	-	-	lost; also written outside its allowance; also not the listed outcome	exit 0	5.9	refuses, nothing changed	exit 3	5.7
+milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone	jigc milestone finalize stage-reports	fresh	refuses: exit 3, `finalize.promote-clobber`	-	-	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	exit 0	6.0	refuses, nothing changed	exit 3	5.8
+milestone-finalize-the-users-own-worktree-moved-away	jigc milestone finalize foreign-worktree-probe	fresh	acts	-	-	git's state moved outside its allowance	exit 0	4.8	holds	exit 0	5.4
