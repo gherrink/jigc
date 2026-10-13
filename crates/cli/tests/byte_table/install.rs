@@ -18,7 +18,11 @@
 //! file it would spare is a plant, which no line excuses.
 
 use super::ON_A_REFUSAL;
-use crate::support::byte_cell::{Allows, Holding, Line, May, Quote, Row, When, Where};
+use crate::support::byte_cell::{
+    Allows, Cell, Condition, Holding, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
+    Where,
+};
+use crate::support::trial_corpus::State;
 
 /// A line that holds where the command acted, whenever it did.
 const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Line {
@@ -313,3 +317,85 @@ pub const UNINSTALL: Row = Row {
 
 /// The family's rows.
 pub const ROWS: &[Row] = &[SETUP, UNINSTALL];
+
+// ---------------------------------------------------------------------------
+// The cells
+// ---------------------------------------------------------------------------
+
+/// A file somebody left where the install writes its bootstrap whole.
+const AT_THE_BOOTSTRAP: Lead = Lead::Plant(Plant::File(".jigc/AGENT.md"));
+
+/// The suite that holds `setup`'s refusal over a file at a path it replaces, on a born
+/// and on an unborn `HEAD`, ordering by ordering.
+const THE_INSTALL_GUARD: &str = "setup_install_pathspec_guard::a_whole_rewrite_install_path_refuses_with_the_users_bytes_intact";
+
+/// The suite that holds `uninstall`'s refusal over a file jigc did not write, at every
+/// transient prefix of the workbench and at two depths.
+const THE_TEARDOWN_GUARD: &str =
+    "uninstall_workbench_subject::a_file_inside_every_transient_prefix_blocks_the_teardown";
+
+/// One cell of `uninstall` in `fresh`: a file the product did not write, in a directory
+/// the teardown removes (the plan's plant **D**).
+const fn uninstall_over(name: &'static str, leads: &'static [Lead], beside: &'static str) -> Cell {
+    Cell {
+        name,
+        leaf: &["uninstall"],
+        state: Prepared::Of(State::Fresh),
+        leads,
+        argv: &["uninstall"],
+        listed: Listed::Refuses,
+        beside: Some(beside),
+    }
+}
+
+/// **The acceptance cells of the install family** (the plan's §5): the blocking rows
+/// `(R1, F1)` and `(R9, F5)` of the review of `1.0.0-rc.24`, each as the one plant its
+/// record names, at the place and under the condition its record names — and beside each
+/// the other side: `setup` with `HEAD` born, and `uninstall` over the same file one
+/// directory up, which that release refused.
+///
+/// **Every cell here is listed as one that refuses**, because the row's doc says so: a
+/// file at a path the install replaces *"is refused before the first write while no
+/// commit holds its bytes, on an unborn `HEAD` as on a born one"* (`S4`), and a file jigc
+/// did not write under a directory of `.jigc/` is one of the four states that *"remove
+/// nothing"* (`U7`).
+pub const CELLS: &[Cell] = &[
+    Cell {
+        name: "setup-head-unborn-a-file-at-the-bootstrap",
+        leaf: &["setup"],
+        state: Prepared::Bare,
+        leads: &[Lead::Under(Condition::HeadUnborn), AT_THE_BOOTSTRAP],
+        argv: &["setup"],
+        listed: Listed::Refuses,
+        beside: Some(THE_INSTALL_GUARD),
+    },
+    Cell {
+        name: "setup-head-born-a-file-at-the-bootstrap",
+        leaf: &["setup"],
+        state: Prepared::Bare,
+        leads: &[AT_THE_BOOTSTRAP],
+        argv: &["setup"],
+        listed: Listed::Refuses,
+        beside: Some(THE_INSTALL_GUARD),
+    },
+    uninstall_over(
+        "uninstall-a-foreign-file-under-logs",
+        &[Lead::Plant(Plant::File(".jigc/logs/notes.md"))],
+        THE_TEARDOWN_GUARD,
+    ),
+    uninstall_over(
+        "uninstall-a-foreign-file-under-state",
+        &[Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        THE_TEARDOWN_GUARD,
+    ),
+    uninstall_over(
+        "uninstall-a-foreign-file-under-index",
+        &[Lead::Plant(Plant::File(".jigc/index/notes.md"))],
+        THE_TEARDOWN_GUARD,
+    ),
+    uninstall_over(
+        "uninstall-a-foreign-file-at-the-workbench-root",
+        &[Lead::Plant(Plant::File(".jigc/notes.md"))],
+        "uninstall_workbench_subject::a_hand_dropped_workbench_file_blocks_and_the_install_survives",
+    ),
+];

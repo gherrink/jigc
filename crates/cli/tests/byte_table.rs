@@ -5,10 +5,22 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has four rows and no cell yet**: this file is the plan's tasks `B1`
-//! to `B2c` — the arms that hold the comparison, the reader and the runner to their
-//! rules, the two fences, and the rows of the four commands the pilot's acceptance needs,
-//! a family a file under `byte_table/` ([`FAMILIES`]).
+//! cell. **The table has four rows and twelve cells — the pilot's acceptance**: this file
+//! is the plan's tasks `B1` to `B2d` — the arms that hold the comparison, the reader and
+//! the runner to their rules, the two fences, and the rows and the cells of the four
+//! commands the acceptance needs, a family a file under `byte_table/` ([`FAMILIES`]).
+//!
+//! **The cells run in the arm of their prepared state** ([`ARMS`],
+//! [`run_the_cells_of`]): the state is built once on the binary this suite was built
+//! with, every cell runs on a copy, and **the expected-red list is exactly the cells that
+//! came out red** ([`EXPECTED_RED`], [`differences`]) — a red cell no entry lists, a
+//! listed cell that is not red, and a listed cell whose classification moved are each
+//! named. The arms are pools as wide as the machine, so under the gate's runner they run
+//! one at a time with the route catalog's
+//! ([`the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner`]). And every cell
+//! has its row, its arm, a name of its own and — where it names one — the test of
+//! another suite that holds the same state, ordering by ordering
+//! ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`]).
 //!
 //! **The arms of the comparison** drive [`byte_cell::compare`] over manifests built as
 //! data: a repository with one commit, changed by hand to what a command would have left.
@@ -66,12 +78,15 @@ mod owed;
 struct Family {
     /// Its rows, a leaf each.
     rows: &'static [Row],
+    /// Its cells.
+    cells: &'static [byte_cell::Cell],
 }
 
 /// **A family's file is wired in by its declaration inside this macro's one call, and
 /// nowhere else** — the `#[path]` line the registration fence reads
 /// (`test_target_registration.rs`), which the macro makes the file's row of [`FAMILIES`].
-/// The file exports `ROWS`. It makes no arm of its own.
+/// The file exports `ROWS` and `CELLS`. It makes no arm of its own: a cell runs in the arm
+/// of its prepared state ([`ARMS`]).
 macro_rules! families {
     ($(#[path = $file:literal] mod $name:ident;)*) => {
         $(
@@ -82,6 +97,7 @@ macro_rules! families {
         /// Every family's file, in the order declared.
         const FAMILIES: &[Family] = &[$(Family {
             rows: $name::ROWS,
+            cells: $name::CELLS,
         }),*];
     };
 }
@@ -98,9 +114,9 @@ families! {
 use owed::{OWED, OWING};
 
 use crate::support::byte_cell::{
-    self, Allows, Built, Checkout, Classification, Commit, Ended, Entry, Holding, Lead, Line,
-    Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row, Seen, Staged, Stands, When,
-    Where, blob_of,
+    self, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding, Lead,
+    Line, Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row, Seen, Staged, Stands,
+    When, Where, blob_of,
 };
 use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
@@ -1605,7 +1621,9 @@ fn an_object_that_is_gone_is_seen() {
 /// line: where the doc staged there is committed at its home as a regular file, the cell
 /// holds; where no commit has it and its bytes stand at another path, *git's state moved
 /// outside its allowance*; where they stand nowhere, *lost*; and where the commit holds a
-/// link at the home in the doc's place, *git's state moved*.
+/// link at the home in the doc's place, *git's state moved*. **The unit's commit doc is
+/// not prose to promote**: it is rendered into the commit's message, and its file goes
+/// with the working area.
 #[test]
 fn a_staged_doc_is_accounted_for() {
     const FINALIZES: Row = row(&[
@@ -1683,6 +1701,41 @@ fn a_staged_doc_is_accounted_for() {
     comes_out(
         &Cell::of(FINALIZES, &before, &before),
         Classification::Holds,
+    );
+    // The unit's commit doc is rendered into the commit's message and promoted nowhere:
+    // its file goes with the working area, and nothing asks where its bytes stand. A doc
+    // whose name only begins like it is prose like any other.
+    let with_its_commit_doc = then(&before, |m| {
+        put(
+            m,
+            "repo/.jigc/tasks/t1/docs/commit:t1.md",
+            "# docs: use tabs\n\nthe message somebody handed to jigc\n",
+        );
+    });
+    let landed = then(&with_its_commit_doc, |m| {
+        area_gone(m);
+        put(m, "repo/docs/use-tabs.md", PROSE);
+        commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
+    });
+    comes_out(
+        &Cell::of(FINALIZES, &with_its_commit_doc, &landed),
+        Classification::Holds,
+    );
+    let with_a_lookalike = then(&before, |m| {
+        put(
+            m,
+            "repo/.jigc/tasks/t1/docs/commit-rules.md",
+            "# Commit rules\n\nmore prose somebody handed to jigc\n",
+        );
+    });
+    let landed = then(&with_a_lookalike, |m| {
+        area_gone(m);
+        put(m, "repo/docs/use-tabs.md", PROSE);
+        commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
+    });
+    comes_out(
+        &Cell::of(FINALIZES, &with_a_lookalike, &landed),
+        Classification::Lost,
     );
 }
 
@@ -2110,6 +2163,12 @@ refuses-and-writes) echo left > left; exit 1 ;;
 refuses) exit 1 ;;
 writes-its-own) mkdir -p .jigc && echo own > .jigc/own.txt ;;
 rewrites-its-own) echo other > .jigc/own.txt ;;
+overwrites-the-committed-plant) echo other > notes.txt ;;
+writes-through-the-link) echo prose > a-link.md ;;
+rewrites-the-edited-file) echo rewritten > README.md ;;
+prunes-the-worktrees) git worktree prune ;;
+seeds-the-ignore-file) echo secrets > .gitignore ;;
+writes-a-baseline) mkdir -p .jigc/state && echo '{}' > .jigc/state/hashes.json ;;
 sleeps) exec sleep 30 ;;
 *) echo "the stand-in knows no '$1'" >&2; exit 64 ;;
 esac
@@ -2140,6 +2199,7 @@ const fn on_a_stand_in(
             leads,
             argv,
             listed: Listed::Acts,
+            beside: None,
         },
         row,
         expected,
@@ -2185,9 +2245,82 @@ const ITS_OWN: Row = row(&[line(
     Allows::Files(Where::Path(".jigc/own.txt"), May::WriteWhole),
 )]);
 
+/// A row that lets its command write the root `.gitignore` while the repository has no
+/// commit.
+const SEEDS: Row = row(&[Line {
+    when: When::NoCommitYet,
+    ..line(
+        "G1",
+        Allows::Files(Where::Path(".gitignore"), May::MergeInto),
+    )
+}]);
+
 /// **The cells on the stand-in**, a layer of the manifest each — what the reader must
-/// read for the comparison to come out as it did over manifests built by hand.
+/// read for the comparison to come out as it did over manifests built by hand — and then
+/// **a plant and a condition each**: what the frame puts into a state for a cell.
 const ON_A_STAND_IN: &[OnAStandIn] = &[
+    // --- the plants: a committed file, a link to nothing, an edit, the user's worktree ---
+    on_a_stand_in(
+        &["overwrites-the-committed-plant"],
+        &[Lead::Plant(Plant::Committed("notes.txt"))],
+        NOTHING,
+        Classification::GitMoved,
+        "the planted `repo/notes.txt` is gone from every path of the sandbox, and an object \
+         within reach still has its bytes",
+    ),
+    on_a_stand_in(
+        &["writes-through-the-link"],
+        &[Lead::Plant(Plant::LinkToNothing("a-link.md"))],
+        NOTHING,
+        Classification::WrittenOutside,
+        "-only-of-its-cell.md` was made, and no line covers it",
+    ),
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::Edit("README.md"))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/README.md` is gone, and its bytes stand at no path",
+    ),
+    on_a_stand_in(
+        &["prunes-the-worktrees"],
+        &[Lead::Plant(Plant::Worktree { moved_away: true })],
+        NOTHING,
+        Classification::GitMoved,
+        "the registration `own`, of the worktree at `outside/own`, is gone",
+    ),
+    on_a_stand_in(
+        &["prunes-the-worktrees"],
+        &[Lead::Plant(Plant::Worktree { moved_away: false })],
+        NOTHING,
+        Classification::Holds,
+        "",
+    ),
+    // --- the two conditions: `HEAD` unborn, and no file-state baseline ---
+    on_a_stand_in(
+        &["seeds-the-ignore-file"],
+        &[Lead::Under(Condition::HeadUnborn)],
+        SEEDS,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["seeds-the-ignore-file"],
+        &[],
+        SEEDS,
+        Classification::WrittenOutside,
+        "`repo/.gitignore` was made, and no line covers it",
+    ),
+    on_a_stand_in(
+        &["writes-a-baseline"],
+        &[
+            Lead::Step(Step::File(Place::Repo(".jigc/state/hashes.json"), "{}\n")),
+            Lead::Under(Condition::NoBaseline),
+        ],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/.jigc/state/hashes.json` was made, and no line covers it",
+    ),
     // --- where a plant's bytes stand: at a path, within reach, in the store, nowhere ---
     on_a_stand_in(
         &["removes-the-plant"],
@@ -2432,6 +2565,7 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
             leads: &[],
             argv: &["refuses"],
             listed: Listed::Refuses,
+            beside: None,
         },
         row: NOTHING,
         expected: Classification::RefusesNothingChanged,
@@ -2548,6 +2682,73 @@ fn the_reader_reads_what_the_comparison_reads() {
         "the branch that moved and the path the commit holds, both under the commit's line"
     );
 
+    // An edit is a line added: what the file held stands above it.
+    let edited = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| on.cell.argv == ["rewrites-the-edited-file"])
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of the edit ran");
+    assert!(
+        matches!(
+            edited.before.files.get("repo/README.md"),
+            Some(Entry::File { bytes, .. }) if bytes.starts_with(b"trial corpus\n")
+        ),
+        "the edited file keeps what it held",
+    );
+
+    // A committed plant is in a commit of its own, on the checked-out branch.
+    let committed = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| on.cell.argv == ["overwrites-the-committed-plant"])
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of the committed plant ran");
+    let head = &committed.before.checkouts[REPO].head;
+    assert!(
+        committed.before.commits.len() == 2
+            && committed.before.commits[head]
+                .changed
+                .keys()
+                .eq(["notes.txt"]),
+        "the committed plant is the one path of the commit `HEAD` is: {:?}",
+        committed.before.commits.get(head)
+    );
+
+    // The user's own worktree, moved away: git's registration names a directory that is
+    // not there, its files stand under `moved/`, and its commit is one only its `HEAD`
+    // reaches — the never-adopted repository has one commit, and the picture has two.
+    let moved = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| {
+            matches!(
+                on.cell.leads,
+                [Lead::Plant(Plant::Worktree { moved_away: true })]
+            )
+        })
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of the worktree that was moved away ran");
+    let before = &moved.before;
+    assert!(
+        before.registrations.get("own").map(String::as_str) == Some("outside/own")
+            && !before.checkouts.contains_key("outside/own")
+            && before
+                .files
+                .contains_key("moved/own/staged-by-its-user.txt")
+            && before.files.contains_key("repo/.git/worktrees/own/index")
+            && before.commits.len() == 2
+            && !before
+                .refs
+                .values()
+                .any(|id| before.commits[id].parent.is_some()),
+        "the worktree that was moved away, as the picture before the command has it: \
+         registrations {:?}, checkouts {:?}, {} commits",
+        before.registrations,
+        before.checkouts.keys(),
+        before.commits.len()
+    );
+
     // The faults of a cell.
     let cell = |name, state, leads, leaf| byte_cell::Cell {
         name,
@@ -2556,6 +2757,7 @@ fn the_reader_reads_what_the_comparison_reads() {
         leads,
         argv: &["refuses"],
         listed: Listed::Refuses,
+        beside: None,
     };
     for (cell, says) in [
         (
@@ -2583,6 +2785,24 @@ fn the_reader_reads_what_the_comparison_reads() {
         (
             cell("another-leaf", Prepared::Bare, &[], &["setup"]),
             "the row handed in is of `jigc probe`",
+        ),
+        (
+            cell(
+                "a-baseline-that-is-not-there",
+                Prepared::Bare,
+                &[Lead::Under(Condition::NoBaseline)],
+                &["probe"],
+            ),
+            "holds no file-state baseline to take away",
+        ),
+        (
+            cell(
+                "an-edit-of-no-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::Edit("no-such-file.md"))],
+                &["probe"],
+            ),
+            "no regular file stands there",
         ),
     ] {
         let fault = byte_cell::run(&built, &NOTHING, &cell).err();
@@ -2655,6 +2875,7 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
         leads,
         argv: &["--version"],
         listed: Listed::Acts,
+        beside: None,
     };
     let brought = byte_cell::run(
         &Built::on(binary, Prepared::Of(State::Fresh)),
@@ -2733,5 +2954,500 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
         a.files.len(),
         a.checkouts[REPO].index.len(),
         a.commits.len()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The cells — an arm a prepared state, and the expected-red list
+// ---------------------------------------------------------------------------
+
+/// Every cell of every family's file.
+fn cells() -> Vec<&'static byte_cell::Cell> {
+    FAMILIES.iter().flat_map(|family| family.cells).collect()
+}
+
+/// The row a cell is compared under: its leaf's.
+fn row_of(cell: &byte_cell::Cell) -> &'static Row {
+    rows()
+        .into_iter()
+        .find(|row| row.leaf == cell.leaf)
+        .unwrap_or_else(|| panic!("`{}` is of a leaf with no row", cell.name))
+}
+
+/// **The cells that are red, by the key of the finding each reproduces** — a row a key and
+/// a classification, with the cells that come out so on the binary this suite was built
+/// with. The keys are minted with the cells, in
+/// `completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md`, in the
+/// grammar the route catalog's have.
+const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[];
+
+/// One entry of the expected-red list.
+struct ExpectedRed {
+    cell: &'static str,
+    key: &'static str,
+    classification: Classification,
+}
+
+/// [`EXPECTED_RED`], an entry a cell.
+fn expected_red() -> Vec<ExpectedRed> {
+    EXPECTED_RED
+        .iter()
+        .flat_map(|(key, classification, cells)| {
+            cells.iter().map(|cell| ExpectedRed {
+                cell,
+                key,
+                classification: *classification,
+            })
+        })
+        .collect()
+}
+
+/// **Every way what the cells came to and the expected-red list disagree.** The list is
+/// exact three ways — a red cell no entry lists, a listed cell that is not red, a listed
+/// cell whose classification moved — and its own faults are named with them: an entry for
+/// a cell that was not run, a cell listed twice, an entry that expects a classification
+/// that is not red, a key that is not in the grammar the findings' keys have.
+fn differences(expected: &[ExpectedRed], results: &[(&str, Classification)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (cell, came) in results {
+        let listed: Vec<&ExpectedRed> = expected
+            .iter()
+            .filter(|entry| entry.cell == *cell)
+            .collect();
+        match (listed.first(), came.is_red()) {
+            (None, true) => out.push(format!(
+                "`{cell}` came out *{came}*, and no entry of the expected-red list names it"
+            )),
+            (Some(entry), false) => out.push(format!(
+                "`{cell}` is listed under `{}` as *{}*, and came out *{came}*, which is not red",
+                entry.key, entry.classification
+            )),
+            (Some(entry), true) if entry.classification != *came => out.push(format!(
+                "`{cell}` is listed under `{}` as *{}*, and came out *{came}*",
+                entry.key, entry.classification
+            )),
+            _ => {}
+        }
+        if listed.len() > 1 {
+            out.push(format!("`{cell}` is listed twice"));
+        }
+    }
+    for entry in expected {
+        if !results.iter().any(|(cell, _)| *cell == entry.cell) {
+            out.push(format!(
+                "`{}` is listed under `{}`, and names a cell that was not run",
+                entry.cell, entry.key
+            ));
+        }
+        if !entry.classification.is_red() {
+            out.push(format!(
+                "`{}` is listed as *{}*, which is not red",
+                entry.cell, entry.classification
+            ));
+        }
+        let in_the_grammar = entry.key.strip_prefix("r1-").is_some_and(|words| {
+            !words.is_empty()
+                && words.split('-').all(|word| {
+                    !word.is_empty()
+                        && word
+                            .bytes()
+                            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                })
+        });
+        if !in_the_grammar {
+            out.push(format!(
+                "`{}` is listed under `{}`, which is no key: `r1-`, then lowercase words joined by `-`",
+                entry.cell, entry.key
+            ));
+        }
+    }
+    out
+}
+
+/// **The expected-red list is exact three ways, and its own faults are named** — on
+/// planted lists and planted results, fault by fault.
+#[test]
+fn the_expected_red_list_is_exact_three_ways() {
+    let entry = |cell, key, classification| ExpectedRed {
+        cell,
+        key,
+        classification,
+    };
+    let results = [
+        ("loses", Classification::Lost),
+        ("holds", Classification::Holds),
+        ("refuses", Classification::RefusesNothingChanged),
+    ];
+    says(
+        &differences(
+            &[entry("loses", "r1-setup-loses", Classification::Lost)],
+            &results,
+        ),
+        &[],
+    );
+    says(
+        &differences(&[], &results),
+        &[(
+            "`loses` came out *lost*",
+            "no entry of the expected-red list names it",
+        )],
+    );
+    says(
+        &differences(
+            &[
+                entry("loses", "r1-setup-loses", Classification::GitMoved),
+                entry("holds", "r1-setup-holds", Classification::WrittenOutside),
+            ],
+            &results,
+        ),
+        &[
+            (
+                "`loses` is listed under `r1-setup-loses`",
+                "and came out *lost*",
+            ),
+            (
+                "`holds` is listed under `r1-setup-holds`",
+                "which is not red",
+            ),
+        ],
+    );
+    says(
+        &differences(
+            &[
+                entry("loses", "r1-setup-loses", Classification::Lost),
+                entry("loses", "r1-setup-loses", Classification::Lost),
+                entry("gone", "r1-setup-gone", Classification::Lost),
+                entry(
+                    "refuses",
+                    "r1-setup-refuses",
+                    Classification::RefusesNothingChanged,
+                ),
+                entry("loses", "setup loses", Classification::Lost),
+            ],
+            &results,
+        ),
+        &[
+            ("`loses`", "is listed twice"),
+            (
+                "`refuses` is listed under `r1-setup-refuses`",
+                "which is not red",
+            ),
+            ("`gone`", "names a cell that was not run"),
+            (
+                "`refuses` is listed as *refuses, nothing changed*",
+                "which is not red",
+            ),
+            ("`loses` is listed under `setup loses`", "which is no key"),
+        ],
+    );
+}
+
+fn binary() -> &'static Path {
+    Path::new(env!("CARGO_BIN_EXE_jigc"))
+}
+
+/// **Run the cells of one prepared state on the binary this suite was built with, and
+/// hold the expected-red list to exactly the ones that came out red.** The state is built
+/// once, on that binary, and every cell runs on a copy of it; every difference of the
+/// state's cells is named at once, with what each cell did and **how many differences
+/// each line of its row excused** — which the arm prints for every cell whether or not
+/// anything differs.
+fn run_the_cells_of(state: Prepared) {
+    let cells: Vec<&byte_cell::Cell> = cells()
+        .into_iter()
+        .filter(|cell| cell.state == state)
+        .collect();
+    assert!(
+        !cells.is_empty(),
+        "`{}` has an arm and no cell",
+        state.name()
+    );
+    let built = Built::on(binary(), state);
+    let ran = route_case::pooled(route_case::width(), &cells, |cell| {
+        byte_cell::run(&built, row_of(cell), cell)
+    });
+    let expected: Vec<ExpectedRed> = expected_red()
+        .into_iter()
+        .filter(|entry| cells.iter().any(|cell| cell.name == entry.cell))
+        .collect();
+
+    let (mut wrong, mut results, mut seen) = (Vec::new(), Vec::new(), Vec::new());
+    for (cell, ran) in cells.iter().zip(&ran) {
+        match ran {
+            Ok(ran) => {
+                results.push((cell.name, ran.verdict.classification));
+                seen.push(format!(
+                    "`{}` — {}{}\n{}\nexcused, line by line: {}",
+                    cell.name,
+                    ran.verdict.classification,
+                    if ran.verdict.hangs_on_reach {
+                        " (it hangs on what *held* means)"
+                    } else {
+                        ""
+                    },
+                    ran.detail.trim_end(),
+                    excused(&ran.verdict),
+                ));
+            }
+            Err(fault) => wrong.push(format!("`{}` cannot be run as written: {fault}", cell.name)),
+        }
+    }
+    wrong.extend(differences(&expected, &results));
+    assert!(
+        wrong.is_empty(),
+        "the cells of `{}` and the expected-red list disagree:\n\n  {}\n\nwhat each cell \
+         did:\n\n{}",
+        state.name(),
+        wrong.join("\n  "),
+        seen.join("\n\n"),
+    );
+    // What each cell did, for a reader of the run — a harness shows it where it is asked to.
+    println!("{}", seen.join("\n\n"));
+}
+
+/// What each line of a row excused, the lines that excused nothing left out.
+fn excused(verdict: &byte_cell::Verdict) -> String {
+    let counted: Vec<String> = verdict
+        .excused
+        .iter()
+        .filter(|(_, times)| *times > 0)
+        .map(|(line, times)| format!("{line} × {times}"))
+        .collect();
+    if counted.is_empty() {
+        "nothing".to_string()
+    } else {
+        counted.join(" · ")
+    }
+}
+
+/// **A prepared state gets its arm by its line inside this macro's one call**: the same
+/// line is the state's row of [`ARMS`] and the test that runs its cells, so a state cannot
+/// be given cells' arm by half.
+macro_rules! arms {
+    ($($name:ident => $state:expr,)*) => {
+        /// The prepared states whose cells an arm runs, each with its arm's name.
+        const ARMS: &[(&str, Prepared)] = &[$((stringify!($name), $state)),*];
+
+        /// **The cells of a prepared state are run on the binary this suite was built
+        /// with, and the expected-red list is exactly the ones that came out red** — one
+        /// arm a state ([`run_the_cells_of`]).
+        mod the_cells_are_run_and_the_expected_red_list_is_exact {
+            use super::*;
+            $(
+                #[test]
+                fn $name() {
+                    run_the_cells_of($state);
+                }
+            )*
+        }
+    };
+}
+
+/// The module `arms!` puts the arms in, as the harness names it inside this suite.
+const RUN: &str = "the_cells_are_run_and_the_expected_red_list_is_exact";
+
+arms! {
+    bare => Prepared::Bare,
+    fresh => Prepared::Of(State::Fresh),
+    committed_singletons => Prepared::Of(State::CommittedSingletons),
+}
+
+/// The suite's own path inside the test binary, as the harness names its tests.
+fn suite() -> &'static str {
+    module_path!()
+        .split_once("::")
+        .map_or(module_path!(), |(_, suite)| suite)
+}
+
+/// Where the suites stand, for the arm that holds a cell's pointer to one.
+const SUITES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests");
+
+/// **Every cell has its row, the arm of its state, a name of its own, and — where it
+/// names a suite that holds the same state — a test that is there.** A cell of a leaf
+/// with no row would be compared under nothing; a cell in a state no arm runs would be
+/// run by nobody, at a green gate; and a pointer to a test that was renamed says a state
+/// is held where nobody can find it. The expected-red list's own faults are held here
+/// too, against every cell's name: an entry for a cell of no arm would be held by no arm.
+/// And the harness is asked that each arm is a test it lists.
+#[test]
+fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
+    let cells = cells();
+    let mut wrong = Vec::new();
+    for (at, cell) in cells.iter().enumerate() {
+        if !rows().iter().any(|row| row.leaf == cell.leaf) {
+            wrong.push(format!(
+                "`{}` is of `jigc {}`, which has no row",
+                cell.name,
+                cell.leaf.join(" ")
+            ));
+        }
+        if !cell.argv.starts_with(cell.leaf) {
+            wrong.push(format!(
+                "`{}` runs `jigc {}`, which is not its leaf's command",
+                cell.name,
+                cell.argv.join(" ")
+            ));
+        }
+        if !ARMS.iter().any(|(_, state)| *state == cell.state) {
+            wrong.push(format!(
+                "`{}` stands in `{}`, whose cells no arm runs",
+                cell.name,
+                cell.state.name()
+            ));
+        }
+        if cells[..at].iter().any(|other| other.name == cell.name) {
+            wrong.push(format!("the name `{}` is two cells'", cell.name));
+        }
+        if let Some(beside) = cell.beside {
+            let held = beside.split_once("::").is_some_and(|(suite, test)| {
+                fs::read_to_string(format!("{SUITES}/{suite}.rs"))
+                    .is_ok_and(|source| source.contains(&format!("\nfn {test}() {{")))
+            });
+            if !held {
+                wrong.push(format!(
+                    "`{}` names `{beside}` as the test that holds its state, and no suite \
+                     has that test",
+                    cell.name
+                ));
+            }
+        }
+    }
+    let as_listed: Vec<(&str, Classification)> = cells
+        .iter()
+        .map(|cell| {
+            let listed = expected_red()
+                .into_iter()
+                .find(|entry| entry.cell == cell.name && entry.classification.is_red());
+            (
+                cell.name,
+                listed.map_or(Classification::Holds, |entry| entry.classification),
+            )
+        })
+        .collect();
+    wrong.extend(differences(&expected_red(), &as_listed));
+    let listed = route_case::harness_tests();
+    for (arm, _) in ARMS {
+        let test = format!("{}::{RUN}::{arm}", suite());
+        if !listed.contains(&test) {
+            wrong.push(format!("the harness lists no test `{test}`"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "the cells of the byte table:\n\n  {}",
+        wrong.join("\n  ")
+    );
+    assert_eq!(
+        cells.len(),
+        12,
+        "the pilot's acceptance is twelve cells (the plan's §5)"
+    );
+}
+
+/// The configuration of the runner `dev/gate` runs the suite under, as committed.
+const RUNNER: &str = include_str!("../../../.config/nextest.toml");
+
+/// **Every way a nextest configuration leaves the tests `term` names free to run beside
+/// the others of the one-at-a-time group.** What holds them is an override of
+/// `[profile.default]` whose filter has `term` among its terms — joined by ` | ` and by
+/// nothing else — and whose test group is one thread wide.
+fn outside_the_group(config: &str, term: &str) -> Vec<String> {
+    let config: toml::Table = match config.parse() {
+        Ok(config) => config,
+        Err(why) => return vec![format!("the runner's configuration is no TOML: {why}")],
+    };
+    let naming: Vec<&toml::Value> = config
+        .get("profile")
+        .and_then(|profiles| profiles.get("default"))
+        .and_then(|default| default.get("overrides"))
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|over| {
+            over.get("filter")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|filter| filter.split(" | ").any(|part| part.trim() == term))
+        })
+        .collect();
+    if naming.is_empty() {
+        return vec![format!(
+            "no override of `[profile.default]` has `{term}` as a term of its filter: the \
+             arms that run cells are in no test group"
+        )];
+    }
+    let mut out = Vec::new();
+    for over in naming {
+        let group = over.get("test-group").and_then(toml::Value::as_str);
+        let wide = group
+            .and_then(|group| config.get("test-groups")?.get(group)?.get("max-threads"))
+            .and_then(toml::Value::as_integer);
+        if wide != Some(1) {
+            out.push(format!(
+                "`{term}` is in the test group `{}`, which is not one thread wide",
+                group.unwrap_or("<none>")
+            ));
+        }
+    }
+    out
+}
+
+/// **The arms that run cells run one at a time under the gate's runner**, with the route
+/// catalog's: each is a pool as wide as the machine, and the runner gives each test a
+/// process of its own, so nothing in the suite can bound two of them together. The term
+/// names the module the arms stand in — an arm `arms!` makes for another prepared state
+/// is in the bound the day it is made. On planted configurations; then the committed one.
+#[test]
+fn the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner() {
+    let term = "test(/^s::run::/)";
+    let config = |groups: &str, filter: &str, group: &str| {
+        format!(
+            "[test-groups]\n{groups}\n[profile.default]\ntest-threads = 16\n\
+             [[profile.default.overrides]]\nfilter = '{filter}'\ntest-group = '{group}'\n"
+        )
+    };
+    let one = "one-at-a-time = { max-threads = 1 }";
+    says(
+        &outside_the_group(
+            &config(one, "test(=s::other) | test(/^s::run::/)", "one-at-a-time"),
+            term,
+        ),
+        &[],
+    );
+    for (groups, filter, group, said) in [
+        (
+            one,
+            "test(=s::run::fresh)",
+            "one-at-a-time",
+            "in no test group",
+        ),
+        (
+            one,
+            "test(/^s::run::/) & binary(g_other)",
+            "one-at-a-time",
+            "in no test group",
+        ),
+        (
+            "one-at-a-time = { max-threads = 2 }",
+            "test(/^s::run::/)",
+            "one-at-a-time",
+            "not one thread wide",
+        ),
+        (one, "test(/^s::run::/)", "another", "not one thread wide"),
+    ] {
+        says(
+            &outside_the_group(&config(groups, filter, group), term),
+            &[("`test(/^s::run::/)`", said)],
+        );
+    }
+    says(
+        &outside_the_group("[profile.default", term),
+        &[("the runner's configuration", "is no TOML")],
+    );
+
+    let wrong = outside_the_group(RUNNER, &format!("test(/^{}::{RUN}::/)", suite()));
+    assert!(
+        wrong.is_empty(),
+        "`.config/nextest.toml` and the arms that run cells:\n\n  {}",
+        wrong.join("\n  ")
     );
 }

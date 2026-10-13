@@ -42,7 +42,9 @@
 //! manifest taken before them ([`Seen::base`]): a difference there is judged against the
 //! row's lines and is never *lost*. And prose handed to jigc — a doc staged under a work
 //! unit's `docs/` — must, once its working area is gone, stand byte for byte in a commit
-//! the command made, as a regular file.
+//! the command made, as a regular file. The unit's commit doc is the exception its
+//! design doc names: it is rendered into the commit's message and promoted nowhere
+//! ([`staged_docs`]).
 //!
 //! **A classification is what one binary did on one day, never a verdict.** The order they
 //! are read in is [`compare`]'s; everything but [`Classification::Holds`] and
@@ -1055,6 +1057,14 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
 /// its merged set, the files of that set (`.jigc/milestones/<id>/merged/docs/`), which is
 /// what the boundary lands. **A stated bound:** at a milestone's boundary a sub-task's own
 /// staged copy is held through the merged set and not by itself.
+///
+/// **The unit's commit doc is none of them.** It is staged beside the others, as
+/// `commit:<id>.md` (`design/write-commands.md`: *`jigc start` itself stages
+/// `commit:<id>.md`*), and it is promoted nowhere: *"The commit doc (`commit:<task-id>`)
+/// is **not** promoted — its sink is the git message rendered in phase 3, not a repo
+/// file"* (`design/finalize.md` → *4. Promote managed docs*). Its file goes with the
+/// working area. **Not held:** that the commit's message is that doc's rendering — a
+/// manifest holds no commit's message, and the rendering is the product's.
 fn staged_docs(manifest: &Manifest) -> Vec<(&str, &str)> {
     let docs = |pattern: &str| -> Vec<(&str, &str)> {
         manifest
@@ -1062,6 +1072,12 @@ fn staged_docs(manifest: &Manifest) -> Vec<(&str, &str)> {
             .iter()
             .filter(|(path, _)| {
                 path.ends_with(".md") && in_repo(path).is_some_and(|rel| under(pattern, rel))
+            })
+            .filter(|(path, _)| {
+                !path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.starts_with("commit:"))
             })
             .filter_map(|(path, entry)| Some((path.as_str(), entry.blob()?)))
             .collect()
@@ -1162,10 +1178,41 @@ impl Built {
 /// **One thing put into a prepared state by hand** before the command runs — the user's,
 /// by construction: it carries bytes found nowhere else, which the frame makes
 /// ([`marker`]), and the comparison asks where those bytes stand afterwards.
+///
+/// The letters are the plan's (§3), which gives each kind the rule that places it: a
+/// cell puts its plant among its leads where that rule says.
 #[derive(Clone, Copy, Debug)]
 pub enum Plant {
-    /// A file in no commit, at this path of the repository.
+    /// **U**, and **D** — a file in no commit, at this path of the repository. **D** is
+    /// the same act in a directory the command removes.
     File(&'static str),
+    /// **T** — a file the user committed at this path of the repository: written, staged
+    /// and committed in a commit of its own, by `git` as the user would run it.
+    Committed(&'static str),
+    /// **L**, to nothing — a symbolic link at this path of the repository whose target is
+    /// not there. The link's target is where it carries its marker.
+    LinkToNothing(&'static str),
+    /// **E** — a line added by hand to the tracked file at this path of the repository, in
+    /// no commit.
+    Edit(&'static str),
+    /// **W** — the user's own linked worktree, at `outside/own`: detached, holding a
+    /// commit only its `HEAD` reaches and a staged file, each with a marker of its own —
+    /// and, where `moved_away`, its directory moved to the sandbox's `moved/` afterwards,
+    /// so that git's registration names a directory that is not there.
+    Worktree { moved_away: bool },
+}
+
+/// **A condition the owner doc names for a command's guard**, which the acceptance runs
+/// on both of its sides (the plan's §3): the side that is not the prepared state's own is
+/// made by one of these.
+#[derive(Clone, Copy, Debug)]
+pub enum Condition {
+    /// `HEAD` unborn: the checked-out branch's commits are taken away, and the index
+    /// keeps what it held (`git update-ref -d HEAD`).
+    HeadUnborn,
+    /// No file-state baseline — the clone: everything under `.jigc/state/` is gone, as it
+    /// is in what `git clone` hands over, the directory being ignored.
+    NoBaseline,
 }
 
 /// **One thing a cell does before its command**, in order — data, like the cell.
@@ -1176,6 +1223,7 @@ pub enum Lead {
     /// files or through git that builds what the cell stands on.
     Step(Step),
     Plant(Plant),
+    Under(Condition),
     /// What stands at this path, from the sandbox's root, is moved to the sandbox's
     /// `moved/` under the name it had.
     MovedAway(&'static str),
@@ -1195,6 +1243,11 @@ pub struct Cell {
     /// holds the row's consent flag.
     pub argv: &'static [&'static str],
     pub listed: Listed,
+    /// **The suite and the test that hold the same state**, as `suite::test` — a cell is
+    /// one plant at one position, and the orderings around it stay in the suite of the
+    /// command, which sweeps them (the plan's §1.5, *the rule against duplication*).
+    /// `None` for a cell no suite stands beside.
+    pub beside: Option<&'static str>,
 }
 
 /// What running one cell came to.
@@ -1210,10 +1263,32 @@ pub struct Ran {
     pub detail: String,
 }
 
-/// The bytes the plant at place `at` of a cell's leads carries: found nowhere else in the
-/// sandbox, not empty, and no other plant's bytes begin with them.
-fn marker(at: usize) -> String {
-    format!("byte-table-plant-{at}-of-its-cell")
+/// The bytes the plant at place `at` of a cell's leads carries — `word` tells apart the
+/// pieces of a plant that has more than one: found nowhere else in the sandbox, not empty,
+/// and no other marker begins with them.
+fn marker(at: usize, word: &str) -> String {
+    format!("byte-table-plant-{at}-{word}-of-its-cell")
+}
+
+/// Where the user's own linked worktree stands, from the sandbox's root ([`Plant::Worktree`]).
+const OWN_WORKTREE: &str = "outside/own";
+
+/// One `git` child of the frame's own, as the user would run it in `at`: under the
+/// sandbox's mask and the standing limit. It must exit 0.
+fn git(sandbox: &Sandbox, at: &Path, args: &[&str]) -> Result<(), String> {
+    let mut command = sandbox.child(Path::new("git"));
+    command.current_dir(at).args(args);
+    let ran = sandbox.run(&mut command, route_case::LIMIT);
+    if ran.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "`git {}`: {}\n{}",
+            args.join(" "),
+            ran.exit(),
+            ran.said
+        ))
+    }
 }
 
 /// The limit of a cell's command: the route catalog's frame's.
@@ -1264,7 +1339,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
     let mut planted = Vec::new();
     for (at, lead) in cell.leads.iter().enumerate() {
         if let Lead::Plant(plant) = lead {
-            planted.push(plant.planted(at));
+            planted.extend(plant.planted(at));
         }
     }
     let mut reader = Reader {
@@ -1323,32 +1398,140 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
 }
 
 impl Plant {
-    /// The plant as the comparison needs it: where it stands, from the sandbox's root, and
-    /// its marker.
-    fn planted(self, at: usize) -> Planted {
+    /// The plant as the comparison needs it: where each piece of it stands, from the
+    /// sandbox's root, with its marker.
+    fn planted(self, at: usize) -> Vec<Planted> {
+        let piece = |path: String, word: &str| Planted {
+            at: path,
+            marker: marker(at, word),
+        };
         match self {
-            Plant::File(path) => Planted {
-                at: format!("{REPO}/{path}"),
-                marker: marker(at),
-            },
+            Plant::File(path)
+            | Plant::Committed(path)
+            | Plant::LinkToNothing(path)
+            | Plant::Edit(path) => vec![piece(format!("{REPO}/{path}"), "only")],
+            Plant::Worktree { moved_away } => {
+                let stands = if moved_away {
+                    "moved/own"
+                } else {
+                    OWN_WORKTREE
+                };
+                vec![
+                    piece(format!("{stands}/committed-by-its-user.txt"), "committed"),
+                    piece(format!("{stands}/staged-by-its-user.txt"), "staged"),
+                ]
+            }
         }
     }
 
-    /// Put the plant in. Nothing stands where a plant goes: one written over a file of the
-    /// state would be an edit, which is another plant.
+    /// Put the plant in. Nothing stands where a file or a link is planted: one written
+    /// over a file of the state would be an edit, which is another plant.
     fn put(self, sandbox: &Sandbox, at: usize) -> Result<(), String> {
+        let repo = sandbox.repo();
+        let free = |path: &str| -> Result<PathBuf, String> {
+            let file = repo.join(path);
+            if fs::symlink_metadata(&file).is_ok() {
+                return Err(format!(
+                    "a plant goes to `{path}`, and something stands there already"
+                ));
+            }
+            fs::create_dir_all(file.parent().expect("a plant has a parent"))
+                .map_err(|why| format!("the directory of the plant at `{path}`: {why}"))?;
+            Ok(file)
+        };
+        let written =
+            |path: &'static str| move |why: std::io::Error| format!("the plant at `{path}`: {why}");
         match self {
             Plant::File(path) => {
-                let file = sandbox.repo().join(path);
-                if fs::symlink_metadata(&file).is_ok() {
+                fs::write(free(path)?, format!("{}\n", marker(at, "only"))).map_err(written(path))
+            }
+            Plant::Committed(path) => {
+                fs::write(free(path)?, format!("{}\n", marker(at, "only")))
+                    .map_err(written(path))?;
+                git(sandbox, &repo, &["add", "--", path])?;
+                git(
+                    sandbox,
+                    &repo,
+                    &["commit", "-q", "-m", "a file of the user's own", "--", path],
+                )
+            }
+            Plant::LinkToNothing(path) => {
+                std::os::unix::fs::symlink(format!("{}.md", marker(at, "only")), free(path)?)
+                    .map_err(written(path))
+            }
+            Plant::Edit(path) => {
+                let file = repo.join(path);
+                if !fs::symlink_metadata(&file).is_ok_and(|entry| entry.is_file()) {
                     return Err(format!(
-                        "a plant goes to `{path}`, and something stands there already"
+                        "an edit goes into `{path}`, and no regular file stands there"
                     ));
                 }
-                let parent = file.parent().expect("a planted file has a parent");
-                fs::create_dir_all(parent)
-                    .and_then(|()| fs::write(&file, format!("{}\n", marker(at))))
-                    .map_err(|why| format!("the plant at `{path}` could not be written: {why}"))
+                let mut bytes = fs::read(&file).map_err(written(path))?;
+                bytes.extend(format!("\n{}\n", marker(at, "only")).bytes());
+                fs::write(&file, bytes).map_err(written(path))
+            }
+            Plant::Worktree { moved_away } => {
+                let own = sandbox.root().join(OWN_WORKTREE);
+                git(
+                    sandbox,
+                    &repo,
+                    &[
+                        "worktree",
+                        "add",
+                        "-q",
+                        "--detach",
+                        "../outside/own",
+                        "HEAD",
+                    ],
+                )?;
+                for (name, word, commits) in [
+                    ("committed-by-its-user.txt", "committed", true),
+                    ("staged-by-its-user.txt", "staged", false),
+                ] {
+                    fs::write(own.join(name), format!("{}\n", marker(at, word)))
+                        .map_err(written(name))?;
+                    git(sandbox, &own, &["add", "--", name])?;
+                    if commits {
+                        git(
+                            sandbox,
+                            &own,
+                            &["commit", "-q", "-m", "the user's own commit"],
+                        )?;
+                    }
+                }
+                if moved_away {
+                    Lead::MovedAway(OWN_WORKTREE).done(sandbox, Path::new(""), at)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Condition {
+    /// Make the condition hold. One that held already is a fault of the cell: its two
+    /// sides would be one cell.
+    fn made(self, sandbox: &Sandbox) -> Result<(), String> {
+        let repo = sandbox.repo();
+        match self {
+            Condition::HeadUnborn => git(sandbox, &repo, &["update-ref", "-d", "HEAD"]),
+            Condition::NoBaseline => {
+                let state = repo.join(".jigc/state");
+                let entries: Vec<PathBuf> = fs::read_dir(&state)
+                    .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+                    .unwrap_or_default();
+                if entries.is_empty() {
+                    return Err("the state holds no file-state baseline to take away".to_string());
+                }
+                for entry in entries {
+                    let gone = if entry.is_dir() {
+                        fs::remove_dir_all(&entry)
+                    } else {
+                        fs::remove_file(&entry)
+                    };
+                    gone.map_err(|why| format!("the file-state baseline: {why}"))?;
+                }
+                Ok(())
             }
         }
     }
@@ -1372,6 +1555,7 @@ impl Lead {
                 format!("the lead {at} of the cell was not done: {said}")
             }),
             Lead::Plant(plant) => plant.put(sandbox, at),
+            Lead::Under(condition) => condition.made(sandbox),
             Lead::MovedAway(path) => {
                 let from = sandbox.root().join(path);
                 let name = from

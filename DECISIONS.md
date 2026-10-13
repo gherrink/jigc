@@ -2,6 +2,61 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The byte table's twelve acceptance cells run on this tree's binary and none is red — eleven refuse and change nothing a refusal may not, one acts and holds, each as the plan reads this tree — and the first cell in which a task's finalize acts found the frame holding a commit doc to the rule for promoted prose (the byte table's pilot, task `B2d`)
+
+**What.** The sixth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §3, §5, §8): the table's first cells — the twelve of its acceptance, in the files of their families — the plants and conditions they need, an arm a prepared state, and the expected-red list, which is empty and exact. No row was touched, and no product source changes.
+
+### The cells, on this tree's binary
+
+**All twelve come out as the plan's §5 reads this tree** ([byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §2 has the table, with the refusal each printed and what each row's lines excused):
+
+- `setup` over an untracked file at `.jigc/AGENT.md`, `HEAD` unborn and born — *refuses, nothing changed*, twice (`setup.dirty-install-path`);
+- `task finalize` over a line added to `VISION.md` after the task's first write, without and with a file-state baseline — *refuses, nothing changed*, twice (`reconciliation.conflict-block`), each leaving one file of the edge index rebuilt, under the ruling's line `C1`;
+- `task finalize` over a link to nothing at the created doc's home — *refuses, nothing changed* (`store.home-not-regular-file`), `C1` × 3;
+- `milestone finalize` over an untracked file, and over a committed one, at the id the join numbered onto — *refuses, nothing changed*, twice (`finalize.promote-clobber`), each leaving `merged/` rebuilt under the line whose own sentence says so, `M1` × 4;
+- `uninstall` over a file jigc did not write under `.jigc/logs/`, `.jigc/state/`, `.jigc/index/` and at `.jigc/`'s root — *refuses, nothing changed*, four times (`uninstall.foreign-bytes` three times, `uninstall.untracked-workbench-file` at the root — the cell the plan had as *not run by anybody*);
+- `milestone finalize` beside the user's own linked worktree, its directory moved away — ***holds***: 66 differences, every one under a line of the row as the record has it — `M3` × 7 · `M5` × 3 · `M6` × 49 over its three places · `M7` × 4 · `M10` × 3 — and nothing under `tmp/`, `home/` or `outside/`.
+
+**What the human's ruling of 2026-10-12 asked to be said of them.** No cell carries a mark for the first silence, and none is red for a rebuilt cache. **No refusal of the twelve left a task area or a milestone area behind**, so *a minted work unit is no cache* leaves no cell red. **No refusal wrote under `.jigc/state/`**, so the point the ruling leaves open there is met by no cell. And no cell turns on the second or the fifth silence: the two cells of `setup` refuse before the first write, and no cell of `uninstall` acts on this tree. So **no cell carries a mark**, and the frame has no word for one yet — a cell's field that no cell fills would be dead; the cells of the next family, whose staged plant turns on what *held* means, bring it. [byte-table-readings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) lists every question with the cells nearest it.
+
+### The frame was wrong in one rule, and a cell found it
+
+The frame held every `.md` file under a task's `docs/` to the rule for prose handed to jigc: once the working area is gone it must stand in a commit the command made. **A task's commit doc is staged there too, as `commit:<id>.md`, and is promoted nowhere** — *"its sink is the git message rendered in phase 3, not a repo file"* (`design/finalize.md` → *4. Promote managed docs*; the record's `T8` quotes it, and the plan's §2 says the commit doc *is held to the message*). So every `task finalize` that acted came out *lost*, for its own commit doc.
+
+No cell showed it on this tree, where no `task finalize` of the twelve acts. **It was found by running the twelve once on the previous release's binary before this commit** — the next task's arm, put into the working tree and taken out again: there the cell of the link acts, and it came out *lost* where the plan's §5 reads *git's state moved outside its allowance*, with one reason, the commit doc. The line was not bent: the rule was read against the plan and the doc, found wrong against both, and corrected red first — [`a_staged_doc_is_accounted_for`](crates/cli/tests/byte_table.rs) gained a working area that holds its commit doc beside the prose, red at *lost* on the frame as it stood; and a doc whose name only begins like it, which must stay prose (a change that exempted `commit-rules.md` too is named by it). **Not held, and said so in the frame:** that the commit's message is the commit doc's rendering — a manifest holds no commit's message, and the rendering is the product's.
+
+### What the frame gained, each piece red first
+
+- **The plants** (the plan's §3): **T**, a file the user committed, in a commit of its own, by `git` under the hooks as they stand · **L**, a link to nothing, whose target carries the marker · **E**, a line added by hand to a tracked file · **W**, the user's own linked worktree at `outside/own`, holding a commit only its `HEAD` reaches and a staged file, and its directory moved to `moved/` where the cell says so. **U** and **D** are the file in no commit the last task built.
+- **The two conditions** a doc names for a guard: `HEAD` unborn (`git update-ref -d HEAD`), and no file-state baseline — everything under `.jigc/state/` gone.
+- **Red first:** against a frame that declared the four plants and the two conditions and put in nothing, seven cells on the stand-in were red — five as faults (the plant did not stand in the picture before the command), two by their classification. Sixteen changes to the built frame and suite, each named: a committed plant that is only staged · one neither staged nor committed · an edit that replaces what the file held · a worktree that stays where it was to be moved away · its commit not made · `HEAD` left born · a baseline that is not there taken for one · and the nine of the suite below. *One survived the arms as first written* — a committed plant that was only staged comes out the same on the stand-in — and the arm gained the picture: the plant is the one path of the commit `HEAD` is.
+
+### The arms, and the list
+
+- **An arm a prepared state** (`bare`, `fresh`, `committed_singletons`), made by one line of `arms!` each: the state is built once on the binary the suite was built with, every cell runs on a copy through the pool, and **the arm prints what every cell did and what each line of its row excused**, red or not.
+- **The expected-red list is exact three ways** — a red cell no entry lists, a listed cell that is not red, a listed cell whose classification moved — with its own faults: a cell that was not run, a cell listed twice, a classification that is not red, a key outside the grammar. Red first on planted lists against a helper that named nothing.
+- **Every cell has its row, the arm of its state, a name of its own, and the test it points at** ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`](crates/cli/tests/byte_table.rs)); the harness is asked that each arm is a test it lists.
+- **The arms run one at a time under the gate's runner, with the route catalog's**: one more term in the one filter line of [`.config/nextest.toml`](.config/nextest.toml), held by [`the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner`](crates/cli/tests/byte_table.rs) — red first on planted configurations.
+- The nine changes named there: each of the list's three ways not named · a group that is not one thread wide · the term taken out of the runner's configuration · a pointer to a test no suite has · two cells under one name · a state with cells and no arm · an entry of the list for a cell that is not red.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A cell is listed as acting or refusing from its row's doc**, never from a run: the eleven refuse because a sentence of the doc says the state is refused (each family's file quotes which), and the cell of the user's worktree acts because a registration that is somebody else's is no reason to refuse.
+- **Two reporters, where the review's cells had three.** The join numbers the second finding onto `stage-2`; one sub-task less is seven lead-ins less a cell, and the row's record asks for *the id the join numbered onto*, which two give.
+- **One plant a cell.** The review planted a file at `.jigc/AGENT.md` and one at `.jigc/config/packs.yaml` together; the cell plants the first. The second is the family's own task's, as a cell of its own.
+- ***No baseline* is `.jigc/state/` emptied in the prepared state**, which is what the builder of the prepared states calls the clone's shape — not a second clone, as the plan's own run had it. On the previous release the cell loses the line either way.
+- **The user's commit is made as the user would make it** — hooks and all, no `--no-verify`: jigc's own `pre-commit` hook runs over it in `fresh` and lets it through.
+- **A cell names the suite and the test that hold its state, ordering by ordering** (`beside`), and the fence asks that the test is there. It is a pointer for a reader, as the plan's rule against duplication asks; nothing is run through it.
+- **The lead-ins of the three task and fan-out constructions were driven once by hand without their plant**, on this tree's binary: each finalizes at exit 0. A refusing cell is held to refusing and not to which refusal — the frame has no word for a code — so that the refusal is the plant's and not a missing lead-in's rests on that drive and on the codes read off each cell's output.
+
+### Not established
+
+- **The twelve on the previous release's binary, as a committed table** — the next task's. They were run there once, uncommitted, to find the rule above.
+- **Linux.**
+- **What the cells add to a gate**: alone, the suite's 29 arms ran in 13 s at a load of about 50, the three arms of the cells among them; inside a gate, this commit's gate is the first measurement, and the next entry has it.
+- **That a refusal is the right refusal**, beyond the builder's reading of twelve outputs.
+- **That a commit's message is its commit doc's rendering.**
+
 ## 2026-10-13 — A refusal may rebuild a cache — the human's ruling on the first of the six silences, carried by three lines that stand in every row — and the four acceptance rows are data, lifted from the committed record quote for quote (the human's ruling of 2026-10-12, option A of two; the byte table's pilot, task `B2c`)
 
 **What.** The fifth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §8), and with it the first ruling on [the record's list of silences](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) (§6). The ruling rides this commit and is none of its own: until now no row was data and no cell existed, so there was nothing built under the other reading to build again — the rows are born under the ruling. No product source changes, and no design doc is edited.

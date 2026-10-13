@@ -40,6 +40,13 @@
 # on a binary a variable names: ignored, run by hand, and in the group for the run that
 # asks for it beside the others. Under `cargo test` — CI, the runner-faithful container —
 # a group's tests are threads of one process and the suite's own gate is the bound.
+#
+# **The byte table's arms that run cells are in the same group**
+# (`crates/cli/tests/byte_table.rs`, one arm a prepared state): each is a pool as wide as
+# the machine too, a cell a chain of child processes, so one of them beside an arm of the
+# catalog would be two machines' worth. The term names the module they stand in, and
+# `byte_table::the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner` holds this
+# file to it.
 [test-groups]
 route-catalog-cases = { max-threads = 1 }
 
@@ -59,7 +66,7 @@ final-status-level = "slow"
 # the override's. Overrides of the default profile reach every other profile, the ones
 # `dev/gate` writes per run included.
 [[profile.default.overrides]]
-filter = 'test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/) | test(=route_catalog::the_cases_are_followed_on_the_binary_a_variable_names)'
+filter = 'test(/^route_catalog::the_cases_are_followed_and_the_expected_red_list_is_exact::/) | test(=route_catalog::the_cases_are_followed_on_the_binary_a_variable_names) | test(/^byte_table::the_cells_are_run_and_the_expected_red_list_is_exact::/)'
 test-group = 'route-catalog-cases'
 
 [profile.ci]
