@@ -1261,6 +1261,9 @@ pub struct Ran {
     /// What the command said and why the verdict is what it is, with the sandbox's root
     /// written `<sandbox>`.
     pub detail: String,
+    /// The cell's seconds in the frame, from the copy of its state to its verdict: the
+    /// sandbox, the leads, the three manifests, the command.
+    pub seconds: f64,
 }
 
 /// The bytes the plant at place `at` of a cell's leads carries — `word` tells apart the
@@ -1331,6 +1334,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
             row.leaf.join(" ")
         ));
     }
+    let started = std::time::Instant::now();
     let copy = built.corpus.copy_state();
     let sandbox = Sandbox::over(cell.name, under_test, |repo, home| {
         fs::rename(copy.repo(), repo).expect("bring the prepared repository in");
@@ -1394,6 +1398,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
         before,
         after,
         detail,
+        seconds: started.elapsed().as_secs_f64(),
     })
 }
 

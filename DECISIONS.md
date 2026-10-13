@@ -2,6 +2,67 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The byte table's acceptance: on the previous release's binary the twelve cells show each of the six blocking rows the pilot was built to catch — six *lost*, three *git's state moved outside its allowance* — and on this tree's they show each of them gone; every line as the plan reads it. And the first numbers: a task cell in two to four seconds, a fan-out cell in six to sixteen (the byte table's pilot, task `B2e`)
+
+**What.** The seventh task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §5, §8, §9): the arm that runs every cell on a binary a variable names, beside this tree's — [`byte_table::the_cells_are_run_on_the_binary_a_variable_names`](crates/cli/tests/byte_table.rs), ignored, run by hand — and the acceptance read off it. No cell and no row changed, and no product source.
+
+### The acceptance
+
+Run on the binary built from the previous release's commit `91834b5e` — `1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked before the run — every cell on a copy of the state **that binary built**. The table, a line a cell with its row's key, is [byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §3.
+
+| | cells | red | keys |
+|---|---:|---:|---:|
+| the previous release | 12 | **9** — 6 *lost*, 3 *git's state moved outside its allowance* | 6: `(R1, F1)` · `(R3, F7)` · `(R6, D-1)`, both halves · `(R6, D-7)` · `(R9, F5)`, three places · `L-22` |
+| this tree | 12 | **0** — 11 *refuses, nothing changed*, 1 *holds* | none |
+
+**Every one of the twelve lines is the plan's §5, on both binaries**, the two the first draft of the plan had wrong included: the link at a created doc's home is *git's state moved outside its allowance* — the commit holds a link where the row declares a doc, and the prose stands at the link's target — and so is the committed doc the boundary landed on, which history still holds. The three cells that are not red on the previous release are the other side of a condition, twice, and the same plant one directory up. **Nothing was bent to get there, and one thing was corrected to**: the frame's own rule for a commit doc, in the task before this one, found by this arm.
+
+**The six named states of the builder of the prepared states all build on the previous release's binary** — which the plan had established through the shell rig only: `fresh` 1.4 s · `committed-singletons` 7.8 · `migrated` 3.6 · `refs-post-hoc` 9.5 · `chatty-hooks` 1.5 · `vendored` 6.2.
+
+**What each line of each row excused** is the arm's third block. On the previous release `M6` excused the most — 159 differences over the three cells of the fan-out, the worktrees' files — then `U1`, 26, `T6`, 19, and `M7`, 12. **Thirteen lines excused nothing in any cell on either binary**: `S6` in both manners · `U2`, `U3`, `U4` as *taken out of*, `U6` · `T2`, `T3`, `T6` as *moved aside* · `M6` as *moved aside* · `C2` · `C3` in both places — and `C1` excused only a refusal of `task finalize`: five differences on this tree, over its three refusals, and one on the previous release. That `U2` and `U3` excused nothing where the previous release's `uninstall` acted is not a finding yet: those three cells are *lost*, and of a red cell the frame says why in the class that outranks the others and no more.
+
+### The arm
+
+- The variable is the table's own, `JIGC_BYTE_TABLE_BINARY`; under the route catalog's, one export would start both tables.
+- It prints four blocks — `cells`, `pairs`, `excused`, `states` — and then what the frame saw of every cell whose two outcomes are not the same words. **It asserts that it ran, and nothing about what a cell came to**: whether a difference between two releases is anything is not the suite's to say.
+- **A state that binary cannot build, and a cell whose lead-in it refuses, keep their lines**, which say why. Held on two stand-ins ([`the_table_runs_each_binary_on_the_state_that_binary_built`](crates/cli/tests/byte_table.rs)): one does nothing and `fresh` builds on it; the other refuses everything, `fresh` cannot be built **on that binary**, and the line says so beside the first one's classification. Four changes to the built arm are named by it — the states built on this tree's binary whatever is handed in · the two columns swapped · a cell's seconds not measured · the variable not read — and a fifth, the arm's term taken out of the runner's configuration, by the arm that holds the group.
+- It is in the one-at-a-time group of the gate's runner by its own name, as the catalog's is.
+
+### The first numbers
+
+A cell's seconds are measured in the frame, from the copy of its state to its verdict: the sandbox, the leads, three manifests, the command. macOS arm64, this tree's debug binary unless said; the machine's one-minute load beside each.
+
+| | a task cell | a fan-out cell | load |
+|---|---:|---:|---|
+| **alone** — the state built, then the one cell, nothing beside it in the process | 3.7 s (its state, `committed-singletons`: 10.9 s) | 7.2 s (its state, `fresh`: 1.9 s) | 19 to 23 |
+| in its arm's pool, the suite's 30 arms at once (`cargo test`) | 1.8 s | 6.0 to 6.3 s | 20 to 40 |
+| in the arm on a named binary — this tree's binary | 3.5 to 3.6 s | 15.0 to 16.1 s | 23 to 41 |
+| — the previous release's binary, a release build | 3.0 to 4.0 s | 9.4 to 12.1 s | the same run |
+| **inside a gate** — the last commit's, the arms one at a time in the runner's group | the arm of `committed-singletons`, two task cells and the state: **10.0 s** | the arm of `fresh`, three fan-out cells, a task cell, four of `uninstall` and the state: **4.2 s** | the gate's own |
+
+The other cells: `setup` and `uninstall` 1.0 to 1.7 s. The whole arm on a named binary — twelve cells on two binaries, and the six states built once more on the named one — ran 90 s.
+
+**What these cost a gate.** Inside the last commit's gate the byte table's 29 arms summed 43.0 s of test time; the three arms that run cells were **15.8 s** of the one-at-a-time chain they share with the route catalog's (`bare` 1.5 · `committed-singletons` 10.0 · `fresh` 4.2), where the catalog's arms were 115 to 269 s each in a gate of this night. The rest is the arm of the 43 cells on the stand-in, 15.1 s, the arm of the two builders, 8.4 s, and the arm of a command that does not end, 2.9 s; they run beside everything else. This commit adds the arm of the two stand-ins.
+
+**So, on those numbers, which cells the gate runs: all twelve** — the planted cells of the acceptance, in the arms of their three states, as the plan's §9 has it for every planted cell. A fan-out cell is two to four and a half times a task cell and still seconds; the plan's worst case for it — 13 to 36 s a cell, about fifty of them — is not what the frame measures on this machine, though under a load of 50 to 60 a fan-out cell was seen at 36 to 53 s on the previous release's binary once, in the run that found the commit doc's rule. **What a whole family costs is the next task's to count**: the acceptance is twelve cells in three states, and the cost of a state is its build — `committed-singletons` is ten seconds whether two cells stand in it or twenty. The human may revisit the gate's share at the stop.
+
+**An arm leaves its cells' seconds behind**, a file a state under the target directory's `tmp/` — the gate's runner shows a passing test's output to nobody, and what a cell costs inside a gate is what the pilot's record asks for. The per-cell seconds inside **this** commit's gate are therefore read after it, and are in the builder's return and not in this entry, which the gate ran on.
+
+### Decided here — as a builder
+
+- **The acceptance's table is committed as words, in the findings file, and not as the arm's bytes**: the arm prints seconds, which no two runs share. The pilot's printed table is the closing task's (`B4`), as the plan has it.
+- **The keys of the acceptance are the rows' own** — `(R1, F1)` and the others, as the review of the previous release and the fix pass's record have them — and no key in the ledger's grammar is minted for a cell that is red only on a binary that is not this tree's.
+- **The arm builds all six named states on the named binary every run**, about thirty seconds on the previous release: the plan asks which of them build there, and the answer should not rest on one run of one day.
+- **A wrong number in the last commit's record is corrected here**: the findings file said that eight of the twelve act on the previous release; it is nine.
+
+### Not established
+
+- **Linux**: the plan asks for the line of `dev/runner-faithful` in this entry, and it runs on a committed revision — so it is run once on this commit after it lands, and is in the builder's return. Whether the expected-red list, which is empty, is the same there is the same run.
+- **A cell's seconds on a quiet machine, and on the hosted runner.** Every number above was taken at a load of 19 or more.
+- **What else the previous release wrote in the nine red cells**, beside what makes each red.
+- **`(R6, K-1)`**, the race: no state reproduces it, and it has no cell — as the plan says.
+- **The base cells, the refusing cells and the cells on demand**: the pilot's next tasks.
+
 ## 2026-10-13 — The byte table's twelve acceptance cells run on this tree's binary and none is red — eleven refuse and change nothing a refusal may not, one acts and holds, each as the plan reads this tree — and the first cell in which a task's finalize acts found the frame holding a commit doc to the rule for promoted prose (the byte table's pilot, task `B2d`)
 
 **What.** The sixth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §3, §5, §8): the table's first cells — the twelve of its acceptance, in the files of their families — the plants and conditions they need, an arm a prepared state, and the expected-red list, which is empty and exact. No row was touched, and no product source changes.

@@ -22,6 +22,16 @@
 //! another suite that holds the same state, ordering by ordering
 //! ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`]).
 //!
+//! **And the same cells run on a binary a variable names**
+//! ([`the_cells_are_run_on_the_binary_a_variable_names`], the plan's task `B2e`) —
+//! ignored, run by hand: every cell on the named binary and on this tree's, each on a
+//! copy of the state that binary built, side by side with what each line of each row
+//! excused and the cell's seconds in the frame. It is how the table is read on the
+//! previous release, where the acceptance must show the losses the pilot was built to
+//! catch. An arm of a prepared state also leaves its cells' seconds in the target
+//! directory's `tmp/` ([`SECONDS`]), so that what a cell costs inside a gate can be read
+//! after one.
+//!
 //! **The arms of the comparison** drive [`byte_cell::compare`] over manifests built as
 //! data: a repository with one commit, changed by hand to what a command would have left.
 //! Each was red against a comparison that declared its classifications and answered
@@ -3162,7 +3172,9 @@ fn run_the_cells_of(state: Prepared) {
         "`{}` has an arm and no cell",
         state.name()
     );
+    let started = std::time::Instant::now();
     let built = Built::on(binary(), state);
+    let built_in = started.elapsed().as_secs_f64();
     let ran = route_case::pooled(route_case::width(), &cells, |cell| {
         byte_cell::run(&built, row_of(cell), cell)
     });
@@ -3203,7 +3215,30 @@ fn run_the_cells_of(state: Prepared) {
     );
     // What each cell did, for a reader of the run — a harness shows it where it is asked to.
     println!("{}", seen.join("\n\n"));
+    // And what each cost: the gate's runner keeps a passing test's output to itself.
+    let seconds: String = cells
+        .iter()
+        .zip(&ran)
+        .filter_map(|(cell, ran)| {
+            Some(format!(
+                "{}\t{:.1}\n",
+                cell.name,
+                ran.as_ref().ok()?.seconds
+            ))
+        })
+        .collect();
+    let _ = fs::write(
+        Path::new(SECONDS).join(format!("byte-table-seconds-{}.tsv", state.name())),
+        format!("cell\tseconds\nthe state, built\t{built_in:.1}\n{seconds}"),
+    );
 }
+
+/// **Where an arm leaves its cells' seconds**: cargo's directory for what a test of this
+/// target writes, `<target>/tmp` — a file a prepared state, `byte-table-seconds-<state>.tsv`,
+/// written over by every run and read by nothing here. A cell's seconds inside a gate are
+/// what the pilot's record asks for, and the gate's runner shows a passing test's output
+/// to nobody.
+const SECONDS: &str = env!("CARGO_TARGET_TMPDIR");
 
 /// What each line of a row excused, the lines that excused nothing left out.
 fn excused(verdict: &byte_cell::Verdict) -> String {
@@ -3395,7 +3430,8 @@ fn outside_the_group(config: &str, term: &str) -> Vec<String> {
 /// catalog's: each is a pool as wide as the machine, and the runner gives each test a
 /// process of its own, so nothing in the suite can bound two of them together. The term
 /// names the module the arms stand in — an arm `arms!` makes for another prepared state
-/// is in the bound the day it is made. On planted configurations; then the committed one.
+/// is in the bound the day it is made. On planted configurations; then the committed one,
+/// which also holds the arm on a named binary, by its name.
 #[test]
 fn the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner() {
     let term = "test(/^s::run::/)";
@@ -3444,10 +3480,378 @@ fn the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner() {
         &[("the runner's configuration", "is no TOML")],
     );
 
-    let wrong = outside_the_group(RUNNER, &format!("test(/^{}::{RUN}::/)", suite()));
+    // The arm that runs every cell on a named binary is in the group by its own name: it
+    // is one test, ignored, and runs the whole table twice.
+    let on_a_named_binary = format!("{}::{ON_A_NAMED_BINARY}", suite());
+    assert!(
+        route_case::harness_tests().contains(&on_a_named_binary),
+        "the harness lists no test `{on_a_named_binary}`"
+    );
+    let mut wrong = outside_the_group(RUNNER, &format!("test(/^{}::{RUN}::/)", suite()));
+    wrong.extend(outside_the_group(
+        RUNNER,
+        &format!("test(={on_a_named_binary})"),
+    ));
     assert!(
         wrong.is_empty(),
         "`.config/nextest.toml` and the arms that run cells:\n\n  {}",
         wrong.join("\n  ")
     );
+}
+
+// ---------------------------------------------------------------------------
+// The cells on a binary a variable names
+// ---------------------------------------------------------------------------
+
+/// The variable that names the binary [`the_cells_are_run_on_the_binary_a_variable_names`]
+/// runs every cell on, by an absolute path. The table's own: under the route catalog's
+/// variable one export would start both tables.
+const NAMED_BINARY: &str = "JIGC_BYTE_TABLE_BINARY";
+
+/// That arm, as the harness names it inside this suite.
+const ON_A_NAMED_BINARY: &str = "the_cells_are_run_on_the_binary_a_variable_names";
+
+/// What one cell came to on one binary.
+struct CameTo {
+    /// Its classification — or, where the frame could not run it on that binary, why: a
+    /// prepared state that binary could not build, a lead-in it refused.
+    came: Result<Classification, String>,
+    exit: String,
+    hangs: bool,
+    /// The cell's seconds in the frame: its sandbox, its leads, its three manifests, its
+    /// command.
+    seconds: f64,
+    excused: Vec<(&'static str, usize)>,
+    detail: String,
+}
+
+impl CameTo {
+    fn not_run(why: &str) -> CameTo {
+        CameTo {
+            // The first line, with the machine's temporary directory written `<tmp>`.
+            came: Err(why
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .replace(&std::env::temp_dir().display().to_string(), "<tmp>/")),
+            exit: "-".to_string(),
+            hangs: false,
+            seconds: 0.0,
+            excused: Vec::new(),
+            detail: why.to_string(),
+        }
+    }
+
+    fn shown(&self) -> String {
+        match &self.came {
+            Ok(classification) if self.hangs => {
+                format!("{classification} (hangs on what *held* means)")
+            }
+            Ok(classification) => classification.to_string(),
+            Err(why) => format!("not run: {why}"),
+        }
+    }
+}
+
+/// What a panic said.
+fn said(panic: Box<dyn std::any::Any + Send>) -> String {
+    panic
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| panic.downcast_ref::<&str>().map(|said| said.to_string()))
+        .unwrap_or_else(|| "a panic that said nothing".to_string())
+}
+
+/// **Every one of `cells` on `binary`, each on a copy of the state that binary built** —
+/// a state at a time, built once. A state that binary cannot build keeps its cells'
+/// lines, which say so; so does a cell whose lead-in that binary refused.
+fn on(binary: &Path, cells: &[&byte_cell::Cell]) -> Vec<CameTo> {
+    let mut came: Vec<Option<CameTo>> = cells.iter().map(|_| None).collect();
+    let mut states: Vec<Prepared> = Vec::new();
+    for cell in cells {
+        if !states.contains(&cell.state) {
+            states.push(cell.state);
+        }
+    }
+    for state in states {
+        let of_state: Vec<usize> = (0..cells.len())
+            .filter(|at| cells[*at].state == state)
+            .collect();
+        match std::panic::catch_unwind(|| Built::on(binary, state)) {
+            Err(panic) => {
+                let why = format!(
+                    "`{}` could not be built on that binary: {}",
+                    state.name(),
+                    said(panic)
+                );
+                for at in of_state {
+                    came[at] = Some(CameTo::not_run(&why));
+                }
+            }
+            Ok(built) => {
+                let ran = route_case::pooled(route_case::width(), &of_state, |at| {
+                    byte_cell::run(&built, row_of(cells[*at]), cells[*at])
+                });
+                for (at, ran) in of_state.into_iter().zip(ran) {
+                    came[at] = Some(match ran {
+                        Ok(ran) => CameTo {
+                            came: Ok(ran.verdict.classification),
+                            exit: ran.exit,
+                            hangs: ran.verdict.hangs_on_reach,
+                            seconds: ran.seconds,
+                            excused: ran.verdict.excused,
+                            detail: ran.detail,
+                        },
+                        Err(fault) => CameTo::not_run(&fault),
+                    });
+                }
+            }
+        }
+    }
+    came.into_iter()
+        .map(|came| came.expect("every cell stands in a state"))
+        .collect()
+}
+
+/// The table: a line a cell, tab-separated — the cell, its command, its state, what it is
+/// listed as, the key it is listed under on this tree, and what it came to on each of the
+/// two binaries with how the command ended and the cell's seconds.
+fn table(
+    cells: &[&byte_cell::Cell],
+    there: &[CameTo],
+    here: &[CameTo],
+    expected: &[ExpectedRed],
+) -> String {
+    let mut out = "cell\tcommand\tstate\tlisted as\tkey\tthe named binary\tits exit\tseconds\t\
+                   this tree's binary\tits exit\tseconds\n"
+        .to_string();
+    for ((cell, there), here) in cells.iter().zip(there).zip(here) {
+        let key = expected
+            .iter()
+            .find(|entry| entry.cell == cell.name)
+            .map_or("-", |entry| entry.key);
+        out.push_str(&format!(
+            "{}\tjigc {}\t{}\t{}\t{key}\t{}\t{}\t{:.1}\t{}\t{}\t{:.1}\n",
+            cell.name,
+            cell.argv.join(" "),
+            cell.state.name(),
+            match cell.listed {
+                Listed::Acts => "acts",
+                Listed::Refuses => "refuses",
+            },
+            there.shown(),
+            there.exit,
+            there.seconds,
+            here.shown(),
+            here.exit,
+            here.seconds,
+        ));
+    }
+    out
+}
+
+/// How many cells came to each pair of outcomes: the named binary's, then this tree's.
+fn pairs(there: &[CameTo], here: &[CameTo]) -> String {
+    let mut counted: std::collections::BTreeMap<(String, String), usize> = Default::default();
+    for (there, here) in there.iter().zip(here) {
+        *counted.entry((there.shown(), here.shown())).or_default() += 1;
+    }
+    let mut out = "the named binary\tthis tree's binary\tcells\n".to_string();
+    for ((there, here), cells) in counted {
+        out.push_str(&format!("{there}\t{here}\t{cells}\n"));
+    }
+    out
+}
+
+/// **What each line of each row excused, over every cell of its leaf** — on the named
+/// binary, then on this tree's: a line that excuses much is seen, and so is one that
+/// excused nothing in any cell.
+fn excused_by_line(cells: &[&byte_cell::Cell], there: &[CameTo], here: &[CameTo]) -> String {
+    let mut out = "command\tline\tthe named binary\tthis tree's binary\n".to_string();
+    for row in rows() {
+        for line in row.lines {
+            let over = |came: &[CameTo]| -> usize {
+                cells
+                    .iter()
+                    .zip(came)
+                    .filter(|(cell, _)| cell.leaf == row.leaf)
+                    .flat_map(|(_, came)| &came.excused)
+                    .filter(|(id, _)| *id == line.id)
+                    .map(|(_, times)| times)
+                    .sum()
+            };
+            out.push_str(&format!(
+                "jigc {}\t{}\t{}\t{}\n",
+                row.leaf.join(" "),
+                line.id,
+                over(there),
+                over(here)
+            ));
+        }
+    }
+    out
+}
+
+/// **The table runs each binary on the state that binary built, and a cell it cannot run
+/// keeps its line** — on two stand-ins. One does nothing and exits 0: `fresh` builds on
+/// it — the builder's one `setup` — and the cell comes out *holds*. The other refuses
+/// everything: the builder's `setup` is refused, the state cannot be built **on that
+/// binary**, and the cell's line says so where the first binary's says what it came to.
+/// So neither column is the other's state.
+#[test]
+fn the_table_runs_each_binary_on_the_state_that_binary_built() {
+    let scratch = ScratchDir::new("byte-table-two-stand-ins");
+    let (does_nothing, refuses) = (
+        scratch.path().join("does-nothing"),
+        scratch.path().join("refuses"),
+    );
+    place_script(&does_nothing, "#!/bin/sh\nexit 0\n");
+    place_script(&refuses, "#!/bin/sh\nexit 1\n");
+    const CELL: byte_cell::Cell = byte_cell::Cell {
+        name: "a-cell-in-fresh",
+        leaf: &["setup"],
+        state: Prepared::Of(State::Fresh),
+        leads: &[],
+        argv: &["setup"],
+        listed: Listed::Acts,
+        beside: None,
+    };
+    let (there, here) = (on(&refuses, &[&CELL]), on(&does_nothing, &[&CELL]));
+    let printed = table(&[&CELL], &there, &here, &[]);
+    let line = printed.lines().nth(1).unwrap_or_default();
+    assert!(
+        line.starts_with(
+            "a-cell-in-fresh\tjigc setup\tfresh\tacts\t-\tnot run: `fresh` could not be built \
+             on that binary: "
+        ) && line.contains("\t-\t0.0\tholds\texit 0\t"),
+        "{printed}"
+    );
+    assert!(
+        here[0].seconds > 0.0 && !line.ends_with("\t0.0"),
+        "a cell that ran has its seconds: {printed}"
+    );
+    assert_eq!(
+        pairs(&there, &here).lines().count(),
+        2,
+        "one pair of outcomes, under its header"
+    );
+    let excused = excused_by_line(&[&CELL], &there, &here);
+    assert!(
+        excused.contains("jigc setup\tS1\t0\t0\n")
+            && excused.contains("jigc uninstall\tU1\t0\t0\n"),
+        "every line of every row has its line: {excused}"
+    );
+
+    let suite = include_str!("byte_table.rs");
+    let arm = &suite[suite
+        .find(&format!("fn {ON_A_NAMED_BINARY}() {{"))
+        .expect("the ignored arm is there")..];
+    assert!(
+        arm.contains("std::env::var_os(NAMED_BINARY)") && arm.contains("on(named, &cells)"),
+        "the ignored arm runs the cells on the binary the variable names"
+    );
+}
+
+/// **Every cell of the table on the binary a variable names, beside what it came to on
+/// this tree's** — a table, run by hand and by no gate:
+///
+/// ```text
+/// JIGC_BYTE_TABLE_BINARY=<an absolute path> \
+///     cargo test -p jigc --test g_migration byte_table::the_cells_are_run_on_the_binary_a_variable_names -- --ignored --exact --nocapture
+/// ```
+///
+/// Every cell is run twice, once on each binary, **on a copy of the state that binary
+/// built** ([`the_table_runs_each_binary_on_the_state_that_binary_built`]). It prints four
+/// blocks, each tab-separated under a line `== <name> ==`: `cells`, the table; `pairs`,
+/// how many cells came to each pair of outcomes; `excused`, what each line of each row
+/// excused on each binary; `states`, which of the builder's named states the named binary
+/// builds, with the seconds each took; and then what the frame saw of every cell whose two
+/// outcomes are not the same words.
+///
+/// **It asserts that it ran** — a binary was named, and every cell has its line — and
+/// nothing about what a cell came to on either binary: whether a difference between two
+/// releases is anything is not this suite's to say.
+#[test]
+#[ignore = "a table, not a fence: every cell on the binary JIGC_BYTE_TABLE_BINARY names"]
+fn the_cells_are_run_on_the_binary_a_variable_names() {
+    let named = std::env::var_os(NAMED_BINARY).unwrap_or_else(|| {
+        panic!("`{NAMED_BINARY}` names the binary to run the cells on, and is not set")
+    });
+    let named = Path::new(&named);
+    assert!(
+        named.is_absolute() && named.is_file(),
+        "`{NAMED_BINARY}` is `{}`: the absolute path of a binary",
+        named.display(),
+    );
+    let cells = cells();
+    let (there, here) = (on(named, &cells), on(binary(), &cells));
+
+    println!(
+        "== cells ==\n{}",
+        table(&cells, &there, &here, &expected_red())
+    );
+    println!("== pairs ==\n{}", pairs(&there, &here));
+    println!("== excused ==\n{}", excused_by_line(&cells, &there, &here));
+    println!("== states ==\nstate\ton the named binary\tseconds");
+    for state in State::ALL {
+        let started = std::time::Instant::now();
+        let built = std::panic::catch_unwind(|| Built::on(named, Prepared::Of(*state)));
+        println!(
+            "{}\t{}\t{:.1}",
+            state.name(),
+            match built {
+                Ok(_) => "built".to_string(),
+                Err(panic) => CameTo::not_run(&said(panic)).shown(),
+            },
+            started.elapsed().as_secs_f64()
+        );
+    }
+    println!("== what the frame saw, where the two outcomes are not the same words ==");
+    for ((cell, there), here) in cells.iter().zip(&there).zip(&here) {
+        if there.shown() != here.shown() {
+            println!(
+                "\n`{}`\n-- the named binary: {}\n{}\n-- this tree's binary: {}\n{}",
+                cell.name,
+                there.shown(),
+                there.detail.trim_end(),
+                here.shown(),
+                here.detail.trim_end(),
+            );
+        }
+    }
+
+    assert_eq!(there.len(), cells.len(), "every cell has its line");
+}
+
+/// The task cell and the fan-out cell that are timed alone.
+const TIMED_ALONE: &[&str] = &[
+    "task-finalize-a-baseline-a-hand-edit-after-the-first-write",
+    "milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto",
+];
+
+/// **One task cell and one fan-out cell, each alone** — a measurement, run by hand and by
+/// no gate: the state built, then the one cell, nothing beside it in this process.
+///
+/// ```text
+/// cargo test -p jigc --test g_migration byte_table::one_task_cell_and_one_fan_out_cell_are_timed_alone -- --ignored --exact --nocapture
+/// ```
+#[test]
+#[ignore = "a measurement, not a fence: one task cell and one fan-out cell, each alone"]
+fn one_task_cell_and_one_fan_out_cell_are_timed_alone() {
+    println!("cell\tits state built in\tthe cell\tcame to");
+    for name in TIMED_ALONE {
+        let cells = cells();
+        let cell = cells
+            .iter()
+            .find(|cell| cell.name == *name)
+            .unwrap_or_else(|| panic!("`{name}` is a cell of the table"));
+        let started = std::time::Instant::now();
+        let built = Built::on(binary(), cell.state);
+        let build = started.elapsed().as_secs_f64();
+        let ran = byte_cell::run(&built, row_of(cell), cell).expect("the cell runs");
+        println!(
+            "{name}\t{build:.1}\t{:.1}\t{}",
+            ran.seconds, ran.verdict.classification
+        );
+    }
 }
