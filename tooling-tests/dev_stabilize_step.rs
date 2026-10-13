@@ -6194,9 +6194,11 @@ const OPENS: &[(&str, usize)] = &[
     ),
     ("null = os.open(os.devnull, os.O_RDWR)", 1),
     ("mutex = os.open(holds, os.O_RDONLY)", 2),
+    // The job's lock, asked whether its supervisor lives: of a job that has its record,
+    // and of a name whose start left none.
     (
         "lock = os.open(os.path.join(home, \"lock\"), os.O_RDONLY)",
-        1,
+        2,
     ),
     (
         "lock = os.open(os.path.join(home, \"lock\"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)",
@@ -6231,8 +6233,9 @@ const THROUGH: &[(&str, &str, &str)] = &[
     // And the binary a build leaves, written once the same way.
     ("kept_once", "build", "target"),
     // And read back: the job, how it ended, the verdict; the command's output, by the
-    // reader of its kind; the binary a build made, and the one a verdict hashes again;
-    // a file whose hash is asked of the tool.
+    // reader of its kind; the binary a build made, and the one a verdict hashes again —
+    // by the one predicate a build's green rests on, at its verdict and at every answer
+    // after it; a file whose hash is asked of the tool.
     ("whole", "read_job", "os.path.join(home, \"job.json\")"),
     ("whole", "stands", "os.path.join(home, \"exit.json\")"),
     ("whole", "stands", "kept"),
@@ -6240,7 +6243,7 @@ const THROUGH: &[(&str, &str, &str)] = &[
     ("whole", "stands", "output"),
     ("whole", "judged_regression", "output"),
     ("whole", "judged_build", "output"),
-    ("whole", "judged_build", "path"),
+    ("whole", "not_the_binary", "path"),
     ("whole", "judged_probe", "output"),
     ("whole", "build", "made"),
     ("whole", "hash_file", "path"),
@@ -9823,6 +9826,333 @@ fn a_held_command_whose_process_is_gone_is_dead_and_never_done() {
         "{dead}"
     );
     held.released(true);
+}
+
+/// **A name whose start left no record is dead — and never a name that is refused for
+/// ever** (the scoped review before the parts, finding 1; DECISIONS.md → 2026-10-13, *Three
+/// findings of the scoped review, repaired*). `hold-start` makes the job's directory, forks
+/// the supervisor and only then writes `job.json`; killed between the two it leaves a
+/// directory without a record, and until this every later `hold-start` and `hold-wait` of
+/// that name refused it (`missing`) — which the harness reads as a step that did not answer,
+/// and does not pass over. The state is made here with no clock in it: the unmodified tool
+/// under [`WRITER`], killed INSIDE THE WRITE OF ITS RECORD — after the fork. Its supervisor
+/// lives, and the command runs to its end unrecorded.
+///
+/// Asked again, the name is answered `dead` with a reason of its own, `no-record`, and
+/// `supervised` says whether the supervisor that start forked still lives: the job's lock
+/// tells. Nothing of it is read — a whole green gate in its output, and how it ended on
+/// record, change nothing — nothing is started under it, and the next name is. The same
+/// answer for a directory no start made, and for one whose record is not one this tool
+/// wrote. A name nobody started is still no job (`missing`).
+#[test]
+fn a_start_killed_before_its_record_leaves_a_job_that_is_dead_and_no_name_refused_for_ever() {
+    let held = Held::new("hold-no-record");
+    let rig = &held.rig;
+    let green = as_recorded("gate-green.txt");
+    let prints = rig.dir().join("prints-gate");
+    fs::write(&prints, &green).expect("what the command prints");
+    let marks = rig.dir().join("marks");
+    fs::create_dir(&marks).expect("where a stopped writer says so");
+    let writer = rig.dir().join("writer.py");
+    fs::write(&writer, WRITER).expect("write the writer's stop");
+    // The supervisor the start forks is stopped inside ITS write too, and is let go at once.
+    fs::write(marks.join("go-exit.json"), "").expect("let the supervisor go");
+    held.released(false);
+
+    // (1) THE STATE AS THE TOOL ITSELF LEAVES IT: the start is killed inside the write of
+    // the job's record — its directory made, its supervisor forked.
+    let mut command = Command::new("python3");
+    command
+        .arg(&writer)
+        .arg(rig.root.join(TOOL))
+        .args([
+            "hold-start",
+            "--scratch",
+            &held.scratch,
+            "--name",
+            "gate-c1",
+        ])
+        .args(GATE_KIND)
+        .current_dir(rig.dir());
+    let mut command = rig.hermetic(command);
+    command
+        .env("HOLD_RAN", &held.ran)
+        .env("HOLD_RELEASE", &held.release)
+        .env("HOLD_PRINTS", &prints)
+        .env("HOLD_EXIT", "0")
+        .env("WRITE_STOPS", "job.json,exit.json")
+        .env("WRITE_MARKS", &marks)
+        .env("WRITE_KILLS", "job.json")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let killed = command
+        .spawn()
+        .expect("spawn the tool under the writer's stop")
+        .wait_with_output()
+        .expect("the killed start");
+    assert!(
+        killed.status.code().is_none() && marks.join("at-job.json").exists(),
+        "the control: the start was killed, inside the write of its record: {killed:?}"
+    );
+    assert!(
+        held.kept("gate-c1", "lock").exists() && !held.kept("gate-c1", "job.json").exists(),
+        "the state: the job's directory and its lock, and no record under its name"
+    );
+    assert_eq!(
+        held.runs_when(1).len(),
+        1,
+        "the control: the supervisor that start forked runs the command, unrecorded"
+    );
+
+    // What a name without a record is answered with, by either act.
+    let no_record = |seen: &Stepped, act: &str, supervised: bool| {
+        let dead = seen.done(act, "dead");
+        assert_eq!(
+            json!([
+                dead["why"],
+                dead["supervised"],
+                dead["waited"],
+                dead["verdict"],
+                dead["verdict_file"],
+                dead["pid"]
+            ]),
+            json!(["no-record", supervised, 0, null, null, null]),
+            "{act}: a name whose start left no record is dead, and says whether its supervisor lives: {dead}"
+        );
+    };
+    no_record(
+        &held.start("gate-c1", &GATE_KIND, &green, 0),
+        "hold-start",
+        true,
+    );
+    // A wait does not wait for a command nothing will ever be read of: it answers at once.
+    no_record(&held.wait("gate-c1", Some(60)), "hold-wait", true);
+    assert_eq!(
+        held.runs().len(),
+        1,
+        "nothing is started under a dead name: {:?}",
+        held.runs()
+    );
+
+    // THE COMMAND RUNS TO ITS END, UNRECORDED — and nothing of it is read: a whole green
+    // gate in its output and how it ended on record make no verdict of it.
+    held.released(true);
+    until(
+        "the supervisor has seen the command end, and is gone",
+        || {
+            held.kept("gate-c1", "exit.json").exists()
+                && held.wait("gate-c1", Some(0)).line["supervised"] == false
+        },
+    );
+    assert_eq!(
+        fs::read_to_string(held.kept("gate-c1", "output")).expect("the output"),
+        green,
+        "the control: the command ran to its end, a whole green gate in its output"
+    );
+    no_record(&held.wait("gate-c1", Some(60)), "hold-wait", false);
+    no_record(
+        &held.start("gate-c1", &GATE_KIND, &green, 0),
+        "hold-start",
+        false,
+    );
+    assert!(
+        !held.kept("gate-c1", "verdict.json").exists()
+            && !held.kept("gate-c1", "job.json").exists(),
+        "no verdict is kept of it, and no record is written for it afterwards"
+    );
+    // AND THE NEXT NAME IS STARTED, as the stage that passes a dead job over asks for it.
+    held.start("gate-c1-2", &GATE_KIND, &green, 0)
+        .done("hold-start", "started");
+    let next = held.wait("gate-c1-2", Some(60));
+    assert_eq!(next.done("hold-wait", "done")["verdict"], "green");
+    assert_eq!(held.runs().len(), 2, "{:?}", held.runs());
+
+    // (2) A DIRECTORY NO START MADE — none of a command's own files in it — and (3) ONE
+    // WHOSE RECORD IS NOT ONE THIS TOOL WROTE: the same answer, and nothing is written there.
+    fs::create_dir_all(rig.scratch.join("hold/by-hand")).expect("a directory made by hand");
+    fs::create_dir_all(rig.scratch.join("hold/half")).expect("a directory made by hand");
+    fs::write(
+        held.kept("half", "job.json"),
+        "{\"name\": \"half\", \"kind\"",
+    )
+    .expect("a record cut off");
+    for (name, files) in [("by-hand", 0), ("half", 1)] {
+        no_record(
+            &held.start(name, &GATE_KIND, &green, 0),
+            "hold-start",
+            false,
+        );
+        no_record(&held.wait(name, Some(60)), "hold-wait", false);
+        assert_eq!(
+            fs::read_dir(rig.scratch.join("hold").join(name))
+                .expect("the directory")
+                .count(),
+            files,
+            "`{name}`: nothing is written under a dead name"
+        );
+    }
+    assert_eq!(held.runs().len(), 2, "{:?}", held.runs());
+
+    // (4) WHAT A STEP OF A STAGE RELAYS: the digest holds the two words, and every field of
+    // it fits its shape — the harness acts on no line with a field struck out.
+    let digest = rig.digest(&["hold-wait", "--scratch", &held.scratch, "--name", "by-hand"]);
+    assert_eq!(
+        json!([
+            digest.done(rig, "hold-wait", "dead")["why"],
+            digest.line["name"]
+        ]),
+        json!(["no-record", "by-hand"]),
+        "{}",
+        digest.raw
+    );
+    // A name nobody started is no job, as it was.
+    held.wait("gate-c9", Some(0)).refused("missing");
+}
+
+/// **A held build is answered green only while its binary is the file it hashed** (the
+/// scoped review before the parts, finding 2; DECISIONS.md → 2026-10-13, *Three findings of
+/// the scoped review, repaired*). The verdict of a held command is read once and kept, and
+/// until this a build's green was answered again from the kept verdict alone: the file at
+/// its path replaced, `hold-start` still said `done`, `green` and the old hash — so the
+/// stage never named the next build, while every driving agent's own hash assert failed.
+///
+/// Now the disk is read on EVERY answer of a build that stands green, by the one predicate
+/// its verdict was judged with: another file, a file that can be written, and no file at
+/// all are each `void` (`hash-differs`) — live, by both acts — and the same bytes back,
+/// read-only, are green again. The kept verdict is what it was, byte for byte: nothing is
+/// written twice. A build that stands red is answered as it was kept.
+#[test]
+fn a_held_build_is_answered_green_only_while_its_binary_is_the_file_it_hashed() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let held = Held::new("hold-build-live");
+    let rig = &held.rig;
+    rig.on_path("cargo", CARGO);
+    rig.write("version.txt", "1.0.0-rc.24\n");
+    let commit = rig.commit("chore: a version");
+    held.released(true);
+    let flags = build_kind(&commit, "bin/c1/jigc", Some("1.0.0-rc.24"));
+    held.start("build-c1", &flags, "", 0)
+        .done("hold-start", "started");
+    let first = held.wait("build-c1", Some(60));
+    let done = first.done("hold-wait", "done").clone();
+    assert_eq!(done["verdict"], "green", "{done}");
+    let binary = rig.scratch.join("bin/c1/jigc");
+    let bytes = fs::read(&binary).expect("the binary");
+    let kept = fs::read(held.kept("build-c1", "verdict.json")).expect("the kept verdict");
+    // What both acts answer for the job that stands: `[verdict, why, facts]` each.
+    let answers = || -> Vec<Value> {
+        [
+            ("hold-start", held.start("build-c1", &flags, "", 0)),
+            ("hold-wait", held.wait("build-c1", Some(0))),
+        ]
+        .iter()
+        .map(|(act, seen)| {
+            let line = seen.done(act, "done");
+            assert_eq!(
+                json!([line["verdict_file"], line["verdict_sha256"], line["exit"]]),
+                json!([done["verdict_file"], done["verdict_sha256"], done["exit"]]),
+                "{act}: the kept verdict is named as it was, whatever the answer: {line}"
+            );
+            json!([line["verdict"], line["why"], line["facts"]])
+        })
+        .collect()
+    };
+    let green = json!(["green", null, done["facts"]]);
+    let differs = json!(["void", "hash-differs", {}]);
+    // What stands at the binary's path: these bytes, read-only or open for writing. (No
+    // executable bit: nothing here runs the file — it is hashed.)
+    let place = |content: &[u8], writable: bool| {
+        if binary.exists() {
+            fs::remove_file(&binary).expect("remove the binary");
+        }
+        fs::write(&binary, content).expect("write at the binary's path");
+        let mode = if writable {
+            fs::Permissions::from_mode(0o644)
+        } else {
+            fs::Permissions::from_mode(0o444)
+        };
+        fs::set_permissions(&binary, mode).expect("set its mode");
+    };
+
+    // The binary as the build left it: green, with the facts that were kept — the saving.
+    assert_eq!(answers(), [green.clone(), green.clone()]);
+
+    // ANOTHER FILE at the path, read-only as the build's was: void, by both acts — and the
+    // tool's own `hash` act prints another hash than the verdict names.
+    place(
+        b"#!/bin/sh\necho 'jigc 1.0.0-rc.24'\n# another binary\n",
+        false,
+    );
+    assert_eq!(
+        answers(),
+        [differs.clone(), differs.clone()],
+        "a build whose binary was replaced is not answered green"
+    );
+    let hashed = rig.step(&["hash", "--scratch", &held.scratch, "--file", "bin/c1/jigc"]);
+    assert_ne!(
+        hashed.done("hash", "hashed")["content_sha256"],
+        done["facts"]["content_sha256"],
+        "the control: the file at the path is another one"
+    );
+
+    // THE SAME BYTES BACK, read-only: green again — the answer is the disk's, each time.
+    place(&bytes, false);
+    assert_eq!(answers(), [green.clone(), green.clone()]);
+    // The same bytes, and the file CAN BE WRITTEN: void.
+    place(&bytes, true);
+    assert_eq!(answers(), [differs.clone(), differs.clone()]);
+    // NO FILE AT ALL: void, the same word.
+    fs::remove_file(&binary).expect("remove the binary");
+    assert_eq!(
+        answers(),
+        [differs.clone(), differs],
+        "a binary that is gone is answered as one that was replaced"
+    );
+    assert_eq!(
+        fs::read(held.kept("build-c1", "verdict.json")).expect("the kept verdict"),
+        kept,
+        "the kept verdict is what it was: a verdict is written once"
+    );
+
+    // A BINARY REPLACED BEFORE ITS VERDICT WAS READ is void IN THE KEPT VERDICT — the
+    // verdict's own read of the disk stands beside the answer's: the file says what the
+    // line says, and a later answer is not what makes it void.
+    held.start("build-c3", &build_kind(&commit, "bin/c3/jigc", None), "", 0)
+        .done("hold-start", "started");
+    let early = rig.scratch.join("bin/c3/jigc");
+    until("the build has ended", || {
+        early.exists() && held.kept("build-c3", "exit.json").exists()
+    });
+    fs::remove_file(&early).expect("remove the binary");
+    let seen = held.wait("build-c3", Some(60));
+    assert_eq!(
+        json!([seen.done("hold-wait", "done")["verdict"], seen.line["why"]]),
+        json!(["void", "hash-differs"]),
+        "{}",
+        seen.raw
+    );
+    held.verdict_of(&seen.line);
+
+    // A build that stands RED is answered as it was kept: nothing of it is on the disk.
+    let wrong = build_kind(&commit, "bin/c2/jigc", Some("1.0.0"));
+    held.start("build-c2", &wrong, "", 0)
+        .done("hold-start", "started");
+    let red = held.wait("build-c2", Some(60));
+    assert_eq!(
+        json!([red.done("hold-wait", "done")["verdict"], red.line["why"]]),
+        json!(["red", "build"])
+    );
+    let again = held.start("build-c2", &wrong, "", 0);
+    assert_eq!(
+        json!([
+            again.done("hold-start", "done")["verdict"],
+            again.line["why"]
+        ]),
+        json!(["red", "build"]),
+        "{}",
+        again.raw
+    );
 }
 
 /// **What a test holds is ended by its rig, however the test ends** (DECISIONS.md →

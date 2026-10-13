@@ -61,9 +61,10 @@
 #         6. the verdict, as `verdict` gives it over what the run left.
 #       A step that cannot be done ends the run there, void. Unless --keep is given, the
 #       two source trees and the two target directories are removed at the end; the
-#       evidence stays. With --baseline DIR what steps 2 and 4 make is KEPT in DIR, and a
-#       later run that names DIR uses it in their place (A KEPT BASELINE, below). Without
-#       it nothing is kept, nothing is asked for a key, and the run is the one above.
+#       evidence stays. With --baseline DIR what steps 2 and 4 make is KEPT in DIR — where
+#       the run that made it compared against it whole — and a later run that names DIR
+#       uses it in their place (A KEPT BASELINE, below). Without it nothing is kept,
+#       nothing is asked for a key, and the run is the one above.
 #
 #   dev/regression-set verdict --evidence DIR --list PATH
 #       The verdict over the evidence a run left, and no build and no test: the same
@@ -192,13 +193,33 @@
 # a kept baseline is used where it was built.
 #
 # REFUSED IS NOT VOID. A baseline that is refused is removed, the previous release is
-# built afresh in its place, in the same run, and that baseline is kept; the run gives its
-# verdict as any run does. So DIR holds one baseline, the last one a run held.
+# built afresh in its place, in the same run, and that baseline is kept where it is fit
+# (below); the run gives its verdict as any run does. So DIR holds one baseline, the last
+# one a run kept.
+#
+# FIT TO KEEP: A BASELINE IS KEPT ONLY BY THE RUN THAT COMPARED AGAINST IT WHOLE. What a
+# run builds in DIR is held until that run has its line, and the record is written after
+# the verdict — where the run ended GREEN OR RED and names NO TEST under
+# `excluded_by_no_row`. So the baseline that is kept ran on its own binary, left a
+# readable report, its second run ran exactly its tests, and every test that failed in it
+# has its row. A run that ended void — whatever by — or that names such a test keeps
+# nothing: DIR is left without a record, the next run finds it unfinished (`incomplete`),
+# removes it and builds afresh. The other choice was made until 2026-10-13, and kept a
+# baseline as soon as its two hashes held and its report was readable: a test that failed
+# once on its own binary, on a loaded machine, or a runner that was signalled while it
+# ran — it writes a report of the tests that had run, and exits as for a failed test —
+# was then kept with the baseline, held by its key like any other, and voided EVERY later
+# run that named DIR (`baseline`, `incomplete`) until the directory was removed by hand.
+# AND SO A VOID ON A BASELINE THAT WAS USED IS NOT THE KEPT DIRECTORY'S DOING, but for
+# what a kept baseline is not held to (below): the run that kept it compared against the
+# same report, with the same test binaries, whole.
 #
 # AT REST a kept baseline is as its own baseline left it, with the previous release's
 # binary at the path the tests name: a run puts it back there when it is over, after the
 # last hash of its proof is taken. A run that is killed after its swap leaves the
-# candidate's binary there, and the next run refuses the baseline by `jigc`.
+# candidate's binary there, and the next run refuses the baseline — by `jigc` where it
+# was kept before that run, and by `incomplete` where that run built it: its record was
+# not written yet.
 #
 # TWO RUNS DO NOT SHARE ONE KEPT BASELINE AT A TIME — the second would drive the first
 # one's candidate. DIR has a lock, held by a run from its start to its end and let go by
@@ -206,14 +227,20 @@
 # the run it would be without --baseline: a build of its own, in its own directory, and
 # nothing read or written in DIR.
 #
-# WHAT THE LINE SAYS OF IT — `baseline: {dir, used, refused, detail, key}`, in the line of
-# a run that names DIR and in no other: `used`, whether the baseline kept there was used
-# and the previous release not built; `refused`, the word by which a baseline that was
-# there was not used — a member of the key, `incomplete`, `record` or `locked` — with its
-# sentence in `detail`, which says what the member is now and what the baseline was kept
-# with; `key`, the sha256 of the key of the baseline the run left in DIR, null where it
-# left none. The evidence holds the record itself, `baseline.json`, and the line's
-# `seconds` what holding the key and keeping took, as `kept`.
+# WHAT THE LINE SAYS OF IT — `baseline: {dir, used, refused, detail, key, unkept}`, in the
+# line of a run that names DIR and in no other: `used`, whether the baseline kept there
+# was used and the previous release not built; `refused`, the word by which a baseline
+# that was there was not used — a member of the key, `incomplete`, `record` or `locked` —
+# with its sentence in `detail`, which says what the member is now and what the baseline
+# was kept with; `key`, the sha256 of the key of the baseline the run left in DIR, null
+# where it left none; and `unkept`, null where the run used the kept baseline, left one
+# there or was shut out (`locked`) — else {why, detail}: WHAT THE RUN BUILT THERE WAS NOT
+# KEPT, by the word the run was void by, or `baseline` for a test no row excludes, and
+# in a sentence. So a void line says of itself whether the kept directory can be its
+# cause: `used: true`, and it compared against a baseline another run kept; `used: false`,
+# and it built its own, which the next run does not meet. The evidence holds the record
+# itself, `baseline.json`, where one was used or kept, and the line's `seconds` what
+# holding the key and keeping took, as `kept`.
 #
 # WHAT A KEPT BASELINE IS NOT HELD TO. The environment beside these: a variable the build
 # or a test reads, the system under them. The runner and git by more than what they say of
@@ -868,6 +895,27 @@ def names(path, needle):
         return needle in handle.read()
 
 
+def unfit(line):
+    """FIT TO KEEP — decided here, over the line of the run that built the baseline, and
+    nowhere else. A baseline is fit where that run COMPARED AGAINST IT WHOLE: it ended
+    green or red — so the baseline ran on its own binary, left a readable report, and the
+    second run ran exactly its tests — and it names no test under `excluded_by_no_row`.
+    Returns None, or the word and the sentence by which what was built is not kept."""
+    if line["status"] == "void":
+        return line["reason"], (
+            "the run ended void (%s): what a run built is kept only by the run that compared"
+            " against it whole, green or red — and the next run builds afresh"
+            % line["reason"])
+    unnamed = line["excluded_by_no_row"]
+    if unnamed:
+        return "baseline", (
+            "the baseline holds a test that failed on its own binary and that no exclusion"
+            " row names — `%s` `%s`, of %d such: every later run would be void by it for as"
+            " long as it was kept, though the test passed again"
+            % (unnamed[0]["binary"], unnamed[0]["test"], len(unnamed)))
+    return None
+
+
 class NotUsed(Exception):
     """A kept baseline that is not used: the word of what it failed on, and a sentence."""
 
@@ -897,9 +945,10 @@ class Kept:
     It lies in one directory the tool owns there, `KEPT`: the previous release's tree, its
     target directory, the files of `KEPT_FILES`, a copy of the baseline's own binary, and
     the record — the key, the kept files' hashes, and the two hashes taken around the
-    baseline's run — WRITTEN LAST, so that a directory without one is a baseline nobody
-    finished. What the line says of it is `said`, which the run's facts hold from the
-    start."""
+    baseline's run — WRITTEN LAST, once the run that built it has compared against it
+    whole (`settle`), so that a directory without one is a baseline nobody finished, or
+    one that was not fit to keep. What the line says of it is `said`, which the run's
+    facts hold from the start."""
 
     def __init__(self, directory, run, previous, the_list):
         self.base = os.path.join(directory, KEPT)
@@ -910,7 +959,8 @@ class Kept:
         self.key = {"previous": previous, "exclusions": digest(rows),
                     "tool": sha256_of(os.path.realpath(__file__))}
         self.said = {"dir": directory, "used": False, "refused": None, "detail": None,
-                     "key": None}
+                     "key": None, "unkept": None}
+        self.built = None
         run.facts["baseline"] = self.said
         # THE LOCK. A run swaps the candidate's binary in at a path inside the kept
         # baseline, so two runs do not share one: the lock is this process's from here to
@@ -1064,15 +1114,38 @@ class Kept:
         self.said.update(used=True, key=digest(self.key))
         run.save()
 
-    def keep(self, binaries):
-        """THE BASELINE HELD, and is kept: the record is written last, by a rename."""
+    def hold(self, binaries):
+        """THE BASELINE HELD — and nothing is kept yet: the copy of its own binary is taken
+        now, before the swap puts the candidate's at the path, and the test binaries of the
+        recorded build are remembered. Whether what this run built is kept is `settle`'s to
+        say, once the run has its verdict."""
+        shutil.copy2(self.run.facts["baked_path"], self.path(BINARY))
+        self.built = binaries
+
+    def settle(self, line):
+        """WHAT BECOMES OF WHAT THIS RUN BUILT, once the run has its line — the ONE place a
+        baseline is kept or left: kept where the line says it is fit (`unfit`), and else
+        left without a record, which the next run finds unfinished and builds afresh. The
+        line then says by which word, and why. A run that used the kept baseline built
+        none, and settles nothing."""
+        if self.said["used"]:
+            return
+        left = unfit(line)
+        if left is None:
+            self.run.timed("kept", self.keep)
+        else:
+            self.said["unkept"] = {"why": left[0], "detail": left[1]}
+            self.run.save()
+
+    def keep(self):
+        """THE BASELINE IS KEPT: the record is written last, by a rename — after the run
+        that built it compared against it whole."""
         run = self.run
-        shutil.copy2(run.facts["baked_path"], self.path(BINARY))
         files = {}
         for name in KEPT_FILES:
             shutil.copyfile(os.path.join(run.evidence, name), self.path(name))
             files[name] = sha256_of(self.path(name))
-        self.key["tests"] = {name: sha256_of(test["binary-path"]) for name, test in binaries}
+        self.key["tests"] = {name: sha256_of(test["binary-path"]) for name, test in self.built}
         self.key["jigc"] = run.facts["previous"]["sha256"]
         staged = self.path(RECORD + ".new")
         with open(staged, "w", encoding="utf-8") as handle:
@@ -1090,7 +1163,9 @@ class Kept:
         """AT REST a kept baseline is as its own baseline left it: the previous release's
         binary at the path its tests name. It is put there when the run is over — after
         the last hash of the proof is taken. A run killed before that leaves the
-        candidate's binary there, and the next run refuses the baseline by `jigc`."""
+        candidate's binary there, and the next run refuses the baseline: by `jigc` where
+        it was kept before that run, by `incomplete` where that run built it. A baseline
+        that was not kept is not put to rest either: it has no record, and is removed."""
         if self.said["key"] is None:
             return
         try:
@@ -1170,7 +1245,7 @@ def drive(run, previous, candidate, kept=None):
         run.hashed("baseline_after")
     hold_baseline(run.facts, run.evidence)
     if record is None and kept:
-        run.timed("kept", kept.keep, sorted(metadata["rust-binaries"].items()))
+        run.timed("kept", kept.hold, sorted(metadata["rust-binaries"].items()))
 
     # The swap: a new file renamed over the path, never a write into the old one.
     staged = baked + ".swap"
@@ -1211,9 +1286,12 @@ def act_run(args):
     except Void as void:
         run.facts["failed"] = {"reason": void.reason, "detail": one_line(void.detail)}
         run.save()
-    if kept:
-        kept.rest()
     line = judge(run.evidence, the_list)
+    if kept:
+        # The verdict first, and only then what becomes of the baseline this run built.
+        kept.settle(line)
+        kept.rest()
+        line["baseline"], line["seconds"] = kept.said, run.facts["seconds"]
     line["work"] = work
     if not args.keep:
         for built in ("previous", "candidate", "target-previous", "target-candidate"):

@@ -2063,8 +2063,13 @@ fn what_a_call_names_wrongly_is_refused_with_its_word() {
 ///
 /// `FAKE_CARGO_MODE` makes one thing go wrong: `fail-previous`, `fail-candidate`,
 /// `same-binary`, `unnamed`, `disturbed` — another file at the path from the candidate's
-/// build until the baseline's run puts the right one back — and `put-back` — the previous
-/// release's binary copied back during the candidate's run, whatever path the run took.
+/// build until the baseline's run puts the right one back — `put-back` — the previous
+/// release's binary copied back during the candidate's run, whatever path the run took —
+/// and `cut-short` — THE BASELINE'S RUNNER SIGNALLED WHILE IT RAN, as the real one answers
+/// it (cargo-nextest 0.9.143, sent SIGTERM and SIGINT two tests into six on 2026-10-13: a
+/// report of the two tests that had run, neither failed, and exit status 100; killed
+/// outright it leaves no report at all): the report holds the tests of the first binary
+/// only, none of them failed, and the exit status is 100.
 ///
 /// *Asked what the runner is* it says what `FAKE_RUNNER` holds — a call only a run that
 /// names a kept baseline makes.
@@ -2163,6 +2168,12 @@ elif argv[:2] == ["nextest", "run"]:
     report = os.path.join(state, "on-%s.xml" % drove)
     out = os.path.join(store, flag("--profile"))
     os.makedirs(out)
+    if "cut-short" in mode and flag("--profile") == "regression-baseline":
+        whole = open(report).read()
+        end = whole.index("</testsuite>") + len("</testsuite>")
+        with open(os.path.join(out, "junit.xml"), "w") as cut:
+            cut.write(whole[:end] + "\n</testsuites>\n")
+        sys.exit(100)
     shutil.copyfile(report, os.path.join(out, "junit.xml"))
     sys.exit(100 if b"<failure" in open(report, "rb").read() else 0)
 else:
@@ -2700,7 +2711,7 @@ impl Driven {
             .collect();
         assert_eq!(
             fields,
-            ["detail", "dir", "key", "refused", "used"],
+            ["detail", "dir", "key", "refused", "unkept", "used"],
             "{}",
             self.called.raw
         );
@@ -2731,7 +2742,8 @@ impl Driven {
     fn used(&self, kept: &Path, key: &str) {
         assert_eq!(
             self.baseline(),
-            &json!({"dir": kept, "used": true, "refused": null, "detail": null, "key": key}),
+            &json!({"dir": kept, "used": true, "refused": null, "detail": null, "key": key,
+                    "unkept": null}),
             "the kept baseline is used: {}",
             self.called.raw
         );
@@ -2768,6 +2780,30 @@ impl Driven {
             self.calls
         );
         self.key();
+    }
+
+    /// The run left NO baseline in `kept` and used none: the line says by which word what
+    /// it built there was not kept — `why` — and in a sentence that holds `saying`.
+    fn not_kept(&self, kept: &Path, why: &str, saying: &str) {
+        let said = self.baseline();
+        assert_eq!(
+            (
+                &said["dir"],
+                &said["used"],
+                &said["key"],
+                said["unkept"]["why"].as_str()
+            ),
+            (&json!(kept), &json!(false), &Value::Null, Some(why)),
+            "what the run built is not kept, by `{why}`: {}",
+            self.called.raw
+        );
+        let detail = said["unkept"]["detail"]
+            .as_str()
+            .expect("what is not kept has its sentence");
+        assert!(
+            detail.contains(saying),
+            "not kept by `{why}` says `{saying}`: {detail}"
+        );
     }
 
     /// Cargo's calls, with the run's own directory named `<work>`.
@@ -2830,7 +2866,8 @@ fn a_kept_baseline_is_used_and_the_previous_release_is_not_built_again() {
     let key = first.key();
     assert_eq!(
         first.baseline(),
-        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key}),
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key,
+                "unkept": null}),
         "nothing was kept, so nothing is refused: {}",
         first.called.raw
     );
@@ -3180,10 +3217,15 @@ fn a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh() {
     let ended = rig.ask(&a_run(), &failing);
     ended.called.void("build-candidate", "exited 101");
     assert_eq!(
-        ended.baseline(),
-        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": null}),
+        (&ended.baseline()["refused"], &ended.baseline()["detail"]),
+        (&Value::Null, &Value::Null),
         "{}",
         ended.called.raw
+    );
+    ended.not_kept(
+        &kept,
+        "build-candidate",
+        "kept only by the run that compared against it whole",
     );
     assert!(rig.in_kept(BAKED).is_file() && !rig.in_kept("baseline.json").exists());
 
@@ -3201,6 +3243,11 @@ fn a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh() {
         (&json!("incomplete"), &Value::Null),
         "{}",
         ended.called.raw
+    );
+    ended.not_kept(
+        &kept,
+        "baseline",
+        "kept only by the run that compared against it whole",
     );
     assert!(rig.in_kept(BAKED).is_file() && !rig.in_kept("baseline.json").exists());
 
@@ -3306,6 +3353,153 @@ fn a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh() {
     let run = rig.ask(&a_run(), &rig.keeping_in(&moved, &list));
     run.called.verdict("red");
     run.refused_for(&moved, "record", "is used where it was built");
+}
+
+/// **A baseline is kept only by the run that compared against it whole** (the scoped review
+/// before the parts, finding 3; DECISIONS.md → 2026-10-13, *Three findings of the scoped
+/// review, repaired*). Until this a baseline was kept as soon as its own two hashes held and
+/// its report was readable and not empty — so a baseline whose run had gone wrong was kept
+/// with its failure, held by its key like any other, and EVERY LATER RUN WAS VOID ON IT:
+///
+/// - a test that failed on its own binary and is on no exclusion row — a machine under load
+///   — voided each later run by `baseline`, the same test named, though it passed again;
+/// - the same test beside a difference that is off the list — a red run — did the same to
+///   the run after the list was completed;
+/// - a runner that was signalled while it ran kept a report of the tests that had run, and
+///   each later run was void `incomplete`.
+///
+/// Now what a run built is kept only where that run ended green or red and named no test
+/// under `excluded_by_no_row`: the record is written after the verdict. Left unkept, the
+/// directory holds no finished record, the next run builds afresh — and keeps. The line
+/// says it: `unkept: {why, detail}`, the word the run was void by. AND WHAT IS FIT IS STILL
+/// KEPT AND USED: a baseline in which a test fails on its own binary UNDER ITS ROW is kept
+/// by the run that made it and used by the next, which builds nothing of the release.
+#[test]
+fn a_baseline_is_kept_only_by_the_run_that_compared_against_it_whole() {
+    let asks_git = "jigc::g_flow fences::reads_the_git_history";
+    let with = |on_previous: End, on_candidate: End| {
+        let mut suite = a_run();
+        suite.push(ran(
+            "jigc::g_flow",
+            "fences::reads_the_git_history",
+            on_previous,
+            on_candidate,
+        ));
+        suite
+    };
+    // The run after one that kept nothing: it finds no finished record, builds the previous
+    // release afresh, gives its verdict — and keeps what it built, which the run after uses.
+    let builds_afresh_and_keeps = |rig: &Rig, suite: &[Ran], asked: &Asked| {
+        let kept = rig.kept();
+        let next = rig.ask(suite, asked);
+        next.called.verdict("green");
+        next.refused_for(&kept, "incomplete", "no finished record");
+        assert_eq!(
+            next.baseline()["unkept"],
+            Value::Null,
+            "{}",
+            next.called.raw
+        );
+        let key = next.key();
+        let after = rig.ask(suite, asked);
+        after.called.verdict("green");
+        after.used(&kept, &key);
+    };
+
+    // (1) A TEST FAILED ON ITS OWN BINARY, AND NO ROW NAMES IT: void — and the next run, in
+    // which it passes, is not void on a baseline that was kept with the failure.
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let asked = rig.keeping(&both_rows(&rig));
+    let first = rig.ask(&with(Fail, Pass), &asked);
+    let line = first.called.void(
+        "baseline",
+        "1 of the 23 tests failed on their own binary and no exclusion row",
+    );
+    assert_eq!(pairs(&line["excluded_by_no_row"]), [asks_git]);
+    builds_afresh_and_keeps(&rig, &with(Pass, Pass), &asked);
+    first.not_kept(
+        &kept,
+        "baseline",
+        "kept only by the run that compared against it whole",
+    );
+
+    // (2) THE SAME TEST BESIDE A DIFFERENCE THAT IS OFF THE LIST: red, and named — and not
+    // kept either: with the list completed, the next run would be void by it.
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let one_row = rig.keeping(&rig.row("jigc::g_flow", "setup::refuses_a_seeded_file"));
+    let first = rig.ask(&with(Fail, Pass), &one_row);
+    let line = first.called.verdict("red");
+    assert_eq!(pairs(&line["excluded_by_no_row"]), [asks_git]);
+    builds_afresh_and_keeps(&rig, &with(Pass, Pass), &rig.keeping(&both_rows(&rig)));
+    first.not_kept(
+        &kept,
+        "baseline",
+        asks_git.split(' ').nth(1).expect("the test"),
+    );
+    assert!(
+        first.baseline()["unkept"]["detail"]
+            .as_str()
+            .is_some_and(|detail| detail.contains("failed on its own binary")),
+        "{}",
+        first.called.raw
+    );
+
+    // (3) THE BASELINE'S RUNNER WAS CUT SHORT: its report holds the tests that had run. The
+    // run is void — its second run ran them all — and the next run is not void on it.
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let asked = rig.keeping(&both_rows(&rig));
+    let mut cut = rig.keeping(&both_rows(&rig));
+    cut.mode = "cut-short".to_owned();
+    let first = rig.ask(&a_run(), &cut);
+    first.called.void(
+        "incomplete",
+        "the two runs did not run the same tests: 2 are",
+    );
+    // What the line says of it is in the run's evidence: `verdict` over it says the same.
+    let again = rig.verdict_over(
+        first.called.line["evidence"]
+            .as_str()
+            .expect("the line names its evidence"),
+    );
+    again.void("incomplete", "did not run the same tests");
+    assert_eq!(again.line["baseline"], first.called.line["baseline"]);
+    builds_afresh_and_keeps(&rig, &a_run(), &asked);
+    first.not_kept(
+        &kept,
+        "incomplete",
+        "kept only by the run that compared against it whole",
+    );
+
+    // (4) AND WHAT IS FIT IS KEPT, AND USED: the test fails on its own binary under its row.
+    let rig = Rig::new();
+    let kept = rig.kept();
+    let listed = rig.keeping(&format!(
+        "{}{}",
+        both_rows(&rig),
+        rig.excluding("jigc::g_flow", "fences::reads_the_git_history")
+    ));
+    let first = rig.ask(&with(Fail, Fail), &listed);
+    first.called.verdict("green");
+    let key = first.key();
+    assert_eq!(
+        first.baseline(),
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key,
+                "unkept": null}),
+        "a baseline that is fit is kept: {}",
+        first.called.raw
+    );
+    let second = rig.ask(&with(Fail, Fail), &listed);
+    let line = second.called.verdict("green");
+    second.used(&kept, &key);
+    assert_eq!(
+        pairs(&line["excluded"]),
+        [asks_git],
+        "{}",
+        second.called.raw
+    );
 }
 
 /// A process that holds the lock of a kept baseline's directory, as a run of the tool

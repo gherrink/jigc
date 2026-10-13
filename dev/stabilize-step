@@ -289,9 +289,10 @@
 #       command that names the same path. THE DIRECTORY IS NO JOB'S: it lies under no
 #       `hold/S/`, and two commands may name it, one after the other. AND NAMING IT IS NO
 #       KEY: that tool uses what is kept there only while its own key holds, and says what
-#       became of it in its line (`baseline: {dir, used, refused, detail, key}`), which is
-#       in the verdict's file, whole — this tool reads none of it, and a verdict is what
-#       it is without the flag. The path is part of what a job was asked, like every flag:
+#       became of it in its line (`baseline: {dir, used, refused, detail, key, unkept}`),
+#       which is in the verdict's file, whole — this tool reads none of it, and a verdict
+#       is what it is without the flag. The path is part of what a job was asked, like
+#       every flag:
 #       the same name with another path, or with none, is refused (taken). The directories
 #       on the way to it are made; a link on the way, or at it, is refused (usage) before
 #       anything is started; the directory itself is that tool's to make.
@@ -300,6 +301,8 @@
 #       NAMES, and no redirect of anybody's. A START IS IDEMPOTENT BY NAME: asked again
 #       with the same arguments it answers with the job that is there — running, done or
 #       dead — and starts nothing; the same name with other arguments is refused (taken).
+#       A NAME WHOSE START LEFT NO RECORD IS DEAD, whatever is asked under it (`hold-wait`,
+#       below: no-record): nothing is started there, and the stage names the next.
 #       Prints {status: started | running | done | dead, name, kind, pid, output, slice}
 #       and, for a job that is done or dead, what `hold-wait` prints of it.
 #
@@ -317,13 +320,20 @@
 #                  why. Never from a caller's word, and never from the exit status alone.
 #         dead     its process is gone WITHOUT that: the supervisor was killed and left
 #                  no record of how the command ended (why: no-exit), or a signal ended
-#                  the command (why: killed, and `signal`). A dead job is named, has no
+#                  the command (why: killed, and `signal`). AND A NAME WHOSE START LEFT NO
+#                  RECORD (why: no-record): its directory is there and holds no `job.json`
+#                  this tool wrote — a `hold-start` that was killed between making the
+#                  directory and writing the record, or a directory no start made. Nothing
+#                  says what was asked under it, so nothing of it is read, and it is
+#                  answered at once, with no kind and no pid; `supervised` says whether the
+#                  job's lock is held — the supervisor that start forked lives, and its
+#                  command runs on to its end, unrecorded. A dead job is named, has no
 #                  verdict whatever its output holds, and is not started again under its
 #                  name: the stage that held it is invoked again, and names the next.
 #       Prints {status, name, kind, pid, output, slice, waited} and, done: {exit,
 #       seconds, verdict, why, detail, facts, verdict_file, verdict_sha256}; dead: {why,
-#       signal}. THE VERDICT, PER KIND — `why` is null unless the verdict is void, or red
-#       for a build:
+#       signal}, or {why, supervised}. THE VERDICT, PER KIND — `why` is null unless the
+#       verdict is void, or red for a build:
 #         gate        the record script's own reader of ONE full gate's two lines
 #                     (`dev/stabilize-record gate-check`): green — `GATE: PASS` and its
 #                     totals line; red — `GATE: FAIL`, of a gate that kept going, with
@@ -342,6 +352,14 @@
 #                     when the commit did not build, or its binary is not of the version
 #                     asked; void (hash-differs) when the file is another. facts:
 #                     {commit, binary, bytes, content_sha256, version, resolves}.
+#                     AND THE DISK AT EVERY ANSWER AFTER IT: a build that stands green is
+#                     answered green only while the file is still that one. Where it is
+#                     another, can be written or is gone, the answer is void
+#                     (hash-differs), with no facts — LIVE, by `hold-start` asked again
+#                     and by `hold-wait` alike: the kept verdict is not written again and
+#                     says what was true when the build ended, and the same bytes back,
+#                     read-only, are answered green again. So a stage never drives a
+#                     binary that is not the one its build hashed: it names the next.
 #         probe       the probe tool's own last line, of the name and the seconds asked.
 #       And for every kind: a verdict the command's exit status does not bear out is void
 #       (exit-differs), and so is an output that holds none (no-verdict).
@@ -674,7 +692,14 @@
 # by a link once every byte is in it, so whoever finds one finds all of it, at whatever
 # moment and after whatever was killed; the writer's own name stays, the same file twice
 # named. (The `output` is the command's stream and is whole when the supervisor has
-# recorded the command's end; the `lock` is empty.) ONE THING A JOB LEAVES IS NOT UNDER
+# recorded the command's end; the `lock` is empty.) AND A JOB'S DIRECTORY WITHOUT ITS
+# RECORD IS NO JOB THAT IS READ: the directory is made, and the supervisor forked, before
+# the record is written — the record holds the supervisor's pid — so a start killed
+# between the two leaves `lock`, `work/` and, where the supervisor was forked, a command
+# that runs to its end with its `output` and its `exit.json` beside no `job.json`. Such a
+# name is DEAD (no-record): no verdict is ever kept of it, whatever its files hold, since
+# nothing says what was asked; nothing is started under it; and its lock is what tells
+# whether its supervisor still lives (`supervised`). ONE THING A JOB LEAVES IS NOT UNDER
 # ITS NAME, and is not the tool's: what a regression set that names a baseline keeps in
 # DIR/<baseline>, for the command that names it next (`hold-start`, above).
 # EVERY PATH THE TOOL WRITES IS RESOLVED: DIR by its real path — which lies
@@ -883,7 +908,7 @@ ACTS = (
     {"act": "land", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
     {"act": "carry", "half": "fix", "phases": None, "commands": [], "owes": FIX_OWES},
     {"act": "sync-main", "half": "close", "phases": None, "commands": [], "owes": "the close's: it pushes nothing, and a merge that stopped is aborted or named"},
-    {"act": "hold-start", "half": "both", "phases": None, "commands": [], "owes": "nothing: a start is idempotent by name — asked again it answers with the job that is there and starts nothing — and what became of the command is `hold-wait`'s answer, read from the job's own files: running, done or dead"},
+    {"act": "hold-start", "half": "both", "phases": None, "commands": [], "owes": "nothing: a start is idempotent by name — asked again it answers with the job that is there and starts nothing — and what became of the command is `hold-wait`'s answer, read from the job's own files: running, done or dead. A start killed between making the job's directory and writing its record leaves a name that is dead (no-record), and no name that is refused: the stage names the next"},
     {"act": "hold-wait", "half": "both", "phases": None, "commands": [], "owes": A_READ + " — and the one write of a verdict, which is read once and kept: a second reader reads the first one's"},
     {"act": "hash", "half": "both", "phases": None, "commands": [], "owes": A_READ},
     {"act": "build", "half": "both", "phases": None, "commands": [], "owes": "nothing: the command of the held kind `build`, which writes its binary once; a build that was killed leaves a work directory no build is started in again, and its job is dead"},
@@ -894,13 +919,13 @@ KEPT = (
     {"file": "<scratch>/state/<tag>.json", "act": "state", "written": "by every `state`, once dev/stabilize-record printed the document", "read": "by whoever is handed the path: the state document, whole", "believed": "as that script's answer at that moment; nothing of this tool reads it back"},
     {"file": "<gate file>.recorded.json", "act": "record", "written": "by `record`, once its commit is made and BEFORE the batch is settled: {branch, commit, head, round, paths, applied, gate}", "read": "by `record` asked again where the journal holds no batch (the arrival state `recorded`)", "believed": "only where git agrees and the step is handed the commit the stage began on (--head): HEAD is the commit the file names, that commit's one parent is --head, the tree is clean, and the calls and checks are the ones the step is asked for. Without --head, or where any of it differs, the file says nothing and the answer is `no-batch`. A kill between the commit and this write leaves the batch in the journal and in HEAD, which is the arrival state `committed`: there is no moment after the commit at which neither says what was recorded"},
     {"file": "<digest root>/lines/<act>.<16 hex>.json", "act": "*", "written": "by every act that is asked for its digest (--digest), a refusal among them, before the digest is printed — and not by a `state` that read the document, whose file is the row above: the ONE line the act prints unasked, whole, named after the act and the first sixteen digits of the line's sha256", "read": "by whoever is handed the digest, which names it by its path under the root and by its sha256: what the digest leaves out — a refusal's halt report, a pending batch's subject and paths, the names a gate shows red", "believed": "as the line of that act at that moment; nothing of this tool reads it back"},
-    {"file": "<scratch>/hold/<name>/job.json", "act": "hold-start", "written": "by the `hold-start` that started the job, once, while it holds the lock of `<scratch>/hold`: {name, kind, asked, pid, started} — whole or not at all: written as `job.json.w<n>` beside it, and given its name by a link", "read": "by every later `hold-start` and `hold-wait` of that name", "believed": "as what was asked: a start under the name with another kind or other arguments is refused (taken)"},
+    {"file": "<scratch>/hold/<name>/job.json", "act": "hold-start", "written": "by the `hold-start` that started the job, once, while it holds the lock of `<scratch>/hold`: {name, kind, asked, pid, started} — whole or not at all: written as `job.json.w<n>` beside it, and given its name by a link", "read": "by every later `hold-start` and `hold-wait` of that name", "believed": "as what was asked: a start under the name with another kind or other arguments is refused (taken). A directory without it — a start killed between making the directory and writing the record, or a directory no start made — is no job that is read: the name is dead (no-record), and the stage names the next"},
     {"file": "<scratch>/hold/<name>/lock", "act": "hold-start", "written": "by `hold-start`, empty, and locked before the supervisor is forked: the supervisor holds that lock for as long as it lives, and nobody else ever holds it exclusively while it does", "read": "by `hold-wait`, which asks for the lock: refused, the supervisor lives", "believed": "always: the kernel frees it when the process is gone, however it went"},
     {"file": "<scratch>/hold/<name>/output", "act": "hold-start", "written": "by the supervisor and the command it runs: both streams of the command, whole", "read": "by the reader of the job's kind, for the verdict — and by whoever is handed the path: a record's gate is held to this file", "believed": "only once the supervisor has recorded how the command ended: what a file holds before that is no verdict"},
     {"file": "<scratch>/hold/<name>/exit.json", "act": "hold-start", "written": "by the supervisor, once the command has ended: {exit, signal, began, ended} — whole or not at all: written as `exit.json.w<n>` beside it, and given its name by a link", "read": "by `hold-wait`, once the lock is free", "believed": "as how the command ended. Where it is missing the supervisor is gone without having seen the command end, and the job is dead"},
-    {"file": "<scratch>/hold/<name>/verdict.json", "act": "hold-wait", "written": "by the first `hold-wait` — or `hold-start` asked again — that finds the job done, under the job's lock: ONE line, {tool, name, kind, asked, exit, seconds, verdict, why, detail, facts, evidence, output, output_sha256}, ending in its sha256 as every line does — whole or not at all: written as `verdict.json.w<n>` beside it, and given its name by a link, so a wait that was killed while it kept the verdict leaves none, and the next wait reads the output and keeps it", "read": "by every later read of the job, and by `dev/stabilize-record result-set`, which writes a scripted check's result from it", "believed": "as the tool's verdict: the line holds to its hash, and names the job and its kind"},
+    {"file": "<scratch>/hold/<name>/verdict.json", "act": "hold-wait", "written": "by the first `hold-wait` — or `hold-start` asked again — that finds the job done, under the job's lock: ONE line, {tool, name, kind, asked, exit, seconds, verdict, why, detail, facts, evidence, output, output_sha256}, ending in its sha256 as every line does — whole or not at all: written as `verdict.json.w<n>` beside it, and given its name by a link, so a wait that was killed while it kept the verdict leaves none, and the next wait reads the output and keeps it", "read": "by every later read of the job, and by `dev/stabilize-record result-set`, which writes a scripted check's result from it", "believed": "as the tool's verdict: the line holds to its hash, and names the job and its kind — and, for a build that stands green, only while the file at <to> is still the read-only binary the line names: asked again where it is not, the answer is void (hash-differs), and this file is what it was"},
     {"file": "<scratch>/<work>/", "act": "build", "written": "by `build`: the commit's archive (source.tar), its unpacked tree (source/), cargo's target directory (target/) and cargo's output (cargo.log). For a held build, <work> is hold/<name>/work", "read": "by cargo, and by whoever reads why a build was red", "believed": "as that build's own: a work directory that holds a build is refused (taken)"},
-    {"file": "<scratch>/<to>", "act": "build", "written": "by `build`, once, read-only: the binary, after it printed the version asked — whole or not at all: written as `<to>.w<n>` beside it, and given its name by a link", "read": "by every agent that drives the binary, and by the verdict of a held build, which hashes it again", "believed": "where its hash is the one the build's line names"},
+    {"file": "<scratch>/<to>", "act": "build", "written": "by `build`, once, read-only: the binary, after it printed the version asked — whole or not at all: written as `<to>.w<n>` beside it, and given its name by a link", "read": "by every agent that drives the binary, by the verdict of a held build, which hashes it again, and by every answer of a build that stands green, which hashes it once more", "believed": "where its hash is the one the build's line names"},
 )
 # HOLDS: the kinds of held command (the header: A HELD COMMAND). `takes` are the flags
 # `hold-start` requires of the kind and `may` the ones it admits; `command` is what is
@@ -913,7 +938,7 @@ REGRESSION_REFUSED = {"usage": 2, "list": 3, "commit": 4, "scratch": 5}
 HOLDS = (
     {"kind": "gate", "takes": ["run"], "may": [], "command": "dev/gate --keep-going", "judged": "`dev/stabilize-record gate-check --run <run> --summary <output>`: the record script's reader of ONE full gate's verdict line and totals line", "exits": {"green": 0}},
     {"kind": "regression", "takes": ["previous", "candidate", "list"], "may": ["baseline"], "command": "dev/regression-set run --previous <previous> --candidate <candidate> --list <list> --scratch <scratch>/hold/<name>/work [--baseline <scratch>/<baseline>]", "judged": "the ONE line of that tool in the output, by its `status`, held to the two commits and the list asked", "exits": dict({"green": 0, "red": 1}, **REGRESSION_VOID, **REGRESSION_REFUSED)},
-    {"kind": "build", "takes": ["commit", "to"], "may": ["version"], "command": "dev/stabilize-step build --scratch <scratch> --commit <commit> --work hold/<name>/work --to <to> [--version <version>]", "judged": "the last line of the output, a line of this tool's `build` — and the file at <to>, hashed again", "exits": {"green": 0, "red": STATUS["build"]}},
+    {"kind": "build", "takes": ["commit", "to"], "may": ["version"], "command": "dev/stabilize-step build --scratch <scratch> --commit <commit> --work hold/<name>/work --to <to> [--version <version>]", "judged": "the last line of the output, a line of this tool's `build` — and the file at <to>, hashed again: at the verdict, and at every answer of a build that stands green", "exits": {"green": 0, "red": STATUS["build"]}},
     {"kind": "probe", "takes": ["seconds"], "may": [], "command": "dev/stabilize-probe hold --scratch <scratch> --name <name> --seconds <seconds>", "judged": "the last line of the output, the probe tool's own, of the name and the seconds asked", "exits": {"green": 0}},
 )
 # The flags a kind can take, in the order a job's record names them.
@@ -1966,6 +1991,21 @@ def judged_regression(root, name, asked, code, output):
     return {"verdict": status, "why": None, "detail": "%s difference(s), %s of them off the list; %s test(s) excluded by a row" % (facts["differences"], facts["not_on_list"], facts["excluded"]), "facts": facts, "evidence": evidence}
 
 
+def not_the_binary(root, asked, content_sha256):
+    """THE DISK AGAIN, by the ONE predicate a build's green rests on — at its verdict, and at
+    every answer after it (`stands`): whether the file at the path a build was asked for is
+    NOT the read-only binary of that hash. Another file is not, nor one that can be written,
+    nor a link — and neither is no file at all: a binary that is gone is answered as one
+    that was replaced."""
+    path = os.path.join(root, asked["to"])
+    try:
+        writable = os.path.islink(path) or bool(os.stat(path).st_mode & 0o222)
+        data = whole(path)
+    except OSError:
+        return True
+    return writable or hashlib.sha256(data).hexdigest() != content_sha256
+
+
 def judged_build(root, name, asked, code, output):
     line = own_line(whole(output).decode("utf-8", "replace"))
     if line is None or line.get("act") != "build":
@@ -1981,13 +2021,7 @@ def judged_build(root, name, asked, code, output):
     if (line.get("commit"), line.get("binary")) != (asked["commit"], asked["to"]) or asked.get("version", line.get("version")) != line.get("version"):
         return void("not-asked", "the build's line is not of the commit, the path and the version asked", None, evidence)
     # THE DISK AGAIN: the file every driving agent will run is the one the build hashed.
-    path = os.path.join(root, asked["to"])
-    try:
-        writable = os.path.islink(path) or bool(os.stat(path).st_mode & 0o222)
-        data = whole(path)
-    except OSError:
-        writable, data = True, b""
-    if writable or hashlib.sha256(data).hexdigest() != line.get("content_sha256"):
+    if not_the_binary(root, asked, line.get("content_sha256")):
         return void("hash-differs", "the file at %s is not the read-only binary the build wrote: its hash is not the one the build's line names, or it can be written" % asked["to"], None, evidence)
     facts = {field: line.get(field) for field in ("commit", "binary", "bytes", "content_sha256", "version", "resolves")}
     return {"verdict": "green", "why": None, "detail": "jigc %s, sha256 %s" % (facts["version"], facts["content_sha256"]), "facts": facts, "evidence": evidence}
@@ -2043,13 +2077,43 @@ def supervise(home, argv):
 
 
 def read_job(home, name):
-    """A job's record, as its `hold-start` wrote it."""
+    """A job's record, as its `hold-start` wrote it — or None, where the directory holds no
+    record this tool wrote: a start that was killed between making the directory and writing
+    the record, or a directory no start made. READ UNDER THE LOCK OF `<root>/hold`, which a
+    start holds from before it makes the directory until its record is written: so a
+    directory found without one is no start under way. (Until 2026-10-13 this was a
+    refusal, `missing`, at every later call of the name — and the stage did not name the
+    next: DECISIONS.md -> 2026-10-13, "Three findings of the scoped review, repaired".)"""
     try:
         job = json.loads(whole(os.path.join(home, "job.json")).decode("utf-8"))
         job["kind"], job["asked"], job["pid"]
     except (OSError, ValueError, KeyError, TypeError):
-        refuse("missing", "the held command `%s` has no record this tool wrote: %s holds no `job.json` of it" % (name, home), "", "a start that was killed before it wrote its record leaves a name nothing is started under again: the stage names the next")
+        return None
     return job
+
+
+def unrecorded(home, name):
+    """WHAT A NAME WITHOUT A RECORD IS ANSWERED WITH: `dead`, by a reason of its own —
+    `no-record`. Nothing says what was asked under the name, so nothing of it is ever read:
+    not its output, not how its command ended; no verdict is kept of it, and nothing is
+    started under it again. The stage names the next. AND `supervised` SAYS WHAT CAN BE
+    TOLD OF A COMMAND UNDER IT: whether the job's lock is held — the supervisor that start
+    forked lives, and its command with it, which runs to its end unrecorded as the command
+    of any dead job does. The tool ends nothing."""
+    supervised = False
+    try:
+        lock = os.open(os.path.join(home, "lock"), os.O_RDONLY)
+    except OSError:
+        # No lock: the start was killed before it made one, or no start made the directory.
+        lock = None
+    if lock is not None:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError:
+            supervised = True
+        finally:
+            os.close(lock)
+    return {"name": name, "status": "dead", "why": "no-record", "supervised": supervised, "waited": 0}
 
 
 def job_of(root, name):
@@ -2073,8 +2137,12 @@ def stands(root, name, job, wait):
     """WHAT BECAME OF A HELD COMMAND, from its own files, asked within `wait` seconds:
     `running` while its supervisor holds the job's lock; `done` once the lock is free and
     the supervisor wrote how the command ended — with the tool's verdict, read once and
-    kept; `dead` where the lock is free and it did not, or a signal ended the command."""
+    kept; `dead` where the lock is free and it did not, or a signal ended the command —
+    and where the name has no record at all (`job` is None), which is asked of nothing but
+    its lock and answered at once."""
     home = os.path.join(root, "hold", name)
+    if job is None:
+        return unrecorded(home, name)
     facts = {"name": name, "kind": job["kind"], "pid": job["pid"], "output": "hold/%s/output" % name}
     lock = os.open(os.path.join(home, "lock"), os.O_RDONLY)
     asked = time.monotonic()
@@ -2110,6 +2178,14 @@ def stands(root, name, job, wait):
             facts.update({field: verdict[field] for field in ("exit", "seconds", "verdict", "why", "detail", "facts")})
         except (ValueError, KeyError, TypeError):
             refuse("missing", "the verdict of the held command `%s` is not the line this tool kept: %s was written by something else, and is not read on a guess" % (name, kept), "", "a verdict is written once and never again: the stage that held the command is invoked again, and names the next")
+        # A BUILD'S GREEN IS THE DISK'S, AT EVERY ANSWER (the scoped review before the parts,
+        # finding 2): the verdict was read once and is kept, and the file it hashed can be
+        # replaced, opened for writing or removed afterwards. So a build that stands green
+        # is answered green only while that file is still the one — else `void`, live, by
+        # the word its verdict would have had; the kept file is not written again, and says
+        # what was true when the command ended.
+        if job["kind"] == "build" and facts["verdict"] == "green" and not_the_binary(root, job["asked"], facts["facts"].get("content_sha256") if isinstance(facts["facts"], dict) else None):
+            facts.update(verdict="void", why="hash-differs", detail="the file at %s is no longer the read-only binary this build's verdict was kept of: it is another file, it can be written, or it is gone — the kept verdict, green, is of what was there when the build ended" % job["asked"]["to"], facts={})
         return dict(facts, status="done", verdict_file="hold/%s/verdict.json" % name, verdict_sha256=hashlib.sha256(text).hexdigest())
     finally:
         os.close(lock)
@@ -2141,9 +2217,10 @@ def hold_start(args, facts):
         # second finds the job the first one started, whole.
         fcntl.flock(mutex, fcntl.LOCK_EX)
         if os.path.lexists(home):
-            # ASKED AGAIN: the job that is there, and nothing is started.
+            # ASKED AGAIN: the job that is there, and nothing is started — nor under a
+            # name whose start left no record, which is dead whatever is asked under it.
             job = read_job(home, args.name)
-            if (job["kind"], job["asked"]) != (args.kind, asked):
+            if job is not None and (job["kind"], job["asked"]) != (args.kind, asked):
                 refuse("taken", "a held command named `%s` was started under `%s` as a `%s` with other arguments: a name is one command's" % (args.name, root, job["kind"]), "its record: %s" % json.dumps({"kind": job["kind"], "asked": job["asked"]}), "nothing was started. The command that is there is waited for under its own arguments, or this one is started under a name of its own")
             fcntl.flock(mutex, fcntl.LOCK_UN)
             facts.update(stands(root, args.name, job, 0))

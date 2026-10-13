@@ -7879,6 +7879,109 @@ fn a_build_that_stands_failed_is_passed_over_and_its_binary_is_written_at_a_path
     );
 }
 
+/// **A name whose start left no record is passed over, and the stage holds the next** (the
+/// scoped review before the parts, finding 1; DECISIONS.md → 2026-10-13, *Three findings of
+/// the scoped review, repaired*). A `hold-start` killed between the job's directory and its
+/// record left a name the step tool refused for ever (`missing`) — which this script reads as
+/// a step that did not answer (`unread`), and does not pass over: a halt at the build under
+/// that commit's name at every later invocation, for the candidate's gate too, and for a
+/// record's gate *nothing was committed*, each time. The tool now answers such a name `dead`
+/// (`no-record`) — a word this script already reads, so NO LINE OF IT CHANGED: read by its
+/// own `readDigest` and `heldOf` here, and passed over by `hold` for what is named by its
+/// commit (the build, the candidate's gate) and for what is numbered (a record's gate) alike.
+#[test]
+fn a_name_whose_start_left_no_record_is_passed_over_and_the_stage_holds_the_next() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-no-record", &one_area());
+    let candidate = sim.rig.rev("HEAD");
+    let scratch = sim.rig.scratch.display().to_string();
+    let (build, gate) = (candidate_build(&candidate), candidates_gate(&candidate));
+    let records = "record-test-r1-a1-1";
+    // THE STATE: under each name the stage asks for first, a directory and no record — what
+    // a start killed before its record leaves, made by hand.
+    for name in [build.as_str(), gate.as_str(), records] {
+        fs::create_dir_all(sim.rig.scratch.join("hold").join(name)).expect("a job's directory");
+    }
+
+    let ran = sim.invoke(sim.args("test", json!({})), small_stage(json!({})));
+    let result = &ran.result;
+    assert_eq!(
+        json!([result["status"], result["next"], result["halted"]]),
+        json!(["hunted", "stop", null]),
+        "the stage runs to its record: {result}"
+    );
+    let agents = ran.agents();
+    for name in [build.as_str(), gate.as_str(), "record-test-r1-a1"] {
+        // (The record's gate is numbered: its first name ends `-1`, and the next is `-2`.)
+        let (first, next) = if name.starts_with("record-") {
+            (format!("{name}-1"), format!("{name}-2"))
+        } else {
+            (name.to_owned(), format!("{name}-2"))
+        };
+        let held: Vec<&str> = agents
+            .iter()
+            .copied()
+            .filter(|label| label.ends_with(&first) || label.ends_with(&next))
+            .collect();
+        assert_eq!(
+            held,
+            [
+                format!("git:hold-start:{first}").as_str(),
+                format!("git:hold-start:{next}").as_str(),
+                format!("git:hold-wait:{next}").as_str(),
+            ],
+            "`{first}`: the name without a record answers its start and is passed over; the next name is started and waited for"
+        );
+        assert!(
+            ran.logs
+                .iter()
+                .any(|line| line.contains(&format!("`{first}`"))
+                    && line.contains("next name is asked")),
+            "`{first}`: {:?}",
+            ran.logs
+        );
+        assert!(
+            !sim.rig
+                .scratch
+                .join("hold")
+                .join(&first)
+                .join("job.json")
+                .exists(),
+            "`{first}`: nothing was started under the dead name"
+        );
+    }
+    assert_eq!(
+        text(&result["candidate"]["binary"]),
+        format!("{scratch}/bin/candidate-{}-2/jigc", &candidate[..12]),
+        "the binary is the next name's, at a path of its own"
+    );
+
+    // WHAT THE STEP SAID, AS THIS SCRIPT READS IT: the tool's own digest of that answer,
+    // through `readDigest` — every field fits — and `heldOf`: `dead`, by the tool's word.
+    let held = Held::new("sim-no-record");
+    let root = held.rig.scratch.display().to_string();
+    fs::create_dir_all(held.rig.scratch.join("hold/by-hand")).expect("a job's directory");
+    for (act, line) in [
+        (
+            "hold-start",
+            held.start_digest("by-hand", &GATE_KIND, &as_recorded("gate-green.txt"), 0),
+        ),
+        ("hold-wait", held.wait_digest("by-hand", 0)),
+    ] {
+        let step = harness_pure(&json!([["readDigest", [{"status": "ran", "line": line}, act]]]))
+            .remove(0);
+        assert!(step.get("relay").is_none(), "a digest of the tool: {step}");
+        let dead = harness_pure(&json!([["heldOf", [step, root]]])).remove(0);
+        assert_eq!(
+            json!([dead["ends"], dead["why"], dead["name"], dead.get("verdict")]),
+            json!(["dead", "no-record", "by-hand", null]),
+            "{act}: {dead}"
+        );
+    }
+}
+
 /// **Every void says why in one word** — of the builder's naming, beside the plan's (`T5b`;
 /// what `K3` left to it: *every void is a word — the sentences the harness composes today need
 /// a word each*; *the reporter words are the reporters that left a report: one the report

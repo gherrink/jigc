@@ -2,6 +2,119 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — Three findings of the scoped review, repaired: a name whose start left no record is dead and never a name refused for ever; a held build is answered green only while its binary is the file it hashed; and a baseline is kept only by the run that compared against it whole (the staged plan's `R0`, its three findings in the step tool and the regression tool; the fixer's choices inside them)
+
+**What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) drove the committed tools at `dbb1cc84` in a throwaway root and reproduced three states that **strand a run**: each is a state the tool itself leaves, is answered the same way at every later call, and has no exit but a hand in the scratch root. All three are repaired in [`dev/stabilize-step`](dev/stabilize-step) and [`dev/regression-set`](dev/regression-set), each with an arm that was red on the parent commit's tools. **No line of the harness, of its fence, of an agent's definition or of the canary's tool changed**; a run without an order answers every call as it did (`a_run_without_an_order_holds_the_bytes_it_held`, unmodified), and a held command or a baseline that ends as the suites drove them ends as it did.
+
+| | The state | What every later call answered | Now |
+|---|---|---|---|
+| 1 | a `hold-start` killed between making the job's directory and writing `job.json` | `refused: missing`, exit 29 — which the harness reads as a step that did not answer (`unread`) and does not pass over: a halt at the build under that commit's name, a held check void `missing:<name>`, a record whose gate says *nothing was committed* — each time | `dead`, by a reason of its own, `no-record`: the harness passes a dead job over and holds the next name |
+| 2 | a held build green, and the file at its path replaced afterwards | `done`, `green`, the old hash — from the kept verdict, the disk not read: every driving agent's hash assert fails, the job stays the answer, nothing rebuilds | `void` (`hash-differs`), live: the stage names the next build |
+| 3 | a baseline kept with what went wrong in its own run | every later run that names the directory void on it — `baseline`, the same test named; `incomplete` | such a baseline is not kept: the next run builds afresh, and the line says what was not kept and why |
+
+### 1 — A name whose start left no record
+
+**The mechanism.** `hold-start` makes `hold/<name>/`, takes the job's lock, forks the supervisor and only then writes `job.json` — the record holds the supervisor's pid. `read_job` refused a directory without a record. The tool's own sentence said *the stage names the next*; the harness names the next only for a job that **ended** `red`, `void` or `dead` (`hold`), and maps a refusal to `unread`.
+
+**The repair.** A directory that holds no record this tool wrote is answered `{status: dead, why: no-record, supervised, waited: 0}`, by `hold-start` asked again and by `hold-wait` alike (`read_job` returns none; `stands` answers through `unrecorded`). It is read **under the lock of `<scratch>/hold`**, which a start holds from before it makes the directory until its record is under its name — so a directory found without one is no start under way. Nothing is started under the name, whatever is asked under it; no verdict is ever kept of it; a wait answers at once. **`dead` is a word the harness already reads**, so for what is named by its commit (the build, the candidate's gate, a held check) and for what is numbered (a record's gate) the pass-over that was built for a red or dead job applies, unchanged.
+
+**A command that still runs under such a directory — what becomes of it, and what can tell.** Where the kill fell after the fork, the supervisor lives: it runs the command to its end and writes `output` and `exit.json` beside no `job.json`. **Nothing is ever read of that** — nothing says what was asked, so no reader of a kind can judge it — and the tool ends nothing: it is the command of a dead job, as the command of a job whose supervisor was killed already is (`no-exit`; the header's *it kills nothing*). So the stage's next name may run beside it, as two gates may. **The job's lock tells**: `supervised` is whether that lock is held — the supervisor the start forked lives. It is in the tool's line and in the file a digest names, and in no digest: the harness acts on nothing of it.
+
+**Against the header's promise, a file is under its name whole or not at all:** kept. `job.json` is still written beside its name and linked — a start killed inside that write leaves `job.json.w0` and no record, which is this state. What the promise never covered is the directory: it is there before the record. The header says so now (*A JOB'S DIRECTORY WITHOUT ITS RECORD IS NO JOB THAT IS READ*).
+
+**Rejected.**
+- *The supervisor waits for the record, and runs nothing without one* — then no command would ever run unrecorded. It reorders a start: today the command may begin before the record is under its name, and `a_file_of_a_held_command_is_under_its_name_whole_or_not_at_all` drives exactly that (the supervisor stopped inside its own write while the start is still inside the record's). It would be a change to a held command that ends as the suites drive it; and a recordless directory — made by hand, or left by a start of the tool before this commit — needs its answer either way. **This is the human's to reverse** if a command that runs unrecorded beside the next name's is worth the reorder.
+- *The supervisor writes the record itself* — the same reorder.
+- *`running`, while the lock is held* — nothing says what was asked under the name, so the answer would name a job nobody can hold to its arguments or judge: of the class that records falsely.
+- *A refusal by another word that the harness passes over* — a change of the harness for a state the tool's table already has a word for.
+- *Removing the directory, or starting under the name again* — the tool removes nothing, and a name is one command's.
+
+### 2 — A held build's green
+
+**The mechanism.** A verdict is read once and kept. For a build it rests on the disk — the file at the path is the one the build's line hashed, and read-only — and that was asked once, inside `judged_build`.
+
+**The repair.** One predicate (`not_the_binary`): the file at the path is **not** the read-only binary of that hash — another file, one that can be written, a link, or none. The verdict asks it, and **every answer of a build that stands green asks it again** (`stands`): where it holds, the answer is `done`, `void`, `hash-differs`, with no facts — by both acts — while `verdict_file` and `verdict_sha256` name the kept file as they did. **Live:** nothing is written; the same bytes back, read-only, are answered green again; a binary that is simply gone is answered as one that was replaced. A build that stands red, and every other kind, is answered from its kept verdict as before.
+
+**What else reads a build's kept verdict.** The harness reads the facts off the digest of the step's line — the live answer. `dev/stabilize-record result-set` reads a verdict's file only for a held check, which a build is not. **`dev/stabilize-canary check` prints `held` from the jobs' own files and asks the step tool nothing**: of a build whose binary was replaced it still says `judged`, `green` — the kept word, as its header says it prints. Not changed: it reads no answer of the step tool, and what a job's directory may hold is what it was.
+
+**Rejected.** *Writing the void into the verdict's file, or a second file beside it* — a verdict is written once, and the tool would gain a file. *`dead`* — the command ran to its end and its end is on record. *The check in `hold-start` only* — both acts answer through one function.
+
+### 3 — What a kept baseline is fit to be kept by
+
+**The mechanism.** `--baseline` (the entry *2026-10-11 — The regression set's baseline is kept*) wrote the record as soon as the baseline's two hashes held and its report was readable and not empty, and holds the report by its hash — never by its content. So a report with a failure of the run that made it was kept like any other.
+
+**Reproduced, each shape, under the suite's own stand-in for cargo** (`a_baseline_is_kept_only_by_the_run_that_compared_against_it_whole`):
+- *A test failed on its own binary and no row excludes it* — the reviewer's: run 1 void `baseline`, kept; run 2, the test passing, void `baseline` again, `used: true`, the same test named.
+- *The same test beside a difference that is off the list* — a red run keeps it too; with the list completed, the next run is void.
+- *The baseline's runner cut short* — the shape the reviewer named and did not drive. **What the real runner does was measured first** (cargo-nextest 0.9.143, a crate of six tests, signalled two tests in, 2026-10-13): on SIGTERM and on SIGINT it writes a well-formed report of the two tests that had run, neither failed, and **exits 100 — as for a failed test**; killed outright it leaves no report. The stand-in's new mode `cut-short` does the first. Run 1 void `incomplete` — its second run ran every test — and kept; run 2 void `incomplete` again.
+
+**The repair: fit to keep is decided in one place, over the line of the run that built the baseline** (`unfit`, asked by `Kept.settle`). What a run builds is held until that run has its line, and **the record is written after the verdict** — only where the run ended **green or red** and names **no test under `excluded_by_no_row`**. So a kept baseline ran on its own binary, left a readable report, its second run ran exactly its tests, and every test that failed in it has its row. Anything else keeps nothing: the directory has no record, the next run finds it unfinished (`incomplete`), removes it, builds afresh — and keeps that, where it is fit.
+
+**The line says it.** `baseline` gains one field, `unkept`: null where the run used the kept baseline, left one there or was shut out (`locked`); else `{why, detail}` — the word the run was void by, or `baseline` for a test no row excludes, and a sentence. **So a void line says whether the kept directory can be its cause**: `used: true`, and it compared against a baseline another run kept — which that run had compared against whole, with the same test binaries; `used: false`, and it built its own, which the next run does not meet.
+
+**The saving is not lost.** A baseline that is fit is kept by the run that made it and used by the next, which builds nothing of the release — held for a green run, a red one, and one in which a test fails on its own binary **under its row** (the arm's fourth part, and the arms of `K8a`, each green unmodified but for the line's new field).
+
+**Rejected.**
+- *The smallest change the review named — at the moment the baseline held, keep it only where no failed test of its report lacks a row.* It closes the first shape. For the third it would have to know from the baseline's own run that it was cut short, and the runner says nothing a tool can hold: the exit status of a signal is that of a failed test, and the report is well-formed.
+- *Holding the runner's exit status to the report* (0 with no failed test, 100 with one) — it tells a cut before any failure, and not one after a test that has its row failed.
+- *Keeping early and removing the record where the run ends void* — two places that decide, and a record that exists for a while on a baseline nobody compared against.
+- *Asking the runner for the tests the recorded build holds* — a third command of the runner, and a new file of evidence.
+
+**What the choice costs.** A run that ended void **after** its baseline held — a swap that did not hold, a second run that was cut short — kept its baseline until now and keeps none: one build of the release more, in a run that failed. A run killed in its second run left a record that the next run refused by `jigc`; it now leaves none, and the next run refuses by `incomplete`: the same one build. And **every baseline kept by the tool as it was is refused once, by `tool`** — the tool's bytes are a member of the key — which is also what removes one that was kept with its failure.
+
+### Red first
+
+The arms were written before either tool changed and run on the parent commit's tools: **four red, for these reasons.**
+
+| Arm | On the parent |
+|---|---|
+| `dev_stabilize_step::a_start_killed_before_its_record_leaves_a_job_that_is_dead_and_no_name_refused_for_ever` — the state made by the tool itself: the unmodified tool under the suite's writer's stop, killed inside the write of its record, after the fork | `hold-start` asked again exits 29: `refused missing: the held command … has no record this tool wrote` |
+| `stabilize_simulation::a_name_whose_start_left_no_record_is_passed_over_and_the_stage_holds_the_next` — a directory and no record under the build's name, the candidate's gate's and the record's gate's first | the stage halts at the build and launches no reviewer |
+| `dev_stabilize_step::a_held_build_is_answered_green_only_while_its_binary_is_the_file_it_hashed` — another file, the same bytes open for writing, no file | both acts answer `green` with the old hash for the replaced file |
+| `dev_regression_set::a_baseline_is_kept_only_by_the_run_that_compared_against_it_whole` | the second run is void `baseline`: *1 of the 23 tests failed on their own binary …* |
+
+The carried arms of the regression suite were red on the parent beside them, on the line's new field.
+
+**The reviewer's drive, again, on the repaired step tool:** sixteen starts of a held probe, each killed 35–120 ms in. Three died before the directory, twelve left their record, and one left none — `lock` and `work/`, and a moment later the `output` and the `exit.json` of a command that ran to its end unrecorded. That name is answered `dead`, `no-record`, exit 0, by both acts, before and after its command ended; so is a directory made by hand.
+
+**Mutants of the finished tools** — thirty-one, each one edit, the arms that name its property run on each, the tool put back and its hash compared after. Twenty-eight died at their first run.
+
+| Of | The edits | |
+|---|---|---|
+| finding 1 (9) | a name without a record refused, as it was · `stands` asked of a record that is none · dead by `no-exit` · said to be `done` · the lock never asked · a free lock read as a supervisor that lives · no lock read as one · the answer without `waited` · a start asked again holding such a name to what is asked | all died: the step arm, and for the three that change a word the harness reads, the simulation's too |
+| finding 2 (10) | the kept verdict alone, as it was · every kind held to a binary · a red build held to one · a binary that is gone, one that can be written, a hash not compared, each read as the binary · the live void with the kept facts, by `no-verdict`, as `red` · the verdict's own read of the disk gone | nine died; **the last survived** — the answer's read made the same void — and died once the arm held the kept verdict's file to the line for a binary replaced before its verdict was read |
+| finding 3 (12) | whatever a run built kept · a void run's baseline fit · a test no row excludes fit · the line silent on what was not kept, or always saying `baseline` · a run that used the kept baseline settling one · the binary copied after the swap · the baseline put to rest before it is settled · the line's `baseline` as it was before the run settled · nothing ever kept · what was not kept unsaved in the evidence · the line's `seconds` as they were before the run settled | ten died; *unsaved in the evidence* **survived**, and died once `verdict` over the run's evidence was held to the line; **the `seconds` survive**, and no arm can tell (below) |
+
+A thirty-second edit showed a call that did nothing — the sentence of what was not kept passed through the one-line helper, and it is one line — and the call was removed.
+
+**What followed its code, and says so.** The two assertions the survivors asked for. And the build's arm first placed its files with a mode held in a variable and an executable bit: the suite's fence on files a test will execute went red in the whole tooling target, and the arm places them by a literal mode without that bit — nothing there runs the file.
+
+**The assertions this commit carried.**
+- *The step suite:* `the_tool_runs_no_git_command_an_agent_may_not`, its source scan — the row of `OPENS` for the read of a job's lock stands twice (a job that has its record; a name whose start left none), and the row of `THROUGH` for the binary a verdict hashes again names the predicate (`not_the_binary`) where it named `judged_build`.
+- *The regression suite:* the line's `baseline` has six fields — `Driven::baseline`, `Driven::used`, and the two exact objects of `a_kept_baseline_is_used_and_the_previous_release_is_not_built_again` and `a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh`, whose two runs that keep nothing now also hold what the line says of it (`build-candidate`, `baseline`). The stand-in for cargo gains the mode `cut-short`.
+- *The simulation:* one arm more, and no line of an arm that stood. **The harness and its fence: nothing** — finding 1's repair changes no word the harness reads; it answers by one it read already.
+- *The canary's tool and its suite: nothing.* `check` reads the jobs' files and no answer of the step tool; it passes a directory without a record over, as it did.
+
+**What the next tasks owe because of this.**
+- *Part 1's reading:* a held build that is passed over for `hash-differs` builds again at the path of the next name; `check`'s `held` still says `judged`, `green` of the first.
+- `T9`, `T10`: [stabilization-workflow.md](implementation/stabilization-workflow.md) names the words a held command is answered with and what a kept baseline is; `no-record`, the build's live answer and `unkept` are not there. The stand-ins of the regression tool's line — the simulation's runtime, the step suite's — print `baseline` with five fields.
+- *The harness's next edit:* its sentence for `dead` says *the command's process is gone*; of a name without a record whose supervisor lives it is not.
+
+**What is not established.**
+- **No real regression set was run with the repaired tool** — thirty-five minutes each; every shape is the stand-in's. What the real runner does when it is cut short was measured on one version, one platform and a crate of six tests.
+- **A start step that is tried twice within one invocation, its first try killed in the window**: the second try is answered `dead`, which `hold` takes as the invocation's own answer — a halt once for a build, a held check void by `dead:<name>` — and the invocation after it passes the name over. Read from `hold`; not driven.
+- **Finding 2 through a stage.** That the stage builds again under the next name is read from `hold`, which passes a job that ended `void` over as it does one that ended `red` — and the simulation drives that for a build that stands red, and for no void: no scenario replaces a binary between two invocations.
+- **A binary replaced between an answer and its use.** The answer is of the moment it is given.
+- **What hashing the real binary costs at every answer**: tens of megabytes, read once per start step and per slice of a wait; not measured.
+- **A start killed between the directory and the fork** is driven as a directory made by hand: no lock, or a lock nobody holds.
+- **`unrecorded`'s read of the lock never waits** (`LOCK_NB`): no mutant was run on it — an arm against one that waits would hang for as long as the stand-in's command lives.
+- **The line's `seconds` after a baseline is kept** are refreshed from the run's facts, and no arm can tell: the stand-in's keeping takes no second.
+
+**Seen and not touched.**
+- **A verdict's file that is not the line this tool kept** is refused `missing` at every later call — the same mechanism as finding 1, with a sentence that says *the stage … names the next*, which it does not. Out: the tool's own writes cannot leave it since a kept file is whole or absent; it takes a hand in the job's directory. It is a row for the ledger.
+- **A job that has its record and no `lock`** ends `hold-wait` on a traceback and no line. A hand's doing too.
+- **`dev/stabilize-canary check`** lists no directory without a record under `held`.
+
 ## 2026-10-13 — The canary's setup writes the parts' prompts, and `check` reads the parts: under `--parts` one prompt file for each act, with its argument object, its return file and a count held to the clone's own harness; `check` says of each act what was returned and what the run shows, prints every filed verdict with its hash, the held commands and the answer sheet, and reads a killed write as a state — and no planted row's key says how its claim falls (the staged plan's `SC3`; the builder's choices inside it, one thing built beyond the plan on the orchestrating session's brief, and three findings of the scoped review taken in while it was built)
 
 **What.** [`dev/stabilize-canary`](dev/stabilize-canary) writes what the human invokes, act by act, and its `check` reads a part back ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §5, §8 and §10, `SC3` — below, *the plan*; the third fault of the row `wf-canary-setup`). The tool's header holds it as the section *THE ACTS OF A RUN IN PARTS* and in what it says of `check`. **Nothing of the harness, the record script, the step tool, an agent's definition or the runtime's stand-in is touched: every act was driven through the committed tools as they stand, and none had to be changed.** Without the switch a setup is what it was, to the byte — its arm and its fixture untouched — and `check` prints the fields it printed, in their order.
