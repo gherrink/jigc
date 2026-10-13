@@ -3383,9 +3383,9 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
     let counted = [
         ("part-1", json!([16, 14, null, null])),
         ("part-2", json!([23, 17, null, null])),
-        ("part-3-act-1", json!([8, 7, null, null])),
+        ("part-3-act-1", json!([9, 8, null, null])),
         ("part-3-act-2", json!([24, 15, null, null])),
-        ("part-4-act-1", json!([9, 8, null, null])),
+        ("part-4-act-1", json!([10, 9, null, null])),
         (
             "part-4-act-2",
             json!([13, 13, "budget.left", {"agents": 9, "tool_steps": 5}]),

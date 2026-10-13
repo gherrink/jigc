@@ -837,8 +837,9 @@ ACTS = (
 #                 each, and no step that asks after one; the three reporters of the review
 #                 row; ONE triage; and the first record: composed, its gate held, its
 #                 commit, its push, the state read back
-#   part-3-act-1  the two reads, the ONE executor that records a ruling, its gate held, its
-#                 commit, its push, the state read back
+#   part-3-act-1  the two reads, THE REPORT CHECK'S VET that every record of rulings of a run
+#                 with a queue is preceded by, the ONE executor that records a ruling, its
+#                 gate held, its commit, its push, the state read back
 #   part-3-act-2  the two reads, the attempt's marker, the two builds asked for and answered;
 #                 a wave of eight verifiers, its reports checked, the queue read; a wave of
 #                 one, checked, read; the second record
@@ -856,9 +857,9 @@ ACTS = (
 EXPECT = {
     "part-1": {"agents": 16, "tool_steps": 14},
     "part-2": {"agents": 23, "tool_steps": 17, "note": "where a reporter of the review row found something, so that the stage's one triage is launched - with nothing to grade there is no triage and no check of its report, two agents less, which no arm drove on this opening"},
-    "part-3-act-1": {"agents": 8, "tool_steps": 7},
+    "part-3-act-1": {"agents": 9, "tool_steps": 8},
     "part-3-act-2": {"agents": 24, "tool_steps": 15},
-    "part-4-act-1": {"agents": 9, "tool_steps": 8},
+    "part-4-act-1": {"agents": 10, "tool_steps": 9},
     "part-4-act-2": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "ended": {"agents": 9, "tool_steps": 5}, "note": "the human ends this act while its wave runs: what is launched by then is under ended - the steps it opens with and the wave's four verifiers - and the rest is what it would launch where nobody ended it"},
     "part-4-act-3": {"agents": 2, "tool_steps": 2},
     "part-4-act-4": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "note": "and one verifier more for each verdict the budget has left when the act starts, which check prints"},

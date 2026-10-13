@@ -11114,7 +11114,8 @@ fn the_regression_hold_passes_the_kept_baseline() {
     // real run, and what that tool says of the baseline beside it.
     let mut said = ran.clone();
     said["baseline"] = json!({"dir": format!("{scratch}/{kept_in}"), "used": true,
-                              "refused": null, "detail": null, "key": "7".repeat(64)});
+                              "refused": null, "detail": null, "key": "7".repeat(64),
+                              "unkept": null});
     let kept_line = format!("{said}\n");
     held.released(true);
 
@@ -12683,6 +12684,138 @@ fn a_file_without_a_reports_name_among_the_reports_strands_no_stage_of_a_run_wit
         rig.git(&["ls-files", "--", &dots[0], &dots[1]]),
         "",
         "and the record's commit holds neither"
+    );
+}
+
+/// **The report check without a stage is the vet alone** (the scoped review before the run
+/// in parts, the harness's finding 2: *no report check before a record of rulings*; what the
+/// record script's repair left: *which act a rulings batch asks*). A record of the human's
+/// rulings names no stage, no attempt and no reporter, so the stage's report check — whose
+/// second half holds a stage's reports to a list — is no act it can ask for. THE SAME ACT,
+/// NAMED WITHOUT A STAGE, IS ITS FIRST HALF ALONE: every written-once file of the run that no
+/// commit holds is vetted, and one the record script would not have written leaves the tree
+/// — a file a hand left among the filed verdicts, and one beside the reports — while what the
+/// stage's agents wrote stays; it checks no report, so nothing is `missing` or `extra`. THE
+/// RECORD OF RULINGS THAT FOLLOWS IS MADE AT ITS FIRST COMMIT STEP — where, without the vet,
+/// its batch was refused over the one file (`check`) and taken back at its commit over the
+/// other (`unvetted`), a gate spent. The round, the stage and the attempt are named together
+/// or not at all; and without them the act takes no reporter and no cycle.
+#[test]
+fn the_report_check_without_a_stage_is_the_vet_alone() {
+    let stage = Stage::between_its_two_records("vet-alone");
+    let rig = &stage.rig;
+    let scratch = rig.scratch.display().to_string();
+    stage.verified("f-1");
+    let strays = [
+        format!("{RUN_DIR}/r1/reports/test/filing.json"),
+        format!("{RUN_DIR}/r1/verdicts/notes.md"),
+    ];
+    for stray in &strays {
+        rig.write(stray, "what I saw\n");
+    }
+    let written = [
+        format!("{RUN_DIR}/r1/reports/test/attempt.a2.md"),
+        format!("{RUN_DIR}/r1/reports/test/verify-f-1.a2.md"),
+        filed_verdict("f-1"),
+    ];
+
+    // NAMED IN PART, OR WITH WHAT ONLY A STAGE'S CHECK TAKES: usage, before anything is vetted.
+    for args in [
+        vec!["check-reports", "--run", RUN, "--round", "1"],
+        vec![
+            "check-reports",
+            "--run",
+            RUN,
+            "--stage",
+            "test",
+            "--attempt",
+            "2",
+        ],
+        vec!["check-reports", "--run", RUN, "--cycle", "1"],
+        vec!["check-reports", "--run", RUN, "--", "attempt"],
+    ] {
+        let mut asked = args.clone();
+        asked.splice(3..3, ["--scratch", scratch.as_str()]);
+        rig.step(&asked).refused("usage");
+    }
+    assert!(
+        strays.iter().all(|stray| rig.root.join(stray).is_file()),
+        "a refused act moved nothing"
+    );
+
+    // THE VET ALONE — as its digest, which is what a stage reads.
+    let seen = rig.digest(&["check-reports", "--run", RUN, "--scratch", &scratch]);
+    let line = seen.done(rig, "check-reports", "vetted");
+    let mut aside: Vec<Value> = line["aside"]
+        .as_array()
+        .expect("what left the tree")
+        .iter()
+        .map(|moved| json!([moved["path"], moved["why"]]))
+        .collect();
+    aside.sort_by_key(|moved| moved[0].as_str().expect("a path").to_owned());
+    assert_eq!(
+        json!([aside, line["vetted"], line.get("check")]),
+        json!([[[strays[0], "bad-id"], [strays[1], "bad-id"]], 5, null]),
+        "both strays leave the tree, five pending files were vetted, and no stage's reports are checked: {}",
+        seen.raw
+    );
+    assert!(
+        strays.iter().all(|stray| !rig.root.join(stray).exists())
+            && written.iter().all(|path| rig.root.join(path).is_file()),
+        "what the stage's agents wrote stays where it is"
+    );
+    let whole = seen.of_its_line(rig);
+    assert!(
+        whole["aside"]
+            .as_array()
+            .expect("what left the tree, in the act's own line")
+            .iter()
+            .all(|moved| moved["to"].as_str().is_some_and(|to| to
+                .starts_with(&format!("{scratch}/refused/"))
+                && Path::new(to).is_file())),
+        "each lies under the scratch root now, and the act's own line says where: {whole}"
+    );
+    // ASKED AGAIN, it finds nothing to move.
+    let again = rig.step(&["check-reports", "--run", RUN, "--scratch", &scratch]);
+    assert_eq!(
+        json!([
+            again.done("check-reports", "vetted")["aside"],
+            again.line["vetted"]
+        ]),
+        json!([[], 3]),
+        "{}",
+        again.raw
+    );
+
+    // THE RECORD OF RULINGS THAT FOLLOWS: applied, and committed at its first commit step.
+    let ruled = Stage {
+        batch: json!([{"argv": ["ledger-set", "--run", RUN],
+                       "stdin": json!({"key": "f-2", "disposition": "later"}).to_string()}]),
+        ..stage.copy("vet-alone-ruled")
+    };
+    ruled.apply(SECOND);
+    let root = ruled.rig.scratch.display().to_string();
+    let head = ruled.rig.rev("HEAD");
+    let seen = ruled.rig.step(&[
+        "record",
+        "--branch",
+        LOOP,
+        "--run-dir",
+        RUN_DIR,
+        "--gate",
+        &ruled.gate,
+        "--calls",
+        "1",
+        "--checks",
+        "0",
+        "--scratch",
+        &root,
+    ]);
+    let said = seen.done("record", "recorded");
+    assert!(
+        said["commit"] == ruled.rig.rev("HEAD").as_str() && ruled.rig.rev("HEAD~1") == head,
+        "ONE commit, and nothing taken back: {}",
+        seen.raw
     );
 }
 

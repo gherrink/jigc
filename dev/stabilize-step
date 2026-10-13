@@ -129,6 +129,19 @@
 #       missing or an extra report is the check's answer, not a refusal. Prints {status:
 #       checked, check, aside: [{path, why, detail, to}]} — `aside` is what left the tree.
 #
+#   dev/stabilize-step check-reports --run R [--scratch DIR]
+#       THE SAME ACT WITHOUT A STAGE: THE VET ALONE (the scoped review before the run in
+#       parts, the harness's finding 2). What comes before A RECORD THAT NAMES NO STAGE'S
+#       REPORTERS — the batch of the human's rulings — so that such a record, too, is
+#       preceded by what sets aside what the tools can set aside: every batch takes what
+#       was filed first, and its commit stages every pending path. The first half above,
+#       whole and unchanged — every written-once file of the run that no commit holds is
+#       vetted, and one the record script would not have written leaves the tree — and NO
+#       SECOND HALF: no stage's reports are held to a list of reporters, so nothing is
+#       `missing` or `extra` here. The round, the stage and the attempt are named together
+#       or not at all, and without them no reporter and no --cycle is taken — usage.
+#       Prints {status: vetted, vetted: <how many files it vetted>, aside}.
+#
 #   dev/stabilize-step find-round --prefix P
 #       The branches named P*, here and on origin. Prints {status: ready, branch, head,
 #       local, remote}.
@@ -1516,11 +1529,23 @@ def begin(args, facts):
 
 
 def check_reports(args, facts):
+    # WITH A STAGE OR WITHOUT ONE: the round, the stage and the attempt are named together
+    # — then the act is the stage's report check, both halves — or none of them is, and
+    # then no reporter and no cycle either: the vet alone.
+    staged = [flag for flag in ("round", "stage", "attempt") if getattr(args, flag) is not None]
+    if staged and len(staged) < 3:
+        refuse("usage", "a stage's report check names --round, --stage and --attempt together, and the vet alone names none of them: --%s without the rest — see dev/stabilize-step --help" % " --".join(staged))
+    if not staged and (args.names or args.cycle is not None):
+        refuse("usage", "the vet alone — `check-reports` without a stage — checks no stage's reports: it takes no reporter and no --cycle — see dev/stabilize-step --help")
     # 1. What is pending and written once, vetted: a file there that the record script
     #    would not have written is no report, and leaves the tree.
     once = written_once(said("status", "--porcelain", "--untracked-files=all"), arrived(args.run, facts))
     aside = set_aside(args.run, once, args.scratch, "no report was vetted, and none was moved")
     facts.update(aside=aside.get("aside") or [])
+    if not staged:
+        # THE VET ALONE: no stage is named, so no stage's reports are held to a list.
+        facts.update(status="vetted", vetted=len(once))
+        return
     # 2. The check: a reporter whose file left has left none.
     flags = stage_flags(args)
     checking = run([RECORD, "check-reports"] + flags + ["--attempt", args.attempt, "--"] + args.names)
@@ -2401,7 +2426,7 @@ DIGEST = {
     "git-state": {**ON, "loop_head": "sha", **PUSHED, "opening": "sha?", "untracked": "count?", "pending": (NULL, {"round": "count?", "calls": "count", "checks": "count", "files": "count"}), **MET, "owed": STATES},
     "state": {"branch": "path?", "state": STATE},
     "begin": {"round": "count", "attempt": "count", "report": "path"},
-    "check-reports": {"check": {"ok": "flag", "attempt": "count", "missing": ["id", 200], "extra": "count", "other_attempts": "count", "reports": "count"}, "aside": ASIDE, **MET},
+    "check-reports": {"check": {"ok": "flag", "attempt": "count", "missing": ["id", 200], "extra": "count", "other_attempts": "count", "reports": "count"}, "aside": ASIDE, "vetted": "count", **MET},
     "find-round": {**ON, "local": ["path", 50], "remote": ["path", 50]},
     "open-round": {**ON, "created": "flag", **MET},
     "push": {**ON, **PUSHED, **MET},
@@ -2765,7 +2790,7 @@ def arguments(argv):
     act("git-state", git_state, ["stage", "loop", "rounds", "run-dir"], lists=["product"], switches=["look"])
     act("state", state, ["run", "scratch", "tag"])
     act("begin", begin, ["run", "round", "stage", "attempt", "reporter", "commit", "scratch"], optional=["cycle"])
-    act("check-reports", check_reports, ["run", "round", "stage", "attempt"], optional=["cycle", "scratch"], names=("names", argparse.ZERO_OR_MORE, str))
+    act("check-reports", check_reports, ["run"], optional=["round", "stage", "attempt", "cycle", "scratch"], names=("names", argparse.ZERO_OR_MORE, str))
     act("find-round", find_round, ["prefix"])
     act("open-round", open_round, ["loop", "branch", "run-dir"])
     act("push", push_branch, ["branch"], optional=["run-dir"])

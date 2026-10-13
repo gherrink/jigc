@@ -2,6 +2,181 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — Three findings of the scoped review, repaired in the harness, and a fourth in words: a job that answers a start as ended is never taken for one the invocation must run itself; every record the harness composes or applies is preceded, in the same invocation, by the report check; and the halt that may be the account's limit is handed which step halted, and says only what is so there (the staged plan's `R0`, its findings in the harness; the fixer's choices inside them)
+
+**What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) appended probe scenarios to an export of the committed simulation at `dbb1cc84` and ran them through the committed harness, the real scripts and the stand-in runtime. It reproduced three things in [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) — one that **publishes behind a gate that never ran**, one that **strands state**, one that **says what is not so** — and named a fourth in words. All four are repaired there, each with arms that were red on the parent commit's harness; the harness's header holds each (*WHO ASKS AFTER IT*, *REPORTS*, *A WAVE THAT IS THE LAST*, and the row of a record's gate). **One act of [`dev/stabilize-step`](dev/stabilize-step) gained a form** — `check-reports` named without a stage — and nothing else of that tool changed; **no line of the record script, of the regression tool or of an agent's definition changed.** The phase's condition holds where it can: a run without an order is answered by every invocation as it was, **but for the one function both paths share** — which job answers a start (`hold`) — and what changes for such a run there is said below, with the assertions it carried.
+
+| | The state | What happened | Now |
+|---|---|---|---|
+| 1 | a start step whose first try returns nothing, under a name an earlier invocation used | the retry's answer — the earlier invocation's job — was taken as this record's gate: the record committed and pushed, `status: ruled`, no gate on its tree | an answer that says the job has **ended** is passed over, whatever the tries: the next name is asked |
+| 2 | a file a hand left among a round's filed verdicts, or beside a stage's reports | a continuation that owes only a record, and every record of rulings, met it with no report check before: refused (`check`) at every invocation until the attempts were spent, the human's `again` refused at its own record — or, beside the reports, a batch taken back at its commit, one gate spent | the check comes first, in the same invocation: the file leaves the tree, and the record is made |
+| 3 | a step that returns nothing after a wave that was the last for its silence | one text for seven steps: *the state document this return names lists every filed verdict* of a document that lists none; *in no commit yet* of a file the commit just made holds | the halt is handed its step, and each sentence is said only where it is so |
+| 4 | the tenth finish of a pending batch under one scratch root | *that invocation holds the full gate on the batch once more, under the next name* — there is none | the halt says that no name is left, and names the batch taken back |
+
+### 1 — Which job answers a start
+
+**The mechanism.** `hold` asks for a held command by name, and the tool answers a start with the job that is there. Whether that job *was there before this invocation asked* was decided by `seen.tries < 2` — the count of the start step's tries — at both guards: a record's gate (`sequence`: any job that is there is an earlier invocation's) and what is named by its commit (`stands`: red, void or dead is passed over). So where the first try of a start returned nothing, whatever answered the retry was taken as the job that dead try had started. Under a name two invocations share it is as well the earlier one's. Three families are shared: `record-rulings-r<round>` (every rulings invocation of a round), `record-pending` (every finish of a pending batch under one scratch root), and every name a commit gives — a build, the candidate's gate, a held check.
+
+**What a start's answer says of who started the job** — the question the brief put: **`started`, to the one call that started it, and nothing else.** Every other answer — `running`, `done` with a verdict, `dead` — is the job that was there, and the line names no call, no invocation and no moment a caller could hold it to: the digest's `pid`, `waited` and `seconds` are the job's, the job's record holds when its start wrote it and no line prints that, and the harness has no clock. So the tool does not tell a dead try's own job from an earlier invocation's, and **the harness is built to what the tool does say** (`passedOver`, one table):
+
+| The answer | A record's gate (`sequence`) | What is named by its commit (`stands`) |
+|---|---|---|
+| `started` | this call's: the answer | the same |
+| ended green | **passed over, whatever the tries** | the answer: a green build, gate or check of that commit is the commit's, whoever asked |
+| ended red, void, dead (`no-record` among it) | **passed over, whatever the tries** | **passed over, whatever the tries** |
+| `running` | first try: an earlier invocation's, passed over · **a retry: the dead try's own, the answer** | the answer: its wait is taken over |
+| not read | nothing is passed over | the same |
+
+**Held as described, both faces** — each on the parent's harness:
+
+- *A record's gate* (the reviewer's): two rulings in one round, the second one's `git:hold-start:record-rulings-r1-1` acting and returning nothing once. Its agents: the record step, that start twice, the commit, the push, the state — **no `hold-wait`, no `…-2`**; the commit step handed `…/hold/record-rulings-r1-1/output`; four long gates before and after; `status: ruled`.
+- *What is named by its commit* (the face the reviewer named and did not drive): a candidate's gate an earlier invocation left red, and a stage started again whose start's first try returns nothing — the red job was the answer, the round's record named `gate=<the first name>`, and `gate.md` held a red nobody measured in that attempt. **Every later record's gate of the round is held to the candidate's**, so a red that is not the candidate's lets red through that is new.
+
+**The cost, and what was rejected.** One more gate, build or check where a dead try's own job had **ended** before its step was asked again — and a gate that ends inside a retry is one that did not run. *Rejected:* the count of tries for any ended job (as it was); `running` on a retry passed over too — then a gate of this tree that runs would be started a second time beside it, for every start whose agent dies once; reading who started a job off a field of the line — there is none, and adding one is a change of the step tool outside the one act this task was given.
+
+**What changes for a run without an order.** `hold` is both paths': there too a red, void or dead job under a commit's name, and any ended job under a record's gate's name, is passed over on a start's retry where it was taken. Nothing else of that path changed. Its scenario of a start whose agent died (`a_held_command_that_is_taken_over_dead_left_running_void_or_red_has_its_cell`: a build, answered green on the retry) is green unmodified.
+
+**What the tool's repair left here** (the entry below, *what the next tasks owe*):
+
+- *A start retried within one invocation, its first try killed between the directory and the record*: answered `dead` / `no-record`, which was the invocation's own answer — a halt at the build — and is now passed over in the same invocation. Driven: the scenario of a name without a record, with each start step's first try returning nothing.
+- *The sentence for `dead`* said *the command's process is gone*. For `no-record` it says what the answer says (`DEAD_WHY`, `heldEnded`): nothing says what was asked under the name, and **a command may still run under it** — whether its supervisor lives is `supervised`, in the step's own line and in no digest, so the sentence names the line and asserts neither.
+- *A build answered `void` / `hash-differs`*: driven, one scenario — green on the parent, a pin. The binary of a build that stands green is replaced between two invocations; the stage builds under the next name, at that name's path.
+
+### 2 — The report check before every record
+
+**The mechanism.** The step tool's order for a record is *the report check, then the record*: the check is what moves a file the record script would not have written out of the tree. The harness asked for it after its instruments, after a triage and after every wave of verifiers — and so **not** where a record follows none of the three: an invocation that continues a stage for its record alone (`filed`: nobody is launched), and the batch of the human's rulings. Every batch takes what was filed first, a ruling's too.
+
+**What of it was left on this base** — established first, as the brief asked, by the reviewer's scenario on `c120cf44`: **all of it, for a file under a plain name.** `notes.txt` among the filed verdicts: two invocations halt at the record, refused `check`, each saying *the stage's report check came before this step* where none had; then `next: rule`, `attempts-spent`; the human's `again` halts where its batch is applied, with the record script's own line; the invocation after it is refused `attempts-spent` again; HEAD never moved. And the cell the record script's repair opened: `filing.json` beside the reports is a pending path there, so a ruling's batch is applied beside it, its gate runs and passes, the commit step refuses `unvetted` and takes the batch back — **driven through the harness for the first time, before and after.** (A name of no plain segment needs nothing here, as that entry says.)
+
+**The repair: every record the harness composes or applies is preceded, in the same invocation, by the report check** (the fence, arm (r), 11b):
+
+- *A record composed with no wave behind it* (`verifyThenRecord`): the stage's own check, over the attempt's reporters, before the composing step — `check-reports:filed`. A check that does not come back halts there, in the report check's own row of what halts a stage; nothing is composed.
+- *The batch of the human's rulings, in a run with a queue* (`ruleTheRun`): **the check's first half alone, the vet** — `check-reports:rulings`. A vet that does not come back halts before anything is applied.
+- What a check set aside there is a line of the log, by its path and the word that refused it (`asideSaid`).
+
+**Which act a rulings batch asks — chosen, and what was rejected.** `check-reports` wants a stage, an attempt and the launched reporters, and a record of rulings has none. **The same act, named without a stage, is its first half alone**: `dev/stabilize-step check-reports --run R --scratch DIR` vets every written-once file of the run that no commit holds, moves out what the record script would not have written, checks no stage's reports, and says `{status: vetted, vetted, aside}`. The round, the stage and the attempt are named together or not at all, and without them no reporter and no cycle is taken (`usage`). One plain invocation of the committed tool, by the allow rule that exists. In the harness it is the act's one composer (`checkReportsPrompt`, without names).
+
+- *Rejected: a new act.* A second composer for what the act already does, a row of the tool's table of acts and of its digest, and the fence's rule that an act has one composer — for the first half of an act that exists.
+- *Rejected: the stage's check, typed with the position's round and attempt and no reporter.* A rulings invocation may stand where the position hands no attempt at all (`attempts-spent` — the very state the finding strands a run in), and a check of an attempt nobody began says nothing true.
+- *Rejected: the vet where the stage's check is asked* (the continuation). That invocation has a stage, an attempt and its marker: the whole check holds, and the record's own batch is held to it.
+- **Switched on the run's queue** (`hasQueue`, a sixth place it is asked; the fence's count is carried). A run without an order has no filed verdicts, and the record script names no stray file of it as pending: neither face of the finding is reached there, and its rulings are recorded as they were, step for step. *Rejected:* the vet for every run — the better rule, and not the phase's condition; the record script's repair took the same line.
+
+**The sentence that said a check came first** (`COMPOSE_REFUSALS`, `check`) is unchanged, and is now so wherever it is said: no record is composed without one before it.
+
+**A link among the filed verdicts** — what that repair *saw and did not touch*: driven once by hand. `pending` refuses (`outside`), so **every invocation halts at its first read** — a stage's, a look's, a ruling's — at `git`, refused `record`, with the record script's line in the file the halt names, and nothing of this repair is reached. No stage progresses until a hand removes the link. A row for the ledger, as that entry has it.
+
+### 3 — The halt that may be the account's limit
+
+**The mechanism.** `limitSaid` composed one text, and `verifyThenRecord` appended it to the halt of any of seven steps that returned nothing after a silent wave: the wave's report check, the read of the queue, the composing step, the record's gate, its commit step, its push, the read-back. What is so differs from step to step, by three facts.
+
+**Held as described, and a third face.** At the report check and the read of the queue the document the halt names is the read *before* the wave — the committed scenario held that its `filed` is empty while the state counts 1, and passed. At the push the message said *the record … is committed on `<branch>` (`<sha>`)* and *WHAT WAS FILED IS NOT LOST, AND IS IN NO COMMIT YET*, of a file that commit holds. **And, found while the seven were laid out: the halt said *this step returned nothing too* of a step that answered** — a record's gate whose start the tool refused, or that still ran when the stage stopped asking, was `transient` and so took the text.
+
+**The repair.** The halt is handed which step halted (`LIMIT_STEPS`), whether that step returned nothing (`silent` — from `heldOf` for a gate's step, which a refusal and a running command are not), and from the push on the record's commit:
+
+| The step | The state was read | The record's commit | What the halt says |
+|---|---|---|---|
+| the report check after the wave · the read of the queue | **before** that wave | none | the count is of then; the named document is that read's and lists nothing the wave filed; `dev/stabilize-record state --run <run>` prints the state now; *in no commit yet*; the stage is continued |
+| the composing step · a step of the record's gate | after | none | the count and the document are of now; *in no commit yet*; what the next invocation does first is the record step's own sentence |
+| the record's commit step | after | **unknown** | *whether a commit holds it this script cannot say*: the step may have made its commit before it returned nothing |
+| the push | after | made | the commit that took what was filed, by its sha; local until the push that is owed |
+| the read-back | after | pushed | the commit, and that it is pushed |
+
+From the commit step on the halt says that the document it names was read before that record's commit. *It CONTINUES* is said at the first two steps only: after them the first read finishes a batch or makes a push before anything is continued, and the halt of that step already says so.
+
+**All seven steps are driven** — by a scenario each, and every sentence at every step by a check of the harness's self-test (five checks, the seven rows each).
+
+### The fourth — no name is left
+
+`finishRecord` holds the gate of a pending batch under `record-pending-<n>`, whichever batch it is, and a name has nine successors for the life of a scratch root. Where every one is taken, `hold` says so (`exhausted`), the halt is no longer *the step that asked did not answer* nor *an agent returned no result*, and its sentence (`recordThen`, `no-name`) says that no name is left, that invoking the stage again changes nothing, and that the exit is the batch taken back — `dev/stabilize-step discard`, spelled whole. **Driven, beyond what was asked**, because the sentence claims an exit: nine names taken, two invocations that halt alike, the named act run as spelled, and the stage invoked after it recording under its attempt's own name.
+
+**The naming is left as it is.** Keying the name by something of the batch is not a few lines: what the first read says of a pending batch in its digest is four counts, and nothing that is one batch's alone — the journal's own identity is in no line, and printing it is a change of the step tool beyond the one act.
+
+### How many agents an act launches
+
+The canary's drive holds each act's counts to the clone's harness. **Two moved, by one tool step each** — the vet before a record of rulings; `dev/stabilize-canary`'s `expect` and its suite's second typing carry them, and the fixture of a setup without the switch is untouched: it prints no act.
+
+| Act | Agents, tool steps — before | After |
+|---|---|---|
+| `part-1` | 16, 14 | 16, 14 |
+| `part-2` | 23, 17 | 23, 17 |
+| `part-3-act-1` | 8, 7 | **9, 8** |
+| `part-3-act-2` | 24, 15 | 24, 15 |
+| `part-4-act-1` | 9, 8 | **10, 9** |
+| `part-4-act-2` | 13, 13 and a verifier for each verdict left; ended at 9, 5 | the same |
+| `part-4-act-3` | 2, 2 | 2, 2 |
+| `part-4-act-4` | 13, 13 and a verifier for each verdict left | the same |
+| `part-4-act-5` | 6, 6 | 6, 6 |
+
+Finding 1 moved none: the raise still asks for its gate under the first ruling's name, is answered by the job that stands and passes it over — on the first try, as before. **Not on the main line:** an invocation that continues with the budget spent and only a record owed launches twelve agents where it launched eleven — its report check; the line's thirteen for act 4 assumes a wave.
+
+### Red first
+
+Eleven arms were written before the harness changed and run on the parent's: **ten red, one green — the pin of the replaced binary.** All eleven were green at their first run on the changed harness.
+
+| Arm (`stabilize_simulation`) | On the parent |
+|---|---|
+| `a_job_that_answers_its_start_as_ended_is_never_taken_whatever_the_start_step_did` | the second ruling's held steps: `[hold-start:record-rulings-r1-1, hold-start:record-rulings-r1-1]` — no `…-2`, no wait |
+| `a_gate_that_stands_red_is_not_the_answer_to_a_stage_started_again`, its last part **turned** | the dead try's own red gate was the answer: no `…-2` |
+| `a_name_whose_start_left_no_record_is_passed_over_and_the_stage_holds_the_next`, its second part | the stage halts at the build: *an agent the scenario scripts was never launched* — the reviewer, the gate's start, the record's |
+| `a_build_whose_binary_was_replaced_is_passed_over_and_built_under_the_next_name` | green: a pin |
+| `a_record_composed_with_no_wave_is_preceded_by_its_report_check_and_a_stray_file_strands_nothing` | `halted` at the record, `refusal: check`, *The stage's report check came before this step* |
+| `a_record_of_rulings_is_preceded_by_the_report_checks_vet_and_a_stray_file_costs_it_nothing` | among the filed: `halted` at `rulings`, the batch *refused check … (no-verdicts-name)* · beside the reports: `halted`, `refused: unvetted`, the gate `pass`, *THE BATCH IS TAKEN BACK ALREADY* |
+| `a_stage_that_died_after_its_last_verifier_filed_is_handed_its_record_and_nothing_else_first` · `a_stage_whose_last_wave_spent_the_budget_is_handed_its_record_before_the_humans_step` — **turned**: each pinned *no report check* | the agents hold no `git:check-reports:filed` |
+| `a_halt_after_silent_calls_says_that_it_may_be_the_limit` · `a_stage_whose_record_step_is_silent_after_that_halts_naming_the_filed_verdicts` | the halt names no step; and the message is the one text |
+| `the_limits_halt_says_what_is_so_at_each_step_of_the_record` (written for the push and the read-back; the gate, the commit step and a refused start added before the mutants) | at the push: *IS IN NO COMMIT YET* beside the commit's sha |
+
+**What followed its code, and says so** — each then run against the parent's harness and tools: `stabilize_simulation::a_pending_batch_whose_gate_has_no_name_left_halts_saying_so_and_names_the_exit_that_works` (on the parent: `transient: true`, *the step that asked did not answer with a job of the tool's*, *under the next name*); `dev_stabilize_step::the_report_check_without_a_stage_is_the_vet_alone` (on the parent: `refused usage: the following arguments are required: --round, --stage, --attempt`); the twelve checks of the harness's self-test; the fence's assertions; and three parts added where a mutant about to be run had nothing against it — a check that does not come back before a record with no wave, a vet that does not come back, and the gate, the commit step and a refused start in the scenario of the record's steps. Each was green at its first run. The whole list run on the parent's harness, step tool, stand-in and canary tool: twenty-four red of forty-two.
+
+### Mutants
+
+Fifty-three of the finished harness, step tool, stand-in and canary tool — each one edit, the arms that name its property and the harness's self-test run on it, the file put back and its hash compared after. **Fifty-two died at their first run; one survived** — *a report check before the record after a wave too* — and died once the helper that holds a stage's second record held that a wave's own check is the one before it (`ends_at_its_second_record`), and by the canary's drive, whose count it moves.
+
+| Of | The edits | What went red |
+|---|---|---|
+| finding 1, the table (11) | a record's gate that ended taken on a retry, as it was · what stands red, void or dead under a commit's name taken on a retry, as it was · a gate that runs passed over on a retry too · one that runs taken on the first try · a green job under a commit's name passed over · the job this call started not exempt · a start that was not read passed over · `hold` passing nothing over · a void job under a commit's name the answer · a green gate of an earlier invocation taken as a record's · the sentence for a name without a record saying *the process is gone* | the self-test's table for all but `hold` itself; and the scenarios — of the two faces, of the red gate, of a name without a record, of the replaced binary, of a continuation's opening steps, of the record's steps. **The two cells of a gate that runs, and the sentence, by the self-test alone** |
+| finding 2, the harness (9) | no check before a record with no wave, as it was · one after a wave too (the survivor) · a check that did not come back not halting · no vet before the rulings, as it was · the vet for a run without an order too · a vet that returned nothing not halting · what a check set aside said nowhere · the vet composed as a stage's check · the check before a record with no wave naming no reporter | the two new scenarios; the two that were turned; for *a run without an order too*, that path's scenario of a go |
+| finding 2, the step tool's act (8) | the vet going on to a stage's check · a stage named in part taken · the vet taking a reporter · taking a cycle · moving nothing · saying that it vetted nothing · saying `checked` · the act wanting a stage, as it did | the step suite's arm; and the scenario of the rulings for the four that change what the harness is answered |
+| finding 3 (17) | the text said of every transient halt, as it was · of a step that refused · of every transient halt of a record step · what a call site hands (five): another step's word at the read of the queue, at the composing step, at the push and at the read-back, and no commit at the push · the two rows the reviewer's faces turn on — *read after the wave* at the report check, *in no commit* at the push — and the commit step's row · a record step saying the wrong one of its two steps (two) · a gate's refused start said to have returned nothing · a gate step that returned nothing not marked · *it continues* said from the composing step on · the call that prints the state naming no run | the three scenarios of the limit's halt — the refused start for the three that turn on whether the step returned nothing — and the self-test's checks for the rows and the sentences |
+| the fourth (5) | the halt saying *under the next name*, as it did · `hold` not saying that no name is left · no name left said to be a step that did not answer · a pending batch's record not known as one · the halt said to be an agent that returned nothing | the scenario of a pending batch with no name left |
+| the stand-ins and the counts (3) | the regression line's stand-in with five fields · each of the two acts counted as it was | the scenario of the kept baseline; the canary's two arms |
+
+**No mutant, and why:** the harness's reading of the vet's answer by its word (`status !== 'vetted'`) — with the committed tool no answer of the act without a stage says anything else, and the tool's own mutant *says `checked`* dies at the scenario because that reading halts; the sentences beyond the words the arms and the self-test name; the header.
+
+### The assertions this commit carried
+
+- *The simulation, turned:* the two scenarios that pinned *no report check* before a record that owes only `filed` (above), and the last part of the red gate's scenario, which pinned a dead try's ended red gate as the invocation's own.
+- *The simulation, a rulings invocation's agents in a run with a queue* — one step more, `git:check-reports:rulings`: the helper `only_rules`, through which `a_budget_ruled_at_a_stop_is_recorded_and_starts_nothing`, `an_order_ruled_at_a_stop_puts_its_rows_into_the_queue_and_the_stage_is_continued`, `an_order_ruled_while_the_run_is_stopped_after_a_round_reopens_its_queue_and_no_go_is_owed` and `a_test_stage_runs_from_the_git_state_to_the_pushed_record` hold it; and the lists typed whole in that last scenario (a ruling on no row) and in `an_order_and_a_budget_ruled_in_one_invocation_are_one_record_of_two_calls` (two). **The golden trace is untouched**: it is a stage's.
+- *The simulation, the limit's halt:* the two scenarios above — `halted.limit` gains `step`, `halted.filed` gains `read`, `commit` and `record`.
+- *The simulation and the runtime's stand-in, the regression tool's line:* the stand-in prints `baseline` with six fields, `unkept` null unless a scenario says otherwise; `a_second_stage_against_one_previous_release_names_the_same_baseline` scripts what that tool says since its repair — a void run keeps nothing and says so, and the run after it builds its own and keeps it — where it scripted a void run that kept. **Nothing the harness reads of that line was held to five**: the harness reads no field of it; the digest's facts of a held regression set are the verdict's, and `baseline` is none of them. The step suite's stand-in of the line carries the sixth field too — that file was in reach, for the one act.
+- *The fence:* arm (k), the pin of the second guard, now the table's four lines; (n), the record's gate with no name left; (p), the composer of the report check is named three times; (r), the limit's function and its seven call sites, the count of where the two kinds of run are told apart (six), and a part 11b for the property of finding 2; (s), the vet's prompt among those composed.
+- *The canary's tool and its suite:* the two counts.
+- *Nothing in the record suite, the regression suite or the step suite beyond the one new arm and the one line.*
+
+### What the next tasks owe because of this
+
+- *The orchestrating session:* the dated note in the plan is in this commit, word for word; its sentences (1) and (6) hold after this repair — act 5's invocation gates the batch under a name of its own, and an act's count is the line's.
+- *Part 1's reading:* the first hosted run of CI's tooling leg with these arms — fifteen more whole stages are driven, by a rough count — on a bound that rests on a proxy taken before them.
+- `T10`: [stabilization-workflow.md](implementation/stabilization-workflow.md) says that *a name is one command's* and nothing of which job answers a start, of the check before a record of rulings, of `vetted`, or of a pending batch with no name left; untouched.
+- *The step tool's next edit:* its header says what a start is answered with, and not that the answer says nothing of who started the job — which is what `passedOver` stands on.
+
+### What is not established
+
+- **No agent has typed the vet**, and no stage has met a stray file under the Workflow runtime.
+- **The one cell the tries still decide** — a record's gate that still runs, on a start's retry — is held by the self-test's table and driven through no stage: the stand-in's gate ends at once. *What it leaves open:* a gate of an earlier invocation that still runs under a shared name when a start's first try returns nothing is taken as this one's. Under `record-pending` that is a gate of the same applied batch; under `record-rulings-r<N>` it takes a batch that was taken back while its gate ran.
+- **A record's gate that still runs after a silent wave** is not said to be the limit — read from `heldOf`, which marks only a step that returned nothing; driven for a start that was refused, not for a command that outlasts its three laps, which would hold a scenario four and a half minutes.
+- **The exit where the rulings' own names are spent too** — nine rulings in one round and nine finishes: the batch taken back is then a ruling to be sent again, under names that are taken. Another scratch root frees every name; not driven, and not said by the halt.
+- **A build, a candidate's gate or a held check with no name left** still halts as a step that did not answer (`transient`): nine red builds of one commit under one root.
+- **The limit's halt's count at a step after the record** is the read after the wave; a verdict filed between that read and the halt is not in it.
+- **How long CI's tooling leg takes with these arms**: not measured.
+- **Not read whole for this task:** the `fix` half of the harness below `ruleTheRun`; the record script; the step suite beyond its rig and the arms of the report check; the canary's suite beyond its drive.
+
+### Seen and not touched
+
+- **A link among the filed verdicts** stops every invocation at its first read (above).
+- **A halt over a held command that still runs** says *an agent returned no result after retries* (`transient`) of agents that each returned `running`.
+- **The record script's refusal of a rulings batch over a file among the filed verdicts** names `dev/stabilize-step check-reports` with no flags — which is now the form the harness asks, give or take its two flags.
+- **`dev/stabilize-canary check`** reads no step's line: of a job that was passed over it says what the job's own files say.
+
 ## 2026-10-13 — Two findings of the scoped review, repaired in the record script: no file that the tools did not write, in a round's two written-once directories, makes a record unrecordable by the tools' own acts; and a verifier's report and a triage's entries are taken only for an attempt that is begun (the staged plan's `R0`, its two findings in the record script; the fixer's choices inside them)
 
 **What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) drove the committed record script at `dbb1cc84` through all four parts with the real opening, found the path sound, and reproduced two things in [`dev/stabilize-record`](dev/stabilize-record) — one that **strands state**, one that **records falsely**. Both are repaired there, each with arms that were red on the parent commit's script; the script's header holds both, the first as a section of its own, *WHAT NO TOOL WROTE*. **No line of code of [`dev/stabilize-step`](dev/stabilize-step) changed** — two sentences of its header did — **and nothing of the harness, its fence, an agent's definition, the canary's tool or the simulation.** Both conditions of the build's first phase hold: a run without an order answers every call as it did (`a_run_without_an_order_holds_the_bytes_it_held`, unmodified — and every change of finding 1 that a run without an order could meet is switched on the run's order); and for a run with a queue whose directories hold only what the tools wrote, nothing changed — every arm of the four suites that drives such a run is green unmodified but the four named below.

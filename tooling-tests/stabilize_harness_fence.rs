@@ -1380,9 +1380,33 @@ fn k_what_the_human_rules_about_the_run_an_unfinished_triage_and_the_openings_fa
         build.contains("const short = sha.slice(0, 12)")
             && build.contains("const at = (n) => 'bin/' + whose + '-' + short + (n > 1 ? '-' + n : '') + '/jigc'")
             && build.contains("await hold({ name: 'build-' + whose + '-' + short, stands: true, kind: 'build', flags: (n) => '--commit ' + sha + ' --to ' + at(n)")
-            && build.contains("const to = at(job.asked)")
-            && function(&full, "hold").contains("if (job.stands && ['red', 'void', 'dead'].includes(at.ends) && seen.tries < 2) {"),
-        "a build is named by its commit, and written at a path of its name's own; a job that stands red, void or dead is passed over"
+            && build.contains("const to = at(job.asked)"),
+        "a build is named by its commit, and written at a path of its name's own"
+    );
+    // WHICH JOB ANSWERS A START IS ONE TABLE, AND THE ANSWER'S OWN WORD DECIDES (the scoped
+    // review before the parts, the harness's finding 1): a job that answered as ENDED is
+    // never taken for one the invocation must run itself — whatever the tries of its start
+    // step, which decided it until then — and what stands under a commit's name is the answer
+    // only while it runs or where it is green. The tries decide ONE cell: a record's gate
+    // that still runs.
+    let held = function(&full, "hold");
+    let over = function(&full, "passedOver");
+    assert!(
+        held.contains("const over = passedOver(job, at, seen.tries)")
+            && held.contains("\n    if (over) {\n")
+            && !held.contains("seen.tries <")
+            && !held.contains(".includes(at.ends)"),
+        "`hold` passes a job over on the table's word, and holds no rule of its own"
+    );
+    assert!(
+        over.contains("\n  if (at.ends === 'unread' || at.fresh) return null\n")
+            && over.contains(
+                "\n  if (at.ends === 'running') return job.sequence && tries < 2 ? 'running' : null\n"
+            )
+            && over.contains("\n  if (job.sequence) return 'ended'\n")
+            && over.contains("\n  return job.stands && at.ends !== 'green' ? 'ended' : null\n")
+            && over.matches("tries").count() == 2,
+        "a job that ended is passed over whatever the tries — for a record's gate every end, for what is named by its commit every end but green — and the tries are asked in the one cell of a record's gate that still runs"
     );
     let scope = function(&full, "scopePrompt");
     assert!(
@@ -1481,6 +1505,17 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
             && step.contains("if (!HELD_TAKES.record.includes(gate.ends)) return { fault: ")
             && step.contains("then: recordThen(v.run, branch, 'no-gate')"),
         "no executor runs for a batch that is applied; and a gate that left no verdict commits nothing and leaves the batch applied"
+    );
+    // WHERE NO NAME IS LEFT FOR THE GATE OF A PENDING BATCH the halt does not say that the
+    // next invocation gates it under the next name: there is none (the scoped review before
+    // the parts, its fourth, in words).
+    assert!(
+        step.contains("then: recordThen(v.run, branch, rec.pending ? 'no-name' : 'no-gate')")
+            && function(&full, "hold").contains("exhausted: true")
+            && function(&full, "pendingRecord").contains("pending: true")
+            && function(&full, "recordThen").contains("if (word === 'no-name') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED")
+            && function(&full, "finishRecord").contains("pendingRecord(v.scratch + '/record/pending', pending)"),
+        "a pending batch's gate that finds no name left says so, and names the batch taken back"
     );
     assert_eq!(
         source.matches("roleStep('record', ").count()
@@ -1865,13 +1900,16 @@ fn p_an_attempt_begins_on_record_and_a_reporter_leaves_the_list_only_on_the_chec
         1,
         "nothing else takes a reporter off the list"
     );
+    // (Its composer is named three times: where it is declared, where a stage's check is
+    // asked for, and where the check's first half alone — the vet — is asked for before the
+    // batch of the human's rulings, which names no reporter to take off a list: arm (r), 11b.)
     assert_eq!(
         source.matches("checkReportsPrompt(").count()
             - function(&full, "selfTest")
                 .matches("checkReportsPrompt(")
                 .count(),
-        2,
-        "the report check is asked for in one place"
+        3,
+        "a stage's report check is asked for in one place, and the vet alone in one"
     );
     // After the instruments, after every triage pass — and, in a run with a queue, after
     // every wave of verifiers.
@@ -3129,8 +3167,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         without(&full, &["selfTest"]).matches("hasQueue(").count(),
-        5,
-        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks, where an invocation is found to continue a stage of that path (`continuing`) — and, since the plan's `T7`, where a return says what such a run's digest holds (`queueSaid`) and where a ruling about a queue is asked of a run that has one (`runRulingsFault`)"
+        6,
+        "the two kinds of run are told apart in one place: `hasQueue` is declared, and asked where the path forks, where an invocation is found to continue a stage of that path (`continuing`) — and, since the plan's `T7`, where a return says what such a run's digest holds (`queueSaid`) and where a ruling about a queue is asked of a run that has one (`runRulingsFault`) — and, since the scoped review before the parts, where the batch of the human's rulings is preceded by the report check's vet (`ruleTheRun`), which a run without an order is not"
     );
     for (name, asks) in [
         ("queueSaid", "if (!state || !hasQueue(state)) return {}"),
@@ -3441,19 +3479,125 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     let closing = function(&full, "verifyThenRecord");
     assert!(
-        closing.contains("const said = ver.last ? limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed) : null")
-            && closing.contains("const limited = (h) => (said && h.halted.transient ? Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says }) : h)")
-            && closing.matches("return { halted: limited(").count() == 6
-            && closing.matches("return { halted: ").count() == 6,
+        closing.contains("const limited = (h, step, silent, record) => {\n    if (!ver.last || !silent) return h\n    const said = limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed, step, record || null)\n    return Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says })\n  }")
+            && closing.matches("return { halted: limited(").count() == 7
+            && closing.matches("return { halted: ").count() == 7,
         "every halt of the phase and of its record passes through the one function that says what a halt after a silent wave may be — and it says so only of a step that returned nothing"
+    );
+    // … AND IT IS HANDED WHICH STEP HALTED (the scoped review before the parts, the harness's
+    // finding 3): the seven steps of the table are the seven the phase names, each where it
+    // halts, and what the halt says is said by that row's facts — whether the state was read
+    // after the wave, and what became of the record's commit.
+    let steps = &full[full
+        .find("\nconst LIMIT_STEPS = {\n")
+        .expect("the steps a halt that may be the limit can be of")..];
+    let steps = &steps[..steps.find("\n}\n").expect("the table closes")];
+    let rows: Vec<&str> = steps
+        .lines()
+        .filter_map(|line| line.strip_prefix("  '"))
+        .map(|line| &line[..line.find('\'').expect("a row's word")])
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "report-check",
+            "queue",
+            "compose",
+            "gate",
+            "commit",
+            "push",
+            "read-back"
+        ],
+        "the steps a halt that may be the account's limit can be of"
+    );
+    for (step, handed) in [
+        (
+            "queue",
+            "launched: launch.names }), 'queue', !!ver.transient) }",
+        ),
+        (
+            "report-check",
+            "launched: launch.names }), 'report-check', !!ver.transient) }",
+        ),
+        (
+            "compose",
+            "first: made.commit }), 'compose', !!again.transient) }",
+        ),
+        (
+            "gate, commit",
+            "first: made.commit }), taken.at, taken.silent === true) }",
+        ),
+        (
+            "push",
+            "and the branch was not pushed'), 'push', !published, taken.result.commit) }",
+        ),
+        (
+            "read-back",
+            "step: after.step || null }), 'read-back', !!after.transient, taken.result.commit) }",
+        ),
+    ] {
+        assert!(
+            closing.contains(handed),
+            "the halt at `{step}` is handed its step, whether the step returned nothing, and — from the push on — the record's commit"
+        );
+    }
+    let recorded = function(&full, "recordStep");
+    assert!(
+        recorded.contains("at: 'gate', silent: gate.silent === true,")
+            && recorded.contains("at: 'commit', silent: !r,")
+            && function(&full, "heldOf").contains(
+                "if (!step) return { ends: 'unread', why: 'the step returned no result', silent: true }"
+            ),
+        "a record step says which of its steps halted, and whether that step returned nothing — which a gate that still runs, and a start that was refused, did not"
     );
     let says = function(&full, "limitSaid");
     assert!(
-        says.contains("limit: { possible: true, wave: last.wave, silent: last.silent }")
-            && says.contains("filed: { counted, files, unconfirmed, directory }")
+        says.contains("limit: { possible: true, wave: last.wave, silent: last.silent, step }")
+            && says.contains("filed: { counted, read: at.read + '-the-wave', commit: at.commit, record: committed ? record : null, files, unconfirmed, directory }")
             && says.contains("THIS MAY BE THE ACCOUNT\\'S USAGE LIMIT")
-            && says.contains("runDir(ctx.run) + '/r' + ctx.round + '/verdicts'"),
-        "the halt says what it may be, and names the filed verdicts: the state's count, the path of each one this invocation's verifiers filed, what nothing held, and the directory the record script files them in"
+            && says.contains("runDir(ctx.run) + '/r' + ctx.round + '/verdicts'")
+            && says.contains("typed(RECORD_TOOL, 'state --run ' + ctx.run)"),
+        "the halt says what it may be, and names the filed verdicts: the state's count and whether it is of before the wave, what became of the record's commit, the path of each one this invocation's verifiers filed, what nothing held, the directory the record script files them in — and, where the document it names predates the wave, the one plain call that prints the state now"
+    );
+    // (11b) EVERY RECORD THE SCRIPT COMPOSES OR APPLIES IS PRECEDED, IN THE SAME INVOCATION, BY
+    // THE REPORT CHECK (the scoped review before the parts, the harness's finding 2). After a
+    // wave it is that wave's; a record composed with NO wave behind it — an invocation that
+    // continues a stage for its record alone — asks for it first; and the batch of the human's
+    // rulings, in a run with a queue, is preceded by the check's first half alone, which
+    // names no stage, no attempt and no reporter.
+    let no_wave = closing
+        .find("\n    if (!ver.waves) {\n      const settled = await settleReports(ctx, launch, 'check-reports:filed', 'Record')\n")
+        .expect("a record composed with no wave behind it asks for the report check first");
+    assert!(
+        no_wave < closing.find("await composeRecord(").expect("the record")
+            && closing.matches("await composeRecord(").count() == 1
+            && closing.contains("\n  if (records) {\n    phase('Record')\n"),
+        "the check comes before the composing step, wherever a record is composed and no wave ran"
+    );
+    assert_eq!(
+        without(&full, &["selfTest"])
+            .matches("await composeRecord(")
+            .count(),
+        3,
+        "a record is composed in three places: a stage's first — after its instruments' check, or its triage's — a continuation's record of what it graded, after that triage's check, and the record after the verify phase"
+    );
+    let rules = function(&full, "ruleTheRun");
+    let vet = rules
+        .find("\n  if (hasQueue(state)) {\n    phase('Record')\n    const vetted = await toolStep('check-reports:rulings', 'Record', 'check-reports', checkReportsPrompt(v, null))\n")
+        .expect("in a run with a queue the vet comes before the batch of the rulings");
+    assert!(
+        vet < rules.find("await rulingsStep(").expect("the one step that records rulings")
+            && rules.contains("if (!vetted || vetted.status !== 'vetted' || !Array.isArray(vetted.aside)) return gitHalt('reports', vetted, ")
+            && without(&full, &["selfTest"]).matches("await rulingsStep(").count() == 2
+            && without(&full, &["selfTest"]).matches("checkReportsPrompt(v, null)").count() == 1,
+        "the vet is asked for in one place — before the one step that records rulings on the path that is reached — and a vet that did not answer halts before anything is applied"
+    );
+    assert!(
+        function(&full, "checkReportsPrompt").contains("\n  const vet = names == null\n")
+            && function(&full, "checkReportsPrompt").contains("'check-reports', (vet ? '--run ' + ctx.run : stageFlags(ctx) + ' --attempt ' + ctx.attempt) + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch) + (vet ? '' : ' -- ' + names.join(' ')))")
+            && tool.contains("    act(\"check-reports\", check_reports, [\"run\"], optional=[\"round\", \"stage\", \"attempt\", \"cycle\", \"scratch\"],")
+            && tool.contains("        facts.update(status=\"vetted\", vetted=len(once))\n        return\n"),
+        "the vet is the report check's own act, named without a stage: the tool then vets, checks no stage's reports, and says `vetted`"
     );
     assert!(
         waves.contains("out.filings.push(verdictFile(ctx, name))")
@@ -3934,6 +4078,11 @@ const PROMPTS: &[(&str, &str, &str)] = &[
         "checkReportsPrompt",
         "",
         "checkReportsPrompt(CTX, ['attempt', 'preflight', 'scope'])",
+    ),
+    (
+        "checkReportsPrompt",
+        "the vet alone",
+        "checkReportsPrompt(V, null)",
     ),
     ("findRoundPrompt", "", "findRoundPrompt(V, 1)"),
     (

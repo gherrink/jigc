@@ -189,8 +189,9 @@
 // script takes, and whose launch that script counts — left so twice, the finding is the
 // human's. ITS RECORD AFTER THE PHASE takes what its verifiers filed, what an earlier
 // invocation's had — THE STATE'S POSITION SAYS THAT ONE IS OWED A RECORD (`filed`), and with
-// that word alone the invocation launches nobody and records — and every report an earlier
-// invocation left pending. AND WHERE IT HAS NOTHING TO RECORD — no
+// that word alone the invocation launches nobody and records, ITS REPORT CHECK FIRST (below:
+// REPORTS) — and every report an earlier invocation left pending. AND WHERE IT HAS NOTHING
+// TO RECORD — no
 // verifier of it left a report, no filed verdict is owed — IT COMPOSES NONE: its attempt is
 // then one that left its marker and no record, the record script counts those, and after
 // two in a row the stage is the human's. A finding whose verifier leaves nothing at all has
@@ -203,10 +204,17 @@
 // wave is launched. AND A STAGE WHOSE STEPS THEN RETURN NOTHING TOO HALTS AS WHAT MAY BE THE
 // ACCOUNT'S LIMIT, NAMING THE FILED VERDICTS (`limitSaid`): by the path of each one this
 // invocation's verifiers filed, by the state's count, by the directory they lie in and by
-// the state document that lists them — files of this machine's disk, and of no commit, until
-// the invocation that follows continues and records them. EVERY OTHER ROLE IS RETRIED AS IT
-// WAS, bounded by the breaker — which is asked before every try, and no longer only before
-// a call's first.
+// the state document that lists them. THE HALT IS HANDED WHICH STEP HALTED (LIMIT_STEPS: the
+// wave's report check, the read of the queue, the composing step, the record's gate, its
+// commit, its push, the read-back), AND SAYS ONLY WHAT IS SO AT THAT STEP: before a read
+// after the wave, that the document it names predates the wave, and the one plain call that
+// prints the state now; that the filed verdicts are in no commit only while none can hold
+// them — where the commit step itself returned nothing it says that it cannot tell, and from
+// the push on it names the commit that took them; and that the stage is simply continued
+// only at the two steps before its record — after them the halt of the record step, of the
+// push and of the read-back already says what the next invocation does first. EVERY OTHER
+// ROLE IS RETRIED AS IT WAS, bounded by the breaker — which is asked before every try, and
+// no longer only before a call's first.
 // WHAT AN INVOCATION OF THAT PATH RETURNS (that plan's T7; the row `wf-return-names`: three
 // names in a stage's return read other than they meant). ITS STATUS IS ONE OF THREE WORDS,
 // EACH FOR WHAT THE INVOCATION ITSELF PUT ON RECORD (`statusOf`): `hunted` — a stage whose
@@ -245,7 +253,11 @@
 // TAKEN ONLY WHILE IT RUNS OR WHERE ITS VERDICT IS GREEN (`hold`, `stands`): one that ended
 // red, void or dead is PASSED OVER for the next name — `<name>-2`, `<name>-3`, … — as a
 // record's gate always was: a red gate a starved machine left is measured again, and never
-// answered for ever. What a name CANNOT hold is that a gate's verdict is of the tree its
+// answered for ever. THE ANSWER'S OWN WORD DECIDES THAT, WHATEVER THE START STEP DID
+// (`passedOver`): the tool says `started` to the one call that started a job and nothing of
+// who started one that is there, so a job that answers a start as ENDED is never taken for
+// one this invocation must run itself — not on the step's retry either. What a name CANNOT
+// hold is that a gate's verdict is of the tree its
 // commit names: the gate reads the working tree, and the tool's own check of that is owed
 // (the row `wf-held-gate-tree`).
 //
@@ -329,6 +341,21 @@
 // instruments, after every triage pass, and inside the record's batch. A file nobody
 // launched stops the stage. A LAUNCHED REPORTER WITH NO REPORT DOES NOT: it is taken off
 // the list, and what it was launched for is recorded as not done (below).
+// AND IN A RUN WITH A QUEUE EVERY RECORD THIS SCRIPT COMPOSES OR APPLIES IS PRECEDED, IN THE
+// SAME INVOCATION, BY THE REPORT CHECK (the scoped review before the parts, its finding 2
+// here): it is the step that SETS ASIDE WHAT THE TOOLS CAN SET ASIDE — a file a hand, an
+// editor or a file browser left among a round's filed verdicts or beside a stage's reports
+// — and a record that meets such a file first is refused over it, at every invocation, or
+// takes its batch back at its commit, a gate spent. After the instruments, a triage or a
+// wave of verifiers the check is that step's own. A RECORD COMPOSED WITH NO WAVE BEHIND IT —
+// an invocation that continues a stage for its record alone (`filed`) and launches nobody —
+// asks for it first, over the attempt's own reporters (`verifyThenRecord`). AND THE BATCH OF
+// THE HUMAN'S RULINGS is preceded by THE CHECK'S FIRST HALF ALONE, THE VET (`ruleTheRun`;
+// `checkReportsPrompt` without names): such a record names no stage, no attempt and no
+// reporter, so nothing of it could be held to a list. What either of those two checks set
+// aside is a line of the log (`asideSaid`). A RUN WITHOUT AN ORDER RECORDS ITS RULINGS AS IT
+// DID: nothing is filed there, and the record script names no stray file of such a run as
+// pending.
 //
 // AN ATTEMPT BEGINS ON RECORD. The first step of an attempt that will launch an agent is
 // `dev/stabilize-step begin`: it holds the round and the attempt to the state's position
@@ -482,7 +509,11 @@
 //       gate         the tool kept the output in, and held  committed, THE BATCH STAYS
 //                    to the candidate's gate there          APPLIED, and the next
 //                                                           invocation gates it again
-//                                                           under the next name
+//                                                           under the next name — or,
+//                                                           where NO NAME IS LEFT for a
+//                                                           pending batch's gate, the
+//                                                           halt says so and names the
+//                                                           batch taken back (`no-name`)
 //   AND WHO ASKS AFTER IT:
 //     the start's agent died      the start is asked for again — its ONE command — and the
 //                               tool answers with the job that is there: nothing starts twice.
@@ -496,6 +527,14 @@
 //                               (a build, the candidate's gate, a held check — named by
 //                               their commit) it is TAKEN while it runs or where it is
 //                               green; red, void or dead it is passed over for the next.
+//                               WHICH JOB WAS THERE IS THE TOOL'S ANSWER, NEVER THE COUNT
+//                               OF THE START STEP'S TRIES (`passedOver`): `started` is this
+//                               call's; an END is never the answer to a job the invocation
+//                               must run itself — on the step's retry either, where it may
+//                               be a dead try's own job that ended, at the cost of one more
+//                               gate; only a record's gate that still RUNS is told by the
+//                               tries — an earlier invocation's on the first, the dead
+//                               try's own on a retry.
 //
 // A FORK IS ON RECORD (the harness review's M3). A verdict the verifier found to contest a
 // settled decision is recorded with that verdict, in the round's triage record: its kind,
@@ -892,6 +931,20 @@ const HELD_ENDS = {
   dead: 'the command\'s process is gone and nothing says how it ended: it has no verdict, whatever its output holds, and is never started again under its name',
   unread: 'the step that asked did not answer with a job of the tool\'s, and nothing is known of how the command stands',
 }
+// DEAD_WHY — WHAT `dead` SAYS WHERE THE TOOL'S OWN WORD FOR IT SAYS SOMETHING ELSE THAN THE
+// SENTENCE ABOVE (`heldEnded`). A NAME WHOSE START LEFT NO RECORD (`no-record`; dev/stabilize-
+// step: A JOB'S DIRECTORY WITHOUT ITS RECORD IS NO JOB THAT IS READ) is dead by that tool's
+// answer, and ITS COMMAND'S PROCESS MAY WELL LIVE: a start killed after its fork leaves a
+// supervisor that runs the command to its end, unrecorded. Whether it lives is the answer's
+// `supervised` — in the step's own line, in the file its digest names, and in no digest: this
+// script acts on nothing of it, and says of such a name what the answer says and no more.
+const DEAD_WHY = {
+  'no-record': 'the name holds no record of the tool\'s — a start under it was killed before it wrote one, or no start made its directory: nothing says what was asked under it, so nothing of it is read and it has no verdict, and nothing is ever started under it again. A command MAY STILL RUN under it, unrecorded — the step\'s own line says whether its supervisor lives (`supervised`)',
+}
+// heldEnded — how a held command stands, as the sentence a halt and a log say of it.
+function heldEnded(job) {
+  return (job.ends === 'dead' && DEAD_WHY[job.why]) || HELD_ENDS[job.ends] || 'it ended `' + job.ends + '`'
+}
 // HELD_TAKES — WHAT A STAGE HOLDS, AND WHICH ENDS IT TAKES (the header: HOW A STEP CAN END, a
 // held command). Any other end is a HALT that names the job — but for a held check, which
 // is then VOID BY A WORD (`heldVoid`): the stage goes on and records it, a run that counts.
@@ -921,7 +974,10 @@ function mayRun(job) {
 }
 // heldFault — a held command that did not end as the stage needs it, as the halt says it.
 function heldFault(what, job) {
-  return what + (job.name ? ' (the held command `' + job.name + '`)' : '') + ' did not end as the stage needs it: ' + (HELD_ENDS[job.ends] || 'it ended `' + job.ends + '`') + (job.why ? ' — `' + job.why + '`' : '') + '.'
+  // (No name was left to hold it under: every step that asked ANSWERED — with a job that was
+  // there already — so it is not said to be a step that did not answer.)
+  if (job.exhausted) return what + ' was not held: ' + job.why + '.'
+  return what + (job.name ? ' (the held command `' + job.name + '`)' : '') + ' did not end as the stage needs it: ' + heldEnded(job) + (job.why ? ' — `' + job.why + '`' : '') + '.'
 }
 // heldThen — what a halt over a held command says is to be done, where the command MAY
 // STILL RUN: it is nobody's to end, the one call that answers once it is over is named, and
@@ -1043,7 +1099,7 @@ const NEEDS = {
 // or the record is committed — and each says what the next invocation finishes.
 const HALTS_AFTER = {
   'names': { phase: 'state', when: 'a reporter name cannot be made for a step of an item the round runs: the item\'s id is too long to carry its step inside a slug' },
-  'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote. IN A RUN WITH A QUEUE, the same of the report check after a wave of verifiers: the first record is committed, and what was filed is on disk' },
+  'report-check': { phase: 'reports', when: 'the report check after the instruments could not be read — its step died, refused, or the breaker is tripped — or it names a file no launched reporter wrote. IN A RUN WITH A QUEUE, the same of the report check after a wave of verifiers: the first record is committed, and what was filed is on disk — and of the report check that comes before a record no wave came before, in an invocation that continues a stage only for its record: nothing was composed' },
   'scope-aside': { phase: 'scope', when: 'the round\'s scope was set aside by the report check: the file at its path is not what the record script would have written' },
   'stood-on': { phase: 'reports', when: 'a reporter the stage stands on left no report: the attempt\'s marker, the first preflight, the scope step, a second preflight that provided, the preflight of a finishing lap' },
   'triage': { phase: 'triage', when: 'ANY ending of triage but its grades with its report — no result, a halt, counts that do not balance, a key that is none or is given twice, no report — and, inside a pass, a verifier\'s name that cannot be made and a report check that could not be read. IN A RUN WITH A QUEUE, any ending of the one triage but its entries handed over, with their rendered report: a halt, a return that names another path than that report\'s or no hash, a call typed with other counts than the stage handed — and the same of the triage an invocation that continues such a stage launches over the rows nobody graded' },
@@ -1708,11 +1764,50 @@ function continueFault(a) {
 // nothing held; and `directory`, where every filed verdict of the round lies. Which of them
 // count is the state document's `filed`, in the file every return names (`named.document`):
 // no step relays a filing, and this script reads none.
-function limitSaid(ctx, last, counted, files, unconfirmed) {
+// THE HALT IS HANDED WHICH STEP HALTED (`step`, a row of LIMIT_STEPS; the scoped review before
+// the parts, its finding 3 in this script: the same sentences were appended at every step,
+// and said what was not so at most of them). What differs from step to step is three facts,
+// and each sentence is said only where it is true:
+//   `read`    whether the state was read AFTER the wave that was made the last. Where its
+//             report check or the read of the queue is the step that returned nothing, IT WAS
+//             NOT (`before`): the count is of before that wave, the state document the return
+//             names is that read's and lists nothing the wave filed — and the halt says so,
+//             and names THE ONE PLAIN CALL THAT PRINTS THE STATE AS IT STANDS NOW.
+//   `commit`  what became of the record's commit: `none` — no commit holds what was filed;
+//             `unknown` — the commit step itself returned nothing, and may have made it;
+//             `made` — committed, and local until the push that is owed; `pushed`. From
+//             `made` on the halt names the commit (`record`) and never says *in no commit*.
+//   WHAT THE NEXT INVOCATION DOES is said by this halt only where nothing else says it — the
+//   two steps before the record, where the stage is simply continued. From the composing step
+//   on, the record step's, the push's and the read-back's own sentence says it, and the halt
+//   carries that sentence (`recordThen`, `pushThen`, `halt`): there the first read finishes a
+//   batch or makes a push before anything is continued.
+const LIMIT_STEPS = {
+  'report-check': { step: 'the report check after that wave', read: 'before', commit: 'none' },
+  'queue': { step: 'the read of the queue after that wave', read: 'before', commit: 'none' },
+  'compose': { step: 'the step that composes the record', read: 'after', commit: 'none' },
+  'gate': { step: 'a step of the record\'s gate', read: 'after', commit: 'none' },
+  'commit': { step: 'the record\'s commit step', read: 'after', commit: 'unknown' },
+  'push': { step: 'the push of the record', read: 'after', commit: 'made' },
+  'read-back': { step: 'the read of the state after the record', read: 'after', commit: 'pushed' },
+}
+// (`record`: the commit of the record this invocation made after its waves, where it made one.)
+function limitSaid(ctx, last, counted, files, unconfirmed, step, record) {
+  const at = LIMIT_STEPS[step]
   const directory = runDir(ctx.run) + '/r' + ctx.round + '/verdicts'
+  const committed = at.commit === 'made' || at.commit === 'pushed'
+  const named = (files.length ? ' — of this invocation\'s verifiers: ' + files.join(', ') : ' — no verifier of this invocation filed one') + (unconfirmed.length ? '; returned as filed in the wave whose report check or whose read of the queue did not come back, and held by nothing: ' + unconfirmed.join(', ') : '')
+  const lies = 'each verdict that is filed is a file under ' + directory + '/ on this machine\'s disk' + named + '.'
+  const filed = committed ? ' WHAT WAS FILED IS NOT LOST, AND IS IN A COMMIT: the record this invocation made (' + record + ') took it' + (at.commit === 'pushed' ? ', and is pushed' : ' — a local commit until the push that is owed is made') + '. In that commit, ' + lies
+    : at.commit === 'unknown' ? ' WHAT WAS FILED IS NOT LOST: ' + lies + ' WHETHER A COMMIT HOLDS IT THIS SCRIPT CANNOT SAY — the commit step may have made its commit before it returned nothing: the next invocation\'s first read says which, and finishes the record either way.'
+      : ' WHAT WAS FILED IS NOT LOST, AND IS IN NO COMMIT YET: ' + lies
+  const state = at.read === 'before' ? ' THE STATE WAS LAST READ BEFORE THAT WAVE: it counted ' + counted + ' verdict(s) in round ' + ctx.round + ' then, and the state document this return names is that read\'s — it lists nothing wave ' + last.wave + ' filed. ' + typed(RECORD_TOOL, 'state --run ' + ctx.run) + ' prints the state as it stands now, on one line: every filed verdict, with whether it counts (`filed`).'
+    : ' The state counts ' + counted + ' verdict(s) in round ' + ctx.round + ', and the state document this return names lists every filed verdict with whether it counts (`filed`)' + (at.commit === 'none' ? '' : ' — as it was read before that record\'s commit: what it says of which record took a verdict (`recorded`) is of then') + '.'
+  const then = at.read === 'before' ? ' Wait for the window, then invoke the stage again with the same args: where the state\'s position still hands it the stage, it CONTINUES — no instrument, the filed verdicts taken as they stand, and only what is missing launched; where it does not, its return says why, and whichever record the run makes next takes what is filed.'
+    : ' Wait for the window, then invoke the stage again with the same args: what that invocation does first is said above, with this halt.'
   return {
-    more: { limit: { possible: true, wave: last.wave, silent: last.silent }, filed: { counted, files, unconfirmed, directory } },
-    says: ' THIS MAY BE THE ACCOUNT\'S USAGE LIMIT — this script cannot tell: a limit never reaches it as a message, it is handed nothing. ' + last.silent + ' verifier call(s) of wave ' + last.wave + ' returned nothing, so that wave was made the last, and then this step returned nothing too. WHAT WAS FILED IS NOT LOST, AND IS IN NO COMMIT YET: the state counts ' + counted + ' verdict(s) in round ' + ctx.round + ', and each one that is filed is a file under ' + directory + '/ on this machine\'s disk' + (files.length ? ' — of this invocation\'s verifiers: ' + files.join(', ') : ' — no verifier of this invocation filed one') + (unconfirmed.length ? '; returned as filed in the wave whose report check or whose read of the queue did not come back, and held by nothing: ' + unconfirmed.join(', ') : '') + '. The state document this return names lists every filed verdict with whether it counts (`filed`). Wait for the window, then invoke the stage again with the same args: where the state\'s position still hands it the stage, it CONTINUES — no instrument, the filed verdicts taken as they stand, and only what is missing launched; where it does not, nothing is left to verify, and the run\'s next record takes what is filed.',
+    more: { limit: { possible: true, wave: last.wave, silent: last.silent, step }, filed: { counted, read: at.read + '-the-wave', commit: at.commit, record: committed ? record : null, files, unconfirmed, directory } },
+    says: ' THIS MAY BE THE ACCOUNT\'S USAGE LIMIT — this script cannot tell: a limit never reaches it as a message, it is handed nothing. ' + last.silent + ' verifier call(s) of wave ' + last.wave + ' returned nothing, so that wave was made the last, and then ' + at.step + ' returned nothing too.' + filed + state + then,
   }
 }
 
@@ -1855,7 +1950,9 @@ function readDigest(r, act) {
 // where it is void; `dead`; or `unread`, where the step did not answer with a job. THE
 // VERDICT IS THE TOOL'S: nothing here judges, and no word of an agent is read.
 function heldOf(step, scratch) {
-  if (!step) return { ends: 'unread', why: 'the step returned no result' }
+  // (`silent`: the step returned NOTHING — what a halt that may be the account's limit is
+  // said of, and what a step that refused, or a command that still runs, is not.)
+  if (!step) return { ends: 'unread', why: 'the step returned no result', silent: true }
   if (step.status === 'halted') return { ends: 'unread', why: step.refused ? stepRefusal(step.refused) : step.relay || 'the step halted', refused: step.refused || null }
   // `fresh`: THIS call started the command — the tool answers `started` once per name, and
   // any other answer of a start is a job that was there before it asked.
@@ -1864,6 +1961,46 @@ function heldOf(step, scratch) {
   if (step.status === 'dead') return Object.assign({ ends: 'dead', why: step.why || null }, job)
   if (step.status === 'done' && ['green', 'red', 'void'].includes(step.verdict) && isText(step.verdict_file) && SHA256_RE.test(String(step.verdict_sha256))) return Object.assign({ ends: step.verdict, why: step.why || null, verdict: scratch + '/' + step.verdict_file, verdict_sha256: step.verdict_sha256, facts: plain(step.facts) ? step.facts : {} }, job)
   return Object.assign({ ends: 'unread', why: 'the step said `' + step.status + '` and named no verdict of the tool\'s' }, job)
+}
+// passedOver — WHETHER THE JOB THAT ANSWERED A START IS PASSED OVER FOR THE NEXT NAME — and by
+// which of the two reasons — or null, where it is the job this invocation holds (`hold`).
+// WHAT A START'S ANSWER SAYS OF WHO STARTED THE JOB (dev/stabilize-step: `hold-start`):
+// `started` — THIS call started it (`fresh`) — and with every other answer NOTHING: the job
+// was there, and the line names no call, no invocation and no moment this script could hold
+// it to (the job's record holds when its start wrote it; no line prints that, and this
+// script has no clock). Until the scoped review before the parts (its finding 1 in this
+// script) THE COUNT OF THE STEP'S TRIES stood in for that: what answered a start's RETRY was
+// taken as the job a dead first try of this invocation had started. It is that only
+// sometimes. Under a name two invocations share — a record's gate of the rulings of one
+// round (`record-rulings-r<N>`), of a pending batch (`record-pending`), and whatever stands
+// under a commit's name — it is as well AN EARLIER INVOCATION'S, and then a record was
+// committed and pushed behind a gate that never ran on its tree, or a round's record named a
+// red nobody measured in that attempt. SO THE ANSWER'S OWN WORD DECIDES, AND THE TRIES ONLY
+// IN THE ONE CELL WHERE NO WORD CAN:
+//   started (`fresh`)                this call's: the answer.
+//   an END — green, red, void, dead  NEVER the answer to a job the invocation must run itself,
+//                                    WHATEVER THE TRIES (`ended`): for a record's gate
+//                                    (`sequence`) every end; for what is named by its commit
+//                                    (`stands`) every end BUT GREEN — a green build, gate or
+//                                    check of that commit is the commit's, whoever asked.
+//   running                          `stands`: the answer — its wait is taken over.
+//                                    `sequence`: on the start's FIRST try an earlier
+//                                    invocation's, and passed over (`running`); on a RETRY the
+//                                    job the dead try started, and the answer — the cell the
+//                                    tries still decide, so that a gate of this tree that runs
+//                                    is not started a second time.
+//   unread                           no job answered: nothing is passed over.
+// THE COST is one more gate, build or check where a dead try's own job had ENDED before its
+// step was asked again — and a gate that ends inside a retry is one that did not run. WHAT
+// THE ONE CELL LEAVES OPEN: a gate of an earlier invocation that STILL RUNS under a shared
+// name when a start's first try returns nothing is taken as this one's. Under
+// `record-pending` that is a gate of the same applied batch; under `record-rulings-r<N>` it
+// takes a batch that was taken back while its gate ran.
+function passedOver(job, at, tries) {
+  if (at.ends === 'unread' || at.fresh) return null
+  if (at.ends === 'running') return job.sequence && tries < 2 ? 'running' : null
+  if (job.sequence) return 'ended'
+  return job.stands && at.ends !== 'green' ? 'ended' : null
 }
 
 // resultRows — what a `test` stage records of its items: ONE RESULT PER ITEM it ran, and
@@ -1977,6 +2114,12 @@ function recordThen(run, branch, word, discarded) {
   if (word === 'unvetted') return stands + (discarded === true ? ' THE BATCH IS TAKEN BACK ALREADY, and a report or a scope that was no such file has left the tree: nothing is pending, and no discard is asked for. Invoke the stage again: it reads the state as it stands and works the next attempt.' : ' The batch was NOT taken back — a file of it is in a commit already — and it is the human\'s: the step\'s own line says which file.')
   if (word === 'head-moved') return stands + ' Nothing was committed or undone: THE BATCH IS STILL APPLIED. Invoke the stage again: its first read meets the commit somebody made while the stage ran — one the remote lacks is its author\'s to push — then gates the batch on the tree as it now stands, and commits it there.' + takeBack
   if (word === 'no-gate') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree: its gate left no verdict, and no commit step ran. Invoke the stage again: that invocation holds the full gate on the batch once more, under the next name, commits and pushes it, and does nothing else.' + takeBack
+  // NO NAME IS LEFT FOR THE GATE OF A PENDING BATCH (`hold`: `exhausted`). Such a gate is held
+  // under `record-pending-<n>` whichever batch it is, a name is one command's for the life of
+  // a scratch root, and there are HOLD_NAMES of them: an invocation that finds them all taken
+  // would find them taken again. So this halt does NOT say that the next invocation gates the
+  // batch under the next name — there is none — and names the exit that works.
+  if (word === 'no-name') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree — AND NO NAME IS LEFT TO HOLD ITS GATE UNDER: the gate of a pending batch is held under one of ' + HOLD_NAMES + ' names for the life of a scratch root, a name is one command\'s, and every one of them holds a command already. INVOKING THE STAGE AGAIN CHANGES NOTHING: that invocation asks for the same names, and halts here. THE EXIT THAT WORKS is the batch taken back — the orchestrator\'s decision, a subagent\'s act: ' + discardCommand(run, branch) + ' asks git first, puts every table back as it was before the record step, and keeps the reports and the round\'s scope — and a filed verdict, which is no file of a batch. The stage invoked after that reads the state as it stands: what the batch recorded is recorded again by the step that owes it — a stage\'s record under its attempt\'s own name, the human\'s rulings by the invocation that carries them.'
   if (word === 'did-not-run' || word === 'locked') return stands + ' Everything is as it was: THE BATCH IS STILL APPLIED. Once what the refusal names is dealt with, invoke the stage again: that invocation gates the batch once more, commits and pushes it, and does nothing else.' + takeBack
   return stands + ' A record step that stopped may have left its batch APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: its first read says what is there. Where a batch is pending, that invocation runs the full gate on it once more, commits and pushes it, and does nothing else; where the commit was made and nothing else, it settles and pushes it; where none is, it reads the state as it stands and works the next attempt.' + takeBack
 }
@@ -2316,8 +2459,15 @@ function statePrompt(v, tag) {
 function beginPrompt(ctx, sha) {
   return stepPrompt('attempt ' + ctx.attempt + ' of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', begun on record: the state must hand the stage exactly this round and attempt, and the attempt\'s marker is written', 'begin', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --reporter ' + ATTEMPT + ' --commit ' + sha + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch))
 }
+// `names` null: THE VET ALONE — the report check's first half (dev/stabilize-step:
+// `check-reports`, WITHOUT A STAGE): every file of the run that is written once and in no
+// commit is vetted, and one that the record script would not have written is moved out of the
+// tree. What an invocation asks for before a record that names no stage's reporters — the
+// batch of the human's rulings. The call then names the run and the scratch root, and no
+// round, no stage, no attempt and no reporter: `ctx` is the invocation's arguments.
 function checkReportsPrompt(ctx, names) {
-  return stepPrompt('the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', stageFlags(ctx) + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch) + ' -- ' + names.join(' '))
+  const vet = names == null
+  return stepPrompt(vet ? 'what of the stabilization run `' + ctx.run + '` is written once and in no commit, VETTED before a record that names no stage\'s reporters — the batch of the human\'s rulings: a file there that the record script would not have written leaves the tree' : 'the reports of the `' + ctx.stage + '` stage of `' + ctx.run + '`, round ' + ctx.round + ', held to the reporters that were launched', 'check-reports', (vet ? '--run ' + ctx.run : stageFlags(ctx) + ' --attempt ' + ctx.attempt) + ' --scratch ' + ctx.scratch + ' ' + digestFlag(ctx.scratch) + (vet ? '' : ' -- ' + names.join(' ')))
 }
 function findRoundPrompt(v, round) {
   return stepPrompt('find the branch of round ' + round + ' of `' + v.run + '`', 'find-round', '--prefix ' + branchName(v.run, round) + ' ' + digestFlag(v.scratch))
@@ -2723,8 +2873,10 @@ function recordPrompt(v, what, branch, dir, round, calls, subject) {
 // pendingRecord — the record step of a batch an earlier invocation applied and did not
 // commit: NO EXECUTOR RUNS — nothing is applied and no table written — and what is left of
 // the step is its gate, held by the tool, and its one commit.
+// (`pending`: the gate of such a record is held under the ONE name every pending batch shares
+// — `recordStep` says so where no name is left of it.)
 function pendingRecord(dir, pending) {
-  return { text: null, hold: recordHold(dir), expect: { calls: pending.calls, checks: pending.checks } }
+  return { text: null, hold: recordHold(dir), pending: true, expect: { calls: pending.calls, checks: pending.checks } }
 }
 // stageRecordCommands — a stage's record, as the calls of its ONE batch: the reports checked
 // first, then the candidate's gate (a `test` stage's), then what each item did, then the
@@ -3148,8 +3300,32 @@ function selfTest() {
   check('an invocation continues a stage where the run has a queue and the position says `triage`, `verify` or `filed` — worked in that order — and nowhere else', JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true })) === '["verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, verify: true, triage: true })) === '["triage","verify"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, triage: true })) === '["triage"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, filed: true })) === '["filed"]' && JSON.stringify(continuing(withQueue, { round: 2, attempt: 2, filed: true, verify: true, triage: true })) === '["triage","verify","filed"]' && continuing({ queue: null }, { round: 2, attempt: 2, filed: true }).length === 0 && continuing(withQueue, { round: 3, attempt: 1 }).length === 0 && continuing(withQueue, { round: 2, attempt: 2, rerun: { clause: 'c' } }).length === 0 && continuing({ queue: null }, { round: 2, attempt: 2, triage: true }).length === 0 && continuing({}, { round: 2, attempt: 2, verify: true }).length === 0)
   check('an invocation that continues takes no scope, clause or cross-model pass, and is stopped after nothing but its first read', continueFault(base) === null && continueFault(Object.assign({}, base, { stopAfter: 'state' })) === null && [['scope', 'everything'], ['clause', 'no-lost-files'], ['crossModel', ['row-3']]].every(([name, value]) => isText(continueFault(Object.assign({}, base, { [name]: value }))) && continueFault(Object.assign({}, base, { [name]: value })).endsWith('it was passed ' + name)) && ['preflight', 'instruments', 'triage'].every((stop) => continueFault(Object.assign({}, base, { stopAfter: stop })).endsWith('it was passed stopAfter: \'' + stop + '\'')))
   check('two verifier calls of one wave that return nothing make it the last', SILENT_LAST === 2)
-  const limit = limitSaid(tested, { wave: 3, silent: 2 }, 7, [verdictFile(tested, filer)], [verdictFile(tested, 'verify-f-2')])
-  check('a halt that may be the account\'s limit says what it saw and never that it is one, and names the filed verdicts: the state\'s count, each path, what nothing held, and where they lie', JSON.stringify(limit.more) === JSON.stringify({ limit: { possible: true, wave: 3, silent: 2 }, filed: { counted: 7, files: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json'], unconfirmed: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json'], directory: 'completions/artifacts/rc24-tier1/r2/verdicts' } }) && limit.says.includes('THIS MAY BE THE ACCOUNT\'S USAGE LIMIT') && limit.says.includes('2 verifier call(s) of wave 3 returned nothing') && limit.says.includes('the state counts 7 verdict(s) in round 2') && limit.says.includes('held by nothing: completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json') && limit.says.includes('it CONTINUES') && limitSaid(tested, { wave: 1, silent: 8 }, 0, [], []).says.includes('no verifier of this invocation filed one') && !limitSaid(tested, { wave: 1, silent: 8 }, 0, [], []).says.includes('held by nothing'))
+  // THE LIMIT'S HALT, AT EACH OF THE SEVEN STEPS IT CAN BE OF (LIMIT_STEPS): what it names, and
+  // that every sentence it says is one that is so at that step — and no sentence that is not.
+  const limitAt = (step, record) => limitSaid(tested, { wave: 3, silent: 2 }, 7, [verdictFile(tested, filer)], [verdictFile(tested, 'verify-f-2')], step, record || null)
+  const limit = limitAt('compose')
+  check('a halt that may be the account\'s limit says what it saw and never that it is one, and names the filed verdicts: the state\'s count, each path, what nothing held, and where they lie', JSON.stringify(limit.more) === JSON.stringify({ limit: { possible: true, wave: 3, silent: 2, step: 'compose' }, filed: { counted: 7, read: 'after-the-wave', commit: 'none', record: null, files: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json'], unconfirmed: ['completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json'], directory: 'completions/artifacts/rc24-tier1/r2/verdicts' } }) && limit.says.includes('THIS MAY BE THE ACCOUNT\'S USAGE LIMIT') && limit.says.includes('2 verifier call(s) of wave 3 returned nothing') && limit.says.includes('The state counts 7 verdict(s) in round 2') && limit.says.includes('held by nothing: completions/artifacts/rc24-tier1/r2/verdicts/verify-f-2.a4.json') && limitSaid(tested, { wave: 1, silent: 8 }, 0, [], [], 'queue', null).says.includes('no verifier of this invocation filed one') && !limitSaid(tested, { wave: 1, silent: 8 }, 0, [], [], 'queue', null).says.includes('held by nothing'))
+  check('the limit\'s halt can be of seven steps, each with whether the state was read after the wave and what became of the record\'s commit', JSON.stringify(Object.keys(LIMIT_STEPS)) === JSON.stringify(['report-check', 'queue', 'compose', 'gate', 'commit', 'push', 'read-back']) && JSON.stringify(Object.keys(LIMIT_STEPS).map((step) => [LIMIT_STEPS[step].read, LIMIT_STEPS[step].commit])) === JSON.stringify([['before', 'none'], ['before', 'none'], ['after', 'none'], ['after', 'none'], ['after', 'unknown'], ['after', 'made'], ['after', 'pushed']]) && Object.keys(LIMIT_STEPS).every((step) => isText(LIMIT_STEPS[step].step) && limitAt(step, 'c'.repeat(40)).says.includes('and then ' + LIMIT_STEPS[step].step + ' returned nothing too.')))
+  const stateNowCall = '`dev/stabilize-record state --run rc24-tier1` prints the state as it stands now'
+  check('before a read after the wave the halt says that the named document predates the wave, and names the one plain call that prints the state now — and after one it does not', ['report-check', 'queue'].every((step) => limitAt(step).says.includes('THE STATE WAS LAST READ BEFORE THAT WAVE: it counted 7 verdict(s) in round 2 then') && limitAt(step).says.includes('it lists nothing wave 3 filed') && limitAt(step).says.includes(stateNowCall) && !limitAt(step).says.includes('lists every filed verdict') && limitAt(step).more.filed.read === 'before-the-wave') && ['compose', 'gate', 'commit', 'push', 'read-back'].every((step) => !limitAt(step, 'c'.repeat(40)).says.includes('BEFORE THAT WAVE') && !limitAt(step, 'c'.repeat(40)).says.includes(stateNowCall) && limitAt(step, 'c'.repeat(40)).says.includes('the state document this return names lists every filed verdict with whether it counts (`filed`)') && limitAt(step, 'c'.repeat(40)).more.filed.read === 'after-the-wave'))
+  check('the halt says *in no commit yet* only where no commit can hold what was filed; where the commit step returned nothing it says that it cannot tell; and from the push on it names the commit', ['report-check', 'queue', 'compose', 'gate'].every((step) => limitAt(step).says.includes('WHAT WAS FILED IS NOT LOST, AND IS IN NO COMMIT YET: ') && limitAt(step).more.filed.commit === 'none' && limitAt(step).more.filed.record === null) && !limitAt('commit').says.includes('IN NO COMMIT YET') && !limitAt('commit').says.includes('IS IN A COMMIT') && limitAt('commit').says.includes('WHETHER A COMMIT HOLDS IT THIS SCRIPT CANNOT SAY') && limitAt('commit').more.filed.commit === 'unknown' && limitAt('commit', 'c'.repeat(40)).more.filed.record === null && ['push', 'read-back'].every((step) => !limitAt(step, 'c'.repeat(40)).says.includes('IN NO COMMIT YET') && limitAt(step, 'c'.repeat(40)).says.includes('WHAT WAS FILED IS NOT LOST, AND IS IN A COMMIT: the record this invocation made (' + 'c'.repeat(40) + ') took it') && limitAt(step, 'c'.repeat(40)).more.filed.record === 'c'.repeat(40)) && limitAt('push', 'c'.repeat(40)).says.includes('a local commit until the push that is owed is made') && !limitAt('push', 'c'.repeat(40)).says.includes('and is pushed') && limitAt('read-back', 'c'.repeat(40)).says.includes(', and is pushed.') && ['commit', 'push', 'read-back'].every((step) => limitAt(step, 'c'.repeat(40)).says.includes('as it was read before that record\'s commit')) && ['compose', 'gate'].every((step) => !limitAt(step).says.includes('as it was read before that record\'s commit')))
+  check('the halt says that the stage is continued only at the two steps before its record: from the composing step on, what the next invocation does first is the record step\'s, the push\'s and the read-back\'s own sentence', ['report-check', 'queue'].every((step) => limitAt(step).says.includes('it CONTINUES') && limitAt(step).says.endsWith('whichever record the run makes next takes what is filed.')) && ['compose', 'gate', 'commit', 'push', 'read-back'].every((step) => !limitAt(step, 'c'.repeat(40)).says.includes('it CONTINUES') && limitAt(step, 'c'.repeat(40)).says.endsWith('what that invocation does first is said above, with this halt.')))
+  // WHICH JOB ANSWERS A START (`passedOver`): the whole table — what the tool's answer says, by
+  // what is held, by how often the start step was tried.
+  const aRecordsGate = { sequence: true }
+  const byItsCommit = { stands: true }
+  const oneName = {}
+  const answered = (ends, fresh) => ({ ends, fresh: fresh === true })
+  const overOf = (job, ends, tries, fresh) => passedOver(job, answered(ends, fresh), tries)
+  check('a job that answers a start as ENDED is never the answer for a record\'s gate, whatever the tries; for what is named by its commit only green is', ['green', 'red', 'void', 'dead'].every((ends) => [1, 2, 3].every((tries) => overOf(aRecordsGate, ends, tries) === 'ended')) && ['red', 'void', 'dead'].every((ends) => [1, 2, 3].every((tries) => overOf(byItsCommit, ends, tries) === 'ended')) && [1, 2, 3].every((tries) => overOf(byItsCommit, 'green', tries) === null))
+  check('a job that still runs is passed over for a record\'s gate on the start\'s first try, is the dead try\'s own on a retry, and is taken over for what is named by its commit', overOf(aRecordsGate, 'running', 1) === 'running' && overOf(aRecordsGate, 'running', 2) === null && overOf(aRecordsGate, 'running', 3) === null && [1, 2].every((tries) => overOf(byItsCommit, 'running', tries) === null))
+  check('the job this call started, and a start that was not read, are never passed over — and a hold of one name passes nothing over', [aRecordsGate, byItsCommit, oneName].every((job) => [1, 2].every((tries) => overOf(job, 'running', tries, true) === null && overOf(job, 'unread', tries) === null)) && ['running', 'green', 'red', 'void', 'dead'].every((ends) => [1, 2].every((tries) => overOf(oneName, ends, tries) === null)))
+  check('a name without a record is said to be what the tool\'s answer says of it — never that its command\'s process is gone', heldEnded({ ends: 'dead', why: 'no-record' }).includes('MAY STILL RUN') && !heldEnded({ ends: 'dead', why: 'no-record' }).includes('process is gone') && heldEnded({ ends: 'dead', why: 'no-record' }).includes('`supervised`') && heldEnded({ ends: 'dead', why: 'no-exit' }) === HELD_ENDS.dead && heldEnded({ ends: 'dead', why: 'killed' }) === HELD_ENDS.dead && heldEnded({ ends: 'red' }) === HELD_ENDS.red && heldFault('the candidate\'s binary', { name: 'build-c1', ends: 'dead', why: 'no-record' }).includes('MAY STILL RUN') && JSON.stringify(Object.keys(DEAD_WHY)) === '["no-record"]')
+  check('a step that returned nothing is told from one that answered: only the first is what the limit\'s halt is said of', heldOf(null, '/tmp/scratch-1').silent === true && heldOf({ status: 'halted', refused: 'taken' }, '/tmp/scratch-1').silent === undefined && heldOf({ status: 'running', name: 'g', kind: 'gate' }, '/tmp/scratch-1').silent === undefined)
+  const noNameSaid = recordThen('rc24-tier1', 'fix/rc24-tier1', 'no-name')
+  check('where no name is left for a pending batch\'s gate the halt says so, never that the next invocation gates it under the next name, and names the exit that works', noNameSaid.includes('NO NAME IS LEFT TO HOLD ITS GATE UNDER') && noNameSaid.includes('one of ' + HOLD_NAMES + ' names') && noNameSaid.includes('INVOKING THE STAGE AGAIN CHANGES NOTHING') && noNameSaid.includes('`dev/stabilize-step discard --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1`') && !noNameSaid.includes('under the next name') && !noNameSaid.includes('once more') && recordThen('rc24-tier1', 'fix/rc24-tier1', 'no-gate').includes('under the next name') && heldFault('the record\'s gate', { name: 'record-pending-9', ends: 'unread', exhausted: true, why: 'none is left' }) === 'the record\'s gate was not held: none is left.' && pendingRecord('/tmp/scratch-1/record/pending', { calls: 2, checks: 1 }).pending === true && pendingRecord('/tmp/scratch-1/record/pending', { calls: 2, checks: 1 }).hold === 'record-pending')
+  const vetText = checkReportsPrompt(base, null)
+  check('the vet before a record of rulings is the report check without a stage: one plain call that names the run and the scratch root, and no round, stage, attempt or reporter', vetText.includes('1. `dev/stabilize-step check-reports --run rc24-tier1 --scratch /tmp/scratch-1 --digest /tmp/scratch-1`') && !vetText.includes('--round') && !vetText.includes('--stage') && !vetText.includes('--attempt') && !vetText.includes(' -- '))
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
@@ -3509,21 +3685,23 @@ async function toolStep(label, phaseTitle, act, prompt, seen) {
 // — a build, the candidate's gate, a held check — `stands`.
 //   THE START is one plain call, and IDEMPOTENT BY NAME: a start step whose agent died is
 //   asked for again as its one command, and the tool answers with the job that is there —
-//   nothing is started twice. With `sequence` the name is `<name>-<n>`: where the FIRST try
-//   of a start is answered by a job that was there already, that job is an EARLIER
-//   INVOCATION'S — a gate of the tree as it stood then — and the next name is asked.
-//   With `stands` the name is the commit's, and A JOB THAT WAS THERE IS THE ANSWER while it
-//   runs — its wait is taken over — or where its verdict is green: nothing is built, gated
-//   or checked twice for one commit. One that ended red, void or dead IS PASSED OVER, and
-//   the next name is asked — `<name>-2`, `<name>-3`, … — so that a red a starved machine
-//   left is measured again and a dead job is never the answer for ever. `flags` may then be
-//   a function of the name's number: what is written under a name is written once.
+//   nothing is started twice. WHICH ANSWER OF A START IS THE JOB THIS INVOCATION HOLDS, AND
+//   WHICH IS PASSED OVER FOR THE NEXT NAME, is one table (`passedOver`). With `sequence` the
+//   name is `<name>-<n>`: a job that answers a start as one that was there is an EARLIER
+//   INVOCATION'S — a gate of the tree as it stood then — and the next name is asked. With
+//   `stands` the name is the commit's, and A JOB THAT WAS THERE IS THE ANSWER while it runs
+//   — its wait is taken over — or where its verdict is green: nothing is built, gated or
+//   checked twice for one commit. One that ended red, void or dead IS PASSED OVER, and the
+//   next name is asked — `<name>-2`, `<name>-3`, … — so that a red a starved machine left
+//   is measured again and a dead job is never the answer for ever. `flags` may then be a
+//   function of the name's number: what is written under a name is written once.
 //   THE WAIT is one plain call an agent runs again while the tool says `running`. A WAIT
 //   WHOSE AGENT DIED IS TAKEN OVER, never started again: the step's retry is the wait, and
 //   the command, which outlives every agent, ran once. An agent whose turn ended on
 //   `running` is followed by the next, HOLD_LAPS in turn.
 // It returns how the command stands — `running` and `unread` among them, with `started`:
-// whether a command of this name is there, and may still run.
+// whether a command of this name is there, and may still run; and `exhausted` where every
+// name the job may be held under answered as taken already: none is left under this root.
 async function hold(job) {
   let started = null
   let name = job.name
@@ -3534,19 +3712,16 @@ async function hold(job) {
     if (!isSlug(name)) return { ends: 'unread', kind: job.kind, why: 'no name of a held command can be made of `' + name + '`: it must be a slug of at most ' + SLUG_MAX + ' characters' }
     const seen = { tries: 0 }
     const at = heldOf(await toolStep('hold-start:' + name, job.phase, 'hold-start', holdStartPrompt(v, name, job.kind, typeof job.flags === 'function' ? job.flags(n) : job.flags, job.what), seen), v.scratch)
-    if (job.sequence && at.ends !== 'unread' && !at.fresh && seen.tries < 2) {
-      log('the held command `' + name + '` was there before this invocation asked for it — an earlier invocation\'s, ' + at.ends + ': it is not read as this one\'s, and the next name is asked')
-      continue
-    }
-    // (A start that started the command answers `running`: an end is a job that was there.
-    // One that a dead try of THIS start left is this invocation's own, and is its answer.)
-    if (job.stands && ['red', 'void', 'dead'].includes(at.ends) && seen.tries < 2) {
-      log('the held command `' + name + '` was there before this invocation asked for it, and ended ' + at.ends + ': it is passed over — a job that stands is the answer only while it runs or where it is green — and the next name is asked')
+    const over = passedOver(job, at, seen.tries)
+    if (over) {
+      log(over === 'running'
+        ? 'the held command `' + name + '` was running before this invocation asked for it — an earlier invocation\'s: it is not read as this one\'s, and the next name is asked'
+        : 'the held command `' + name + '` answered its start as one that had ended already (' + at.ends + (at.why ? ', `' + at.why + '`' : '') + ') — this call did not start it, and the tool does not say which call did: ' + (job.sequence ? 'it is not read as the gate of this record\'s tree' : 'it is passed over — a job that stands is the answer only while it runs or where it is green') + ', and the next name is asked')
       continue
     }
     started = at
   }
-  if (!started) return { ends: 'unread', name, kind: job.kind, why: 'every name from `' + job.name + (job.sequence ? '-1' : '') + '` to `' + name + '` holds a command of an earlier invocation under this scratch root' + (job.stands ? ', each ended red, void or dead' : '') }
+  if (!started) return { ends: 'unread', name, kind: job.kind, exhausted: true, why: 'every name from `' + job.name + (job.sequence ? '-1' : '') + '` to `' + name + '` answered its start with a command that was there already under this scratch root' + (job.stands ? ', each ended red, void or dead' : '') + ': a name is one command\'s, and none is left' }
   // A start the tool REFUSED started nothing; one whose agent returned nothing, or whose
   // line did not come back, may have.
   if (started.ends === 'unread') return Object.assign({ name, kind: job.kind }, started, { started: !started.refused })
@@ -3674,6 +3849,17 @@ async function settleReports(ctx, launch, label, phaseTitle) {
   for (const name of read.missing || []) launch.drop(name)
   return read
 }
+// asideSaid — WHAT A REPORT CHECK SET ASIDE, AS LINES OF THE LOG: each file that left the tree
+// because the record script would not have written it there, by its path and the word of
+// what refused it — a file a hand, an editor or a file browser left among a round's filed
+// verdicts or beside a stage's reports, where the check comes before a record and no
+// reporter of the invocation is there for the caller to say it of.
+function asideSaid(aside) {
+  for (const moved of aside) {
+    if (!plain(moved) || typeof moved.path !== 'string') continue
+    log('SET ASIDE by the report check: `' + moved.path + '` (`' + String(moved.why) + '`) — the file is not what `' + RECORD_TOOL + '` would have written at its path, and it left the tree for the scratch root: the step\'s own line says where it lies now')
+  }
+}
 
 // recordFault — why a record is NOT accepted as recorded, or null. What is accepted is the
 // commit step's own line — held to its hash by `readStep` — and nothing an agent says of
@@ -3714,15 +3900,20 @@ async function recordStep(label, branch, rec) {
   }
   // A RECORD'S GATE WITH NO VERDICT — void, dead, or nobody left to ask after it: nothing
   // is committed, THE BATCH STAYS APPLIED, and the next invocation gates it again, under
-  // the next name.
+  // the next name — the name of a pending batch's gate (`finishRecord`). WHERE THIS IS THAT
+  // GATE AND NO NAME IS LEFT OF IT (`exhausted`), there is no next name, and the halt says so
+  // and names the exit that works (`recordThen`: `no-name`).
+  // (`at`, `silent`: which step of the record it was, and whether that step RETURNED NOTHING
+  // — what a halt that may be the account's limit is said of, `limitSaid`.)
   const gate = await hold({ name: rec.hold, sequence: true, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate on the tree with the records', phase: 'Record' })
-  if (!HELD_TAKES.record.includes(gate.ends)) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: gate.ends === 'unread' || gate.ends === 'running', held: heldSaid(gate), then: recordThen(v.run, branch, 'no-gate') + (heldThen(v.scratch, gate) || '') }
+  if (gate.exhausted) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: false, at: 'gate', silent: false, held: heldSaid(gate), then: recordThen(v.run, branch, rec.pending ? 'no-name' : 'no-gate') }
+  if (!HELD_TAKES.record.includes(gate.ends)) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: gate.ends === 'unread' || gate.ends === 'running', at: 'gate', silent: gate.silent === true, held: heldSaid(gate), then: recordThen(v.run, branch, 'no-gate') + (heldThen(v.scratch, gate) || '') }
   const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead))
   const found = recordFault(r, rec.expect)
   if (!found) return { result: r }
   const fault = found.replace('<branch>', branch)
   const word = r && typeof r.refused === 'string' ? r.refused : null
-  return { fault, result: r, transient: !r, refused: word, step: stepFile(r), gate: r && plain(r.gate) ? r.gate : null, then: recordThen(v.run, branch, word, r ? r.discarded : null) }
+  return { fault, result: r, transient: !r, at: 'commit', silent: !r, refused: word, step: stepFile(r), gate: r && plain(r.gate) ? r.gate : null, then: recordThen(v.run, branch, word, r ? r.discarded : null) }
 }
 // composeRecord — THE FIRST ACT OF A RECORD THE TOOL COMPOSES, IN A RUN WITH A QUEUE: ONE
 // step of the tool (`compose`), handed the plain words and the sha256 of their canonical
@@ -4087,36 +4278,63 @@ async function verifyWaves(ctx, launch, built, from) {
 //   a record of nothing but its own attempt would make every such invocation one that
 //   reached its record, and the loop would have no counter. Every other refusal halts the
 //   stage at its record.
+//   THE REPORT CHECK COMES BEFORE THE RECORD: a wave's own, after every wave — and, where no
+//   wave ran and a record is composed all the same, one asked for here, before the composing
+//   step (the header: REPORTS).
 //   A HALT AFTER A WAVE THAT WAS THE LAST FOR ITS SILENCE, OF A STEP THAT RETURNED NOTHING
 //   TOO, SAYS THAT IT MAY BE THE ACCOUNT'S LIMIT, AND NAMES THE FILED VERDICTS (`limitSaid`):
 //   the wave's own report check, the read of the queue, the composing step, the record's
-//   gate and its commit, the push, the read-back. A step that REFUSED is no such halt.
+//   gate and its commit, the push, the read-back — AND IS HANDED WHICH OF THE SEVEN IT WAS,
+//   so that what it says is so at that step. A step that REFUSED is no such halt, and
+//   neither is a gate that still runs: both answered.
 // It returns `halted` — the halt, whole — or the state as it was last read, `second`: the
 // commit of the record it made, or null; and `verify`: WHAT THE PHASE DID, AS COUNTS.
 async function verifyThenRecord(ctx, launch, built, from, made) {
   phase('Verify')
   const spent = from.queue.spent
   const ver = await verifyWaves(ctx, launch, built, from)
-  const said = ver.last ? limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed) : null
-  const limited = (h) => (said && h.halted.transient ? Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says }) : h)
-  if (ver.fault && ver.unread) return { halted: limited(haltAfter('read-back', made.says + ', wave ' + ver.waves + ' of its verifiers ran, and the queue could not be read after it: ' + ver.fault + '. What a verifier filed is on disk, and the state counts it', { transient: !!ver.transient, step: ver.step, launched: launch.names })) }
-  if (ver.fault) return { halted: limited(haltAfter('report-check', 'after wave ' + ver.waves + ' of the stage\'s verifiers ' + ver.fault + '. ' + made.says.charAt(0).toUpperCase() + made.says.slice(1) + ', and what a verifier filed is on disk', { transient: !!ver.transient, step: ver.step, launched: launch.names })) }
+  // `limited` — A HALT OF THE PHASE OR OF ITS RECORD, AS ONE THAT MAY BE THE ACCOUNT'S LIMIT:
+  // only after a wave that was made the last for its silence, and only where THE STEP THAT
+  // HALTED RETURNED NOTHING (`silent` — a step that refused, and a gate that still runs,
+  // answered). It is handed WHICH STEP that was (`step`, a row of LIMIT_STEPS) and, from the
+  // push on, the commit the record made: what the halt says of the filed verdicts, of the
+  // state document and of the next invocation is true at that step, or is not said.
+  const limited = (h, step, silent, record) => {
+    if (!ver.last || !silent) return h
+    const said = limitSaid(ctx, ver.last, ver.state.queue.spent, ver.filings, ver.unconfirmed, step, record || null)
+    return Object.assign(h, { halted: Object.assign(h.halted, said.more), message: h.message + said.says })
+  }
+  if (ver.fault && ver.unread) return { halted: limited(haltAfter('read-back', made.says + ', wave ' + ver.waves + ' of its verifiers ran, and the queue could not be read after it: ' + ver.fault + '. What a verifier filed is on disk, and the state counts it', { transient: !!ver.transient, step: ver.step, launched: launch.names }), 'queue', !!ver.transient) }
+  if (ver.fault) return { halted: limited(haltAfter('report-check', 'after wave ' + ver.waves + ' of the stage\'s verifiers ' + ver.fault + '. ' + made.says.charAt(0).toUpperCase() + made.says.slice(1) + ', and what a verifier filed is on disk', { transient: !!ver.transient, step: ver.step, launched: launch.names }), 'report-check', !!ver.transient) }
   let state = ver.state
   let second = null
   const records = made.commit ? ver.launched > 0 : made.owed || launch.names.some((name) => name !== ATTEMPT)
   if (!records && !made.commit) log('NOTHING TO RECORD: no verifier of this invocation left a report, and no filed verdict is owed a record — so no record is composed, and attempt ' + ctx.attempt + ' is one that left its marker and no record. The record script counts those: after two in a row the stage is the human\'s, who grants one more')
   if (records) {
     phase('Record')
+    // THE REPORT CHECK COMES BEFORE THE RECORD, IN THIS INVOCATION (the header: REPORTS; the
+    // scoped review before the parts, its finding 2 in this script). After a wave it is that
+    // wave's own. WHERE NO WAVE RAN — an invocation that continues a stage for its record
+    // alone (`filed`): the queue printed no key, or the budget has nothing left — nothing of
+    // this invocation had checked the reports, and the composing step was the first to meet
+    // a file the tools did not write: refused (`check`), at this and at every later
+    // invocation, until the stage's attempts were spent. So the check is asked for HERE, over
+    // the attempt's own reporters: what the tools can set aside leaves the tree first.
+    if (!ver.waves) {
+      const settled = await settleReports(ctx, launch, 'check-reports:filed', 'Record')
+      if (settled.fault) return { halted: limited(haltAfter('report-check', 'before the record of what was filed — no verifier was launched, so no wave\'s report check had come before it — ' + settled.fault + '. Nothing was composed, and what was filed is on disk', { transient: !!settled.transient, step: settled.file ? { file: v.scratch + '/' + settled.file.file, sha256: settled.file.sha256 } : null, launched: launch.names }), 'report-check', false) }
+      asideSaid(settled.aside)
+    }
     const again = await composeRecord('verdicts:r' + ctx.round, loopBranch, ctx, v.scratch + '/record/verdicts-r' + ctx.round + '-a' + ctx.attempt, 'docs(record): ' + subjectOf(v.run, ctx.round, 'the verdicts of the test stage'), launch.names.map((name) => 'reporter=' + name))
-    if (again.fault && again.refusal !== NO_CHANGE) return { halted: limited(recordHalt('record', again, { refusal: again.refusal || null, launched: launch.names, first: made.commit })) }
+    if (again.fault && again.refusal !== NO_CHANGE) return { halted: limited(recordHalt('record', again, { refusal: again.refusal || null, launched: launch.names, first: made.commit }), 'compose', !!again.transient) }
     if (again.fault) log('NOTHING TO RECORD after the verifiers: the record script refused the record as one that changes nothing (`' + NO_CHANGE + '`) — no verdict was filed since the record before it, and no batch is left. That is no halt')
     else {
       const taken = await recordStep('verdicts:r' + ctx.round, loopBranch, again.rec)
-      if (taken.fault) return { halted: limited(recordHalt('record', taken, { launched: launch.names, first: made.commit })) }
+      if (taken.fault) return { halted: limited(recordHalt('record', taken, { launched: launch.names, first: made.commit }), taken.at, taken.silent === true) }
       const published = await pushRecord('push:verdicts', loopBranch)
-      if (!onIt(published, loopBranch, true)) return { halted: limited(pushHalt(published, loopBranch, 'the record of what the verifiers filed is committed on ' + loopBranch + ' (' + taken.result.commit + ') and the branch was not pushed')) }
+      if (!onIt(published, loopBranch, true)) return { halted: limited(pushHalt(published, loopBranch, 'the record of what the verifiers filed is committed on ' + loopBranch + ' (' + taken.result.commit + ') and the branch was not pushed'), 'push', !published, taken.result.commit) }
       const after = await readState()
-      if (!after.state) return { halted: limited(haltAfter('read-back', 'the record of what the verifiers filed is committed and pushed (' + taken.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null })) }
+      if (!after.state) return { halted: limited(haltAfter('read-back', 'the record of what the verifiers filed is committed and pushed (' + taken.result.commit + '), and the state could not be read back: ' + after.error, { transient: !!after.transient, step: after.step || null }), 'read-back', !!after.transient, taken.result.commit) }
       state = after.state
       second = taken.result.commit
     }
@@ -4312,6 +4530,23 @@ async function ruleTheRun(state, checkedOut) {
   // The round a finding's passes are counted in, and the round each stage is spent in.
   const stages = {}
   for (const h of state.human_stages || []) stages[h.stage] = h.round
+  // THE REPORT CHECK'S VET COMES BEFORE THE BATCH OF THE RULINGS, IN A RUN WITH A QUEUE (the
+  // header: REPORTS; the scoped review before the parts, its finding 2 in this script). Every
+  // batch takes what was filed first — a ruling's too — so a file a hand left among a round's
+  // filed verdicts refused the batch where it is applied (`check`), at every invocation; and
+  // one beside a stage's reports, a pending path of such a run, was staged by the commit step
+  // and refused by its vet: the batch taken back, one whole gate spent, and the ruling to be
+  // sent again. A record of rulings names no stage's reporters, so what it is preceded by is
+  // the check's first half alone: what the tools can set aside leaves the tree before
+  // anything is applied. A RUN WITHOUT AN ORDER RECORDS ITS RULINGS AS IT DID: nothing is
+  // filed there, and the record script names no stray file of it as pending.
+  if (hasQueue(state)) {
+    phase('Record')
+    const vetted = await toolStep('check-reports:rulings', 'Record', 'check-reports', checkReportsPrompt(v, null))
+    if (!vetted || vetted.status !== 'vetted' || !Array.isArray(vetted.aside)) return gitHalt('reports', vetted, 'the rulings were not recorded: the report check\'s vet, which comes before their batch, did not answer with what it set aside — nothing was applied')
+    log('the report check\'s vet, before the batch of the rulings: ' + (Number.isInteger(vetted.vetted) ? vetted.vetted : 'the') + ' pending file(s) of the run vetted, ' + vetted.aside.length + ' set aside')
+    asideSaid(vetted.aside)
+  }
   const ruled = await rulingsStep((about && state.stop ? state.stop.round : state.round) || 0, loopBranch, ran, { round: state.round, stages })
   if (ruled.halted) return ruled.halted
   return Object.assign({ status: 'ruled', stage: v.stage, run: v.run, rulings: v.rulings, record: ruled.record, message: 'the human\'s rulings ' + (about ? 'about the run' : 'on the round\'s findings and bounds') + ' are recorded, and nothing was started: `next` names the step.' }, nextOf(ruled.state))
@@ -4601,7 +4836,7 @@ async function runTest() {
     }
     heldRan.push(Object.assign({ item: i.item }, await hold({ name: i.item + '-' + sha.slice(0, 12) + '-a' + runOf(i), stands: true, kind, flags: regressionFlags(previousOf(state).commit, sha), what: 'the held check `' + i.item + '`: the regression set, the previous release against the candidate', phase: 'Preflight and scope' })))
   }
-  for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('VOID BY A WORD: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : (HELD_ENDS[h.ends] || h.ends) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It left no verdict, and is recorded void — `' + heldVoid(h) + '` — a run that counts')
+  for (const h of heldRan.filter((x) => !HELD_TAKES.check.includes(x.ends))) log('VOID BY A WORD: the held check `' + h.item + '` — ' + (h.ends === 'not-run' ? 'a gate reads the working tree, which is no longer the round\'s candidate: it is not run again inside its round' : heldEnded(h) + (h.why ? ' (`' + h.why + '`)' : '')) + '. It left no verdict, and is recorded void — `' + heldVoid(h) + '` — a run that counts')
   const needsImage = hunting.some((i) => chainOf(i.kind, false).some((stepList) => stepList.some((s) => s.image)))
   let checks = pre.result.checks || []
   // The second preflight: the trial image, and the checks the scope selected. One that did
