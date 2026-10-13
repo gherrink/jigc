@@ -6,14 +6,14 @@
 # of the owed list in the suite. The ruling is the human's of 2026-10-12 — only the writing
 # commands the fix pass touched are piloted now, the rest before the port (`DECISIONS.md` →
 # *The reshaped `test` stage is run for real in parts*, ruling 3) — and which leaves the pass
-# touched is a count the plan made by script (`…/reshape/byte-table-plan.md` → §1.4): 28 of
-# 36, with these eight outside it. The plan's task `B3` reads each of the eight against its
-# handler and commits the count; a line leaves this file in the commit that brings its row.
-ingest	the plan's script counts it untouched since the previous release — and the plan's own reading finds it one step from a changed function (`FileStateRecord::load` and `::save`); `B3` reads it against its handler
-unmanage	the plan's script counts it untouched since the previous release — and the plan's own reading finds it one step from a changed function (`FileStateRecord::load` and `::save`); `B3` reads it against its handler
-task bind	the plan's script counts it untouched since the previous release: its one edge to a changed function is a name two files share; `B3` reads it against its handler
-config insert-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
-config replace-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
-config remove-step	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
-config fill	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
-config fork	the plan's script counts it untouched since the previous release: no edge to a changed function was found; `B3` reads it against its handler
+# touched is a committed count, each leaf read against its handler
+# (`…/reshape/byte-table-leaves-touched-since-rc24.md`): 30 of 36 under the plan's rule, with
+# these six outside it. `byte_table::every_scheduled_leaf_is_one_the_count_holds_untouched`
+# holds every line here to that count; a line leaves this file in the commit that brings its
+# row.
+task bind	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the script's one edge is a closure that shares a name with a changed function
+config insert-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config replace-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config remove-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config fill	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config fork	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls

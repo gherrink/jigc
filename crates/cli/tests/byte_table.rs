@@ -6,8 +6,8 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has four rows and twelve cells — the pilot's acceptance**: this file
-//! is the plan's tasks `B1` to `B2d` — the arms that hold the comparison, the reader and
-//! the runner to their rules, the two fences, and the rows and the cells of the four
+//! is the plan's tasks `B1` to `B3` — the arms that hold the comparison, the reader and
+//! the runner to their rules, the fences, and the rows and the cells of the four
 //! commands the acceptance needs, a family a file under `byte_table/` ([`FAMILIES`]).
 //!
 //! **The cells run in the arm of their prepared state** ([`ARMS`],
@@ -66,6 +66,25 @@
 //! each under the task that owes it, a list the later tasks empty). So a writing command
 //! the product gains tomorrow is on no list, and is named until it has its answer.
 //!
+//! **The cell fence** ([`every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`], the
+//! plan's task `B3`): what a row needs a cell for is read off the row — its refusing cell,
+//! its base cell in its home state and in each other prepared state, and a planted cell
+//! for every line and every kind of plant that targets it
+//! ([`byte_cell::aimed`](crate::support::byte_cell::aimed), which also gives the reason a
+//! kind does not target a line, so that nobody types one) — and each need has exactly one
+//! answer: a cell, a line of `byte_table/scheduled-cells.tsv` with its reason, or its
+//! leaf's cells owed whole by a task of the plan ([`CELLS_OWED`]). A cell says which line
+//! its plant is aimed at, and never a path. **A base cell in a state that is not its
+//! leaf's home runs on demand** ([`the_cells_on_demand_are_run_and_printed`]), and has
+//! its line in the committed table of that arm
+//! ([`every_cell_on_demand_has_its_line_in_the_committed_table`]) — held by no gate.
+//! **Every line of a row excuses a difference in some cell the gate runs, or is named**
+//! ([`EXCUSED_IN`], [`EXCUSES_NOTHING`]), exactly, in the arm of every state. And **every
+//! scheduled leaf is one the committed count holds untouched**
+//! ([`every_scheduled_leaf_is_one_the_count_holds_untouched`]): the count of the write
+//! leaves the fix pass touched, each read against its handler, is
+//! `…/reshape/byte-table-leaves-touched-since-rc24.md`.
+//!
 //! **A prepared state is built on the binary handed in**
 //! ([`a_prepared_state_is_built_on_the_binary_handed_in`], the plan's task `B2a`): the
 //! table runs a cell on the state the binary under test built, so the builder of the
@@ -121,12 +140,12 @@ families! {
     mod milestone;
 }
 
-use owed::{OWED, OWING};
+use owed::{CELLS_OWED, OWED, OWING};
 
 use crate::support::byte_cell::{
-    self, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding, Lead,
-    Line, Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row, Seen, Staged, Stands,
-    When, Where, blob_of,
+    self, Aim, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding,
+    Kind, Layer, Lead, Line, Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row,
+    Seen, Staged, Stands, When, Where, blob_of,
 };
 use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
@@ -446,6 +465,1219 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
             "`jigc doc merge`",
             "no row, no scheduled row and no owed row",
         )],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The cell fence — what a row needs a cell for, and the count its lists stand on
+// ---------------------------------------------------------------------------
+
+/// **One thing a row needs a cell for** (the plan's §3, *How the cross is kept from
+/// exploding*): the leaf's refusing cell; its base cell in its home state; its base cell
+/// in each other prepared state, which runs on demand; and a planted cell for every line
+/// of the row and every kind of plant that targets it ([`byte_cell::aimed`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Need {
+    Refusing,
+    Base,
+    BaseIn(Prepared),
+    Planted(Aim),
+}
+
+impl Need {
+    /// The need as the scheduled list of cells names it.
+    fn named(&self) -> String {
+        match self {
+            Need::Refusing => "refusing".to_string(),
+            Need::Base => "base".to_string(),
+            Need::BaseIn(state) => format!("base, in `{}`", state.name()),
+            Need::Planted(aim) => format!("{} × {}", aim.line, aim.kind.tag()),
+        }
+    }
+}
+
+/// The seven prepared states (the plan's §3).
+const STATES: [Prepared; 7] = [
+    Prepared::Bare,
+    Prepared::Of(State::Fresh),
+    Prepared::Of(State::CommittedSingletons),
+    Prepared::Of(State::Migrated),
+    Prepared::Of(State::RefsPostHoc),
+    Prepared::Of(State::ChattyHooks),
+    Prepared::Of(State::Vendored),
+];
+
+/// Everything `row` needs a cell for, in order: the two layers that have no plant, the
+/// states that are not its home, then its lines, each with the kinds that target it.
+fn needs(row: &Row) -> Vec<Need> {
+    let mut out = vec![Need::Refusing, Need::Base];
+    out.extend(
+        STATES
+            .iter()
+            .filter(|state| **state != row.home)
+            .map(|state| Need::BaseIn(*state)),
+    );
+    for line in row.lines {
+        for kind in Kind::ALL {
+            if byte_cell::aimed(*kind, line).is_ok() {
+                out.push(Need::Planted(Aim {
+                    line: line.id,
+                    kind: *kind,
+                }));
+            }
+        }
+    }
+    out
+}
+
+/// **The need `cell` answers under `row`** — its layer, and for a planted cell what its
+/// plant is aimed at. `Err` is a fault of the cell as written: a plant aimed at nothing,
+/// an aim with no plant, an aim at a line the row does not have or a line the kind does
+/// not target — with the reason the frame derives — or a plant that is not of the kind
+/// the cell says.
+fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
+    let layer = cell.layer(row);
+    let aim = match (layer, cell.aim) {
+        (Layer::Planted, Some(aim)) => aim,
+        (Layer::Planted, None) => return Err("puts a plant in and aims it at no line".to_string()),
+        (_, Some(_)) => return Err("aims at a line and puts no plant in".to_string()),
+        (Layer::Refusing, None) => return Ok(Need::Refusing),
+        (Layer::Base, None) => return Ok(Need::Base),
+        (Layer::BaseElsewhere, None) => return Ok(Need::BaseIn(cell.state)),
+    };
+    let Some(line) = row.lines.iter().find(|line| line.id == aim.line) else {
+        return Err(format!(
+            "aims at the line `{}`, which its row does not have",
+            aim.line
+        ));
+    };
+    if let Err(why) = byte_cell::aimed(aim.kind, line) {
+        return Err(format!(
+            "aims a plant of the kind *{}* at the line `{}`, and {why}",
+            aim.kind.tag(),
+            aim.line
+        ));
+    }
+    let of_the_kind = cell.leads.iter().any(|lead| match lead {
+        Lead::Plant(plant) => plant.is_of(aim.kind),
+        _ => false,
+    });
+    if !of_the_kind {
+        return Err(format!(
+            "says its plant is of the kind *{}*, and puts in none that is",
+            aim.kind.tag()
+        ));
+    }
+    Ok(Need::Planted(aim))
+}
+
+/// **The scheduled list of cells** — what a row needs a cell for and the pilot leaves for
+/// before the port: one file of data, a line a need with its reason.
+const SCHEDULED_CELLS: &str = include_str!("byte_table/scheduled-cells.tsv");
+
+/// The rows of a scheduled list of cells: every line that is no comment and not empty, as
+/// a leaf — its words, space-separated — a need as [`Need::named`] spells it, and a
+/// reason, tab-separated.
+fn scheduled_cells(list: &'static str) -> Vec<(Vec<&'static str>, &'static str, &'static str)> {
+    list.lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let mut columns = line.splitn(3, '\t');
+            let leaf = columns.next().unwrap_or_default();
+            (
+                leaf.split(' ').collect(),
+                columns.next().unwrap_or_default(),
+                columns.next().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+/// **Every way the cells, the scheduled list of cells and the list of leaves whose cells
+/// are owed fail to answer for what the rows need** — empty when every need of every row
+/// has exactly one answer: a cell, or a scheduled row with its reason; or its leaf's
+/// cells are owed whole, by a task of the plan. A cell that cannot be read as an answer
+/// is named too ([`answers`]).
+fn unmet(
+    rows: &[&Row],
+    cells: &[&byte_cell::Cell],
+    scheduled: &[(Vec<&str>, &str, &str)],
+    owed: &[(&[&str], &str)],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
+    let mut met: Vec<(&[&str], Need)> = Vec::new();
+    for cell in cells {
+        let Some(row) = rows.iter().find(|row| row.leaf == cell.leaf) else {
+            continue;
+        };
+        match answers(cell, row) {
+            Ok(need) => met.push((row.leaf, need)),
+            Err(fault) => out.push(format!("`{}` {fault}", cell.name)),
+        }
+    }
+    for row in rows {
+        let owing: Vec<&str> = owed
+            .iter()
+            .filter(|(leaf, _)| *leaf == row.leaf)
+            .map(|(_, task)| *task)
+            .collect();
+        let waiting: Vec<&(Vec<&str>, &str, &str)> = scheduled
+            .iter()
+            .filter(|(leaf, _, _)| leaf.as_slice() == row.leaf)
+            .collect();
+        let needs = needs(row);
+        if !owing.is_empty() {
+            if owing.len() > 1 {
+                out.push(format!(
+                    "the cells of {} are owed more than once",
+                    named(row.leaf)
+                ));
+            }
+            if !waiting.is_empty() {
+                out.push(format!(
+                    "{} is answered more than once: its cells are owed by `{}`, and it has \
+                     rows of the scheduled list of cells",
+                    named(row.leaf),
+                    owing[0]
+                ));
+            }
+        } else {
+            for need in &needs {
+                let cell = met
+                    .iter()
+                    .any(|(leaf, answer)| *leaf == row.leaf && answer == need);
+                let rows = waiting
+                    .iter()
+                    .filter(|(_, what, _)| *what == need.named())
+                    .count();
+                match (cell, rows) {
+                    (true, 0) | (false, 1) => {}
+                    (false, 0) => out.push(format!(
+                        "{} needs a cell for *{}*, and has no cell and no scheduled row for it",
+                        named(row.leaf),
+                        need.named()
+                    )),
+                    _ => out.push(format!(
+                        "{} is answered more than once for *{}*",
+                        named(row.leaf),
+                        need.named()
+                    )),
+                }
+            }
+        }
+        for (_, what, reason) in waiting {
+            if !needs.iter().any(|need| need.named() == *what) {
+                out.push(format!(
+                    "{} has a scheduled row for *{what}*, which is nothing its row needs a \
+                     cell for",
+                    named(row.leaf)
+                ));
+            }
+            if reason.trim().is_empty() {
+                out.push(format!(
+                    "{} has a scheduled row for *{what}* that does not say why it waits",
+                    named(row.leaf)
+                ));
+            }
+        }
+    }
+    for (leaf, _, _) in scheduled {
+        if !rows.iter().any(|row| row.leaf == leaf.as_slice()) {
+            out.push(format!(
+                "{} is on the scheduled list of cells, and has no row",
+                named(leaf)
+            ));
+        }
+    }
+    for (leaf, task) in owed {
+        if !rows.iter().any(|row| row.leaf == *leaf) {
+            out.push(format!(
+                "the cells of {} are owed, and it has no row",
+                named(leaf)
+            ));
+        }
+        if !OWING.contains(task) {
+            out.push(format!(
+                "the cells of {} are owed by `{task}`, which is no task of the plan that owes \
+                 a row",
+                named(leaf)
+            ));
+        }
+    }
+    out
+}
+
+/// A line a need, tab-separated: the leaf, the need, and what answers it — the cells, a
+/// scheduled row with its reason, or the task that owes the leaf's cells.
+fn needs_table(
+    rows: &[&Row],
+    cells: &[&byte_cell::Cell],
+    scheduled: &[(Vec<&str>, &str, &str)],
+    owed: &[(&[&str], &str)],
+) -> String {
+    let mut out = "command\tneeds a cell for\tanswered by\n".to_string();
+    for row in rows {
+        for need in needs(row) {
+            let by: Vec<&str> = cells
+                .iter()
+                .filter(|cell| cell.leaf == row.leaf && answers(cell, row).as_ref() == Ok(&need))
+                .map(|cell| cell.name)
+                .collect();
+            let waits = scheduled
+                .iter()
+                .find(|(leaf, what, _)| leaf.as_slice() == row.leaf && *what == need.named());
+            let owing = owed.iter().find(|(leaf, _)| *leaf == row.leaf);
+            let answer = match (by.is_empty(), waits, owing) {
+                (false, _, _) => by.join(" · "),
+                (true, Some((_, _, reason)), _) => format!("scheduled: {reason}"),
+                (true, None, Some((_, task))) => format!("owed by `{task}`"),
+                (true, None, None) => "nothing".to_string(),
+            };
+            out.push_str(&format!(
+                "jigc {}\t{}\t{answer}\n",
+                row.leaf.join(" "),
+                need.named()
+            ));
+        }
+    }
+    out
+}
+
+/// **Every row has, for each thing it needs a cell for, a cell, a scheduled row, or its
+/// leaf's cells owed whole by a task of the plan** — so a line a row gains tomorrow needs
+/// its planted cells that day, and a cell cannot be born aimed at nothing.
+///
+/// On a fixture: a row with no cell is named need by need — its refusing cell, its base
+/// cell, the base cell of each other prepared state, and each plant that targets one of
+/// its lines; a cell, a scheduled row, or the owed list answers each; a need answered
+/// twice is named, and so are a scheduled row for nothing the row needs, one with no
+/// reason, a plant aimed at no line, an aim with no plant, an aim at a line the row does
+/// not have, an aim the line's own vocabulary turns away — with **the reason the frame
+/// derives** — and a plant that is not of the kind the cell says. Then this tree: nothing
+/// is unmet; and **the fence is not vacuous** — with the owed list taken away, the four
+/// rows of the acceptance are named for what the twelve cells do not answer.
+#[test]
+fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
+    const REPLACES: Row = Row {
+        leaf: &["task", "finalize"],
+        home: Prepared::Of(State::Fresh),
+        ..row(&[
+            line("F1", Allows::Files(Where::Path("a-file"), May::WriteWhole)),
+            line("F2", Allows::Commit(Holding::TheIndex)),
+            Line {
+                when: When::Refused,
+                on_refusal: true,
+                ..line(
+                    "F3",
+                    Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+                )
+            },
+        ])
+    };
+    let names: Vec<String> = needs(&REPLACES).iter().map(Need::named).collect();
+    assert_eq!(
+        names,
+        [
+            "refusing",
+            "base",
+            "base, in `bare`",
+            "base, in `committed-singletons`",
+            "base, in `migrated`",
+            "base, in `refs-post-hoc`",
+            "base, in `chatty-hooks`",
+            "base, in `vendored`",
+            "F1 × U",
+            "F1 × T",
+            "F1 × L, to nothing",
+            "F1 × L, to a file in the repository",
+            "F1 × L, to a file outside it",
+            "F1 × K, a directory in a file's place",
+            "F1 × K, a file in a directory's place",
+            "F1 × E, after the first write",
+            "F1 × S, where the command writes",
+            "F2 × S, where it does not",
+            "F2 × N",
+            "F2 × H",
+        ],
+        "what a row needs a cell for is read off its lines"
+    );
+    assert_eq!(
+        unmet(&[&REPLACES], &[], &[], &[]).len(),
+        names.len(),
+        "a row nobody answers for is named need by need"
+    );
+    says(
+        &unmet(&[&REPLACES], &[], &[], &[(&["task", "finalize"], "B4")]),
+        &[],
+    );
+
+    const fn cell(
+        name: &'static str,
+        state: Prepared,
+        leads: &'static [Lead],
+        argv: &'static [&'static str],
+        aim: Option<Aim>,
+    ) -> byte_cell::Cell {
+        byte_cell::Cell {
+            name,
+            leaf: &["task", "finalize"],
+            state,
+            leads,
+            argv,
+            listed: Listed::Acts,
+            beside: None,
+            aim,
+        }
+    }
+    const FRESH: Prepared = Prepared::Of(State::Fresh);
+    const A_STEP: &[Lead] = &[Lead::Step(Step::Jigc(&["start", "an intent"]))];
+    const A_FILE: &[Lead] = &[Lead::Plant(Plant::File("a-file"))];
+    const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+        Some(Aim { line, kind })
+    }
+    const UNRESOLVED: &[&str] = &["task", "finalize", "a-task"];
+    const ACTING: &[&str] = &["task", "finalize", "an-intent"];
+    let refusing = cell(
+        "refusing",
+        FRESH,
+        &[],
+        &["task", "finalize", "a-task"],
+        None,
+    );
+    let base = cell("base", FRESH, A_STEP, ACTING, None);
+    let elsewhere = cell("elsewhere", Prepared::Bare, &[], ACTING, None);
+    let planted = cell("planted", FRESH, A_FILE, ACTING, at("F1", Kind::Untracked));
+    assert_eq!(answers(&refusing, &REPLACES), Ok(Need::Refusing));
+    assert_eq!(answers(&base, &REPLACES), Ok(Need::Base));
+    assert_eq!(
+        answers(&elsewhere, &REPLACES),
+        Ok(Need::BaseIn(Prepared::Bare))
+    );
+    assert_eq!(
+        answers(&planted, &REPLACES),
+        Ok(Need::Planted(Aim {
+            line: "F1",
+            kind: Kind::Untracked
+        }))
+    );
+    // The argv that resolves nothing is the refusing cell's in `fresh` and with no lead,
+    // and nowhere else.
+    assert_eq!(
+        answers(
+            &cell("unresolved-in-bare", Prepared::Bare, &[], UNRESOLVED, None),
+            &REPLACES
+        ),
+        Ok(Need::BaseIn(Prepared::Bare))
+    );
+    assert_eq!(
+        answers(
+            &cell("unresolved-after-a-lead", FRESH, A_STEP, UNRESOLVED, None),
+            &REPLACES
+        ),
+        Ok(Need::Base)
+    );
+    let the_four = [&refusing, &base, &elsewhere, &planted];
+    assert_eq!(
+        unmet(&[&REPLACES], &the_four, &[], &[]).len(),
+        names.len() - 4,
+        "a cell answers the need of its layer, and no other"
+    );
+    let waits = |what: &'static str, why: &'static str| (vec!["task", "finalize"], what, why);
+    let rest: Vec<(Vec<&str>, &str, &str)> = needs(&REPLACES)
+        .iter()
+        .map(Need::named)
+        .filter(|what| !["refusing", "base", "base, in `bare`", "F1 × U"].contains(&what.as_str()))
+        .map(|what| waits(what.leak(), "before the port"))
+        .collect();
+    says(&unmet(&[&REPLACES], &the_four, &rest, &[]), &[]);
+
+    // Answered twice; a row for nothing; a row with no reason; owed and scheduled at once.
+    let mut twice = rest.clone();
+    twice.push(waits("F1 × U", "before the port"));
+    twice.push(waits("F3 × U", "before the port"));
+    twice.push(waits("F2 × H", " "));
+    says(
+        &unmet(&[&REPLACES], &the_four, &twice, &[]),
+        &[
+            ("`jigc task finalize`", "more than once for *F1 × U*"),
+            ("`jigc task finalize`", "more than once for *F2 × H*"),
+            (
+                "a scheduled row for *F3 × U*",
+                "nothing its row needs a cell for",
+            ),
+            ("a scheduled row for *F2 × H*", "does not say why it waits"),
+        ],
+    );
+    says(
+        &unmet(
+            &[&REPLACES],
+            &[],
+            &[
+                waits("refusing", "before the port"),
+                (vec!["doc", "create"], "base", "before the port"),
+            ],
+            &[
+                (&["task", "finalize"], "B4"),
+                (&["task", "finalize"], "B5"),
+                (&["relocate"], "B1"),
+            ],
+        ),
+        &[
+            ("`jigc task finalize`", "owed more than once"),
+            (
+                "`jigc task finalize`",
+                "its cells are owed by `B4`, and it has rows of the scheduled list",
+            ),
+            ("`jigc doc create`", "has no row"),
+            ("the cells of `jigc relocate` are owed", "it has no row"),
+            ("`jigc relocate`", "no task of the plan that owes a row"),
+        ],
+    );
+
+    // A cell that cannot be read as an answer.
+    let owed_whole: &[(&[&str], &str)] = &[(&["task", "finalize"], "B4")];
+    for (cell, said) in [
+        (
+            cell("a-plant-aimed-at-nothing", FRESH, A_FILE, ACTING, None),
+            "puts a plant in and aims it at no line",
+        ),
+        (
+            cell(
+                "an-aim-with-no-plant",
+                FRESH,
+                A_STEP,
+                ACTING,
+                at("F1", Kind::Untracked),
+            ),
+            "aims at a line and puts no plant in",
+        ),
+        (
+            cell(
+                "a-line-the-row-does-not-have",
+                FRESH,
+                A_FILE,
+                ACTING,
+                at("F9", Kind::Untracked),
+            ),
+            "aims at the line `F9`, which its row does not have",
+        ),
+        (
+            cell(
+                "a-line-the-kind-does-not-target",
+                FRESH,
+                A_FILE,
+                ACTING,
+                at("F1", Kind::Foreign),
+            ),
+            "at the line `F1`, and the line removes no directory",
+        ),
+        (
+            cell(
+                "a-line-that-holds-on-a-refusal-only",
+                FRESH,
+                A_FILE,
+                ACTING,
+                at("F3", Kind::Untracked),
+            ),
+            "the line holds on a refusal only",
+        ),
+        (
+            cell(
+                "a-plant-of-another-kind",
+                FRESH,
+                A_FILE,
+                ACTING,
+                at("F1", Kind::Committed),
+            ),
+            "says its plant is of the kind *T*, and puts in none that is",
+        ),
+    ] {
+        says(
+            &unmet(&[&REPLACES], &[&cell], &[], owed_whole),
+            &[(cell.name, said)],
+        );
+    }
+
+    // This tree.
+    let (rows, cells) = (rows(), cells());
+    let wrong = unmet(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED);
+    assert!(
+        wrong.is_empty(),
+        "the byte table's cells do not answer for what its rows need:\n\n  {}\n\na row needs \
+         its refusing cell, its base cell in its home state and in each other prepared state, \
+         and a planted cell for every line and every kind of plant that targets it — each a \
+         cell in a file under `byte_table/`, or a line of `byte_table/scheduled-cells.tsv` \
+         with its reason; or the leaf's cells are owed whole in `CELLS_OWED`, by the task of \
+         the plan that owes them",
+        wrong.join("\n  ")
+    );
+    // Not vacuous: with nothing owed, the rows of the acceptance are named for what the
+    // acceptance's cells do not answer — and the cells that are there answer something.
+    let bare = unmet(&rows, &cells, &[], &[]);
+    let needed: usize = rows.iter().map(|row| needs(row).len()).sum();
+    assert!(
+        bare.len() > 100 && bare.len() < needed,
+        "with nothing owed, {} of {needed} needs are unmet",
+        bare.len()
+    );
+    assert!(
+        bare.iter().any(|line| line
+            == "`jigc uninstall` needs a cell for *refusing*, and has no cell and no scheduled \
+                row for it")
+            && !bare.iter().any(|line| line.contains("*U1 × D*")),
+        "{bare:#?}"
+    );
+    assert_eq!(
+        needs_table(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED)
+            .lines()
+            .count(),
+        needed + 1,
+        "the table of needs has a line a need, under its header"
+    );
+}
+
+/// **The cells that run on demand, as their arm last printed them** — the base cells in a
+/// prepared state that is not their leaf's home ([`Layer::BaseElsewhere`]): committed,
+/// dated, and **held by no gate** — a cell here that starts to lose bytes is seen when
+/// somebody runs the arm ([`the_cells_on_demand_are_run_and_printed`]).
+const ON_DEMAND: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv"
+);
+
+/// The header of that table, as the arm prints it.
+const ON_DEMAND_HEADER: &str = "cell\tcommand\tstate\tlisted as\tcame to\tits exit";
+
+/// The cells that run on demand, of `cells`.
+fn on_demand(cells: &[&'static byte_cell::Cell]) -> Vec<&'static byte_cell::Cell> {
+    cells
+        .iter()
+        .copied()
+        .filter(|cell| {
+            rows()
+                .iter()
+                .find(|row| row.leaf == cell.leaf)
+                .is_some_and(|row| cell.layer(row) == Layer::BaseElsewhere)
+        })
+        .collect()
+}
+
+/// **Every way a committed table of the cells on demand and the cells themselves
+/// disagree**: a cell with no line, a line for no cell, a cell with two lines, a table
+/// that does not open with the arm's header.
+fn unlisted(cells: &[&str], table: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut lines = table
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    if lines.next() != Some(ON_DEMAND_HEADER) {
+        out.push(
+            "the table of the cells on demand does not open with the arm's header".to_string(),
+        );
+    }
+    let listed: Vec<&str> = lines
+        .map(|line| line.split('\t').next().unwrap_or_default())
+        .collect();
+    for cell in cells {
+        match listed.iter().filter(|name| *name == cell).count() {
+            1 => {}
+            0 => out.push(format!(
+                "`{cell}` runs on demand, and the committed table of its arm has no line for it"
+            )),
+            _ => out.push(format!(
+                "`{cell}` has more than one line in the committed table"
+            )),
+        }
+    }
+    for name in listed {
+        if !cells.contains(&name) {
+            out.push(format!(
+                "the committed table has a line for `{name}`, which is no cell that runs on demand"
+            ));
+        }
+    }
+    out
+}
+
+/// **Every cell that runs on demand has its line in the committed table of that arm**,
+/// and the table has no line for anything else — on a fixture, fault by fault; then this
+/// tree's cells against the committed table.
+#[test]
+fn every_cell_on_demand_has_its_line_in_the_committed_table() {
+    let table = |lines: &str| format!("# printed on a day\n{ON_DEMAND_HEADER}\n{lines}");
+    says(
+        &unlisted(&["a", "b"], &table("a\tjigc x\nb\tjigc y\n")),
+        &[],
+    );
+    says(&unlisted(&[], &table("")), &[]);
+    says(
+        &unlisted(&["a", "b"], &table("a\tjigc x\na\tjigc x\nc\tjigc z\n")),
+        &[
+            ("`a`", "more than one line"),
+            ("`b` runs on demand", "has no line for it"),
+            ("a line for `c`", "no cell that runs on demand"),
+        ],
+    );
+    says(
+        &unlisted(&["a"], "cell\tcommand\na\tjigc x\n"),
+        &[("the table of the cells on demand", "the arm's header")],
+    );
+
+    let cells = cells();
+    let names: Vec<&str> = on_demand(&cells).iter().map(|cell| cell.name).collect();
+    let wrong = unlisted(&names, ON_DEMAND);
+    assert!(
+        wrong.is_empty(),
+        "the cells that run on demand and their committed table:\n\n  {}\n\nrun \
+         `byte_table::{ON_DEMAND_ARM}` and commit what it prints under `== cells on demand ==` \
+         as `…/reshape/byte-table-on-demand-cells.tsv`, under a line that says when",
+        wrong.join("\n  ")
+    );
+}
+
+/// **What each line of each row excuses, by the prepared state in whose cells it excuses
+/// a difference** — the cells the gate runs. Exact both ways in every arm
+/// ([`excused_otherwise`]): a line that excuses a difference in a state it is not listed
+/// for is named, and so is one listed for a state in whose cells it excuses nothing. A
+/// line no cell of any state excuses a difference under stands on [`EXCUSES_NOTHING`].
+const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
+    (
+        &["task", "finalize"],
+        "C1",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M3",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M5",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M6, the worktrees",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M6, the sub-tasks' areas",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M6, the milestone's area",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M7",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M10, the edge index",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M10, the file-state hashes",
+        &[Prepared::Of(State::Fresh)],
+    ),
+];
+
+/// What would use every line of a row that no cell of the gate excuses a difference
+/// under: the cells of its family, which a later task of the plan owes.
+const ITS_FAMILYS_CELLS: &str = "the cells of its family, which are owed";
+
+/// **The lines that excuse nothing in any cell the gate runs** — named, each with what
+/// would use it, and not removed: a line is its doc's sentence, and stands whether or not
+/// a cell has met it yet. A line that is on neither list, or on both, is named
+/// ([`unaccounted`]).
+const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
+    (&["setup"], "S1", ITS_FAMILYS_CELLS),
+    (&["setup"], "S2", ITS_FAMILYS_CELLS),
+    (&["setup"], "S3", ITS_FAMILYS_CELLS),
+    (&["setup"], "S4", ITS_FAMILYS_CELLS),
+    (&["setup"], "S5", ITS_FAMILYS_CELLS),
+    (&["setup"], "S6, written", ITS_FAMILYS_CELLS),
+    (&["setup"], "S6, removed", ITS_FAMILYS_CELLS),
+    (&["setup"], "S7", ITS_FAMILYS_CELLS),
+    (&["setup"], "S8", ITS_FAMILYS_CELLS),
+    (&["setup"], "S9", ITS_FAMILYS_CELLS),
+    (&["setup"], "S10", ITS_FAMILYS_CELLS),
+    (&["setup"], "S11", ITS_FAMILYS_CELLS),
+    (&["setup"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["setup"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["setup"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["setup"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["uninstall"], "U1", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U2", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U3", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U4", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U4, removed", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U5", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U6", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["uninstall"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["uninstall"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["task", "finalize"], "T1", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "T2", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "T3", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "T4", ITS_FAMILYS_CELLS),
+    (
+        &["task", "finalize"],
+        "T5, the edge index",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["task", "finalize"],
+        "T5, the file-state hashes",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["task", "finalize"], "T6", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "T6, moved aside", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["task", "finalize"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["task", "finalize"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["milestone", "finalize"], "M2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "finalize"],
+        "M6, moved aside",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "finalize"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["milestone", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "finalize"],
+        "C3, the base pin",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (
+        &["milestone", "finalize"],
+        "C3, the task list",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+];
+
+/// What would use a line of the ruling on a refusal's caches that no refusal of the
+/// leaf's cells has met.
+const A_REFUSAL_THAT_REBUILDS_IT: &str =
+    "a refusal of this leaf that leaves that cache rebuilt: none of its cells' refusals does";
+
+/// What would use a line of the ruling that stands in a row whose leaf has no milestone.
+const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
+     leaf reads no milestone's cache";
+
+/// **Every way the two lists fail to account for the lines of `rows`**: a line on neither
+/// list, a line on both, a line listed twice, an entry for a line no row has, an entry of
+/// [`EXCUSED_IN`] that names no state, an entry of [`EXCUSES_NOTHING`] that does not say
+/// what would use the line.
+fn unaccounted(
+    rows: &[&Row],
+    excused_in: &[(&[&str], &str, &[Prepared])],
+    nothing: &[(&[&str], &str, &str)],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let named =
+        |leaf: &[&str], line: &str| format!("the line `{line}` of `jigc {}`", leaf.join(" "));
+    for row in rows {
+        for line in row.lines {
+            let somewhere = excused_in
+                .iter()
+                .filter(|(leaf, id, _)| *leaf == row.leaf && *id == line.id)
+                .count();
+            let nowhere = nothing
+                .iter()
+                .filter(|(leaf, id, _)| *leaf == row.leaf && *id == line.id)
+                .count();
+            match (somewhere, nowhere) {
+                (1, 0) | (0, 1) => {}
+                (0, 0) => out.push(format!(
+                    "{} is on neither list: it excuses a difference in the cells of a state, \
+                     or it is named as excusing nothing",
+                    named(row.leaf, line.id)
+                )),
+                _ => out.push(format!(
+                    "{} is listed more than once",
+                    named(row.leaf, line.id)
+                )),
+            }
+        }
+    }
+    let has = |leaf: &[&str], id: &str| {
+        rows.iter()
+            .any(|row| row.leaf == leaf && row.lines.iter().any(|line| line.id == id))
+    };
+    for (leaf, id, states) in excused_in {
+        if !has(leaf, id) {
+            out.push(format!("{} is listed, and no row has it", named(leaf, id)));
+        }
+        if states.is_empty() {
+            out.push(format!(
+                "{} is listed as excusing a difference, in the cells of no state",
+                named(leaf, id)
+            ));
+        }
+    }
+    for (leaf, id, would) in nothing {
+        if !has(leaf, id) {
+            out.push(format!("{} is listed, and no row has it", named(leaf, id)));
+        }
+        if would.trim().is_empty() {
+            out.push(format!(
+                "{} is named as excusing nothing, and nothing says what would use it",
+                named(leaf, id)
+            ));
+        }
+    }
+    out
+}
+
+/// What the lines of a cell's row excused: each line's `id`, and how many differences.
+type Excused<'a> = &'a [(&'static str, usize)];
+
+/// **Every way what the lines excused in the cells of `state` is not what [`EXCUSED_IN`]
+/// says of that state** — over the rows whose leaf has a cell among `ran`, each cell with
+/// what the lines of its row excused: a line that excused a difference there and is not
+/// listed for the state, and a line listed for it that excused none.
+fn excused_otherwise(
+    state: Prepared,
+    rows: &[&Row],
+    ran: &[(&[&str], Excused<'_>)],
+    excused_in: &[(&[&str], &str, &[Prepared])],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for row in rows {
+        if !ran.iter().any(|(leaf, _)| *leaf == row.leaf) {
+            continue;
+        }
+        for line in row.lines {
+            let times: usize = ran
+                .iter()
+                .filter(|(leaf, _)| *leaf == row.leaf)
+                .flat_map(|(_, excused)| excused.iter())
+                .filter(|(id, _)| *id == line.id)
+                .map(|(_, times)| times)
+                .sum();
+            let listed = excused_in.iter().any(|(leaf, id, states)| {
+                *leaf == row.leaf && *id == line.id && states.contains(&state)
+            });
+            let named = format!("the line `{}` of `jigc {}`", line.id, row.leaf.join(" "));
+            match (times, listed) {
+                (0, true) => out.push(format!(
+                    "{named} is listed as excusing a difference in the cells of `{}`, and \
+                     excused none",
+                    state.name()
+                )),
+                (times, false) if times > 0 => out.push(format!(
+                    "{named} excused {times} difference(s) in the cells of `{}`, and is not \
+                     listed as excusing any there",
+                    state.name()
+                )),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// **Every line of a row excuses a difference in some cell the gate runs, or is named** —
+/// and where it does is exact in every arm. On a fixture: a line on neither list, on
+/// both, listed for no state, named with nothing that would use it, and an entry for a
+/// line no row has are each named; and of what an arm's cells excused, a line that
+/// excused a difference in a state it is not listed for, and a line listed for a state it
+/// excused nothing in. Then this tree's rows against the two lists. What the cells
+/// excuse is held where they run ([`run_the_cells_of`]).
+#[test]
+fn every_line_of_a_row_excuses_a_difference_in_some_cell_or_is_named() {
+    const TWO: Row = Row {
+        leaf: &["task", "finalize"],
+        ..row(&[
+            line("F1", Allows::Staged),
+            line("F2", Allows::Commit(Holding::TheIndex)),
+        ])
+    };
+    const FRESH: Prepared = Prepared::Of(State::Fresh);
+    let leaf: &[&str] = &["task", "finalize"];
+    says(
+        &unaccounted(
+            &[&TWO],
+            &[(leaf, "F1", &[FRESH])],
+            &[(leaf, "F2", "a cell")],
+        ),
+        &[],
+    );
+    says(
+        &unaccounted(&[&TWO], &[], &[]),
+        &[
+            ("the line `F1` of `jigc task finalize`", "on neither list"),
+            ("the line `F2` of `jigc task finalize`", "on neither list"),
+        ],
+    );
+    says(
+        &unaccounted(
+            &[&TWO],
+            &[(leaf, "F1", &[]), (leaf, "F3", &[FRESH])],
+            &[(leaf, "F1", "a cell"), (leaf, "F2", " "), (leaf, "F4", "-")],
+        ),
+        &[
+            ("the line `F1`", "listed more than once"),
+            ("the line `F1`", "in the cells of no state"),
+            ("the line `F3`", "no row has it"),
+            ("the line `F2`", "nothing says what would use it"),
+            ("the line `F4`", "no row has it"),
+        ],
+    );
+    let listed: &[(&[&str], &str, &[Prepared])] = &[(leaf, "F1", &[FRESH])];
+    let excused = |f1, f2| -> Vec<(&'static str, usize)> { vec![("F1", f1), ("F2", f2)] };
+    let (once, never, other) = (excused(1, 0), excused(0, 0), excused(0, 2));
+    says(
+        &excused_otherwise(
+            FRESH,
+            &[&TWO],
+            &[(leaf, once.as_slice()), (leaf, never.as_slice())],
+            listed,
+        ),
+        &[],
+    );
+    says(
+        &excused_otherwise(
+            FRESH,
+            &[&TWO],
+            &[(leaf, never.as_slice()), (leaf, other.as_slice())],
+            listed,
+        ),
+        &[
+            (
+                "the line `F1`",
+                "is listed as excusing a difference in the cells of `fresh`, and excused none",
+            ),
+            (
+                "the line `F2`",
+                "excused 2 difference(s) in the cells of `fresh`, and is not listed",
+            ),
+        ],
+    );
+    // Another state's cells are held to their own listing, and a row with no cell in the
+    // arm to nothing.
+    says(
+        &excused_otherwise(Prepared::Bare, &[&TWO], &[(leaf, once.as_slice())], listed),
+        &[(
+            "the line `F1`",
+            "excused 1 difference(s) in the cells of `bare`",
+        )],
+    );
+    says(&excused_otherwise(FRESH, &[&TWO], &[], listed), &[]);
+
+    let wrong = unaccounted(&rows(), EXCUSED_IN, EXCUSES_NOTHING);
+    assert!(
+        wrong.is_empty(),
+        "the lines of the rows and the two lists of what they excuse:\n\n  {}\n\na line \
+         excuses a difference in the cells of a state (`EXCUSED_IN`), or it is named with \
+         what would use it (`EXCUSES_NOTHING`) — exactly one of the two",
+        wrong.join("\n  ")
+    );
+}
+
+/// **The count the pilot's bound stands on** — which write leaves the fix pass touched
+/// since the previous release, each leaf read against its handler, under each reading of
+/// *touched* the plan names (its §1.4).
+const COUNT: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/byte-table-leaves-touched-since-rc24.md"
+);
+
+/// The reading of *touched* the pilot is built under, as the count's table heads its
+/// column: the plan's rule.
+const THE_PLANS_RULE: &str = "the plan's rule";
+
+/// One line of the count's table: a leaf's words, and under each reading whether the
+/// count holds the leaf touched.
+type Counted<'a> = (Vec<&'a str>, Vec<(&'a str, bool)>);
+
+/// **The count's table**: every line that opens ``| `jigc `` — a leaf, and under each
+/// reading whether the count holds it touched. The readings are the table's own column
+/// heads, from its second column on.
+fn counted(count: &'static str) -> Vec<Counted<'static>> {
+    let cells_of = |line: &'static str| -> Vec<&'static str> {
+        line.trim_matches('|').split('|').map(str::trim).collect()
+    };
+    let heads: Vec<&str> = count
+        .lines()
+        .find(|line| line.starts_with("| leaf |"))
+        .map(cells_of)
+        .unwrap_or_default();
+    count
+        .lines()
+        .filter(|line| line.starts_with("| `jigc "))
+        .map(|line| {
+            let cells = cells_of(line);
+            let leaf = cells[0]
+                .trim_matches('`')
+                .trim_start_matches("jigc ")
+                .split(' ')
+                .collect();
+            let readings = heads
+                .iter()
+                .zip(&cells)
+                .skip(1)
+                .filter(|(_, cell)| ["touched", "untouched"].contains(*cell))
+                .map(|(head, cell)| (*head, *cell == "touched"))
+                .collect();
+            (leaf, readings)
+        })
+        .collect()
+}
+
+/// **Every way a count and a scheduled list of leaves disagree**: a write leaf the count
+/// has no line for, or two; a line for no write leaf; a line that does not say, under
+/// `reading`, whether the leaf is touched; and **a scheduled leaf the count holds
+/// touched** under it.
+fn uncounted(
+    leaves: &[Vec<&str>],
+    counted: &[Counted<'_>],
+    scheduled: &[(Vec<&str>, &str)],
+    reading: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
+    let under = |leaf: &[&str]| {
+        counted
+            .iter()
+            .find(|(counted, _)| counted.as_slice() == leaf)
+            .and_then(|(_, readings)| readings.iter().find(|(head, _)| *head == reading))
+            .map(|(_, touched)| *touched)
+    };
+    for leaf in leaves {
+        match counted
+            .iter()
+            .filter(|(counted, _)| counted == leaf)
+            .count()
+        {
+            1 => {
+                if under(leaf).is_none() {
+                    out.push(format!(
+                        "the count does not say whether {} is touched under *{reading}*",
+                        named(leaf)
+                    ));
+                }
+            }
+            0 => out.push(format!("the count has no line for {}", named(leaf))),
+            _ => out.push(format!(
+                "the count has more than one line for {}",
+                named(leaf)
+            )),
+        }
+    }
+    for (leaf, _) in counted {
+        if !leaves.contains(leaf) {
+            out.push(format!(
+                "the count has a line for {}, which is no write leaf",
+                named(leaf)
+            ));
+        }
+    }
+    for (leaf, _) in scheduled {
+        if under(leaf) == Some(true) {
+            out.push(format!(
+                "{} is on the scheduled list, and the count holds it touched under \
+                 *{reading}*: a touched leaf is the pilot's, and is owed its row",
+                named(leaf)
+            ));
+        }
+    }
+    out
+}
+
+/// **Every scheduled leaf is one the count holds untouched**, and the count has one line
+/// for every write leaf — on a fixture, fault by fault; then the committed count against
+/// the product's registry and the scheduled list.
+#[test]
+fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
+    const FIXTURE: &str = "| leaf | the plan's rule | another reading | why |\n|---|---|---|---|\n\
+        | `jigc setup` | touched | touched | - |\n\
+        | `jigc doc create` | untouched | touched | - |\n\
+        | `jigc relocate` | by reading | touched | - |\n\
+        | `jigc doc show` | untouched | untouched | - |\n";
+    let counted_fixture = counted(FIXTURE);
+    assert_eq!(counted_fixture.len(), 4, "{counted_fixture:?}");
+    assert_eq!(
+        counted_fixture[1],
+        (
+            vec!["doc", "create"],
+            vec![("the plan's rule", false), ("another reading", true)]
+        )
+    );
+    let leaves = vec![
+        vec!["setup"],
+        vec!["doc", "create"],
+        vec!["relocate"],
+        vec!["rename"],
+    ];
+    let waits = |leaf: &[&'static str]| (leaf.to_vec(), "the count holds it untouched");
+    says(
+        &uncounted(
+            &leaves,
+            &counted_fixture,
+            &[waits(&["doc", "create"]), waits(&["setup"])],
+            THE_PLANS_RULE,
+        ),
+        &[
+            (
+                "whether `jigc relocate` is touched",
+                "under *the plan's rule*",
+            ),
+            ("no line for `jigc rename`", ""),
+            ("a line for `jigc doc show`", "which is no write leaf"),
+            (
+                "`jigc setup` is on the scheduled list",
+                "the count holds it touched",
+            ),
+        ],
+    );
+    // Under another reading the same scheduled leaf is touched.
+    says(
+        &uncounted(
+            &[vec!["doc", "create"]],
+            &counted_fixture[1..2],
+            &[waits(&["doc", "create"])],
+            "another reading",
+        ),
+        &[("`jigc doc create` is on the scheduled list", "touched")],
+    );
+
+    let wrong = uncounted(
+        &write_leaves(),
+        &counted(COUNT),
+        &scheduled(SCHEDULED),
+        THE_PLANS_RULE,
+    );
+    assert!(
+        wrong.is_empty(),
+        "the count of the leaves the fix pass touched and the scheduled list:\n\n  {}\n\nthe \
+         count is `…/reshape/byte-table-leaves-touched-since-rc24.md`: a line a write leaf, \
+         and a leaf it holds touched under the reading the pilot is built under has a row or \
+         is owed one",
+        wrong.join("\n  ")
     );
 }
 
@@ -947,6 +2179,7 @@ const fn row(lines: &'static [Line]) -> Row {
     Row {
         leaf: &["probe"],
         consent: Some("--force"),
+        home: Prepared::Bare,
         lines,
     }
 }
@@ -2210,6 +3443,7 @@ const fn on_a_stand_in(
             argv,
             listed: Listed::Acts,
             beside: None,
+            aim: None,
         },
         row,
         expected,
@@ -2576,6 +3810,7 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
             argv: &["refuses"],
             listed: Listed::Refuses,
             beside: None,
+            aim: None,
         },
         row: NOTHING,
         expected: Classification::RefusesNothingChanged,
@@ -2768,6 +4003,7 @@ fn the_reader_reads_what_the_comparison_reads() {
         argv: &["refuses"],
         listed: Listed::Refuses,
         beside: None,
+        aim: None,
     };
     for (cell, says) in [
         (
@@ -2886,6 +4122,7 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
         argv: &["--version"],
         listed: Listed::Acts,
         beside: None,
+        aim: None,
     };
     let brought = byte_cell::run(
         &Built::on(binary, Prepared::Of(State::Fresh)),
@@ -2974,6 +4211,17 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
 /// Every cell of every family's file.
 fn cells() -> Vec<&'static byte_cell::Cell> {
     FAMILIES.iter().flat_map(|family| family.cells).collect()
+}
+
+/// The cells the gate runs, of `cells`: every one but a base cell in a state that is not
+/// its leaf's home, which runs on demand ([`on_demand`]).
+fn in_the_gate(cells: &[&'static byte_cell::Cell]) -> Vec<&'static byte_cell::Cell> {
+    let later = on_demand(cells);
+    cells
+        .iter()
+        .copied()
+        .filter(|cell| !later.iter().any(|other| other.name == cell.name))
+        .collect()
 }
 
 /// The row a cell is compared under: its leaf's.
@@ -3163,7 +4411,7 @@ fn binary() -> &'static Path {
 /// each line of its row excused** — which the arm prints for every cell whether or not
 /// anything differs.
 fn run_the_cells_of(state: Prepared) {
-    let cells: Vec<&byte_cell::Cell> = cells()
+    let cells: Vec<&byte_cell::Cell> = in_the_gate(&cells())
         .into_iter()
         .filter(|cell| cell.state == state)
         .collect();
@@ -3205,10 +4453,16 @@ fn run_the_cells_of(state: Prepared) {
         }
     }
     wrong.extend(differences(&expected, &results));
+    let excused_by: Vec<(&[&str], Excused<'_>)> = cells
+        .iter()
+        .zip(&ran)
+        .filter_map(|(cell, ran)| Some((cell.leaf, ran.as_ref().ok()?.verdict.excused.as_slice())))
+        .collect();
+    wrong.extend(excused_otherwise(state, &rows(), &excused_by, EXCUSED_IN));
     assert!(
         wrong.is_empty(),
-        "the cells of `{}` and the expected-red list disagree:\n\n  {}\n\nwhat each cell \
-         did:\n\n{}",
+        "the cells of `{}`, the expected-red list and what each line is listed as excusing \
+         disagree:\n\n  {}\n\nwhat each cell did:\n\n{}",
         state.name(),
         wrong.join("\n  "),
         seen.join("\n\n"),
@@ -3323,7 +4577,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
                 cell.argv.join(" ")
             ));
         }
-        if !ARMS.iter().any(|(_, state)| *state == cell.state) {
+        let runs_on_demand = on_demand(&cells)
+            .iter()
+            .any(|other| other.name == cell.name);
+        if !runs_on_demand && !ARMS.iter().any(|(_, state)| *state == cell.state) {
             wrong.push(format!(
                 "`{}` stands in `{}`, whose cells no arm runs",
                 cell.name,
@@ -3366,6 +4623,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
         if !listed.contains(&test) {
             wrong.push(format!("the harness lists no test `{test}`"));
         }
+    }
+    let on_demand_arm = format!("{}::{ON_DEMAND_ARM}", suite());
+    if !listed.contains(&on_demand_arm) {
+        wrong.push(format!("the harness lists no test `{on_demand_arm}`"));
     }
     assert!(
         wrong.is_empty(),
@@ -3715,6 +4976,7 @@ fn the_table_runs_each_binary_on_the_state_that_binary_built() {
         argv: &["setup"],
         listed: Listed::Acts,
         beside: None,
+        aim: None,
     };
     let (there, here) = (on(&refuses, &[&CELL]), on(&does_nothing, &[&CELL]));
     let printed = table(&[&CELL], &there, &here, &[]);
@@ -3792,6 +5054,15 @@ fn the_cells_are_run_on_the_binary_a_variable_names() {
     );
     println!("== pairs ==\n{}", pairs(&there, &here));
     println!("== excused ==\n{}", excused_by_line(&cells, &there, &here));
+    println!(
+        "== needs ==\n{}",
+        needs_table(
+            &rows(),
+            &cells,
+            &scheduled_cells(SCHEDULED_CELLS),
+            CELLS_OWED
+        )
+    );
     println!("== states ==\nstate\ton the named binary\tseconds");
     for state in State::ALL {
         let started = std::time::Instant::now();
@@ -3854,4 +5125,60 @@ fn one_task_cell_and_one_fan_out_cell_are_timed_alone() {
             ran.seconds, ran.verdict.classification
         );
     }
+}
+
+/// The arm that runs the cells on demand, as the harness names it inside this suite.
+const ON_DEMAND_ARM: &str = "the_cells_on_demand_are_run_and_printed";
+
+/// **The cells that run on demand, run and printed** — the base cells in a prepared state
+/// that is not their leaf's home (the plan's §9): run by hand and by no gate, on the
+/// binary this suite was built with, each on a copy of its state.
+///
+/// ```text
+/// cargo test -p jigc --test g_migration byte_table::the_cells_on_demand_are_run_and_printed -- --ignored --exact --nocapture
+/// ```
+///
+/// It prints, under `== cells on demand ==`, the table that is committed as
+/// `…/reshape/byte-table-on-demand-cells.tsv` under a line that says when it was printed
+/// ([`every_cell_on_demand_has_its_line_in_the_committed_table`] holds a line a cell);
+/// then each cell's seconds, and what the frame saw of every cell that came out red.
+/// **It asserts that every cell ran**, and nothing about what one came to: a cell that
+/// starts to lose bytes in a state that is not its leaf's home is seen here, by whoever
+/// runs this, and by no gate.
+#[test]
+#[ignore = "a table, not a fence: the base cells in the states that are not their leaf's home"]
+fn the_cells_on_demand_are_run_and_printed() {
+    let cells = on_demand(&cells());
+    let came = on(binary(), &cells);
+    println!("== cells on demand ==\n{ON_DEMAND_HEADER}");
+    for (cell, came) in cells.iter().zip(&came) {
+        println!(
+            "{}\tjigc {}\t{}\t{}\t{}\t{}",
+            cell.name,
+            cell.argv.join(" "),
+            cell.state.name(),
+            match cell.listed {
+                Listed::Acts => "acts",
+                Listed::Refuses => "refuses",
+            },
+            came.shown(),
+            came.exit,
+        );
+    }
+    println!("== seconds ==\ncell\tseconds");
+    for (cell, came) in cells.iter().zip(&came) {
+        println!("{}\t{:.1}", cell.name, came.seconds);
+    }
+    println!("== what the frame saw of every cell that is red, or was not run ==");
+    for (cell, came) in cells.iter().zip(&came) {
+        if !matches!(came.came, Ok(classification) if !classification.is_red()) {
+            println!(
+                "\n`{}` — {}\n{}",
+                cell.name,
+                came.shown(),
+                came.detail.trim_end()
+            );
+        }
+    }
+    assert_eq!(came.len(), cells.len(), "every cell on demand has its line");
 }

@@ -1,0 +1,11 @@
+# The byte table's scheduled list of cells — what a row needs a cell for, and the pilot leaves
+# for before the port.
+#
+# A line a need: the leaf, its words as `cli::cli::VERB_KINDS` holds them, space-separated; a
+# tab; the need, as the cell fence names it — `refusing`, `base`, ``base, in `<state>` ``, or
+# `<line> × <plant>` with the plan's letter and its position; a tab; and why it waits.
+# `byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed` holds every need of
+# every row to exactly one of a cell or a line here — but for a leaf whose cells are owed whole
+# by a task of the plan (`CELLS_OWED`, in `owed.rs`), which has no line here. What a row needs
+# is read off its lines by the frame (`support::byte_cell::aimed`); a plant that does not
+# target a line has the reason the frame derives, and no line here.

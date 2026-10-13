@@ -2,6 +2,60 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The byte table's fence is whole, and the count its bound stands on is committed: what a row needs a cell for is read off its lines, each need has a cell, a scheduled row or its leaf's cells owed; a cell on demand has its line; every line of a row excuses a difference somewhere or is named; and of the 36 write leaves the fix pass touched 30 under the plan's rule — 36 under the widest reading, at most 26 under the narrowest (the byte table's pilot, task `B3`)
+
+**What.** The eighth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §1.4, §3, §8): the rest of the fence over [byte_table.rs](crates/cli/tests/byte_table.rs), the scheduled list of cells, and [the count](completions/artifacts/M55/stabilization-build/reshape/byte-table-leaves-touched-since-rc24.md). No row and no cell changed what it holds, and no product source changes.
+
+### The count — for the human's ruling at the stop on what *touched* means
+
+Each of the eight leaves the plan's script called untouched, and the two it counted only through what a command prints, was read against its handler — by a read-only helper that ran nothing, checked by the builder against the diff at the places the count names.
+
+| the reading of *touched* | touched | untouched |
+|---|---:|---:|
+| every changed function counts | **36** | 0 |
+| **the plan's rule** — the handler reaches a changed function that not every write leaf reaches, whatever the change was | **30** | 6 — `task bind`, and the five `config` leaves that are not `config set` |
+| only a change that moves a byte the command writes or a refusal it takes | **at most 26** | at least 10 — those six, and `ingest`, `unmanage`, `workflow`, `task amend` |
+
+- **`ingest` and `unmanage` are touched under the plan's rule**, where its script had them untouched: each calls `FileStateRecord::load` and `::save`, both changed and neither reached by every write leaf. What changed is the text of a refusal that stood, and a body moved into a function of its own — **no byte either command writes, and no condition under which it refuses**.
+- **`workflow` and `task amend`** reach one presentation field, a new read of git, and a parameter their caller passes as nothing.
+- **`task bind` and five `config` leaves reach no changed function at all.**
+- **Under the narrowest reading the other 26 leaves were not read**, so *at most 26* is a bound and not a count.
+- **A sentence of the plan found false against the tree, and left as it stands**: its §1.4 says the rule *"leaves out the 61 changed functions all 36 leaves reach"*. Six leaves reach none, so no changed function is reached from inside all 36 handlers; what all 36 share is `fn main` and the invocation log's functions it calls, which changed.
+
+**What the lists do with it.** `ingest` and `unmanage` leave the scheduled list for the owed list, under `B5`; six stay scheduled, each with the count as its reason. [`every_scheduled_leaf_is_one_the_count_holds_untouched`](crates/cli/tests/byte_table.rs) reads the count's table: a leaf it holds touched under the plan's rule cannot stand on the scheduled list, and every write leaf has its line.
+
+### The fence — what it holds now
+
+- **What a row needs a cell for is read off the row** ([`every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`](crates/cli/tests/byte_table.rs)): its refusing cell · its base cell in its home state · its base cell in each of the other six prepared states · and a planted cell for every line and every kind of plant that targets it. Each need has exactly one answer: a cell, a line of [scheduled-cells.tsv](crates/cli/tests/byte_table/scheduled-cells.tsv) with its reason, or its leaf's cells owed whole by a task of the plan (`CELLS_OWED`).
+- **Which plant targets which line is the frame's to derive** ([`byte_cell::aimed`](crates/cli/tests/support/byte_cell.rs)), from the plan's position rules read against the allowance's vocabulary — seventeen kinds, a letter with its position each — **and so is the reason a kind does not target a line**: nobody types one.
+- **A cell says which line its plant is aimed at, and never a path** (`Cell::aim`): a plant aimed at no line, an aim with no plant, an aim at a line the row does not have or the kind does not target, and a plant that is not of the kind the cell says are each named.
+- **A row has a home state** (`Row::home`), and **a cell's layer is derived** from the cell and its row — refusing, base, base elsewhere, planted. **A base cell in a state that is not its leaf's home runs on demand**, in an ignored arm ([`the_cells_on_demand_are_run_and_printed`](crates/cli/tests/byte_table.rs)), and has its line in [the committed table of that arm](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv) — which no gate holds beyond a line a cell.
+- **Every line of a row excuses a difference in some cell the gate runs, or is named** ([`every_line_of_a_row_excuses_a_difference_in_some_cell_or_is_named`](crates/cli/tests/byte_table.rs)): `EXCUSED_IN` lists a line with the prepared states in whose cells it excuses a difference, **exactly, in the arm of every state**; `EXCUSES_NOTHING` names the others, each with what would use it. Of the 54 lines of the four rows, 10 excuse a difference in the twelve cells and 44 are named — the thirteen the last entry counted over both binaries are among them, and none is removed.
+
+**What the four rows need**, by the fence's own count: `setup` 86 · `uninstall` 18 · `task finalize` 33 · `milestone finalize` 38 — 175 needs, of which the twelve cells of the acceptance answer 7. All four leaves' cells are owed: `task finalize`'s by `B4`, the others by `B5` and `B7`.
+
+### Red first, and each change to the built fence named
+
+- **Against helpers that named nothing**, each of the four new arms was red at its own fixture: *a row nobody answers for is named need by need* (0 of 20), the table of the cells on demand (0 of 3), the two lists of what a line excuses (0 of 2), the count (0 of 4).
+- **Seventeen changes to the built fence, one at a time, each named**: a need answered by a cell and a scheduled row · owed and scheduled at once · a plant of another kind · an aim with no plant · a line that holds on a refusal only taken as a target · **D** aimed at every line of the file layer · a scheduled row for nothing the row needs · a line of the committed table for no cell · a cell on demand with no line · a line on both lists · a line on neither · a line listed for a state it excuses nothing in · a line that excuses where it is not listed · a scheduled leaf the count holds touched · a write leaf the count has no line for · an entry of `EXCUSED_IN` taken away (named by the arm of `committed-singletons`) · and the refusing layer read off the argv alone — **which survived the arm as first written**: the fixture gained a cell with that argv in another state and one after a lead.
+- **Not vacuous on this tree**: with nothing owed, 168 of the 175 needs are named, and none of the seven the twelve cells answer.
+
+### Decided here — as a builder, and open to being overturned
+
+- **`ingest` and `unmanage` stand under `B5`**, the install family's task: their owner doc is `setup`'s and `uninstall`'s (`design/project-setup.md` → *Flow 2 hardening*). The plan's `B5` names two leaves; it would hold four.
+- **A leaf's home state**: `setup` in the never-adopted repository; `uninstall`, `task finalize` and `milestone finalize` in `fresh`. The plan's words are *the smallest prepared state in which that write happens*.
+- **A kind is a letter at one position** — a link to nothing, to a file in the repository and to one outside it are three; an edit before and after a unit's first write are two — because a cell is one plant at one position. **The sub-directories the layout names for plant D are not the fence's**: a need for **D** is answered by one cell, and how many places a directory's cells stand in is its family's reading of the layout.
+- **A plant in a directory a line lets the command write into is a need** (**U** at `T5`, `M1`, `M10`, `S4`): the plan's rule is *at each place a line lets the command create or replace*.
+- **The list of what a line excuses is typed, like the expected-red list**, and held exactly where cells run: the arms run a state a process, and nothing a process sees says what another state's cells excused.
+- **No term joins the runner's configuration for the arm of the cells on demand**: it is ignored, and runs by hand.
+
+### Not established
+
+- **That the kinds of plant target the right lines.** `aimed` is the builder's reading of the plan's §3 against a vocabulary the plan had not seen; a family's task meets it line by line.
+- **Any cell on demand**: there is none yet, and the arm printed a header.
+- **The count's narrowest reading for 26 leaves**, and the count's edges no reading by name sees ([the count](completions/artifacts/M55/stabilization-build/reshape/byte-table-leaves-touched-since-rc24.md) → §5).
+- **Linux.**
+
 ## 2026-10-13 — The byte table's acceptance: on the previous release's binary the twelve cells show each of the six blocking rows the pilot was built to catch — six *lost*, three *git's state moved outside its allowance* — and on this tree's they show each of them gone; every line as the plan reads it. And the first numbers: a task cell in two to four seconds, a fan-out cell in six to sixteen (the byte table's pilot, task `B2e`)
 
 **What.** The seventh task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §5, §8, §9): the arm that runs every cell on a binary a variable names, beside this tree's — [`byte_table::the_cells_are_run_on_the_binary_a_variable_names`](crates/cli/tests/byte_table.rs), ignored, run by hand — and the acceptance read off it. No cell and no row changed, and no product source.

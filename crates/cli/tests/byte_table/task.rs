@@ -13,7 +13,8 @@
 
 use super::ON_A_REFUSAL;
 use crate::support::byte_cell::{
-    Allows, Cell, Condition, Holding, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When, Where,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote,
+    Row, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -33,6 +34,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 pub const FINALIZE: Row = Row {
     leaf: &["task", "finalize"],
     consent: None,
+    home: Prepared::Of(State::Fresh),
     lines: &[
         line(
             "T1",
@@ -337,6 +339,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["task", "finalize", "sharpen-the-open-questions"],
         listed: Listed::Refuses,
         beside: Some(THE_COPY_IN_SUITE_IN_A_CLONE),
+        aim: Some(Aim {
+            line: "T1",
+            kind: Kind::EditAfter,
+        }),
     },
     Cell {
         name: "task-finalize-a-baseline-a-hand-edit-after-the-first-write",
@@ -354,6 +360,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["task", "finalize", "sharpen-the-open-questions"],
         listed: Listed::Refuses,
         beside: Some(THE_COPY_IN_SUITE),
+        aim: Some(Aim {
+            line: "T1",
+            kind: Kind::EditAfter,
+        }),
     },
     Cell {
         name: "task-finalize-a-link-to-nothing-at-the-created-docs-home",
@@ -378,5 +388,9 @@ pub const CELLS: &[Cell] = &[
         argv: &["task", "finalize", "file-a-finding"],
         listed: Listed::Refuses,
         beside: Some("promote_destination_shape::a_fresh_doc_never_promotes_onto_an_entry_that_is_not_a_regular_file"),
+        aim: Some(Aim {
+            line: "T1",
+            kind: Kind::LinkToNothing,
+        }),
     },
 ];

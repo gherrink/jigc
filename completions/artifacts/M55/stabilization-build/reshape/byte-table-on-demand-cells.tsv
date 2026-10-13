@@ -1,0 +1,3 @@
+# The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate.
+# Printed by `byte_table::the_cells_on_demand_are_run_and_printed`. No cell runs on demand yet: the first are the task `B4`'s.
+cell	command	state	listed as	came to	its exit

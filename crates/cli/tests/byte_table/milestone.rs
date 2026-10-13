@@ -13,7 +13,8 @@
 
 use super::ON_A_REFUSAL;
 use crate::support::byte_cell::{
-    Allows, Cell, Holding, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When, Where,
+    Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
+    Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -33,6 +34,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 pub const FINALIZE: Row = Row {
     leaf: &["milestone", "finalize"],
     consent: None,
+    home: Prepared::Of(State::Fresh),
     lines: &[
         // The one line of the four rows whose own sentence says it holds on a refusal.
         Line {
@@ -398,6 +400,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["milestone", "finalize", "stage-reports"],
         listed: Listed::Refuses,
         beside: Some("milestone_promote_guards::a_suffix_landing_on_an_occupied_home_blocks_and_its_route_lands_the_milestone"),
+        aim: Some(Aim {
+            line: "M2",
+            kind: Kind::Untracked,
+        }),
     },
     Cell {
         name: "milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone",
@@ -407,6 +413,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["milestone", "finalize", "stage-reports"],
         listed: Listed::Refuses,
         beside: Some("milestone_promote_guards::a_committed_occupant_is_never_routed_at_moving_out"),
+        aim: Some(Aim {
+            line: "M2",
+            kind: Kind::Committed,
+        }),
     },
     Cell {
         name: "milestone-finalize-the-users-own-worktree-moved-away",
@@ -426,5 +436,9 @@ pub const CELLS: &[Cell] = &[
         argv: &["milestone", "finalize", "foreign-worktree-probe"],
         listed: Listed::Acts,
         beside: Some("worktree_registration_reach::every_worktree_door_leaves_a_foreign_registration_exactly_as_it_found_it"),
+        aim: Some(Aim {
+            line: "M7",
+            kind: Kind::WorktreeMovedAway,
+        }),
     },
 ];

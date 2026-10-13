@@ -64,6 +64,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::leaf_argv::MINIMAL_ARGV;
 use super::route_case::{self, Sandbox, Step};
 use super::trial_corpus::{State, TrialCorpus};
 
@@ -312,12 +313,197 @@ pub struct Line {
 }
 
 /// **A leaf's row**: the command as `cli::cli::VERB_KINDS` holds it, the flag its owner
-/// doc names as the consent to a destruction where it has one, and the allowance.
+/// doc names as the consent to a destruction where it has one, its home state, and the
+/// allowance.
 #[derive(Clone, Copy, Debug)]
 pub struct Row {
     pub leaf: &'static [&'static str],
     pub consent: Option<&'static str>,
+    /// **The leaf's home state** — the smallest prepared state in which its write happens
+    /// (the plan's §3): where its planted cells and its base cell stand, and run in the
+    /// gate. A base cell in any other state runs on demand ([`Layer`]).
+    pub home: Prepared,
     pub lines: &'static [Line],
+}
+
+/// **A plant's kind, at one of its positions** — the plan's letters (§3, *The plants —
+/// each with the rule that places it*). A kind with more than one position, or more than
+/// one shape, is one variant each: a cell is one plant at one position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Kind {
+    /// **U** — an untracked file.
+    Untracked,
+    /// **T** — a committed file.
+    Committed,
+    /// **L** — a link to nothing.
+    LinkToNothing,
+    /// **L** — a link to a file in the repository.
+    LinkInside,
+    /// **L** — a link to a file under `outside/`.
+    LinkOutside,
+    /// **K** — a directory in a file's place.
+    DirForAFile,
+    /// **K** — a file in a directory's place: at the parent of a file the command writes.
+    FileForADir,
+    /// **E** — an edit in no commit, before the work unit's first write to the file.
+    EditBefore,
+    /// **E** — the same after that first write; or, where no unit stands between, last
+    /// before the command.
+    EditAfter,
+    /// **M** — a user's own line in a file jigc merges into, the file in no commit.
+    UsersLine,
+    /// **S** — a staged change at a place the command writes.
+    StagedThere,
+    /// **S** — a staged change at a place it does not.
+    StagedElsewhere,
+    /// **N** — a file whose name git quotes.
+    QuotedName,
+    /// **D** — a file the product did not write, in a directory the command removes.
+    Foreign,
+    /// **H** — a `pre-commit` hook of the user's that rejects.
+    RejectingHook,
+    /// **W** — the user's own linked worktree, its directory there.
+    WorktreeThere,
+    /// **W** — the same, its directory moved away.
+    WorktreeMovedAway,
+}
+
+impl Kind {
+    pub const ALL: &'static [Kind] = &[
+        Kind::Untracked,
+        Kind::Committed,
+        Kind::LinkToNothing,
+        Kind::LinkInside,
+        Kind::LinkOutside,
+        Kind::DirForAFile,
+        Kind::FileForADir,
+        Kind::EditBefore,
+        Kind::EditAfter,
+        Kind::UsersLine,
+        Kind::StagedThere,
+        Kind::StagedElsewhere,
+        Kind::QuotedName,
+        Kind::Foreign,
+        Kind::RejectingHook,
+        Kind::WorktreeThere,
+        Kind::WorktreeMovedAway,
+    ];
+
+    /// The plan's letter, with the position where the kind has more than one.
+    pub fn tag(self) -> &'static str {
+        match self {
+            Kind::Untracked => "U",
+            Kind::Committed => "T",
+            Kind::LinkToNothing => "L, to nothing",
+            Kind::LinkInside => "L, to a file in the repository",
+            Kind::LinkOutside => "L, to a file outside it",
+            Kind::DirForAFile => "K, a directory in a file's place",
+            Kind::FileForADir => "K, a file in a directory's place",
+            Kind::EditBefore => "E, before the first write",
+            Kind::EditAfter => "E, after the first write",
+            Kind::UsersLine => "M",
+            Kind::StagedThere => "S, where the command writes",
+            Kind::StagedElsewhere => "S, where it does not",
+            Kind::QuotedName => "N",
+            Kind::Foreign => "D",
+            Kind::RejectingHook => "H",
+            Kind::WorktreeThere => "W, its directory there",
+            Kind::WorktreeMovedAway => "W, its directory moved away",
+        }
+    }
+}
+
+/// **Whether a plant of `kind` targets `line`** — the plan's position rules (§3), read
+/// against the allowance's vocabulary. `Err` is **the reason the frame derives** for a
+/// line a kind does not target: nobody types it.
+///
+/// The rules, a kind each: **U** goes *at each place a line lets the command create or
+/// replace*; **T** *at a place the command creates*, which a commit can hold; **L** and
+/// **K** *at each place the command creates, replaces or merges into* — one file's
+/// place; **E** *in a tracked file the command rewrites*, and before a unit's first
+/// write only where a unit's staged doc is what lands; **M** *in a file jigc merges
+/// into*; **S** *at a place the command writes, and at one it does not* — the second is
+/// the commit's to answer; **N** *where the command lists or stages paths*; **D** *in a
+/// directory the command removes*; **H** *at every leaf whose row has a commit*; **W**
+/// where a line removes a registration.
+pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
+    if line.when == When::Refused {
+        return Err(
+            "the line holds on a refusal only, and a plant targets what a command \
+                    may do where it acts",
+        );
+    }
+    let one_file = |place: Where| !matches!(place, Where::Under(_));
+    let lands = |may: May| matches!(may, May::WriteWhole | May::Rebuilt | May::CopyOfAStagedDoc);
+    let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
+    let aimed = match (kind, line.allows) {
+        (Kind::Untracked, Allows::Files(_, may)) => lands(may),
+        (Kind::Committed, Allows::Files(place, may)) => {
+            lands(may) && one_file(place) && !matches!(place, Where::Hook)
+        }
+        (
+            Kind::LinkToNothing
+            | Kind::LinkInside
+            | Kind::LinkOutside
+            | Kind::DirForAFile
+            | Kind::FileForADir,
+            Allows::Files(place, may),
+        ) => one_file(place) && (lands(may) || matches!(may, May::MergeInto)),
+        (Kind::EditBefore, Allows::Files(_, may)) => matches!(may, May::CopyOfAStagedDoc),
+        (Kind::EditAfter | Kind::StagedThere, Allows::Files(place, may)) => {
+            one_file(place) && !matches!(place, Where::Hook) && (lands(may) || merges(may))
+        }
+        (Kind::UsersLine, Allows::Files(_, may)) => merges(may),
+        (Kind::Foreign, Allows::Files(place, may)) => {
+            matches!(place, Where::Under(_)) && matches!(may, May::Removed)
+        }
+        (Kind::StagedElsewhere | Kind::QuotedName | Kind::RejectingHook, Allows::Commit(_)) => true,
+        (Kind::WorktreeThere | Kind::WorktreeMovedAway, Allows::Unregistered(_)) => true,
+        _ => false,
+    };
+    if aimed {
+        return Ok(());
+    }
+    Err(match kind {
+        Kind::Untracked => "the line lets the command create or replace nothing",
+        Kind::Committed => "the line lets the command create nothing a commit can hold",
+        Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside => {
+            "the line names no one file's place the command creates, replaces or merges into"
+        }
+        Kind::DirForAFile | Kind::FileForADir => {
+            "the line names no one file's place the command writes"
+        }
+        Kind::EditBefore => "no staged doc of a work unit lands at the line's place",
+        Kind::EditAfter => "the line lets the command rewrite no tracked file",
+        Kind::UsersLine => "the line merges into no file and takes lines out of none",
+        Kind::StagedThere => "the line names no tracked file's place the command writes",
+        Kind::StagedElsewhere | Kind::QuotedName | Kind::RejectingHook => "the line is no commit's",
+        Kind::Foreign => "the line removes no directory",
+        Kind::WorktreeThere | Kind::WorktreeMovedAway => "the line removes no registration",
+    })
+}
+
+/// **What a cell's plant is aimed at**: a line of its leaf's row, by its `id`, and the
+/// kind of plant at the position it stands in. It names a line and never a path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Aim {
+    pub line: &'static str,
+    pub kind: Kind,
+}
+
+/// **The layer a cell stands in** (the plan's §3, *How the cross is kept from
+/// exploding*) — derived from the cell and its row, typed by nobody.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layer {
+    /// The leaf with the argv that resolves nothing (`support::leaf_argv`), in `fresh`,
+    /// with no lead.
+    Refusing,
+    /// The leaf with something to act on and no plant, in its home state.
+    Base,
+    /// The same in a state that is not the leaf's home: **it runs on demand**, in no gate.
+    BaseElsewhere,
+    /// A plant, or a condition a doc names for the command's guard.
+    Planted,
 }
 
 /// What comparing one cell came to. The words are the plan's and are what a table prints.
@@ -1248,6 +1434,56 @@ pub struct Cell {
     /// command, which sweeps them (the plan's §1.5, *the rule against duplication*).
     /// `None` for a cell no suite stands beside.
     pub beside: Option<&'static str>,
+    /// What the cell's plant is aimed at; `None` for a cell that plants nothing.
+    pub aim: Option<Aim>,
+}
+
+impl Cell {
+    /// Whether the cell puts something into its state by hand, or makes a condition hold.
+    pub fn plants(&self) -> bool {
+        self.leads
+            .iter()
+            .any(|lead| matches!(lead, Lead::Plant(_) | Lead::Under(_)))
+    }
+
+    /// The layer the cell stands in, under its leaf's row.
+    pub fn layer(&self, row: &Row) -> Layer {
+        let resolves_nothing = MINIMAL_ARGV
+            .iter()
+            .find(|(leaf, _)| *leaf == self.leaf)
+            .is_some_and(|(leaf, tail)| self.argv.iter().eq(leaf.iter().chain(tail.iter())));
+        if self.plants() {
+            Layer::Planted
+        } else if resolves_nothing
+            && self.leads.is_empty()
+            && self.state == Prepared::Of(State::Fresh)
+        {
+            Layer::Refusing
+        } else if self.state == row.home {
+            Layer::Base
+        } else {
+            Layer::BaseElsewhere
+        }
+    }
+}
+
+impl Plant {
+    /// Whether a plant of this shape can be one of `kind`.
+    pub fn is_of(self, kind: Kind) -> bool {
+        match self {
+            Plant::File(_) => matches!(kind, Kind::Untracked | Kind::Foreign),
+            Plant::Committed(_) => kind == Kind::Committed,
+            Plant::LinkToNothing(_) => kind == Kind::LinkToNothing,
+            Plant::Edit(_) => matches!(kind, Kind::EditBefore | Kind::EditAfter),
+            Plant::Worktree { moved_away } => {
+                kind == if moved_away {
+                    Kind::WorktreeMovedAway
+                } else {
+                    Kind::WorktreeThere
+                }
+            }
+        }
+    }
 }
 
 /// What running one cell came to.

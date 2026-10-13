@@ -19,8 +19,8 @@
 
 use super::ON_A_REFUSAL;
 use crate::support::byte_cell::{
-    Allows, Cell, Condition, Holding, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
-    Where,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote,
+    Row, When, Where,
 };
 use crate::support::trial_corpus::State;
 
@@ -39,6 +39,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 pub const SETUP: Row = Row {
     leaf: &["setup"],
     consent: Some("--force"),
+    home: Prepared::Bare,
     lines: &[
         line(
             "S1",
@@ -225,6 +226,7 @@ pub const SETUP: Row = Row {
 pub const UNINSTALL: Row = Row {
     leaf: &["uninstall"],
     consent: Some("--force"),
+    home: Prepared::Of(State::Fresh),
     lines: &[
         line(
             "U1",
@@ -345,6 +347,10 @@ const fn uninstall_over(name: &'static str, leads: &'static [Lead], beside: &'st
         argv: &["uninstall"],
         listed: Listed::Refuses,
         beside: Some(beside),
+        aim: Some(Aim {
+            line: "U1",
+            kind: Kind::Foreign,
+        }),
     }
 }
 
@@ -368,6 +374,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["setup"],
         listed: Listed::Refuses,
         beside: Some(THE_INSTALL_GUARD),
+        aim: Some(Aim {
+            line: "S1",
+            kind: Kind::Untracked,
+        }),
     },
     Cell {
         name: "setup-head-born-a-file-at-the-bootstrap",
@@ -377,6 +387,10 @@ pub const CELLS: &[Cell] = &[
         argv: &["setup"],
         listed: Listed::Refuses,
         beside: Some(THE_INSTALL_GUARD),
+        aim: Some(Aim {
+            line: "S1",
+            kind: Kind::Untracked,
+        }),
     },
     uninstall_over(
         "uninstall-a-foreign-file-under-logs",
