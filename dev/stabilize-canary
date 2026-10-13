@@ -55,8 +55,19 @@
 #       THE OPENING OF A RUN IN PARTS (below) in place of the synthetic opening — a run
 #       with a queue — and --items names items of THAT opening's table; --budget and
 #       --order are that opening's, each with its default there, and neither is taken
-#       without the switch (usage). The commit named must then also hold, in its
-#       DECISIONS.md, exactly one entry that states the exit rule (unfit).
+#       without the switch (usage); a budget is at most 999991, so that the two raises
+#       a prompt file is written for are numbers the harness takes. The commit named
+#       must then also hold, in its DECISIONS.md, exactly one entry that states the exit
+#       rule (unfit) — AND IT MUST HOLD THIS TOOL AS IT RUNS (unfit): the file that runs
+#       is the working tree's, the clone holds the commit's, and a setup under the switch
+#       says `ready` only where the two are one file. Asked before anything is made; the
+#       refusal says which commit to name — the one checked out, where that holds the
+#       file — or that the file is in no commit. So REV is THE TIP OF THE BRANCH WHEN THE
+#       SETUP IS RUN: the commit that holds the tool with every repair made since it was
+#       built. Nothing else of the commit has to be the working tree's: the record
+#       script and the step tool are called by their paths in the clone, the harness is
+#       named to every prompt file by its path in the clone, and a session that stands
+#       in the clone loads the clone's definitions and settings.
 #       Everything is checked before anything is made; a setup that fails after that
 #       leaves a root that holds no canary.json, which no act takes for a canary. It ends
 #       with `check`, and with the state a fresh run has — `next` is `test`, round 1,
@@ -73,10 +84,13 @@
 #       is in no queue under the word that keeps it out, as the run's own state says
 #       both; and, after `script_path`: prompts — the directory of the prompt files —
 #       acts: [{act, args, prompt, return, expect [, human] [, verdicts]}], one for each
-#       act of the parts, in the order they are made (THE ACTS OF A RUN IN PARTS) — and
-#       tool: {sha256, as_committed}: the sha256 of THE FILE THAT RAN, which is the
-#       working tree's, and whether it is the file the commit named holds at this
-#       tool's path — the one the clone holds, whose header an agent there can read.
+#       act of the parts, in the order they are made (THE ACTS OF A RUN IN PARTS) —
+#       rulings: [{ruling, args, prompt, return, when}], apart from the acts: THE RULINGS
+#       OFF THE MAIN LINE (below), each with a prompt file under a name no act has — and
+#       tool: {sha256, as_committed}: the sha256 of THE FILE THAT RAN, and that it is the
+#       file the commit named holds at this tool's path — the one the clone holds, whose
+#       header an agent there can read. `as_committed` is true in every line that says
+#       `ready`: a setup whose tool is another is refused.
 #
 #   dev/stabilize-canary check --root ROOT
 #       THE CLONE CAN REACH NOTHING BUT ITS BARE REMOTE — asserted, before the session
@@ -86,8 +100,11 @@
 #       and pushes to — under the configuration THE CALLER runs with, so a rewrite in the
 #       session's own configuration is seen — is ROOT/origin.git; and the clone's own
 #       configuration holds no `url.*` rewrite and names, anywhere in it, no remote of
-#       this repository and not this repository (not-isolated). It writes nothing but what
-#       `git status` writes in the CLONE.
+#       this repository and not this repository (not-isolated). IT WRITES NOTHING, AND
+#       TAKES NO LOCK A STAGE COULD MEET: every git command it runs is a read, and its
+#       `git status` is asked with no optional lock — a plain one may hold the index's
+#       lock for a moment, and a commit step of a stage that stages at that moment is
+#       refused and costs its record one more gate.
 #       Prints {status: checked, root, run, loop, branch, remotes, fetch_url, push_url,
 #       head, remote_head, pushed, records, pending, state: {next, round, attempt [,
 #       refused]}, not_ready, items: [{item, kind, selected}], ledger: [{key, grade,
@@ -105,24 +122,82 @@
 #       empty or null. NO REFUSAL OF A TOOL `check` CALLS — git, the clone's record
 #       script — IS EVER TURNED INTO *the root holds no canary*: such a refusal is
 #       `tool`, and its recommendation says that the canary stands as it stood and
-#       that no setup is asked for. Only a root with no canary.json holds none (missing).
+#       that no setup is asked for. Only a root with no canary.json holds none (missing)
+#       — and a canary.json that lacks what `check` reads the root by is refused by the
+#       same word, in a sentence of its own: nothing of a root is read on a guess.
 #       FOR A ROOT OF THE PARTS — one a setup under --parts made — the line holds no
 #       `returned`, whose two files no act of the parts writes, and holds instead, after
-#       `ledger`: budget: {limit, spent, left} · queue: the keys the queue ranks ·
-#       listed: {WHY: [key]} · human: [{key, why}], the human's list · filed: [{file,
-#       key, verdict, attempt, sha256, counts, why, recorded, handed_on}] — EVERY FILED
-#       VERDICT, with the sha256 of its bytes, whether it counts and whether a record
-#       took it: the same file is printed with the same hash before and after that
-#       record · view: {file, sha256, on_disk}, the stop's view · attempts: {begun,
-#       unrecorded} · held: [{name, kind, state, verdict}] — THE HELD COMMANDS under the
-#       scratch root, as their own files say (judged: its verdict is kept; ended: the
-#       command has ended and no step has asked after it since, so no verdict is kept;
-#       no-exit: it runs, or its supervisor is gone) · trail: [{commit, subject,
-#       attempts}] — THE RECORDS MADE, every commit on the opening with the attempts
-#       whose marker it took · pending_paths: what `git status` shows, by its path ·
-#       acts: [{act, returned, status, next, shows, stands}] (below) · tool: {wrote,
-#       reads, same} — the tool that wrote the opening and the one that reads it now,
-#       by sha256 · sheet: [{plan, key, class, returns}] — THE ANSWER SHEET · to_answer.
+#       `ledger`: applied (below) · budget: {limit, spent, left} · queue: the keys the
+#       queue ranks · listed: {WHY: [key]} · human: [{key, why}], the human's list ·
+#       filed: [{file, key, verdict, attempt, sha256, counts, why, recorded, handed_on
+#       [, applied] [, no_file, set_aside]}] — EVERY FILED VERDICT, with the sha256 of its
+#       bytes, whether it counts and whether a record took it: the same file is printed
+#       with the same hash before and after that record · view: {file, sha256, on_disk},
+#       the stop's view · attempts: {begun, unrecorded} · held (below) · trail: [{commit,
+#       subject, attempts}] — THE RECORDS MADE, every commit on the opening with the
+#       attempts whose marker it took · pending_paths: what `git status` shows, by its
+#       path · acts: [{act, returned, status, next, own, shows, stands}] (below) ·
+#       ruling (below) · tool: {wrote, commit, reads, same} — THE THREE TOOLS, by sha256:
+#       the one that wrote the opening, the one the clone's commit holds at this tool's
+#       path, and the one that asks now; `same` where they are one · sheet: [{plan, key,
+#       class, returns}] — THE ANSWER SHEET · to_answer.
+#
+#       WHAT `check` SAYS OF THE FIELDS THAT ARE READ FROM THE RUN'S TABLES. The run's
+#       state is read by the clone's record script from the tables AS THE WORKING TREE
+#       HOLDS THEM: `state`, `not_ready`, `items`, `ledger`, `budget`, `queue`, `listed`,
+#       `human`, `filed`, `view` and `attempts` are that state's. `head`, `remote_head`,
+#       `pushed`, `records`, `trail` and `pending_paths` are git's, and say what is
+#       committed. The two differ in ONE state a run reaches: A BATCH THAT IS APPLIED AND
+#       IN NO COMMIT — a record whose gate was held when its invocation was ended, or
+#       halted. So `check` asks the clone's record script what is pending (`pending`, a
+#       read), asks git whether HEAD holds every file of the batch as the batch wrote it
+#       (the step tool's own question; its `git-state --look` is not asked — it fetches,
+#       and its `git status` may take the index's lock), and prints
+#         applied   null where no batch is applied. Else {subject, round, calls, files,
+#                   filed, altered, in_commit, then [, across, discard]}: the batch as the
+#                   record script says it — its files and the filed verdicts it takes,
+#                   by their paths — and WHETHER A COMMIT HOLDS IT. Where none does:
+#                   `across`, every field of this line that was read across the batch
+#                   and says what the record WILL say; `discard`, the ONE call that takes
+#                   the batch back, spelled whole, run from the clone — the exit where a
+#                   halt says no name is left for its gate, or the batch is not to be
+#                   recorded; and `then`, what follows: the next invocation that does not
+#                   only look finishes the batch, whatever it carries. Where the record
+#                   script cannot say what is pending — a link among the filed verdicts
+#                   is refused there — {refused: its line, then}: no invocation gets
+#                   past its first read while that stands.
+#       And while a batch is applied and in no commit: `state` holds `across: applied`;
+#       A FILED VERDICT THE BATCH TAKES IS PRINTED AS ONE NO RECORD TOOK — `recorded`
+#       false, `applied` true: `recorded` is asked of what is committed — and of each act
+#       `shows` counts the batch as the record it will be (WHAT `check` SAYS OF EACH ACT).
+#       A filed entry that is a link or a directory says so (`no_file`), with the one
+#       call that sets it aside (`set_aside`), run from the clone.
+#
+#         held      THE HELD COMMANDS under the scratch root, [{name, kind, state, why,
+#                   verdict, kept [, supervised]}] — EACH AS THE STEP TOOL WOULD ANSWER IT,
+#                   read and not asked: that tool has no call that only reads a job (a
+#                   wait, and a start asked again, judge a command that has ended and
+#                   keep its verdict). `state`: running — its supervisor holds the job's
+#                   lock · done — the command has ended, and its supervisor wrote how ·
+#                   dead — `why` says how: no-record (the directory holds no record;
+#                   `supervised`: whether a supervisor lives under it all the same),
+#                   no-exit (the supervisor is gone and wrote nothing), killed (a signal
+#                   ended the command) · null — a hand was in the job's directory (why:
+#                   no-lock, verdict-unread), and the step tool answers nothing of it.
+#                   `verdict`: what the step tool answers now — null while none is kept,
+#                   and `void` (why: hash-differs) for a build whose binary is no longer
+#                   the file it hashed. `kept`: THE KEPT WORD, as the verdict's file holds
+#                   it. WHAT IT CANNOT TELL: whether the command of a job that is `dead`
+#                   still runs — a killed supervisor leaves its command running.
+#         ruling    null, or THE RULING OFF THE MAIN LINE THAT IS THE NEXT STEP, as the
+#                   state says it: {ruling, prompt, withheld, only} — the prompt file to
+#                   paste. NEVER NAMED WHILE AN ACT MAY BE RUNNING, as far as `check` can
+#                   see one: while a held command's supervisor lives, or a batch is
+#                   applied and in no commit, `prompt` is null and `withheld` says why.
+#                   `only` says what it cannot see: A SESSION. While an attempt is under
+#                   way between two held commands the state reads as it does once that
+#                   attempt is dead — so no ruling is typed while a session of an act is
+#                   open, whatever this field says.
 #
 # WHAT THE ORCHESTRATOR INVOKES — the line of `setup`, with nothing to interpret:
 #
@@ -256,11 +331,17 @@
 #                table below, the `plan` and `returns` of PLANTS — and `check` prints
 #                it (`sheet`), to the human's terminal. It stands in nothing a setup
 #                writes: no row, no prompt file, not the line, not the file kept.
-#                IT CANNOT BE HIDDEN FROM AN AGENT THAT GOES LOOKING — this header, the
-#                plan and the log's entry are in the commit the clone holds, and a held
-#                build unpacks that commit under the scratch root — ONLY KEPT OUT OF
-#                WHAT AN AGENT IS HANDED. Whether a verifier went and read them is a
-#                question a part's reading answers (`check`: to_answer).
+#                IT CANNOT BE HIDDEN FROM AN AGENT THAT GOES LOOKING — FIVE FILES of the
+#                commit the clone holds say it: this header, the plan, the log's
+#                entries, this tool's suite (which types the keys, the plan's names
+#                and the answers a second time) and THE REPORT THE FIRST ROW'S REPRO
+#                CITES, which states that row's verdict and whose path the row hands
+#                its verifier; and a held build unpacks that commit under the scratch
+#                root, all five with it — ONLY KEPT OUT OF WHAT AN AGENT IS HANDED,
+#                but for that one path. Whether a verifier went and read one is a
+#                question a part's reading answers (`check`: to_answer, which names
+#                the five by path, and asks of the first row's verifier whether it
+#                drove before it opened the report).
 #
 #                the plan's name                 the key that is planted                    class            what a verifier should return
 #                plant-install-hook-regression   setup-hook-link-route-deletes-the-script   route seed       confirmed, a regression
@@ -340,20 +421,52 @@
 #                  was held, the same arguments once more — that invocation finds the
 #                  batch applied and in no commit, gates it under a name of its own,
 #                  commits it, pushes it and starts nothing. BEFORE IT THE HUMAN WAITS
-#                  UNTIL `check` SAYS, UNDER `held`, THAT THE RECORD'S JOB HAS `ended`: a
-#                  held command outlives the session, its supervisor writes how it ended
-#                  (`exit.json`), and NO `verdict.json` APPEARS WHILE NOBODY ASKS AFTER
-#                  THE JOB — a verdict is written by the step that asks, and NONE IS
-#                  WAITED FOR: this invocation asks nothing of that job, and gates the
-#                  batch again under a name of its own. The wait is only so that two
-#                  gates do not run on one machine at once, and nothing is looked up in
-#                  the scratch root by hand.
+#                  UNTIL `check` SAYS, UNDER `held`, THAT THE RECORD'S JOB IS `done` — OR
+#                  `dead`: a held command outlives the session, its supervisor writes
+#                  how it ended (`exit.json`), and NO `verdict.json` APPEARS WHILE NOBODY
+#                  ASKS AFTER THE JOB — a verdict is written by the step that asks, and
+#                  NONE IS WAITED FOR: this invocation asks nothing of that job, and
+#                  gates the batch again under a name of its own. While `check` says
+#                  `running`, the gate runs. `dead` ends the wait too: the supervisor is
+#                  gone, no other word will ever come, and whether the gate's own
+#                  command still runs `check` cannot tell — NOTHING THAT NAMES THE ROOT
+#                  IS ENDED THERE (after act 4 a process that names the root is the
+#                  supervisor of a record's gate; ending processes by the root's path
+#                  is act 3's instruction, and act 3's only), and the act is made all
+#                  the same. The wait is only so that two gates do not run on one
+#                  machine at once, and nothing is looked up in the scratch root by
+#                  hand. And `check`'s `applied` names the batch for as long as no
+#                  commit holds it.
+#
+# THE RULINGS OFF THE MAIN LINE — the human's exits the plan's section 5 names, each ONE
+# invocation that only rules and starts nothing. FOR EACH THE SETUP WRITES A PROMPT FILE
+# beside the acts', ROOT/prompts/RULING.md, under a name no act has, and names it in its
+# line apart from the acts (`rulings`), with its argument object, its return file
+# (ROOT/results/RULING.json) and `when` — the state it is the exit of, in words. No count
+# is printed: nobody counted an invocation off the line. `check` names the file where
+# the run's state is that state (`ruling`), and never while it can see that an act may
+# be running. NO RULING IS TYPED WHILE A SESSION OF AN ACT IS OPEN.
+#
+#   ruling-again        one more attempt (`again: test`): the stage has spent two attempts
+#                       in a row without a record — part 1 spends one — and the third
+#                       is the human's to grant. Then the act that halted, once more.
+#   ruling-raise-again  one more raise, by four more (the opening's budget and eight):
+#                       part 4's act 2, its window missed — the stage recorded, and the
+#                       raised budget is spent with rows nobody reached. Then part 4's
+#                       acts 2 to 5 once more.
+#   NOT A PROMPT, BECAUSE IT IS NO INVOCATION: a batch that is applied and is not to be
+#   recorded is taken back by one call of the step tool, which `check` prints whole
+#   (`applied`: discard). And no file is written for a `go`, which no part owes.
 #
 # THE STEPS OF A RUN IN PARTS, each one plain invocation, from this repository's root:
 #
 #   1. A root, outside the repository:
 #        mktemp -d /ABSOLUTE/SCRATCH/canary.XXXXXX
-#   2. The setup, with the path step 1 printed and the commit that holds this tool:
+#      (Under the machine's temporary directory, and not under an agent session's
+#      scratch directory: a root whose path embeds the home directory's makes a report
+#      that names a path under it refused as a host path.)
+#   2. The setup, with the path step 1 printed and THE TIP OF THE BRANCH, by its full
+#      sha — the commit that holds this tool as it runs; any other is refused (unfit):
 #        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts
 #   3. The clone is trusted: one interactive session is started in `session_cwd`, its
 #      trust dialog accepted, and the session left.
@@ -371,7 +484,13 @@
 #
 # WHAT `check` SAYS OF EACH ACT (`acts`), so that a part is read from the run and from no
 # memory of a session. TWO THINGS ARE ASKED OF AN ACT. `returned`: its return file is
-# there — with the `status` and the `next` it holds, where it holds one JSON object.
+# there — with the `status` and the `next` it holds, where it holds one JSON object, and
+# `own`: WHETHER THAT RETURN IS ONE OF THE ACT'S OWN — its status is the one the act
+# returns on the main line (part-1 and part-4-act-3 `stopped`, part-2 `hunted`, the two
+# rulings `ruled`, part-3-act-2 and part-4-act-4 `verified`, part-4-act-5 `recorded`; the
+# act the human ends has none), of this run and this stage where the return names one.
+# A refusal, a halt, a halt in another repository and another stage's return are none
+# (false); another act's return with the same status cannot be told from the act's own.
 # `shows`: THE RUN ITSELF SHOWS THE ACT — by what that act alone leaves, as the parts are
 # run in their order from one root: part-1, an attempt that reached no record before the
 # stage's first record; part-2, that record; part-3-act-1, another order than the
@@ -381,7 +500,9 @@
 # NOTHING, and the record an ended act left is finished by an invocation that begins no
 # attempt: of part-4-act-3 and part-4-act-5 the run shows nothing either way (null). In a
 # root opened afresh for a later part, read `trail` and `attempts` — the acts' words are
-# the main line's. `stands` is the one word the two make:
+# the main line's. A BATCH THAT IS APPLIED AND IN NO COMMIT COUNTS AS THE RECORD IT WILL
+# BE, with the markers that are pending: the act that reached its record's gate ran, and
+# is not said to have never run. `stands` is the one word the two make:
 #
 #   returned          the file is there, and the run shows the act — or cannot show one
 #   not-written       the run shows the act and no file is there: IT RAN, AND ITS RETURN
@@ -393,7 +514,9 @@
 #   cannot-tell       no file is there, and the act is one the run cannot show
 #
 # `to_answer` names what a part's reading — of the transcripts, which no tool here reads —
-# has to answer beside the plan's own table: whether a verifier read the answers.
+# has to answer beside the plan's own table: whether a verifier read one of the five
+# files that hold an answer, each named by its path; and whether the first planted row's
+# verifier drove its claim before it opened the report its row cites.
 #
 # WHAT IT SHOWS (the plan's list): that a stage reaches its record and pushes it with
 # real agents — the attempt's marker, the scope, the instruments, triage, a verifier, the
@@ -450,7 +573,8 @@
 #    0  the act is done
 #    2  usage         an unknown act or flag, a missing argument, a value outside its
 #                     grammar — a root that is not absolute or not of plain segments, an
-#                     item this tool has no row for
+#                     item this tool has no row for, a budget whose raises the harness
+#                     would not take
 #    3  inside        the root lies inside the repository
 #    4  no-root       the root's parent is not there, or the root is no directory
 #    5  exists        the root holds something already: a root is used once
@@ -459,7 +583,7 @@
 #                     the repository
 #    8  unfit         the commit named lacks a script of a run, or the harness — or,
 #                     under --parts, its log does not hold exactly one entry that states
-#                     the exit rule
+#                     the exit rule, or it does not hold this tool as it runs
 #    9  tool          a command the act runs failed: git, or the clone's own
 #                     dev/stabilize-record or dev/stabilize-step — a scanner that could
 #                     not run among them — or the file system refused a directory or a
@@ -468,7 +592,8 @@
 #   10  not-isolated  the clone could reach something that is not its bare remote
 #   11  not-fresh     the run the setup opened is not in the state a fresh run has —
 #                     or, under --parts, a row of it is left for a triage
-#   12  missing       the root holds no canary
+#   12  missing       the root holds no canary — or its canary.json is not the line a
+#                     setup of this tool kept
 #   13  link          a directory of the canary is a link, or is not where it should be
 #
 # Needs python3 and git, and — in the clone, for every write of the opening — what
@@ -477,6 +602,7 @@
 # tooling-tests/dev_stabilize_canary.rs drives it.
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -525,6 +651,10 @@ SLUG_MAX = 100
 # A budget as the record script takes one, and an order as --order spells it: classes
 # joined by commas, each ONE PLAIN WORD, `<kind>:<origin>`.
 NUMBER = re.compile(r"[1-9][0-9]{0,5}")
+# The largest number the harness takes in a ruling (its MAX_NUMBER): a budget is raised by
+# rulings, so the opening's budget leaves room for the two raises a prompt file is written
+# for (RAISE, below).
+MOST = 999999
 CLASSES = re.compile(r"[a-z]+(?:-[a-z]+)*:[a-z]+(?:-[a-z]+)*(?:,[a-z]+(?:-[a-z]+)*:[a-z]+(?:-[a-z]+)*)*")
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
@@ -812,16 +942,34 @@ ORDER_THREE = ("route under-confirmed", "route seed", "behaviour under-confirmed
 RAISE = 4
 # `human`: what the human does around an act that is more than pasting its prompt and
 # reading `check` — in words, and no command: the three acts of the interruption.
+# `own`: THE STATUSES A RETURN OF THE ACT HOLDS ON THE MAIN LINE — what `check` holds an act's
+# return file to (its `own`): a return with another status is a refusal, a halt, another
+# act's return or a file somebody wrote. The act the human ends has none: it writes no return.
 ACTS = (
-    ("part-1", {"scope": True, "stopAfter": "preflight"}),
-    ("part-2", {"scope": True}),
-    ("part-3-act-1", {"rulings": "order"}),
-    ("part-3-act-2", {}),
-    ("part-4-act-1", {"rulings": "budget"}),
-    ("part-4-act-2", {"human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the fourth verifier returns. In it the session is ended at its terminal. No return is written, and that is right"}),
-    ("part-4-act-3", {"stopAfter": "state", "human": "Before it: list the verdicts directory twice, a minute apart - no file may appear between the two - and see that no process that names the root still runs. Then check, whose filed is the snapshot: every filed file with its hash. Then this act, in a new session: it only looks, and launches nobody"}),
-    ("part-4-act-4", {}),
-    ("part-4-act-5", {"human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job that it has ended - so that two gates do not run on one machine at once. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. Then this act - the same arguments once more"}),
+    ("part-1", {"scope": True, "stopAfter": "preflight", "own": ("stopped",)}),
+    ("part-2", {"scope": True, "own": ("hunted",)}),
+    ("part-3-act-1", {"rulings": "order", "own": ("ruled",)}),
+    ("part-3-act-2", {"own": ("verified",)}),
+    ("part-4-act-1", {"rulings": "budget", "own": ("ruled",)}),
+    ("part-4-act-2", {"own": (), "human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the fourth verifier returns. In it the session is ended at its terminal. No return is written, and that is right"}),
+    ("part-4-act-3", {"stopAfter": "state", "own": ("stopped",), "human": "Before it: list the verdicts directory twice, a minute apart - no file may appear between the two - and see that no process that names the root still runs. Then check, whose filed is the snapshot: every filed file with its hash. Then this act, in a new session: it only looks, and launches nobody"}),
+    ("part-4-act-4", {"own": ("verified",)}),
+    ("part-4-act-5", {"own": ("recorded",), "human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job done - or dead. While it says running the gate still runs, and this act waits, so that two gates do not run on one machine at once. done: the command has ended. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. dead: the job's supervisor is gone, no other word will ever come and the wait is over - whether the gate's own command still runs check cannot tell, NOTHING THAT NAMES THE ROOT IS ENDED HERE (after act 4 a process that names the root is the supervisor of a record's gate), and the act is made all the same. Then this act - the same arguments once more"}),
+)
+# THE RULINGS OFF THE MAIN LINE — the human's exits the plan's section 5 names, each ONE
+# invocation that only rules and starts nothing, with a prompt file of its own under a name
+# no act has (`ruling-…`): what its argument object holds beside the stage, the run and the
+# scratch root, and `when` — in words, and no command — the state it is the exit of. `check`
+# names the file where the run's state is that state (its `ruling`).
+#   ruling-again        part 1 spends one attempt without a record; where the stage then
+#                       halts before its record a second time, the third attempt is the
+#                       human's to grant
+#   ruling-raise-again  part 4, act 2, its window missed: the stage recorded, the raised
+#                       budget is spent with rows nobody reached, and the interruption is
+#                       made after ONE MORE RAISE of four
+OFF_LINE = (
+    ("ruling-again", "again", "OFF THE MAIN LINE - only where check names this file under ruling: the stage has spent two attempts in a row without a record - part 1 spends one - and one more is the human's to grant. It is recorded and starts nothing. Then the act that halted, once more. NEVER WHILE A SESSION OF AN ACT IS OPEN: while an attempt is under way the state reads the same, and check cannot see a session"),
+    ("ruling-raise-again", "raise-again", "OFF THE MAIN LINE - only where check names this file under ruling: the window of part 4's act 2 was missed, the stage recorded, and the raised budget is spent with rows nobody reached. One more raise of four, recorded, and nothing started. Then part 4's acts 2 to 5 once more. NEVER WHILE A SESSION OF AN ACT IS OPEN"),
 )
 # HOW MANY AGENTS AN ACT LAUNCHES WHERE EVERY AGENT ENDS WELL, and how many of them are
 # one-command steps of dev/stabilize-step — counted, and held to the clone's own harness
@@ -895,7 +1043,17 @@ RULINGS = " - the rulings of the human"
 MARKER = r"/r[0-9]+/reports/test/attempt\.a([0-9]+)\.md"
 # What the plan for the parts is, for the one question a part's reading has to answer.
 PLAN = "completions/artifacts/M55/stabilization-build/reshape/staged-canary.md"
-TO_ANSWER = "did any verifier read the plan for the parts (%s), this tool (dev/%s) or the log's entry on it (%s) - the three places of the candidate's own commit that say which planted row is which, and how each should fall?"
+# FIVE PLACES OF THE CANDIDATE'S OWN COMMIT HOLD AN ANSWER — each by its path in the clone,
+# and each a second time wherever a held build unpacked that commit under the scratch root:
+# the plan, this tool, the log, this tool's suite (the keys, the plan's names and what each
+# should return, typed a second time), and the report the first planted row's repro cites
+# (VR1), which states that row's verdict.
+SUITE = "tooling-tests/dev_stabilize_canary.rs"
+ANSWERS = (PLAN, "dev/" + PROG, LOG, SUITE, VR1)
+TO_ANSWER = (
+    "did any verifier read one of the five files of the candidate's own commit that say which planted row is which, or how one should fall - %s - in the clone, or in the copy a held build unpacked under the scratch root (scratch/hold/build-.../work, the tree and its archive)?" % ", ".join(ANSWERS),
+    "the first planted row hands its verifier the path of the last of those files, a report that states that row's verdict: did that verifier drive the claim before it opened the report, or after - or without opening it?",
+)
 
 OPENING_PARTS = """# %(run)s - the opening record of a canary run in parts
 
@@ -1147,7 +1305,12 @@ def queued(args):
     order = ORDER if args.order is None else tuple(named.replace(":", " ") for named in args.order.split(","))
     if len(set(order)) != len(order):
         refuse("usage", "--order %s names a class twice — see dev/stabilize-canary --help" % json.dumps(args.order))
-    return {"budget": BUDGET if args.budget is None else int(args.budget), "hand-on": HAND_ON, "order": list(order)}
+    budget = BUDGET if args.budget is None else int(args.budget)
+    if budget + 2 * RAISE > MOST:
+        # A RAISE IS A NUMBER THE HARNESS MUST TAKE: part 4 raises the budget by four, and
+        # the ruling after a missed window by four more.
+        refuse("usage", "--budget %d is too large: part 4 raises it by %d, a missed window by %d more, and the harness takes no number above %d in a ruling — at most %d; see dev/stabilize-canary --help" % (budget, RAISE, RAISE, MOST, MOST - 2 * RAISE))
+    return {"budget": budget, "hand-on": HAND_ON, "order": list(order)}
 
 
 def stated(candidate):
@@ -1160,6 +1323,39 @@ def stated(candidate):
     if len(heads) != 1:
         refuse("unfit", "the commit named, %s, holds %d entries of %s that open `%s%s`, and the opening of a run in parts names exactly one: the entry that states the run's closing condition" % (candidate, len(heads), LOG, ENTRY, CONDITION), log.shown() if log.code != 0 else " / ".join(heads), "name a commit whose %s holds that entry once" % LOG)
     return heads[0]
+
+
+def the_commits_tool(candidate):
+    """THE TOOL THAT RUNS IS THE TOOL THE COMMIT NAMED HOLDS — asked under the switch, before
+    anything is made — or the setup is refused (unfit): the sha256 of the file that ran.
+    A setup runs the working tree's tool, and the clone holds the commit's. Everything else
+    a stage runs is the commit's by construction — the record script and the step tool are
+    called by their paths in the clone, the harness is named to every prompt file by its
+    path in the clone, and a session that stands there loads the clone's definitions — so
+    THIS FILE IS THE ONE THING OF A SETUP THAT A HUMAN CAN GET WRONG: the opening, the
+    plants, each act's arguments and each count are this file's tables, held to the harness
+    of the commit this file was committed with. A commit that lacks a repair of the tools
+    lacks this file as it stands too, and is refused by the same question. The two are
+    compared as git's blobs, the file hashed with no filter of the caller's configuration."""
+    mine = os.path.realpath(__file__)
+    with open(mine, "rb") as file:
+        digest = hashlib.sha256(file.read()).hexdigest()
+    at = "dev/%s" % PROG
+
+    def blob(commit):
+        asked = source("rev-parse", "--verify", "--quiet", "%s:%s" % (commit, at))
+        return asked.out.strip() if asked.code == 0 else None
+
+    own, theirs = source("hash-object", "--no-filters", "--", mine), blob(candidate)
+    if own.code != 0 or own.out.strip() != theirs:
+        head = source("rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+        here = head.out.strip() if head.code == 0 else None
+        if here is not None and own.code == 0 and blob(here) == own.out.strip():
+            then = "Name the commit that is checked out where this tool lies: --commit %s — the tip of the branch when the setup is run, which holds the tool as it stands with every repair made since the tool was built" % here
+        else:
+            then = "The file that runs is in no commit this checkout stands at: commit it and name that commit, or run the setup from a checkout of the commit named — by the path of the tool in that checkout"
+        refuse("unfit", "the tool that runs is not the tool the commit named, %s, holds at %s: the clone would hold another tool, another table of the acts, and whatever else that commit lacks of the tools a stage runs — and a setup under --parts says `ready` only where the two are one file" % (candidate, at), "git's blob of the file that runs (%s) is %s; the commit named holds %s there; checked out is %s" % (mine, own.out.strip() if own.code == 0 else own.shown(), theirs or "no such file", here or "no commit"), "nothing was made: the root holds what it held. %s" % then)
+    return digest
 
 
 # --- the opening ----------------------------------------------------------------
@@ -1222,7 +1418,7 @@ def acts_of(run_name, root, script, queue, items):
     where every agent ends well — counted for the opening as it is written where no flag
     says otherwise, and `null` for any other root but for the acts no opening moves."""
     as_written = [row["item"] for row in items] == [row["item"] for row in PARTS_ITEMS] and (queue["budget"], tuple(queue["order"])) == (BUDGET, ORDER)
-    said = {"order": {"order": list(ORDER_THREE)}, "budget": {"budget": queue["budget"] + RAISE}}
+    said = {"order": {"order": list(ORDER_THREE)}, "budget": {"budget": queue["budget"] + RAISE}, "again": {"again": "test"}, "raise-again": {"budget": queue["budget"] + 2 * RAISE}}
     acts = []
     for act, more in ACTS:
         args = {"stage": "test", "run": run_name, "scratch": os.path.join(root, "scratch")}
@@ -1239,10 +1435,13 @@ def acts_of(run_name, root, script, queue, items):
             # Where a verifier's verdict is filed: the directory the human lists.
             named["verdicts"] = os.path.join(root, DIRS[1], RUNS, run_name, "r1", "verdicts")
         acts.append(named)
-    for act in acts:
+    # THE RULINGS OFF THE MAIN LINE, each with a prompt file of its own beside the acts' —
+    # under a name no act has — and no count: nobody counted an invocation off the line.
+    rulings = [{"ruling": ruling, "args": {"stage": "test", "run": run_name, "scratch": os.path.join(root, "scratch"), "rulings": [said[what]]}, "prompt": os.path.join(root, PROMPTS, ruling + ".md"), "return": os.path.join(root, "results", ruling + ".json"), "when": when} for ruling, what, when in OFF_LINE]
+    for act in acts + rulings:
         with open(act["prompt"], "x", encoding="ascii") as file:
             file.write(PROMPT % {"script": script, "args": json.dumps(act["args"]), "returns": act["return"]})
-    return acts
+    return acts, rulings
 
 
 def expected(items):
@@ -1271,6 +1470,7 @@ def setup(args, facts):
     if lacks:
         refuse("unfit", "the commit named, %s, lacks %s: a stage has nothing to run there" % (candidate, ", ".join(lacks)), "", "name a commit that holds the two scripts of a run and the harness")
     if queue is not None:
+        wrote = the_commits_tool(candidate)
         queue["condition"] = stated(candidate)
     if os.path.lexists(os.path.join(ROOT, run_dir)) or holds(candidate, run_dir):
         refuse("taken", "the repository holds `%s`: the canary's run exists in its clone only, so that a stage launched from the wrong directory finds no such run" % run_dir, "", "name a run the repository does not hold")
@@ -1369,15 +1569,13 @@ def setup(args, facts):
         # THE ACTS, each with a prompt file of its own — written last, where everything
         # else of the canary stands: a root that holds prompts holds a run that is fresh.
         os.mkdir(os.path.join(root, PROMPTS))
-        facts.update(prompts=os.path.join(root, PROMPTS), acts=acts_of(run_name, root, facts["script_path"], queue, items))
-        # WHICH TOOL WROTE THIS OPENING: the file that ran — the working tree's, which need
-        # not be the commit's — by the sha256 of its bytes, and whether it is the file the
-        # commit named holds at this tool's path, which is the one the clone holds.
-        mine = os.path.realpath(__file__)
-        with open(mine, "rb") as file:
-            digest = hashlib.sha256(file.read()).hexdigest()
-        theirs, own = source("rev-parse", "--verify", "--quiet", "%s:dev/%s" % (candidate, PROG)), source("hash-object", "--", mine)
-        facts.update(tool={"sha256": digest, "as_committed": theirs.code == 0 and own.code == 0 and theirs.out.strip() == own.out.strip()})
+        acts, rulings = acts_of(run_name, root, facts["script_path"], queue, items)
+        facts.update(prompts=os.path.join(root, PROMPTS), acts=acts, rulings=rulings)
+        # WHICH TOOL WROTE THIS OPENING: the file that ran, by the sha256 of its bytes — and
+        # it is the file the commit named holds at this tool's path, which is the one the
+        # clone holds: a setup under the switch whose tool is another was refused before
+        # anything was made (the_commits_tool).
+        facts.update(tool={"sha256": wrote, "as_committed": True})
     facts.update(check="dev/%s check --root %s" % (PROG, root))
     if queue is None:
         facts.update(expect=expected(items))
@@ -1394,6 +1592,11 @@ def not_isolated(detail, evidence=""):
     refuse("not-isolated", detail, evidence, "NO STAGE IS INVOKED ON THIS CLONE: something in it, or in the caller's git configuration, could carry a push somewhere else. A canary is set up again under another root")
 
 
+# `git status` AS `check` ASKS IT: with no optional lock. A plain `git status` may take the
+# index's lock for a moment to write a refreshed index back, and a commit step of a stage
+# that stages at that moment is refused (`locked`) and costs its record one more gate. So
+# asked, it writes nothing at all — and no other git command `check` runs takes a lock.
+STATUS_READ = ("--no-optional-locks", "status", "--porcelain", "--untracked-files=all")
 # The word the record script refuses a read with where one of the run's writes was killed
 # between its files, as its one line on stderr opens — and what follows from that state.
 INTERRUPTED = "stabilize-record: refused interrupted: "
@@ -1465,7 +1668,7 @@ def examined(root, kept, advice=SETUP_ADVICE):
         "remote_head": remote_head,
         "pushed": remote_head == head,
         "records": int(said("rev-list", "--count", "%s..HEAD" % kept["head"])),
-        "pending": len(lines(said("status", "--porcelain", "--untracked-files=all"))),
+        "pending": len(lines(said(*STATUS_READ))),
         "state": position,
         **({"interrupted": {"said": " ".join(asked.err.split()), "then": THEN}} if killed else {}),
         "not_ready": (state or {}).get("not_ready"),
@@ -1477,10 +1680,11 @@ def examined(root, kept, advice=SETUP_ADVICE):
 
 def returned(path):
     """WHAT AN ACT'S RETURN FILE SAYS: whether it is there, and — where it holds one JSON
-    object — the `status` and the `next` of it. A file that holds anything else is there,
-    and says nothing; nothing is read through a link."""
+    object — the `status` and the `next` of it, and the run and the stage it names where it
+    names one. A file that holds anything else is there, and says nothing; nothing is read
+    through a link."""
     if not os.path.lexists(path):
-        return False, None, None
+        return False, None, None, {}
     said = None
     if os.path.isfile(path) and not os.path.islink(path):
         try:
@@ -1489,8 +1693,8 @@ def returned(path):
         except (OSError, ValueError):
             said = None
     if not isinstance(said, dict):
-        return True, None, None
-    return (True,) + tuple(said[name] if isinstance(said.get(name), str) else None for name in ("status", "next"))
+        return True, None, None, {}
+    return (True,) + tuple(said[name] if isinstance(said.get(name), str) else None for name in ("status", "next")) + ({name: said[name] for name in ("run", "stage") if name in said},)
 
 
 def stands(there, shows):
@@ -1523,38 +1727,189 @@ def whole(path):
     return said if isinstance(said, dict) else None
 
 
+def not_the_binary(scratch, asked, content_sha256):
+    """The step tool's ONE predicate a build's green rests on, read as that tool reads it:
+    whether the file at the path a build was asked for is NOT the read-only binary of that
+    hash — another file, one that can be written, a link, or none."""
+    try:
+        path = os.path.join(scratch, asked["to"])
+        writable = os.path.islink(path) or bool(os.stat(path).st_mode & 0o222)
+        with open(path, "rb") as file:
+            data = file.read()
+    except (OSError, KeyError, TypeError):
+        return True
+    return writable or hashlib.sha256(data).hexdigest() != content_sha256
+
+
 def held_jobs(scratch):
-    """THE HELD COMMANDS UNDER THE SCRATCH ROOT, as their own files say — read, and nothing
-    asked of the step tool, which would judge a job and keep its verdict: every job
-    `dev/stabilize-step hold-start` started there, in the order they were started, each
-    with its kind and ONE WORD for how far it is:
-      judged   its verdict is kept (`verdict.json`): `verdict` is the tool's word for it
-      ended    the command has ended and its supervisor wrote how (`exit.json`), and NO
-               STEP HAS ASKED AFTER IT SINCE: no verdict is kept, and none appears by
-               itself — the next step that asks after the job reads and keeps it
-      no-exit  neither file is there: the command runs — or its supervisor is gone
-               without having seen it end, which only the step tool can tell
-    So that nobody has to look into the scratch root to see whether a gate still runs."""
+    """THE HELD COMMANDS UNDER THE SCRATCH ROOT, EACH AS THE STEP TOOL WOULD ANSWER IT — READ,
+    AND NOTHING ASKED OF THAT TOOL: it has no call that only reads a job. `hold-wait`, and
+    `hold-start` asked again, both answer through the one function that JUDGES a command
+    that has ended — it writes `verdict.json`, and for a gate runs the record script's
+    reader — and a start under a name that is not there starts a command. So `check` reads
+    what that function reads, in its order, and writes nothing: the job's record, under
+    the shared lock of `hold` (a start holds that lock until its record is under its name,
+    so a directory found without one is no start under way); the job's lock, asked shared
+    and without waiting (held: its supervisor lives); how the command ended; the kept
+    verdict; and, for a build that stands green, the binary's hash again. EVERY DIRECTORY
+    under `hold` is listed, in the order the jobs were started (one without a record
+    first), each with:
+      state    running  the supervisor holds the job's lock
+               done     the command has ended, and its supervisor wrote how
+               dead     why: no-record — the directory holds no record of the tool's, and
+                        nothing is ever read of it (supervised: whether a supervisor
+                        lives under it all the same, and its command with it) · no-exit —
+                        the supervisor is gone and wrote nothing · killed — a signal
+                        ended the command
+               null     why: no-lock, or verdict-unread — a hand was in the job's
+                        directory, and the step tool answers nothing of it
+      verdict  WHAT THE STEP TOOL ANSWERS NOW: the kept verdict — or, for a build whose
+               kept verdict is green and whose binary is no longer the read-only file it
+               hashed, `void` (why: hash-differs). null while none is kept: the next step
+               that asks after the job judges it, and none appears by itself
+      kept     THE KEPT WORD, as `verdict.json` holds it — what was so when the command
+               ended; null while none is kept
+      why      the step tool's reason, beside `dead` and beside a verdict that has one
+    WHAT IT CANNOT TELL: whether the command of a job that is `dead` still runs — a
+    supervisor that was killed leaves its command running, and nothing on disk says so."""
     holds = os.path.join(scratch, "hold")
+    if os.path.islink(holds) or not os.path.isdir(holds):
+        return []
+    mutex = os.open(holds, os.O_RDONLY)
+    try:
+        fcntl.flock(mutex, fcntl.LOCK_SH)
+        records = [(name, whole(os.path.join(holds, name, "job.json"))) for name in os.listdir(holds) if os.path.isdir(os.path.join(holds, name)) and not os.path.islink(os.path.join(holds, name))]
+    finally:
+        os.close(mutex)
     found = []
-    for name in os.listdir(holds) if os.path.isdir(holds) and not os.path.islink(holds) else []:
+    for name, job in records:
         home = os.path.join(holds, name)
-        job = whole(os.path.join(home, "job.json"))
+        if job is not None and not all(field in job for field in ("kind", "asked", "pid")):
+            job = None
+        said = {"name": name, "kind": job["kind"] if job else None, "state": None, "why": None, "verdict": None, "kept": None}
+        try:
+            lock = os.open(os.path.join(home, "lock"), os.O_RDONLY)
+        except OSError:
+            lock = None
+        supervised = False
+        if lock is not None:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except OSError:
+                supervised = True
+            finally:
+                os.close(lock)
+        ended = whole(os.path.join(home, "exit.json"))
+        kept = os.path.join(home, "verdict.json")
         if job is None:
-            continue
-        verdict, ended = whole(os.path.join(home, "verdict.json")), whole(os.path.join(home, "exit.json"))
-        started = job.get("started")
-        found.append((started if isinstance(started, (int, float)) else 0, name, {"name": name, "kind": job.get("kind"), "state": "judged" if verdict else "ended" if ended else "no-exit", "verdict": verdict.get("verdict") if verdict else None}))
+            said.update(state="dead", why="no-record", supervised=supervised)
+        elif lock is None:
+            said.update(why="no-lock")
+        elif supervised:
+            said.update(state="running")
+        elif ended is None or "exit" not in ended or "signal" not in ended:
+            said.update(state="dead", why="no-exit")
+        elif ended["signal"] is not None:
+            said.update(state="dead", why="killed")
+        elif not os.path.lexists(kept):
+            said.update(state="done")
+        else:
+            verdict = whole(kept)
+            if verdict is None or not all(field in verdict for field in ("exit", "seconds", "verdict", "why", "detail", "facts")):
+                said.update(why="verdict-unread")
+            else:
+                said.update(state="done", why=verdict["why"], verdict=verdict["verdict"], kept=verdict["verdict"])
+                # A BUILD'S GREEN IS THE DISK'S, AT EVERY ANSWER: the kept word is printed
+                # as kept, and the answer is the step tool's live one.
+                facts = verdict["facts"] if isinstance(verdict["facts"], dict) else {}
+                if job["kind"] == "build" and verdict["verdict"] == "green" and not_the_binary(scratch, job["asked"], facts.get("content_sha256")):
+                    said.update(why="hash-differs", verdict="void")
+        started = job.get("started") if job else None
+        found.append((started if isinstance(started, (int, float)) else 0, name, said))
     return [job for _, _, job in sorted(found, key=lambda entry: entry[:2])]
 
 
-def parts_read(root, kept, state):
+def git_blob(clone, env, spec):
+    """The sha256 of the bytes git holds in the clone at `spec` — `<commit>:<path>` — or None
+    where it holds none. A read: `git cat-file` takes no lock."""
+    done = subprocess.run(["git", "cat-file", "blob", spec], cwd=clone, env=env, capture_output=True, stdin=subprocess.DEVNULL)
+    return hashlib.sha256(done.stdout).hexdigest() if done.returncode == 0 else None
+
+
+# WHAT FOLLOWS FROM A BATCH THAT IS APPLIED AND IN NO COMMIT, and from a refusal of the read
+# that says what is pending — `check`'s words; the two calls are spelled whole beside them.
+APPLIED_THEN = "the tables of the run in the clone hold this batch, and NO COMMIT HOLDS IT: every field named under across says what the tables say with the batch applied - what the record WILL say - and records, trail, head and pushed say what is committed. The next invocation of the stage that does not only look finishes the batch before anything else, whatever it carries: it gates it under a name of its own, commits it, pushes it and starts nothing - a ruling it carries is not recorded by it (the prompt file of part-4-act-5 holds the arguments for it). The batch is taken back instead by the one call under discard, run from the clone - the exit where a halt says that no name is left to gate it under, or where the batch is not to be recorded"
+COMMITTED_THEN = "every file of this batch is in the clone's HEAD as the batch wrote it: its commit is made, and the record script has not been told so yet. The next invocation of the stage settles it at its first read"
+PENDING_THEN = "the clone's record script could not say what of the run is pending, and every invocation - a stage's, a look's, a ruling's - asks it at its first read: none gets past it while this stands. Where it names a file among the filed verdicts or beside the reports, that file is set aside by the call printed beside it under filed, or by dev/stabilize-record set-aside --run %s -- PATH from the clone, with the path it names"
+
+
+def applied_batch(clone, env, kept):
+    """THE BATCH THAT IS APPLIED, as the clone's own record script says it (`pending`, a
+    read) — None where there is none — and whether a commit holds it, asked of git as the
+    step tool asks it: every file of the batch is in HEAD with the bytes the batch wrote.
+    (The step tool's own read of where a batch stands, `git-state --look`, is no call that
+    changes nothing: it fetches, and its `git status` may take the index's lock.) A refusal
+    of `pending` is a state, and is printed as one. Returns (what `check` prints, the batch
+    where no commit holds it)."""
+    asked = run([os.path.join(clone, RECORD), "pending", "--run", kept["run"]], clone, env)
+    try:
+        answer = json.loads(asked.out) if asked.code == 0 else None
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict):
+        return {"refused": " ".join((asked.err or asked.out).split())[:2000], "then": PENDING_THEN % kept["run"]}, None
+    batch = answer.get("batch")
+    if not isinstance(batch, dict):
+        return None, None
+    files = batch.get("files") or {}
+    committed = bool(files) and all(git_blob(clone, env, "HEAD:" + path) == digest for path, digest in files.items())
+    said = {"subject": batch.get("subject"), "round": batch.get("round"), "calls": batch.get("calls"), "files": sorted(files), "filed": sorted(batch.get("filed") or {}), "altered": batch.get("altered") or [], "in_commit": committed}
+    if committed:
+        said.update(then=COMMITTED_THEN)
+        return said, None
+    said.update(then=APPLIED_THEN, discard="dev/stabilize-step discard --branch %s --run-dir %s" % (kept["loop"], kept["run_dir"]))
+    return said, batch
+
+
+# WHAT `check` SAYS BESIDE A RULING'S FILE, AND WHERE IT WITHHOLDS ONE.
+RULING_ONLY = "a ruling is typed only while NO SESSION OF AN ACT IS OPEN. check cannot see a session: while an attempt is under way - its agents hunting or verifying between two held commands - the state reads exactly as it does once that attempt is dead. What it can see, and withholds the file for: a held command whose supervisor lives, and a batch that is applied and in no commit"
+
+
+def ruling_of(kept, position, budget, queue, held, uncommitted):
+    """THE RULING THAT IS THE NEXT STEP, where the run's state says that one of the rulings
+    off the main line is — its prompt file, by name — or None. `ruling-again`: the stage's
+    next step is the human's because two attempts in a row reached no record. `ruling-
+    raise-again`: the budget part 4 raised is spent, rows are left in the queue, and the
+    step is the human's. NEVER NAMED WHILE AN ACT MAY BE RUNNING, as far as `check` can see
+    one (`withheld` then says what it saw): a held command whose supervisor lives, or a
+    batch applied and in no commit — which the next invocation finishes, whatever it
+    carries, so that no ruling is the step there."""
+    files = {entry.get("ruling"): entry.get("prompt") for entry in kept.get("rulings") or []}
+    limit, left = (budget or {}).get("limit"), (budget or {}).get("left")
+    if position.get("next") == "rule" and position.get("refused") == "attempts-spent":
+        name = "ruling-again"
+    elif position.get("next") == "rule" and limit == kept["budget"] + RAISE and left == 0 and queue:
+        name = "ruling-raise-again"
+    else:
+        return None
+    if name not in files:
+        return None
+    runs = [job["name"] for job in held if job["state"] == "running" or job.get("supervised")]
+    said = {"ruling": name, "prompt": files[name], "withheld": None, "only": RULING_ONLY}
+    if runs or uncommitted:
+        said.update(prompt=None, withheld="a held command still runs (%s): an act may be running, or a gate it left" % ", ".join(runs) if runs else "a batch is applied and in no commit (applied): the next invocation finishes it, and no ruling is the step")
+    return said
+
+
+def parts_read(root, kept, state, position):
     """WHAT A PART IS READ BY (the header: check, for a root of the parts) — from the run's
-    own state as the clone's record script printed it, and from git in the clone: the
-    budget, the queue, what is listed and why, the human's list, every filed verdict with
-    its hash, the view's standing, the attempts begun, the records made, what is pending
-    by its path; for each act its return and whether the run shows it; the answer sheet;
-    and what a part's reading has to answer."""
+    own state as the clone's record script printed it, from what that script says is
+    pending, and from git in the clone: the batch that is applied; the budget, the queue,
+    what is listed and why, the human's list, every filed verdict with its hash, the
+    view's standing, the attempts begun, the held commands, the records made, what is
+    pending by its path; for each act its return and whether the run shows it; the ruling
+    that is the next step; the three tools; the answer sheet; and what a part's reading
+    has to answer."""
     clone, env = os.path.join(root, DIRS[1]), callers_env()
 
     def said(*argv):
@@ -1571,7 +1926,7 @@ def parts_read(root, kept, state):
     for entry in lines(said("log", "--reverse", "--format=%H %s", "%s..HEAD" % kept["head"])):
         commit, _, subject = entry.partition(" ")
         trail.append({"commit": commit, "subject": subject, "attempts": attempts(lines(said("diff-tree", "--no-commit-id", "--name-only", "--diff-filter=A", "-r", commit)))})
-    pending = [line[3:] for line in lines(said("status", "--porcelain", "--untracked-files=all"))]
+    pending = [line[3:] for line in lines(said(*STATUS_READ))]
     # WHERE THE STATE WAS NOT READ — a write of the run was killed between its files —
     # nothing below that is the state's is said: each such field is null, and of no act
     # is it said whether the run shows it.
@@ -1580,63 +1935,106 @@ def parts_read(root, kept, state):
     begun = rounds[-1]["test_attempt"] if rounds else 0
     budget = state.get("budget") or {}
 
+    # THE BATCH THAT IS APPLIED, AND WHETHER A COMMIT HOLDS IT. Where none does, THE STATE
+    # ABOVE WAS READ ACROSS IT: every field of this line that is the state's says what the
+    # tables say with the batch applied, of a record no commit holds. `check` says so three
+    # times — the batch under `applied`, with the fields it reaches (`across`); `state`
+    # itself (`across`); and each filed verdict the batch takes, which is printed as one NO
+    # RECORD TOOK (`recorded` is asked of what is committed) and as `applied`.
+    applied, batch = applied_batch(clone, env, kept)
+    takes = set(batch.get("filed") or {}) if batch else set()
+
     # WHAT THE RUN SHOWS OF EACH ACT — each by what that act alone leaves, as the parts are
     # run in their order from one root: an attempt that reached no record before the
     # stage's first record; that record; another order than the opening's; a record of
     # filed verdicts; a budget above the opening's; after the record that raised it, an
     # attempt that reached no record, and a record that took an attempt's marker. A LOOK
     # LEAVES NOTHING, and the record an ended act left is finished by an invocation that
-    # begins no attempt: of those two the run shows nothing either way (None).
-    first = next((made_ for made_ in trail if made_["subject"].endswith(FINDINGS)), None)
+    # begins no attempt: of those two the run shows nothing either way (None). A BATCH
+    # THAT IS APPLIED AND IN NO COMMIT IS THE RECORD IT WILL BE: the act that reached it
+    # ran — to its record's gate — so it stands here as the last record made, with the
+    # markers that are pending, which its commit takes.
+    made_ = trail + ([{"subject": batch.get("subject") or "", "attempts": attempts(pending)}] if batch else [])
+    first = next((record for record in made_ if record["subject"].endswith(FINDINGS)), None)
     raised = budget.get("limit") is not None and budget["limit"] > kept["budget"]
-    ruled = [at for at, made_ in enumerate(trail) if made_["subject"].endswith(RULINGS)]
-    later = trail[ruled[-1] + 1:] if raised and ruled else []
-    took = sum(1 for made_ in later if made_["attempts"])
-    loose = len(attempts(pending)) + sum(len(made_["attempts"]) for made_ in later) - took
+    ruled = [at for at, record in enumerate(made_) if record["subject"].endswith(RULINGS)]
+    later = made_[ruled[-1] + 1:] if raised and ruled else []
+    took = sum(1 for record in later if record["attempts"])
+    loose = (0 if batch else len(attempts(pending))) + sum(len(record["attempts"]) for record in later) - took
     shows = {
         "part-1": len(first["attempts"]) > 1 if first else begun > 0,
         "part-2": first is not None,
         "part-3-act-1": (state.get("facts") or {}).get("order") != kept["order"],
-        "part-3-act-2": any(made_["subject"].endswith(VERDICTS) for made_ in trail),
+        "part-3-act-2": any(record["subject"].endswith(VERDICTS) for record in made_),
         "part-4-act-1": raised,
         "part-4-act-2": raised and loose > 0,
         "part-4-act-3": None,
         "part-4-act-4": raised and took > 0,
         "part-4-act-5": None,
     }
+    own = {act: more.get("own", ()) for act, more in ACTS}
     acts = []
     for act in kept["acts"]:
-        there, status, following = returned(act["return"])
+        there, status, following, about = returned(act["return"])
         shown = None if unread else shows[act["act"]]
-        acts.append({"act": act["act"], "returned": there, "status": status, "next": following, "shows": shown, "stands": stands(there, shown)})
+        # WHETHER THE RETURN IS ONE OF THE ACT'S OWN: its status is one the act returns on
+        # the main line, and it names this run and this stage where it names one. None
+        # where no file is there, or it holds no status.
+        mine = None if status is None else status in own[act["act"]] and about.get("run", kept["run"]) == kept["run"] and about.get("stage", "test") == "test"
+        acts.append({"act": act["act"], "returned": there, "status": status, "next": following, "own": mine, "shows": shown, "stands": stands(there, shown)})
 
     listed = {}
     for row in state.get("ledger") or []:
         if row.get("route") == "listed":
             listed.setdefault(row.get("why"), []).append(row.get("key"))
     view = state.get("view")
+    filed = []
+    for entry in state.get("filed") or []:
+        said_ = {name: entry.get(name) for name in ("file", "key", "verdict", "attempt", "sha256", "counts", "why", "recorded", "handed_on")}
+        if said_["file"] in takes:
+            said_.update(recorded=False, applied=True)
+        # A LINK OR A DIRECTORY AMONG THE FILED VERDICTS is no file a record could take, and
+        # the record script refuses over it: said here, with the ONE call that sets it aside.
+        at = os.path.join(clone, said_["file"]) if isinstance(said_["file"], str) else None
+        if at and (os.path.islink(at) or os.path.isdir(at)):
+            said_.update(no_file="link" if os.path.islink(at) else "directory", set_aside="dev/stabilize-record set-aside --run %s -- %s" % (kept["run"], said_["file"]))
+        filed.append(said_)
     of_the_state = {
         "budget": state.get("budget"),
         "queue": [row.get("key") for row in (state.get("queue") or {}).get("ranked") or []],
         "listed": listed,
         "human": [{"key": row.get("key"), "why": row.get("why")} for row in state.get("human_list") or []],
-        "filed": [{name: entry.get(name) for name in ("file", "key", "verdict", "attempt", "sha256", "counts", "why", "recorded", "handed_on")} for entry in state.get("filed") or []],
+        "filed": filed,
         "view": view and {name: view.get(name) for name in ("file", "sha256", "on_disk")},
         "attempts": {"begun": begun, "unrecorded": rounds[-1]["test_unrecorded"] if rounds else 0},
     }
+    if batch and not unread:
+        applied.update(across=["state", "not_ready", "items", "ledger"] + list(of_the_state))
+        position = dict(position, across="applied")
+    held = held_jobs(os.path.join(root, DIRS[2]))
     with open(os.path.realpath(__file__), "rb") as file:
         reads = hashlib.sha256(file.read()).hexdigest()
     wrote = (kept.get("tool") or {}).get("sha256")
+    commit = git_blob(clone, env, "%s:dev/%s" % (kept["candidate"], PROG))
     return {
+        "state": position,
+        "applied": applied,
         **({name: None for name in of_the_state} if unread else of_the_state),
-        "held": held_jobs(os.path.join(root, DIRS[2])),
+        "held": held,
         "trail": trail,
         "pending_paths": pending,
         "acts": acts,
-        "tool": {"wrote": wrote, "reads": reads, "same": wrote == reads},
+        "ruling": None if unread else ruling_of(kept, position, budget, of_the_state["queue"], held, bool(batch)),
+        "tool": {"wrote": wrote, "commit": commit, "reads": reads, "same": wrote == commit == reads},
         "sheet": [{"plan": plant["plan"], "key": plant["key"], "class": "%s seed" % plant["kind"], "returns": plant["returns"]} for plant in PLANTS],
-        "to_answer": [TO_ANSWER % (PLAN, PROG, LOG)],
+        "to_answer": list(TO_ANSWER),
     }
+
+
+# WHAT A ROOT'S KEPT LINE MUST HOLD FOR `check` TO READ IT — by every root, and by a root of
+# the parts: a kept file that lacks one is no line a setup of this tool kept.
+KEPT_NEEDS = ("run", "loop", "head")
+KEPT_PARTS = ("run_dir", "candidate", "budget", "order")
 
 
 def check(args, facts):
@@ -1644,13 +2042,26 @@ def check(args, facts):
     kept = os.path.join(root, KEPT)
     if not os.path.isfile(kept):
         refuse("missing", "the root `%s` holds no canary: no `%s` is there — a setup that failed leaves none" % (root, KEPT), "", "`dev/stabilize-canary setup` builds one, under a root that is not there yet")
-    with open(kept, encoding="ascii") as file:
-        held = parsed(file.read(), "`%s`" % kept)
+    # THE KEPT LINE, READ AS WHAT IT IS OR REFUSED IN ONE LINE: a file that is no JSON object,
+    # or lacks what the root is read by, is no line a setup of this tool kept — never a
+    # traceback, whatever bytes it holds.
+    with open(kept, "rb") as file:
+        text = file.read().decode("utf-8", "replace")
+    try:
+        held = json.loads(text)
+    except ValueError:
+        held = None
+    parts = isinstance(held, dict) and held.get("acts") is not None
+    lacks = ["a JSON object"] if not isinstance(held, dict) else [name for name in KEPT_NEEDS + (KEPT_PARTS if parts else ()) if name not in held]
+    if parts and not (isinstance(held["acts"], list) and all(isinstance(act, dict) and isinstance(act.get("act"), str) and act["act"] in dict(ACTS) and isinstance(act.get("return"), str) for act in held["acts"])):
+        lacks.append("acts, each with its act and its return")
+    if lacks:
+        refuse("missing", "`%s` is not the line a setup of this tool kept: it lacks %s — nothing of the root is read on a guess" % (kept, ", ".join(lacks)), "", "THE RUN IN THE CLONE IS UNTOUCHED: `check` writes nothing. The file was cut short or written by something else — or by a setup of another version of this tool, and `check` is then asked of the tool of the commit the root was set up from. No setup is asked for on this word alone")
     found, state = examined(root, held, CHECK_ADVICE)
-    if held.get("acts") is not None:
+    if parts:
         # A ROOT OF THE PARTS: the small canary's two return files are no act's of it.
         del found["returned"]
-        found.update(parts_read(root, held, state))
+        found.update(parts_read(root, held, state, found["state"]))
     facts.update(found, status="checked")
 
 

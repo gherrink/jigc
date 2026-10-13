@@ -2,6 +2,169 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — The canary's setup refuses a commit whose tool is not the one running, and `check` says what is so: a batch that is applied and in no commit is named with every field read across it, a held command is said as the step tool would answer it, the five files that hold an answer are named by path, no git command of `check` takes a lock, and the rulings off the main line have prompt files (the second scoped review before part 1, `R1`, its findings in the canary's tool; the fixer's choices inside them)
+
+**What.** A second scoped review read the tool `SC3` built and the three repairs after it, at `7725f5d6`, for the three dangers only, and drove the committed tools in throwaway roots ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) — below, *the plan*; the review is its `R1`). It found nothing that stops part 1 and nothing that publishes. It found a setup that says `ready` over the wrong commit, and a `check` — the one instrument the human reads between two acts — that says what is not so in states the parts reach. Five findings and three rows are repaired, and the rulings off the main line given prompt files, in [`dev/stabilize-canary`](dev/stabilize-canary), each with an arm; the tool's header holds each. **Nothing of the harness, the record script, the step tool, an agent's definition or the runtime's stand-in is touched**, and no act of theirs was added: `check` asks two reads that existed. **Without `--parts` a setup and a `check` are what they were** — the fixture and every arm of the small canary untouched and green — but for two things no line of output shows: `check`'s `git status` is asked with no optional lock, and a kept file `check` cannot read is refused in one line where it was a traceback.
+
+| | On the base — each reproduced first | Now |
+|---|---|---|
+| 1 | a setup run with a tool the commit named does not hold: `status = ready`, `tool.as_committed = False`; every later `check`: `tool.same: true` | refused `unfit`, before anything is made, with the commit to name |
+| 2 | a batch applied and in no commit: `records = 0`, a queue of thirteen keys, no field that names the batch, while the step tool says `owed = ["applied"]` | `applied` names it, with every field read across it; `state` says `across`; a filed verdict it takes reads `recorded: false`, `applied: true`; the act that reached it is shown |
+| 3 | a build the step tool answers `void`, `hash-differs` read `judged`, `green`; a directory without a record was not listed; a job whose supervisor was killed read `no-exit`, as a command that runs | each job as the step tool would answer it: `running`, `done`, `dead` with its reason; the kept word as `kept` |
+| 4 | `to_answer`: one question, *the three places* | two questions; five files, each by its path |
+| 8 | `check`'s git commands: `status --porcelain --untracked-files=all`, twice | `--no-optional-locks status …`, and an arm over every git command `check` runs |
+
+### 1 — The commit a setup is handed
+
+**The mechanism.** A setup runs the working tree's tool and clones the commit named. `tool.as_committed` was computed and refused nothing, and the plan's own words — *the commit that holds `SC3`* — name a commit that lacks the three repairs.
+
+**The repair.** Under `--parts`, among what is asked before anything is made: **the file that runs is the file the commit named holds at the tool's path**, compared as git's blobs with no filter of the caller's configuration — or `unfit`. The refusal says which commit to name: where the commit checked out holds the file that runs, that commit by its sha (*the tip of the branch when the setup is run*); else that the file is in no commit — commit it, or run the setup from a checkout of the commit named. Nothing was made, so the root handed over is as usable as it was (the arm sets up under it afterwards).
+
+**What else of the commit must be the running tree's for `ready` to be true: nothing — from the lines.** Every write of the opening goes through `os.path.join(clone, RECORD)`, its push through the clone's step tool; `script_path` is `os.path.join(clone, HARNESS)` and is what every prompt file names; a session that stands in the clone loads the clone's definitions and settings. What is the working tree's is this one file: the opening, the plants, each act's arguments and each count are its tables — and the counts were held to the harness of the commit the file was committed with. **So the one thing a human can get wrong is which tool runs against which commit, and that is what is held.** A commit that lacks a repair of the other tools lacks this file as it stands too — every commit before this one does — and is refused by the same question. *Rejected:* refusing where the working tree is dirty, or where `HEAD` is not the commit named — the first refuses a setup whose tool is the commit's, the second a setup run from a later commit that did not touch the tool; neither is a state in which the clone runs anything else than the line says. *Rejected:* a field at the head of the line and no refusal — the review's fallback: a `ready` that is not ready is what was found.
+
+**`check` says of the tool what is so**: `tool: {wrote, commit, reads, same}` — what wrote the opening (the kept line), what the clone's commit holds at the tool's path (asked of the clone), what asks now. A root the tool as it was made is read as what it is.
+
+### 2 — A batch that is applied and in no commit
+
+**The seven fields of the state, the four beside them, and each act's `shows` — what each is read from, and where its word was false.** The clone's record script reads the run's state from the tables as the working tree holds them, from the reports and from the filed verdicts on disk; git says what is committed. The two differ in one state the parts reach: a record whose gate was held when its invocation was ended, or halted.
+
+| Field | Read from | Across a batch applied and in no commit, on the base |
+|---|---|---|
+| `state` (`next`, round, attempt) | the tables, and the attempts' markers on disk | the step after the record, of a record no commit holds |
+| `not_ready`, `items`, `ledger` | the tables | grades, routes and selections as the batch wrote them |
+| `budget` | the run's facts (`limit`); the filed verdicts that count (`spent`) | a raise nobody committed reads as the limit |
+| `queue`, `listed`, `human` | the tables and the filed verdicts | thirteen keys after an order nobody committed — reproduced |
+| `filed[].recorded` | the round's triage table | `true` for every filing the batch takes |
+| `view` | the tables, and the file | the view the batch wrote, as written |
+| `attempts` | the markers on disk, and what the tables say a record took | the attempts as the batch recorded them |
+| `head`, `pushed`, `records`, `trail`, `pending_paths` | git | true: they say what is committed |
+| `shows` of `part-2`, `part-3-act-2`, `part-4-act-4` | the commits on the opening | `false` — and with no return file `never-ran` — of an act that ran to its record's gate |
+| `shows` of `part-3-act-1`, `part-4-act-1`, and the raise that `part-4-act-2` and `-4` stand on | the run's facts in the tables | `true` of a ruling nobody committed |
+| `shows` of `part-1`, `part-4-act-2` | the markers on disk and in the commits | true |
+
+**The repair.** `check` asks the clone's record script what is pending (`pending`, a read) and asks git whether `HEAD` holds every file of the batch with the bytes the batch wrote — the step tool's own question (`in_head`). It prints `applied`: null, or the batch — `subject`, `round`, `calls`, `files`, the `filed` verdicts it takes, `altered`, `in_commit` — and where no commit holds it `across`, **every field of the line that was read across it**, `discard`, the one call that takes it back, spelled whole, and `then`, what follows. `state` gains `across: applied`. **A filed verdict the batch takes is printed as one no record took** (`recorded: false`, `applied: true`): `recorded` is asked of what is committed. **And for `shows` the batch is the record it will be**, with the markers that are pending: the act that reached its record's gate ran, so with no return file it reads `not-written` and never `never-ran`. A batch whose commit is made and that nobody settled says `in_commit: true` and nothing else.
+
+*Chosen:* one field that names the batch and lists what was read across it, and a correction at the two places where one word flips — over reading the state from what is committed, which would need the tables of `HEAD` unpacked and the record script run over them: a second state, for one window. *Rejected:* the step tool's own read of where a batch stands (`git-state --look`): **it is no call that changes nothing** — it fetches, and its `git status` may take the index's lock. *Rejected:* `shows: false` with a mark beside it — the act did run.
+
+**A refusal of `pending` is a state** (what `check` can say of the review's fifth finding, which is the record script's and is not changed): `applied: {refused, then}` — the script's own line, and that no invocation gets past its first read while it stands. A filed entry that is a link or a directory says so (`no_file`) with the one call that sets it aside (`set_aside`), which the arm runs as printed.
+
+### 3 — A held command, as the step tool would answer it
+
+**Which call is asked: none — the step tool has no call that only reads a job.** `hold-wait`, and `hold-start` asked again, both answer through `stands`, which **judges** a command that has ended and no step has asked after: it writes `verdict.json`, and for a gate runs the record script's reader over the output. A start under a name that is not there starts a command. So `check` reads what `stands` reads, in its order, and writes nothing: the job's record under the shared lock of `<scratch>/hold` (as `job_of` reads it — a start holds that lock until its record is under its name); the job's lock, asked shared and without waiting (as `unrecorded` asks it); how the command ended; the kept verdict; and for a build that stands green the binary's hash again, by the step tool's predicate. Every directory under `hold` is listed:
+
+| `state` | `why` | When |
+|---|---|---|
+| `running` | — | the supervisor holds the job's lock |
+| `done` | the verdict's own, or `hash-differs` | the command has ended. `verdict` is what the step tool answers now — null while none is kept; `void` for a build whose binary is no longer the file it hashed — and `kept` is the kept word |
+| `dead` | `no-record` · `no-exit` · `killed` | no record (`supervised`: whether a supervisor lives under it all the same) · the supervisor is gone and wrote nothing · a signal ended the command |
+| null | `no-lock` · `verdict-unread` | a hand was in the job's directory, and the step tool answers nothing of it |
+
+**Act 5's wait is keepable for every state of the gate's job.** It is *until `check` says `done` — or `dead`*: `running` is waited out; `done` covers a job nobody asked after and one somebody did, where the word it replaces, `ended`, never came for the second; and `dead` ends the wait too — no other word will ever come. **What `check` says then, and what the human is told:** `dead`, `no-exit`; and the line's `human` of act 5 says that whether the gate's own command still runs `check` cannot tell, that **nothing that names the root is ended there** — after act 4 a process that names the root is the supervisor of a record's gate, and the instruction to end processes by the root's path is act 3's only — and that the act is made all the same. The prompt file is the session's one message and says nothing of it, as before. *Rejected:* one `hold-wait` by hand before act 5 — it writes a verdict nothing needs, as `SC3`'s entry has it.
+
+### 4 — Where the answers are
+
+`to_answer` is two questions. The first names **five files of the candidate's own commit, each by its path**: the plan, the tool, the log, the tool's suite and the report the first planted row's repro cites — and that each lies a second time where a held build unpacked the commit. The second asks of the first planted row's verifier whether it drove before it opened that report, or after. **The suite and the cited report stay in the commit, and no planted row's text is changed** — that is the plan's owner's, and is known.
+
+**What a verifier that stands in the clone can read of its own answer, and by which path** (the review's count, reproduced there by a search of the clone for one planted key and one plan's name): its row, which it is handed — and for the first plant the row's repro ends with the path of a report whose tenth line states the row's verdict; `dev/stabilize-canary`, whose header holds the sheet as a table; `DECISIONS.md`, whose entry of `SC3` holds the mapping key by key, and this entry; the plan, §4; `tooling-tests/dev_stabilize_canary.rs`, which types the keys, the plan's names and what each should return a second time; and all of them once more under `<scratch>/hold/build-…/work`. Nothing a setup writes holds any of it, and the kit a verifier reads first names none.
+
+### 8 — No lock a stage could meet
+
+`check`'s two `git status` calls are asked with `--no-optional-locks`: they write nothing and take no lock, so `check` no longer writes anything at all. An arm puts a stand-in for git on the path that writes down every command, and holds that each `status` opens with the flag and that every other command is one of ten reads that take no lock. For a root without the switch too: the bytes printed are the same.
+
+### The rulings off the main line
+
+Part 1 spends one attempt without a record; where part 2 halts before its record the third is the human's to grant, and the argument object was the human's to type. **Under `--parts` the setup writes two prompt files more, each under a name no act has, and lists them in its line apart from `acts`** (`rulings: [{ruling, args, prompt, return, when}]`):
+
+| File | Its ruling | The exit of |
+|---|---|---|
+| `ruling-again` | `rulings: [{again: 'test'}]` | two attempts in a row without a record (the plan's §5, part 2) |
+| `ruling-raise-again` | `rulings: [{budget: <the opening's and eight>}]` | part 4's act 2, its window missed: the raised budget spent, rows nobody reached (§5, part 4) |
+
+Each is run through the clone's own harness by an arm, as its prompt file says, at the state it is the exit of: `ruled`, and nothing started. No count is printed for one. **`check` names the file where the state says the ruling is the step** (`ruling: {ruling, prompt, withheld, only}`) — `next: rule` with `attempts-spent`; or `next: rule` with the raised budget spent and a queue that is not empty.
+
+**What `check` can and cannot tell about an act that may be running.** *It can see* a held command whose supervisor lives, and a batch applied and in no commit: for either `prompt` is null and `withheld` says which. *It cannot see a session.* While an attempt is under way between two held commands — reporters hunting, verifiers driving — nothing on disk tells it from an attempt that died, and the state reads `next: rule`, `attempts-spent` for a live second attempt exactly as for a dead one. `only` says so beside every file it names, and the plan's rule stands: **no ruling is typed while a session of an act is open.**
+
+*Not written:* a file for `go` — no part owes one (the plan's dated note on `T7`). *Not a prompt:* the batch taken back, which is one call of the step tool that `check` prints whole.
+
+### The rows
+
+- **`--budget` above 999991 is refused at the setup** (`usage`): the harness takes no number above 999999 in a ruling, and the two raises a prompt file is written for add eight.
+- **A kept line `check` cannot read is refused in one line** (`missing`, in a sentence of its own that asks for no setup): no JSON, bytes outside ASCII, a key the root is read by missing, an act without its return file.
+- **`acts[].own`: whether a return is one of the act's own** — its status is the one the act returns on the main line (`stopped` for part 1 and the look, `hunted` for part 2, `ruled` for the two rulings, `verified` for part 3's and part 4's continuation, `recorded` for act 5, none for the act the human ends), of this run and this stage where the return names one. A refusal, a halt, a halt in another repository and another stage's return read `false`. *What it cannot tell:* another act's return with the same status.
+
+### Not changed, and recorded as they were
+
+The review's findings 5 (a link or a directory among the filed verdicts), 6 (a record's gate of an earlier invocation that still runs, taken on a start's retry) and 7 (a halt over a held command that still runs says that an agent returned nothing) are the record script's and the harness's, are unlikely on the parts' path, and stay as the three entries below have them.
+
+### Red first
+
+Seven arms were written or turned and run on the parent's tool — the tool had been changed by then, and the parent's was put in its place for the run — **seven red.** (The new arm of the applied batch did not end at its first run, for a defect of its own stand-in for git, below; it was ended by hand, repaired and run again on the parent's tool: red, as the table has it.) Each finding was also driven on the parent's tool by hand, with the reviewer's scripts, before any arm: the table at the top is that drive.
+
+| Arm (`dev_stabilize_canary`) | On the parent |
+|---|---|
+| `a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads` | *the line names the rulings off the main line* — it names none |
+| `check_says_what_is_applied_and_in_no_commit_and_takes_no_lock_a_stage_could_meet` (new) | `applied`, over the order's batch: nine nulls where the batch is named |
+| `check_says_of_each_act_what_was_returned_and_what_the_run_shows` | an act's object holds no `own` |
+| `the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes` | one question where two are asked |
+| `the_ruling_off_the_main_line_is_named_where_it_is_the_step_and_the_harness_takes_it` (new) | the line names no ruling |
+| `a_filed_verdict_is_printed_with_its_hash_before_and_after_the_record_that_takes_it` | the record's gate: `judged`, and no `kept` |
+| `the_acts_run_in_order_through_the_clones_own_harness` | an act's object holds no `own` |
+
+**What followed its code, and says so.** Three expectations were corrected at the first run on the changed tool, each to what the tools do: in the window before act 5 the state reads as the state of the missed window does, so `ruling` is `ruling-raise-again`, **withheld** — written as null; a kept file rewritten with a character outside ASCII left a traceback, which is the row the arm was written for and was repaired then; and the stand-in for git named git by the name on the path, which on this platform is a trampoline that looks its tool up by name — it names git's own binary now. Four assertions were added where a mutant about to be run had nothing against it: the three tools read each from its own place; the same bytes open for writing at a build's path; a kept file that is no JSON; and the withheld ruling's reason.
+
+**The acts' arm, turned at one place.** Part 4's fourth act is now ended at its record's gate — the window before act 5, on the main line — and act 5 is run after it: the arm holds the window's words there, act 5's count on the main line for the first time, and act 4's count as *its line's, less the three steps after the gate, which act 5 makes*. Then the one more raise, by its prompt file. **No count the setup prints under `expect` moved.**
+
+### Mutants
+
+Sixty-three of the finished tool — each one edit, the arm that names its property run on it, the tool put back and its hash compared after. **Sixty-two died at their first run; one survives, and no arm can reach it** (below).
+
+| Of | The edits | What went red |
+|---|---|---|
+| finding 1, and the budget (8) | no refusal · refused by another word · the refusal naming the commit named, and not the one checked out · the commit checked out named whatever it holds · asked without the switch too · the line saying `as_committed: false` · a budget never refused · refused one early | the prompt arm |
+| the rulings' files and act 5's words (7) | no file written · `again` of another stage · one raise, not two · a ruling named as an act · *never while a session is open* unsaid · *nothing that names the root is ended here* unsaid · the wait still for `ended` | the prompt arm |
+| the three tools (2) | the commit's read off what wrote · `same` without the commit's | the prompt arm, by the part that bends the kept line |
+| finding 8 (1) | `status` with the optional lock | the arm of the applied batch |
+| finding 2 (12) | the batch not asked for · never in a commit · always in one · `state` silent · `across` naming seven fields · a committed batch said as applied · the discard call misspelled · the batch no record for `shows` · the batch a record with no marker · `recorded` as the tables say · a taken filing not marked · every filing marked | the arm of the applied batch; the filed arm for the two of a taken filing; **the acts' arm for the marker and for *every filing marked*** — the window on the main line |
+| what `check` says of finding 5 (4) | a refusal of `pending` no state · a link not said · a link said to be a directory · the set-aside call misspelled | the arm of the applied batch |
+| finding 3 (11) | a directory without a record skipped · `supervised` never said · the lock not asked · no exit read as `running` · a signal not read · a command nobody asked after said `dead` · a build's green never asked of the disk · the kept word printed as the live one · every kind held to a binary · a binary that can be written taken for the binary · a hand's verdict file read as `done` | the arm of the acts' returns |
+| the rows (9) | another run's return the act's own · another stage's · a halt part 2's own · the ended act with a status of its own · no status said `false` · what a kept line lacks not asked · the candidate not needed · the acts not held · no JSON not asked | the arm of the acts' returns |
+| the ruling that is the step (6) | `again` never the step · named while a held command runs · what `check` cannot see unsaid · named across an applied batch · one more raise named at the first raise · **one more raise named with nothing left to reach — survives** | the rulings' arm; the acts' arm for the two of the batch and the first raise |
+| finding 4 (3) | the suite not named · the cited report not named · the second question not asked | the sheet's arm |
+
+**The survivor.** `check` names the one more raise only where the queue still holds a row — the harness refuses a raise over an empty queue. No arm reaches a raised budget that is spent over an empty queue: the plan runs that state from a fresh root. The condition is in the tool and is held by nothing.
+
+**No mutant, and no pin beyond a few words:** the header; `then`, `only` and `when` beyond the phrases the arms name; the read of a job's record under the lock of `hold`, which only a race could tell; `--no-filters` in the comparison of the tool — the rig sets no filter; the markers of an applied batch not counted as loose, which needs a batch applied after a raise with no ended act before it.
+
+### The assertions this commit carried
+
+All in the canary's suite, and no other suite: the object `check` prints for an act gains `own` (four places); the held commands' words in the arm of the acts' returns and in the filed arm; the prompts' directory holds eleven files; act 5's words; the tool's two fields become the refusal and `check`'s four; the one question becomes two. The fixture of a setup without the switch is untouched.
+
+### What the next tasks owe because of this
+
+- *The orchestrating session:* the dated note in the plan is in this commit. `implementation/decisions-pending.md`, the row `wf-canary-setup`: not touched — outside this task's write-set.
+- *Part 1's reading:* the first hosted run of CI's tooling leg with two arms more, one of them a drive of three invocations.
+- `T9`, the rest: `rulings`, `applied`, `held` and `ruling` are fields of the parts' line; where the opening with a queue becomes the only one, `KEPT_PARTS` is what every root is read by.
+- *The step tool's next edit:* a read-only answer of a job — what `check` now reads by the tool's own files — would let `check` ask instead of read, and would end the second typing of `stands`' order here.
+
+### What is not established
+
+- **No agent and no human has read a line of the changed `check`.** The words of `then`, `only`, `withheld` and act 5's `human` are held by a few phrases each.
+- **The window before act 5 with a gate nobody asked after, through a stage**: the arm's gate ends void and is asked after, so the job reads `done` with a kept verdict; `done` with none is held by removing the verdict's file.
+- **`running` and `supervised` are held with the job's lock taken by the suite**, as a supervisor holds it — no held command was left running under a `check`.
+- **`check` while a start is under way** waits for the lock of `<scratch>/hold`, as the step tool does; a start that is stopped holds it for as long. Not driven.
+- **A batch that is staged and not committed** reads as applied: `check` does not tell the two apart, and the step tool does.
+- **`in_commit` where `HEAD` holds the batch's files and the index does not**, and **`shows` of part 4's second act where a batch is applied and that act never ran** — the batch's markers are not counted as loose — are read from the lines; no arm reaches either.
+- **`ruling-again` after a part 2 that halted for real**: the arm reaches the state by two stops before any record.
+- **The comparison of the tool with the commit's** is of git's blobs; a commit whose tool is the same file and whose other tools differ is taken — which is every later commit that did not touch the tool, and is right.
+- **Not read whole for this task:** the record script beyond `pending`, `filed_in`, `set-aside` and `discard`; the step tool beyond the held command's functions, the first read and `discard`; the harness beyond its argument check for rulings; the suite's arms of the small canary beyond their rig.
+
+### Seen and not touched
+
+- **The plan's §5** still spells the setup's commit as *the commit that holds `SC3`*, and act 5's wait as *until `ended`*: the dated note corrects both, and the text is the plan's owner's.
+- **`refuse`'s default recommendation** speaks of a setup, and `check`'s refusals of a root (`inside`, `link`) still carry it.
+- **Off the main line the acts' words shift**, as the header says: after an `again` ruling `part-1` reads `returned-unshown`; after a missed window `part-4-act-4` reads `not-written` before it was run.
+- **`check` prints a return's `status` whole**, whatever its length.
+
 ## 2026-10-13 — Three findings of the scoped review, repaired in the harness, and a fourth in words: a job that answers a start as ended is never taken for one the invocation must run itself; every record the harness composes or applies is preceded, in the same invocation, by the report check; and the halt that may be the account's limit is handed which step halted, and says only what is so there (the staged plan's `R0`, its findings in the harness; the fixer's choices inside them)
 
 **What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) appended probe scenarios to an export of the committed simulation at `dbb1cc84` and ran them through the committed harness, the real scripts and the stand-in runtime. It reproduced three things in [`.claude/workflows/stabilize.js`](.claude/workflows/stabilize.js) — one that **publishes behind a gate that never ran**, one that **strands state**, one that **says what is not so** — and named a fourth in words. All four are repaired there, each with arms that were red on the parent commit's harness; the harness's header holds each (*WHO ASKS AFTER IT*, *REPORTS*, *A WAVE THAT IS THE LAST*, and the row of a record's gate). **One act of [`dev/stabilize-step`](dev/stabilize-step) gained a form** — `check-reports` named without a stage — and nothing else of that tool changed; **no line of the record script, of the regression tool or of an agent's definition changed.** The phase's condition holds where it can: a run without an order is answered by every invocation as it was, **but for the one function both paths share** — which job answers a start (`hold`) — and what changes for such a run there is said below, with the assertions it carried.
