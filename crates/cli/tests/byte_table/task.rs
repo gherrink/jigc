@@ -13,10 +13,10 @@
 //! commits its own paths and never the index — and no cell names it yet: the comparison
 //! has no switch for it, and a cell of such a task would be read under `T4`.
 
-use super::ON_A_REFUSAL;
+use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote,
-    Row, When, Where,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
+    Quote, Row, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -400,11 +400,12 @@ const THE_COPY_IN_SUITE: &str = "copy_in_baseline::a_hand_edit_after_the_first_w
 /// sides of the condition its record names — the file-state baseline absent, which is
 /// the clone, and present.
 ///
-/// **Every cell here is listed as one that refuses**, from the row's doc: an edit made
+/// **Every cell here is listed as one that refuses, and names its refusal**, from the
+/// row's doc: an edit made
 /// out of band after the task's first write is a conflict the finalize blocks on, and
 /// *"a promote lands a regular file at exactly its canonical path, or the transaction
 /// refuses before anything is written"* (`T1`).
-pub const CELLS: &[Cell] = &[
+const ACCEPTANCE: &[Cell] = &[
     Cell {
         name: "task-finalize-no-baseline-a-hand-edit-after-the-first-write",
         leaf: &["task", "finalize"],
@@ -420,12 +421,13 @@ pub const CELLS: &[Cell] = &[
             A_HAND_EDIT,
         ],
         argv: &["task", "finalize", "sharpen-the-open-questions"],
-        listed: Listed::Refuses,
+        listed: refuses(3, "reconciliation.conflict-block"),
         beside: Some(THE_COPY_IN_SUITE_IN_A_CLONE),
         aim: Some(Aim {
             line: "T1",
             kind: Kind::EditAfter,
         }),
+        marks: &[],
     },
     Cell {
         name: "task-finalize-a-baseline-a-hand-edit-after-the-first-write",
@@ -441,12 +443,13 @@ pub const CELLS: &[Cell] = &[
             A_HAND_EDIT,
         ],
         argv: &["task", "finalize", "sharpen-the-open-questions"],
-        listed: Listed::Refuses,
+        listed: refuses(3, "reconciliation.conflict-block"),
         beside: Some(THE_COPY_IN_SUITE),
         aim: Some(Aim {
             line: "T1",
             kind: Kind::EditAfter,
         }),
+        marks: &[],
     },
     Cell {
         name: "task-finalize-a-link-to-nothing-at-the-created-docs-home",
@@ -469,11 +472,784 @@ pub const CELLS: &[Cell] = &[
             Lead::Plant(Plant::LinkToNothing("docs/inconsistencies/two-docs.md")),
         ],
         argv: &["task", "finalize", "file-a-finding"],
-        listed: Listed::Refuses,
+        listed: refuses(3, "store.home-not-regular-file"),
         beside: Some("promote_destination_shape::a_fresh_doc_never_promotes_onto_an_entry_that_is_not_a_regular_file"),
         aim: Some(Aim {
             line: "T1",
             kind: Kind::LinkToNothing,
         }),
+        marks: &[],
     },
+];
+
+// ---------------------------------------------------------------------------
+// The family's cells — the plan's task `B4`
+// ---------------------------------------------------------------------------
+
+/// **An open task that created a decision and is ready to finalize** — its id,
+/// `record-a-decision`; the ADR it created promotes to `docs/decisions/one-way.md`.
+/// `single-task` is the leaf's plain spelling: its commit is the index, whole (`T4`).
+const A_DECISION: [Lead; 11] = [
+    jigc(&["start", "--workflow", "single-task", "record a decision"]),
+    jigc(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "One way",
+        "--task",
+        "record-a-decision",
+    ]),
+    payload("context", "The forces, in a line.\n"),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "adr:one-way#context",
+        "--from-file",
+        "../outside/context",
+        "--task",
+        "record-a-decision",
+    ]),
+    payload("decision", "The call, in a line.\n"),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "adr:one-way#decision",
+        "--from-file",
+        "../outside/decision",
+        "--task",
+        "record-a-decision",
+    ]),
+    payload("consequences", "What follows, in a line.\n"),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "adr:one-way#consequences",
+        "--from-file",
+        "../outside/consequences",
+        "--task",
+        "record-a-decision",
+    ]),
+    jigc(&[
+        "doc",
+        "set-field",
+        "commit:record-a-decision#type",
+        "--value",
+        "docs",
+        "--task",
+        "record-a-decision",
+    ]),
+    payload("summary", "record a decision\n"),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "commit:record-a-decision#summary",
+        "--from-file",
+        "../outside/summary",
+        "--task",
+        "record-a-decision",
+    ]),
+];
+
+/// [`A_DECISION`], with what stands before the task is started — which is where a file
+/// the user committed goes, since `start` pins the task's base — and what is put in after
+/// its last write, last before the command.
+macro_rules! a_decision {
+    ([$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
+        &[
+            $($before,)*
+            A_DECISION[0], A_DECISION[1], A_DECISION[2], A_DECISION[3], A_DECISION[4],
+            A_DECISION[5], A_DECISION[6], A_DECISION[7], A_DECISION[8], A_DECISION[9],
+            A_DECISION[10],
+            $($after,)*
+        ]
+    };
+}
+
+/// The home the created decision promotes to, and the directory it stands in.
+const THE_DECISIONS_HOME: &str = "docs/decisions/one-way.md";
+const THE_DECISIONS_DIRECTORY: &str = "docs/decisions";
+
+const FINALIZE_THE_DECISION: &[&str] = &["task", "finalize", "record-a-decision"];
+const FINALIZE_THE_VISION: &[&str] = &["task", "finalize", "sharpen-the-open-questions"];
+
+/// **The task of [`A_TASK_OVER_THE_VISION`], writing another part of the vision** — its
+/// thesis, the first of the doc's three slots, where a line added by hand at the file's
+/// end stands in the last.
+const A_WRITE_TO_THE_THESIS: [Lead; 2] = [
+    payload("thesis", "A thesis, sharpened.\n"),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "vision:vision#thesis",
+        "--from-file",
+        "../outside/thesis",
+        "--task",
+        "sharpen-the-open-questions",
+    ]),
+];
+
+/// **A milestone with one sub-task nobody has re-entered** — `ship-it`, and its sub-task
+/// `do-the-thing`: the record names it, and it stages nothing (the record's `A10`).
+const A_SUB_TASK: [Lead; 2] = [
+    jigc(&["milestone", "create", "Ship it"]),
+    jigc(&["milestone", "add-task", "ship-it", "do the thing"]),
+];
+
+/// The milestone's committed record.
+const THE_RECORD: &str = "docs/milestone-records/ship-it.md";
+
+const DISCARD_THE_DECISION: &[&str] = &["task", "discard", "record-a-decision"];
+const DISCARD_THE_DECISION_BY_CONSENT: &[&str] =
+    &["task", "discard", "record-a-decision", "--force"];
+const DISCARD_THE_SUB_TASK: &[&str] = &["task", "discard", "do-the-thing"];
+
+/// What a planted cell's plant is aimed at.
+const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+    Some(Aim { line, kind })
+}
+
+/// One cell of `jigc task finalize`.
+const fn finalize(
+    name: &'static str,
+    state: Prepared,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["task", "finalize"],
+        state,
+        leads,
+        argv,
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// One cell of `jigc task discard`, in `fresh`.
+const fn discard(
+    name: &'static str,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["task", "discard"],
+        state: FRESH,
+        leads,
+        argv,
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+const FRESH: Prepared = Prepared::Of(State::Fresh);
+const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
+
+/// A file of the user's that is no doc and no file of jigc's, in a task's working area.
+const NOTES_AT_THE_AREAS_ROOT: &str = ".jigc/tasks/record-a-decision/NOTES.md";
+const NOTES_UNDER_THE_AREAS_DOCS: &str = ".jigc/tasks/record-a-decision/docs/notes.txt";
+
+/// A file whose name git quotes: a quote, and a byte outside ASCII (the plan's plant **N**).
+const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
+
+/// **The cells of `jigc task finalize`** — its refusing cell, its base cell, and a planted
+/// cell for every line of its row and every kind of plant that targets it, but for the
+/// ones `scheduled-cells.tsv` holds with their reason. Each is listed from the row's doc:
+///
+/// - **over the created doc's home** (`T1`) a file in no commit, a link, a directory and a
+///   file staged and not in the tree are each refused — *"A promote lands a regular file
+///   at exactly its canonical path, or the transaction refuses before anything is
+///   written"*, and *"a `created` doc over an occupied destination blocks with
+///   **`finalize.promote-clobber`**"*; a file the user committed there before the task
+///   began is the doc's own base — the create takes it up — and what it holds is no ADR,
+///   so the finalize's validation refuses;
+/// - **an edit before the task's first write** (`T1`) is carried into the task where the
+///   task writes another part, and where it writes the same part the write replaces it —
+///   the second of the bounds of 2026-10-06, which the cell stands on;
+/// - **a change staged at the doc and not in the working file** (`T1`) is replaced at
+///   finalize — the first of those bounds;
+/// - **what is staged elsewhere rides the commit** (`T4`: *"The commit set is therefore
+///   **the git index** … committed whole"*), a name git quotes included, and **a hook
+///   that rejects** leaves the task as it was (`T7`);
+/// - **a file of the user's in a cache the finalize writes** (`T5`) stays, and one **in
+///   the task's working area** (`T6`) is *"moved aside first, to
+///   `.jigc/displaced/<task-id>/` with its relative paths intact"*;
+/// - **a hand edit to `.jigc/version`** (`T2`) is left: the stamp is refreshed *"where it
+///   is jigc's to write"*; a change staged at it and not in the file is met by no
+///   sentence, and the cell is listed as one that acts.
+///
+/// Two cells run their own command a second time over what a first refusal left
+/// ([`Lead::Refused`]): the ruling on a refusal's caches is bounded by *a refused command
+/// run again refuses again, with the plant standing*.
+const FINALIZE_CELLS: [Cell; 24] = [
+    finalize(
+        "task-finalize-a-task-that-is-not-there",
+        FRESH,
+        &[],
+        &["task", "finalize", "a-task"],
+        refuses(1, "finalize.no-task"),
+        None,
+    ),
+    finalize(
+        "task-finalize-a-created-decision",
+        FRESH,
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+    finalize(
+        "task-finalize-an-untracked-file-at-the-created-docs-home",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(THE_DECISIONS_HOME))]),
+        FINALIZE_THE_DECISION,
+        refuses(3, "finalize.promote-clobber"),
+        at("T1", Kind::Untracked),
+    ),
+    finalize(
+        "task-finalize-an-untracked-file-at-the-created-docs-home-run-again",
+        FRESH,
+        a_decision!(
+            [],
+            [
+                Lead::Plant(Plant::File(THE_DECISIONS_HOME)),
+                Lead::Refused(FINALIZE_THE_DECISION),
+            ]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(3, "finalize.promote-clobber"),
+        at("T1", Kind::Untracked),
+    ),
+    // The create takes the committed file up as the doc's base, and every write of the
+    // task to it is then refused — what it holds is no ADR — so the task comes to its
+    // finalize with the doc as the user committed it.
+    finalize(
+        "task-finalize-a-committed-file-at-the-created-docs-home",
+        FRESH,
+        &[
+            Lead::Plant(Plant::Committed(THE_DECISIONS_HOME)),
+            A_DECISION[0],
+            A_DECISION[1],
+            A_DECISION[8],
+            A_DECISION[9],
+            A_DECISION[10],
+        ],
+        FINALIZE_THE_DECISION,
+        refuses(3, "conformance.section-missing"),
+        at("T1", Kind::Committed),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-file-in-the-repository-at-the-created-docs-home",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::LinkToAFile {
+                at: THE_DECISIONS_HOME,
+                outside: false,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(3, "store.home-not-regular-file"),
+        at("T1", Kind::LinkInside),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-file-outside-at-the-created-docs-home",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::LinkToAFile {
+                at: THE_DECISIONS_HOME,
+                outside: true,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(3, "store.home-not-regular-file"),
+        at("T1", Kind::LinkOutside),
+    ),
+    finalize(
+        "task-finalize-a-directory-at-the-created-docs-home",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::Dir(THE_DECISIONS_HOME))]),
+        FINALIZE_THE_DECISION,
+        refuses(3, "store.home-not-regular-file"),
+        at("T1", Kind::DirForAFile),
+    ),
+    finalize(
+        "task-finalize-a-file-where-the-created-docs-directory-goes",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(THE_DECISIONS_DIRECTORY))]),
+        FINALIZE_THE_DECISION,
+        refuses(1, "to promote into"),
+        at("T1", Kind::FileForADir),
+    ),
+    finalize(
+        "task-finalize-a-file-staged-at-the-created-docs-home-and-not-in-the-tree",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: THE_DECISIONS_HOME,
+                kept: false,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(3, "finalize.promote-clobber"),
+        at("T1", Kind::StagedThere),
+    ),
+    Cell {
+        marks: &[Mark::Bound(1), Mark::Reach],
+        ..finalize(
+            "task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file",
+            SINGLETONS,
+            &[
+                A_TASK_OVER_THE_VISION[0],
+                A_TASK_OVER_THE_VISION[1],
+                A_TASK_OVER_THE_VISION[2],
+                A_TASK_OVER_THE_VISION[3],
+                A_TASK_OVER_THE_VISION[4],
+                A_TASK_OVER_THE_VISION[5],
+                Lead::Plant(Plant::Staged {
+                    at: "VISION.md",
+                    kept: false,
+                }),
+            ],
+            FINALIZE_THE_VISION,
+            Listed::Acts,
+            at("T1", Kind::StagedThere),
+        )
+    },
+    finalize(
+        "task-finalize-a-hand-edit-before-the-first-write-to-another-part",
+        SINGLETONS,
+        &[
+            A_TASK_OVER_THE_VISION[0],
+            A_HAND_EDIT,
+            A_WRITE_TO_THE_THESIS[0],
+            A_WRITE_TO_THE_THESIS[1],
+            A_TASK_OVER_THE_VISION[3],
+            A_TASK_OVER_THE_VISION[4],
+            A_TASK_OVER_THE_VISION[5],
+        ],
+        FINALIZE_THE_VISION,
+        Listed::Acts,
+        at("T1", Kind::EditBefore),
+    ),
+    Cell {
+        marks: &[Mark::Bound(2)],
+        ..finalize(
+            "task-finalize-a-hand-edit-before-the-first-write-to-the-same-part",
+            SINGLETONS,
+            &[
+                A_TASK_OVER_THE_VISION[0],
+                A_HAND_EDIT,
+                A_TASK_OVER_THE_VISION[1],
+                A_TASK_OVER_THE_VISION[2],
+                A_TASK_OVER_THE_VISION[3],
+                A_TASK_OVER_THE_VISION[4],
+                A_TASK_OVER_THE_VISION[5],
+            ],
+            FINALIZE_THE_VISION,
+            Listed::Acts,
+            at("T1", Kind::EditBefore),
+        )
+    },
+    Cell {
+        beside: Some(THE_COPY_IN_SUITE),
+        ..finalize(
+            "task-finalize-a-hand-edit-after-the-first-write-run-again",
+            SINGLETONS,
+            &[
+                A_TASK_OVER_THE_VISION[0],
+                A_TASK_OVER_THE_VISION[1],
+                A_TASK_OVER_THE_VISION[2],
+                A_TASK_OVER_THE_VISION[3],
+                A_TASK_OVER_THE_VISION[4],
+                A_TASK_OVER_THE_VISION[5],
+                A_HAND_EDIT,
+                Lead::Refused(FINALIZE_THE_VISION),
+            ],
+            FINALIZE_THE_VISION,
+            refuses(3, "reconciliation.conflict-block"),
+            at("T1", Kind::EditAfter),
+        )
+    },
+    finalize(
+        "task-finalize-a-hand-edit-to-the-version-stamp",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::Edit(".jigc/version"))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::EditAfter),
+    ),
+    Cell {
+        marks: &[Mark::Reach, Mark::Silence(8)],
+        ..finalize(
+            "task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file",
+            FRESH,
+            a_decision!(
+                [],
+                [Lead::Plant(Plant::Staged {
+                    at: ".jigc/version",
+                    kept: false,
+                })]
+            ),
+            FINALIZE_THE_DECISION,
+            Listed::Acts,
+            at("T2", Kind::StagedThere),
+        )
+    },
+    finalize(
+        "task-finalize-a-file-staged-elsewhere",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: "notes/staged-by-its-user.txt",
+                kept: true,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T4", Kind::StagedElsewhere),
+    ),
+    finalize(
+        "task-finalize-a-staged-file-whose-name-git-quotes",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: A_NAME_GIT_QUOTES,
+                kept: true,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T4", Kind::QuotedName),
+    ),
+    finalize(
+        "task-finalize-a-hook-that-rejects",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::RejectingHook)]),
+        FINALIZE_THE_DECISION,
+        refuses(1, "`git commit` was rejected"),
+        at("T4", Kind::RejectingHook),
+    ),
+    finalize(
+        "task-finalize-a-foreign-file-under-the-edge-index",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(".jigc/index/notes.md"))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T5, the edge index", Kind::Untracked),
+    ),
+    finalize(
+        "task-finalize-a-foreign-file-under-the-file-state-hashes",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(".jigc/state/notes.md"))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T5, the file-state hashes", Kind::Untracked),
+    ),
+    finalize(
+        "task-finalize-a-foreign-file-at-the-task-areas-root",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_AT_THE_AREAS_ROOT))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T6", Kind::Foreign),
+    ),
+    finalize(
+        "task-finalize-a-foreign-file-under-the-task-areas-docs",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_UNDER_THE_AREAS_DOCS))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T6", Kind::Foreign),
+    ),
+    // The base cell in the never-adopted repository: the command as typed, with no lead.
+    finalize(
+        "task-finalize-a-created-decision-in-bare",
+        Prepared::Bare,
+        &[],
+        FINALIZE_THE_DECISION,
+        refuses(1, "finalize.no-task"),
+        None,
+    ),
+];
+
+/// **The base cell of `jigc task finalize` in the prepared states that are not its home**
+/// — on demand, in no gate: the same task, the same command.
+const FINALIZE_ELSEWHERE: [Cell; 5] = [
+    finalize(
+        "task-finalize-a-created-decision-in-committed-singletons",
+        SINGLETONS,
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+    finalize(
+        "task-finalize-a-created-decision-in-migrated",
+        Prepared::Of(State::Migrated),
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+    finalize(
+        "task-finalize-a-created-decision-in-refs-post-hoc",
+        Prepared::Of(State::RefsPostHoc),
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+    finalize(
+        "task-finalize-a-created-decision-in-chatty-hooks",
+        Prepared::Of(State::ChattyHooks),
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+    finalize(
+        "task-finalize-a-created-decision-in-vendored",
+        Prepared::Of(State::Vendored),
+        a_decision!([], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
+];
+
+/// **The cells of `jigc task discard`**, each listed from the row's doc:
+///
+/// - **an ordinary task refuses from the moment it exists** (`A2`: *"an ordinary discard
+///   needs the consent from the moment the task exists"*), and under the consent its
+///   working area goes with what is staged in it, which the command's output names
+///   (`A4`);
+/// - **a sub-task nobody re-entered** is settled with no consent (`A10`): one item of the
+///   record flips, in a commit of the record alone, and the area goes (`A5` to `A7`) —
+///   **the family's base cell**, the one spelling in which the command acts without its
+///   consent flag;
+/// - **a file jigc did not write in the working area** is refused, *"naming every path"*
+///   (`A3`), and goes under the consent, named;
+/// - **the record** (`A5`): a hand edit *"conflict-blocks on drift"*
+///   (`design/team-ready-state.md` → *Engine capability 1*); a change staged at it and not
+///   in the working file is met by no sentence of the row's docs — the cell is listed as
+///   one that acts, since no sentence says the state is refused, and what the command
+///   does with the staged bytes is the cell's to show;
+/// - **what is staged elsewhere stays out of the record's commit** (`A6`: *"never
+///   sweeping the agent's in-flight index/worktree WIP"*), and **a hook that rejects**
+///   leaves *"the record **and** the task exactly as the frame says"* (`A8`);
+/// - **a file of the user's beside the baseline** (`A7`) stays.
+const DISCARD_CELLS: [Cell; 15] = [
+    discard(
+        "task-discard-a-task-that-is-not-there",
+        &[],
+        &["task", "discard", "a-task"],
+        refuses(1, "no task `a-task`"),
+        None,
+    ),
+    discard(
+        "task-discard-a-task-with-a-staged-decision",
+        a_decision!([], []),
+        DISCARD_THE_DECISION,
+        refuses(1, "task-discard.staged-prose"),
+        None,
+    ),
+    discard(
+        "task-discard-a-task-with-a-staged-decision-under-the-consent",
+        a_decision!([], []),
+        DISCARD_THE_DECISION_BY_CONSENT,
+        Listed::Acts,
+        None,
+    ),
+    discard(
+        "task-discard-a-sub-task-nobody-re-entered",
+        &[A_SUB_TASK[0], A_SUB_TASK[1]],
+        DISCARD_THE_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    discard(
+        "task-discard-a-foreign-file-at-the-task-areas-root",
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_AT_THE_AREAS_ROOT))]),
+        DISCARD_THE_DECISION,
+        refuses(1, "task-discard.foreign-bytes"),
+        at("A1", Kind::Foreign),
+    ),
+    discard(
+        "task-discard-a-foreign-file-at-the-task-areas-root-under-the-consent",
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_AT_THE_AREAS_ROOT))]),
+        DISCARD_THE_DECISION_BY_CONSENT,
+        Listed::Acts,
+        at("A1", Kind::Foreign),
+    ),
+    discard(
+        "task-discard-a-foreign-file-under-the-task-areas-docs",
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_UNDER_THE_AREAS_DOCS))]),
+        DISCARD_THE_DECISION,
+        refuses(1, "task-discard.foreign-bytes"),
+        at("A1", Kind::Foreign),
+    ),
+    discard(
+        "task-discard-a-foreign-file-under-the-task-areas-docs-under-the-consent",
+        a_decision!([], [Lead::Plant(Plant::File(NOTES_UNDER_THE_AREAS_DOCS))]),
+        DISCARD_THE_DECISION_BY_CONSENT,
+        Listed::Acts,
+        at("A1", Kind::Foreign),
+    ),
+    discard(
+        "task-discard-a-hand-edit-to-the-milestones-record",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::Edit(THE_RECORD)),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("A5", Kind::EditAfter),
+    ),
+    Cell {
+        marks: &[Mark::Reach, Mark::Silence(8)],
+        ..discard(
+            "task-discard-a-change-staged-at-the-record-and-not-in-the-file",
+            &[
+                A_SUB_TASK[0],
+                A_SUB_TASK[1],
+                Lead::Plant(Plant::Staged {
+                    at: THE_RECORD,
+                    kept: false,
+                }),
+            ],
+            DISCARD_THE_SUB_TASK,
+            Listed::Acts,
+            at("A5", Kind::StagedThere),
+        )
+    },
+    discard(
+        "task-discard-a-file-staged-elsewhere",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::Staged {
+                at: "notes/staged-by-its-user.txt",
+                kept: true,
+            }),
+        ],
+        DISCARD_THE_SUB_TASK,
+        Listed::Acts,
+        at("A6", Kind::StagedElsewhere),
+    ),
+    discard(
+        "task-discard-a-staged-file-whose-name-git-quotes",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::Staged {
+                at: A_NAME_GIT_QUOTES,
+                kept: true,
+            }),
+        ],
+        DISCARD_THE_SUB_TASK,
+        Listed::Acts,
+        at("A6", Kind::QuotedName),
+    ),
+    Cell {
+        marks: &[Mark::Silence(6)],
+        ..discard(
+            "task-discard-a-hook-that-rejects",
+            &[
+                A_SUB_TASK[0],
+                A_SUB_TASK[1],
+                Lead::Plant(Plant::RejectingHook),
+            ],
+            DISCARD_THE_SUB_TASK,
+            refuses(1, "`git commit` was rejected"),
+            at("A6", Kind::RejectingHook),
+        )
+    },
+    discard(
+        "task-discard-a-foreign-file-under-the-file-state-hashes",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::File(".jigc/state/notes.md")),
+        ],
+        DISCARD_THE_SUB_TASK,
+        Listed::Acts,
+        at("A7", Kind::Untracked),
+    ),
+    // The base cell in the never-adopted repository: the command as typed, with no lead.
+    Cell {
+        state: Prepared::Bare,
+        ..discard(
+            "task-discard-a-sub-task-nobody-re-entered-in-bare",
+            &[],
+            DISCARD_THE_SUB_TASK,
+            refuses(1, "no task `do-the-thing`"),
+            None,
+        )
+    },
+];
+
+/// One base cell of `jigc task discard` in a prepared state that is not its home.
+const fn discard_in(name: &'static str, state: State) -> Cell {
+    Cell {
+        state: Prepared::Of(state),
+        ..discard(
+            name,
+            &[A_SUB_TASK[0], A_SUB_TASK[1]],
+            DISCARD_THE_SUB_TASK,
+            Listed::Acts,
+            None,
+        )
+    }
+}
+
+/// **The base cell of `jigc task discard` in the prepared states that are not its home**
+/// — on demand, in no gate.
+const DISCARD_ELSEWHERE: [Cell; 5] = [
+    discard_in(
+        "task-discard-a-sub-task-nobody-re-entered-in-committed-singletons",
+        State::CommittedSingletons,
+    ),
+    discard_in(
+        "task-discard-a-sub-task-nobody-re-entered-in-migrated",
+        State::Migrated,
+    ),
+    discard_in(
+        "task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc",
+        State::RefsPostHoc,
+    ),
+    discard_in(
+        "task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks",
+        State::ChattyHooks,
+    ),
+    discard_in(
+        "task-discard-a-sub-task-nobody-re-entered-in-vendored",
+        State::Vendored,
+    ),
+];
+
+/// **The family's cells**: the acceptance's three, then the two leaves' own — the ones the
+/// gate runs, in the arm of their state, and the base cells in the states that are not a
+/// leaf's home, which run on demand.
+pub const CELLS: &[&[Cell]] = &[
+    ACCEPTANCE,
+    &FINALIZE_CELLS,
+    &FINALIZE_ELSEWHERE,
+    &DISCARD_CELLS,
+    &DISCARD_ELSEWHERE,
 ];

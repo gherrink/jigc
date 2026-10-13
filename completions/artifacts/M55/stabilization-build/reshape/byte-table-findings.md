@@ -28,7 +28,7 @@ and `design/storage.md` → *Edge index lifecycle*, the first row of its table o
 
 **What was ruled, and what was not.** The table follows the storage design: a refusal may rebuild a cache, and no cell is red for it (the record's §4a, lines `C1` to `C3`). Which of the two sentences is corrected, and to what, is not ruled here and no design doc is edited in this lane. A neighbour of the same question is in the record's §6, entry 1, *what the ruling leaves open*: `design/storage.md` → *Derived caches* calls the file↔state hashes *rebuildable from the committed docs* in one sentence and says in the next paragraph that they *"carry **no stamp and no rebuild path**"* — one doc, two sentences.
 
-## 2. The cells — none is red on this tree's binary
+## 2. The acceptance's cells — none is red on this tree's binary
 
 *2026-10-13, this tree's debug build, macOS arm64; the task `B2d`. The suite's expected-red list is empty, and exact: a cell that comes out red is named by the arm of its state.*
 
@@ -81,3 +81,61 @@ The twelve cells of the pilot's acceptance ([byte-table-plan.md](byte-table-plan
 - *`L-22`* — the registration `own`, of the worktree at `outside/own`, is gone.
 
 **No verdict on either binary hangs on what *held* means.** On this tree no cell left anything under the sandbox's `tmp/`, `home/` or `outside/`, nor did the three that are not red on the previous release. **Of a red cell the frame says why in the class that outranks the others, and no more**: what else the previous release wrote in those nine — a file no line covers, beside the loss — is not in this table. **All six named states of the builder of the prepared states build on the previous release's binary** — `fresh`, `committed-singletons`, `migrated`, `refs-post-hoc`, `chatty-hooks`, `vendored` — where the plan had it established only through the shell rig.
+
+## 4. The task family's cells — five are red on this tree's binary, under five keys
+
+*2026-10-13, this tree's debug build, macOS arm64; the second commit of the task `B4`. The family is `jigc task finalize` and `jigc task discard`: 49 cells beside the acceptance's three of `task finalize` — 37 that the gate runs, in the arms of `fresh` and `committed-singletons`, and 12 base cells in the prepared states that are not the leaves' home, which run on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)). The suite's expected-red list names the five below, and is exact.*
+
+**Of the gate's 37: 16 hold, 16 refuse and change nothing a refusal may not, 5 are red.** Of the 12 on demand: 10 hold and 2 refuse, none red. Each red cell is one plant at one position, and none shows a second class beside the one it is listed under.
+
+Each row says what the cell is, what it came to, the sentence it is held against, and what the previous release's binary does with the same cell (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked before the run). **Nothing here is a grade**, and whether a difference between two releases is anything is not this file's to say.
+
+### `r1-task-finalize-a-hand-edit-before-the-tasks-first-write-is-replaced-by-its-write-to-the-same-part`
+
+- *The cell.* `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part`, in `committed-singletons`: a task is started; a line is added by hand to the committed `VISION.md`, in no commit; the task writes the vision's `open-questions` slot — the part the line stands in — and is finalized.
+- *What it came to.* **Lost.** Exit 0, `finalized … promoted VISION.md`; the line stands at no path of the sandbox and in no object.
+- *Held against.* The exit rule's first clause — *"no jigc command at exit 0 destroys bytes no git object holds"*. **It stands on a declared bound**, the second of the human's four of 2026-10-06: *an uncommitted edit made before a task first writes a doc is carried into the task, and a write by that task to the same part replaces it*. A bound takes no cell off the list.
+- *The previous release.* **It does not show it.** The same cell refuses there — `reconciliation.conflict-block`, exit 3, *an external edit and this task's staged writes both changed it* — and the line stands.
+- *Beside it.* `task-finalize-a-hand-edit-before-the-first-write-to-another-part` holds on this tree: the line is carried into the task and stands in the commit. The previous release refuses that cell the same way.
+
+### `r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced`
+
+- *The cell.* `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file`, in `committed-singletons`: after the task's last write, a line is added to `VISION.md`, staged, and the working file put back as it was.
+- *What it came to.* **Lost**, and it hangs on what *held* means: exit 0, the staged bytes are in the index no longer, and in the store with nothing reaching them.
+- *Held against.* The clause; and **it stands on a declared bound**, the first of the four: *content staged for a doc a task is updating, while the working file does not carry it, is replaced at finalize*.
+- *The previous release.* The same: *lost*, exit 0.
+
+### `r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced`
+
+- *The cell.* `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file`, in `fresh`: the same act at `.jigc/version`, last before the finalize of a task that created a decision.
+- *What it came to.* **Lost**, hanging on what *held* means: exit 0, *1 file committed* — the decision — and the index entry of `.jigc/version` is no longer what the user staged.
+- *Held against.* The clause; and `T3`'s sentence, *"This phase stages **jigc's own** managed artifacts into that existing index"* — what the user staged there was not jigc's own. No declared bound names this path: the record's §6, entry 8, has the two readings.
+- *The previous release.* The same: *lost*, exit 0.
+- *Beside it.* A hand edit to the stamp **in the working file** is left alone on this tree — *jigc left it untouched and out of this commit* — where the previous release replaced it at exit 0: *lost* there, *holds* here.
+
+### `r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced`
+
+- *The cell.* `task-discard-a-change-staged-at-the-record-and-not-in-the-file`, in `fresh`: a milestone with one sub-task nobody re-entered; a line is added to the milestone's committed record, staged, and the working file put back; the sub-task is discarded.
+- *What it came to.* **Lost**, hanging on what *held* means: exit 0, `record commit: …`, and the staged bytes are in the index no longer.
+- *Held against.* The clause; and `A6`'s sentence — the record's commit *"stages and commits **only the record file** … never sweeping the agent's in-flight index/worktree WIP"*: the staged change was index work in flight, at the one path the door stages. A hand edit **in the working file** is refused at the same door (`reconciliation.conflict-block`), on both binaries. The record's §6, entry 8.
+- *The previous release.* The same: *lost*, exit 0.
+
+### `r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area`
+
+- *The cell.* `task-discard-a-hook-that-rejects`, in `fresh`: the same sub-task, and the user's own lines in the `pre-commit` hook, which reject every commit.
+- *What it came to.* **Refused, and changed what a refusal may not.** Exit 1, *nothing was committed — the milestone record still names task:do-the-thing as it did, and the task's working area is intact*; and `.jigc/tasks/do-the-thing/record-commit-msg.txt` was made.
+- *Held against.* `A8`'s sentence — *"a rejected `pre-commit` hook leaves the record *and* the task exactly as the frame says"* — and `design/finalize.md` → *6. Commit*: *"a temp file, deleted after"*. The record's §6, entry 6, has the two readings: the file may be part of *the survivable frame*, which no doc describes.
+- *The previous release.* The same.
+- *Beside it.* `task-finalize-a-hook-that-rejects` leaves no file.
+
+### What the same cells show the other way — red on the previous release, and not on this tree
+
+Seven cells of the family come out otherwise on the previous release, beside the acceptance's three — six of them red there and not here, and one red on both, differently: a hand edit to `.jigc/version` (*lost* there, *holds* here) · a file staged at the created doc's home and not in the tree (*lost* there, refused here) · a link to a file in the repository, a link to one outside it, and a directory at the created doc's home, each refused there with another refusal than the one the cell names (`finalize.promote-clobber` twice; an unnamed *could not read … Is a directory* at exit 1) and refused here with `store.home-not-regular-file` · and the two cells of the hand edit before the first write, which that release refuses and this tree does not — one of them the first key above, red here as a loss. The arm counts; it does not say which of these is a regression.
+
+## 5. Seen by hand, and no cell
+
+*Each was read off a cell's output or a probe of the builder's on 2026-10-13; none is a difference of bytes, so none is a cell's to hold, and each is the route catalog's kind of finding.*
+
+- **`jigc task discard <id>` over a task that is not there answers `finalize.no-task`** — a code of another command. Exit 1, *no task `a-task`*, nothing changed. The cell names the refusal by its sentence.
+- **`jigc task finalize` over a file where the created doc's directory goes exits 1 with no finding**: *could not create "<sandbox>/repo/docs/decisions" to promote into: File exists (os error 17)* — an operating-system error, an absolute path, and no code — where a link or a directory at the doc's own home is `store.home-not-regular-file` at exit 3. Nothing is changed but the edge index, rebuilt.
+- **A `doc create` over a file the user committed at the minted id takes the file up as the doc's base, and a write of the task to it is then refused** (`write.non-reparseable`, seen at `doc set-slot`) when the file is no doc of that type. The finalize refuses on the file's conformance (`conformance.section-missing`), and the file stands.

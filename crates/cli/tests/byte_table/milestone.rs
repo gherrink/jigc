@@ -11,7 +11,7 @@
 //! commit a sub-task that staged code and then the aggregate; no cell sets that knob, and
 //! the comparison reads every commit the command made under `M3` either way.
 
-use super::ON_A_REFUSAL;
+use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
     Where,
@@ -391,19 +391,20 @@ const BETAS_CODE: [Lead; 2] = staged_code!("add-beta-file", "beta.txt");
 /// is taken before either mode lays down a commit"* (`M2`). **The cell of `L-22` is
 /// listed as one that acts**: a registration of somebody's own worktree is no reason to
 /// refuse, and *"every other registration … is left byte-identical"* (`M7`).
-pub const CELLS: &[Cell] = &[
+const ACCEPTANCE: &[Cell] = &[
     Cell {
         name: "milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto",
         leaf: &["milestone", "finalize"],
         state: Prepared::Of(State::Fresh),
         leads: two_reporters_joined!([], [Lead::Plant(Plant::File(THE_NUMBERED_HOME))]),
         argv: &["milestone", "finalize", "stage-reports"],
-        listed: Listed::Refuses,
+        listed: refuses(3, "finalize.promote-clobber"),
         beside: Some("milestone_promote_guards::a_suffix_landing_on_an_occupied_home_blocks_and_its_route_lands_the_milestone"),
         aim: Some(Aim {
             line: "M2",
             kind: Kind::Untracked,
         }),
+        marks: &[],
     },
     Cell {
         name: "milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone",
@@ -411,12 +412,13 @@ pub const CELLS: &[Cell] = &[
         state: Prepared::Of(State::Fresh),
         leads: two_reporters_joined!([Lead::Plant(Plant::Committed(THE_NUMBERED_HOME))], []),
         argv: &["milestone", "finalize", "stage-reports"],
-        listed: Listed::Refuses,
+        listed: refuses(3, "finalize.promote-clobber"),
         beside: Some("milestone_promote_guards::a_committed_occupant_is_never_routed_at_moving_out"),
         aim: Some(Aim {
             line: "M2",
             kind: Kind::Committed,
         }),
+        marks: &[],
     },
     Cell {
         name: "milestone-finalize-the-users-own-worktree-moved-away",
@@ -440,5 +442,10 @@ pub const CELLS: &[Cell] = &[
             line: "M7",
             kind: Kind::WorktreeMovedAway,
         }),
+        marks: &[],
     },
 ];
+
+/// The family's cells: the acceptance's. Its other cells are a later task's, if the human
+/// rules for it at the pilot's stop.
+pub const CELLS: &[&[Cell]] = &[ACCEPTANCE];

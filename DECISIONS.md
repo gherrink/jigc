@@ -2,6 +2,67 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — One family of the byte table end to end: `jigc task finalize` and `jigc task discard` have their cells — 49 beside the acceptance's, 37 in the gate and 12 on demand — and five are red on this tree, under five keys: four lose bytes the user staged or wrote, three of them on a declared bound or a silence, and one refusal leaves a file behind. A cell names its refusal, shows every class it is red in, and carries a mark for the question it turns on (the byte table's pilot, task `B4`, the second of its three commits)
+
+**What.** The cells of the task family ([task.rs](crates/cli/tests/byte_table/task.rs)), on the row the commit before this one wrote and on `task finalize`'s; what the frame needed for them ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)), each piece red first; and the lists ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §3, §8). No row was touched, and no product source changes. The route catalog's frame is byte for byte what it was: the byte frame uses only what was exposed to it before.
+
+### The cells, on this tree's binary
+
+| | cells | hold | refuse, nothing changed | red |
+|---|---:|---:|---:|---:|
+| the acceptance (unchanged) | 12 | 1 | 11 | 0 |
+| `task finalize` — in the gate | 23 | 9 | 11 | 3 |
+| `task discard` — in the gate | 14 | 7 | 5 | 2 |
+| both, on demand — the base cell in the six states that are not the leaves' home | 12 | 10 | 2 | 0 |
+| **all** | **61** | **27** | **29** | **5** |
+
+**The five red cells**, each under a key of its own in [byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §4, which has the cell, the sentence it is held against and what the previous release does:
+
+| key | came to | stands on | the previous release |
+|---|---|---|---|
+| `r1-task-finalize-a-hand-edit-before-the-tasks-first-write-is-replaced-by-its-write-to-the-same-part` | *lost* | the second declared bound | **does not show it**: refuses there (`reconciliation.conflict-block`), and the line stands |
+| `r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced` | *lost* — hangs on what *held* means | the first declared bound | the same |
+| `r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced` | *lost* — hangs | no bound; the record's new entry 8 | the same |
+| `r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced` | *lost* — hangs | no bound; entry 8 | the same |
+| `r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area` | *refused, and changed what a refusal may not* | the record's entry 6 | the same |
+
+**No red cell shows a second class.** And the other way: seven cells of the family come out otherwise on the previous release — six red there and not here (a hand edit to `.jigc/version` and a file staged at a created doc's home, each *lost* there; a link to a file and a directory at that home, refused there with another refusal than the one the cell names), and one red on both, differently. On that binary 20 of the 61 are red.
+
+**The second bound of the ruling on a refusal's caches is held in two cells**, which the builder before left named: *a refused command run again refuses again, with the plant standing*. Each runs its command once as a lead that must refuse and then as the cell's command; the second refusal names the same refusal, the plant stands, and nothing at all is changed.
+
+### What the frame gained, each piece red first
+
+- **A cell names its refusal** — `Listed::RefusesWith`: the exit code, and words the output holds. One that refuses otherwise is *not the listed outcome*. Every cell of the table names one — the twelve of the acceptance too, whose codes had been read by eye — and the fence holds it ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`](crates/cli/tests/byte_table.rs)); the frame's own arms may still say *refuses* alone.
+- **A red cell shows every class it is red in** — `Verdict::also`: its classification outranks the others, and each lower class the comparison found stands beside it with its reasons, in the arm's output and in the table's columns.
+- **A mark** — `Cell::marks`: the open question a cell turns on, or the declared bound it stands on. `Reach`, a silence by its entry's number, a bound by its number. [`a_mark_names_a_question_the_list_of_readings_has`](crates/cli/tests/byte_table.rs) holds a mark to an entry the record has and to a line of [the readings' last table](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md); an arm names a verdict that hangs on what *held* means and carries no mark for it. **A mark changes a list and a count, and no cell's construction.**
+- **The plants the family needed**: a link to a file of the user's, in the repository and outside it, which carries a marker in the link and another in the file it points at — so that a write through the link is a loss · a directory in a file's place · a change staged, kept in the working file or not — where not, **it is the user's while an object within reach has it**, the index or a commit that took it in · the user's own lines in the `pre-commit` hook, put in after the hook's first line so that what the hook held stays. A file in a directory's place and a name git quotes are a file and a staged change, at another path.
+- **A lead-in that must refuse** (`Lead::Refused`), for the cells that run their command again.
+- **The consent reaches a staged doc** the command's output names by its identity, as it reaches a planted path: *narrate under one*.
+- **Red first.** Against a frame that declared each piece and did nothing with it, five arms were red at their own assertions: the mark's fence (0 of 9) · the named refusal (*refuses, nothing changed* where *not the listed outcome*) · the classes beside the first (none where three) · the consent over a staged doc (*lost* where *holds*) · and ten cells on the stand-in, as faults — the plant not standing in the picture before the command. **Twenty-three changes to the built frame and suite, one at a time; twenty-two named**: a refusal's exit code not compared · its words not compared · a cell that names its refusal and acts · the lower classes dropped · a staged doc going under the consent whatever the output names · and going without the consent · what was staged never lost · a staged change kept in the working file though the cell says not · one not staged at all · the link's target file not written · a link to a file outside put into the repository · a directory that holds no file · a hook not made executable · a hook that rejects nothing · a hook that loses what it held · a lead-in that must refuse and may exit 0 · a mark for a silence the record does not list · a line of the readings' table for no cell · a marked cell with no line · a cell that refuses and does not name its refusal · the cells on demand run in the gate's arms · a verdict that hangs and carries no mark. **One survived, and is left**: a staged piece taken to stand before the command whether or not the index holds it — no cell can show it while the plant stages, and the change that makes the plant not stage is named by that very check.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A declared bound's cell is listed red, under a key**: the plan says a bound takes no cell off the list. Two of the five stand on one.
+- **A file the user committed at the created doc's home goes in before `start`**, as the plan's rule for **T** has it — and the create then takes the file up as the doc's base, so the cell's task makes no write to it: one is refused. The cell is listed from what the finalize's validation says of such a doc.
+- **An edit before the first write is two cells**: the task writes another part, and the same part. The bound speaks of both, and they come out differently.
+- **A staged change goes in last before the command**, as the plan's rule for **S** has it; staged before the task exists it is another refusal, seen by hand and no cell.
+- **The base cell of `task discard` is the sub-task nobody re-entered** — the one construction in which the command acts without its consent — with two beside it: an ordinary task refused, and under the consent.
+- **A base cell in the never-adopted repository runs on demand**, like the other five: `bare` is no leaf's home here.
+- **The refusal of a refusing cell is read off a run**: no doc gives the words a command answers a task that is not there with. Every other refusal is the row's doc's.
+- **Fourteen needs wait, with one reason each way**: every kind of plant that goes where nothing stands, at `.jigc/version` and at the milestone's record — a link, a directory, a file in no commit or in one. Those places stand in every state the leaves act in. *Before the port.*
+- **No new cell names a suite that holds its state beside it**, but the one that runs an acceptance cell's command again: the pointer is a reader's aid, and the family's suites were not read for it.
+
+### Left, and said
+
+Plant **M** — no line of the family merges · the two spellings — the doc-only arm and `squash: false` — which the comparison still has no switch for: every new cell of `task finalize` is a `single-task` task, whose commit is the index, and the acceptance's cell of the link is still read under `T4` · a closed list of the bounds with their entries: a mark names a bound by its number, and the four entries are still owed as one list · a name with a line break, which stays a fault of the reader · **D** in a directory jigc did not make inside a working area: the doc's unit is the foreign directory, whole, and a command names it and not the file in it.
+
+### Not established
+
+- **Linux**, and the cells' seconds inside a gate: the next commit's record has both.
+- **That a refusal's words are the right ones** beyond the run they were read off, for the four refusing cells.
+- **That the four *lost* cells lose under the reading in between** — a reflog — beyond the reasoning that an index's blob is in none: the frame does not carry that reading apart from the store.
+- **What the previous release wrote beside what makes it red** is now in the arm's columns, class by class; no line of this entry rests on it.
+
 ## 2026-10-13 — `jigc task discard` has its row, written from its docs before a cell of it runs — four lines over quoted sentences, six rules that are no line, and one more place where a doc is silent; and three lines of the acceptance's rows that let a file go where no sentence does are corrected, red first (the byte table's pilot, task `B4`, the first of its three commits)
 
 **What.** The plan's task `B4` is one family end to end — `jigc task finalize` and `jigc task discard` — in three commits: the row from the docs, the cells, the record ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §8). This is the first: [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) gains §3a, and [task.rs](crates/cli/tests/byte_table/task.rs) the row as data, lifted from it quote for quote. No cell is added, **no binary was run to learn what the command writes**, and no product source changes.

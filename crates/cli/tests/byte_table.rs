@@ -6,9 +6,18 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has five rows — the four of the pilot's acceptance, and `jigc task
-//! discard`'s — and the acceptance's twelve cells**: this file is the plan's tasks `B1` to
-//! `B4` — the arms that hold the comparison, the reader and the runner to their rules, the
-//! fences, and the rows and the cells, a family a file under `byte_table/` ([`FAMILIES`]).
+//! discard`'s — and 61 cells: the acceptance's twelve, and the task family's forty-nine**
+//! (`jigc task finalize`, `jigc task discard`), of which twelve run on demand. This file
+//! is the plan's tasks `B1` to `B4` — the arms that hold the comparison, the reader and the
+//! runner to their rules, the fences, and the rows and the cells, a family a file under
+//! `byte_table/` ([`FAMILIES`]).
+//!
+//! **A cell of the table names the refusal it expects** — the exit code, and words its
+//! output holds — and one that refuses otherwise is *not the listed outcome*
+//! ([`a_refusal_is_the_refusal_the_cell_names`]); **a red cell shows every class it is red
+//! in** ([`a_red_cell_shows_every_class_it_is_red_in`]); and **a cell that turns on an open
+//! question, or stands on a declared bound, carries a mark**, which the committed list of
+//! readings names back ([`a_mark_names_a_question_the_list_of_readings_has`]).
 //!
 //! **The cells run in the arm of their prepared state** ([`ARMS`],
 //! [`run_the_cells_of`]): the state is built once on the binary this suite was built
@@ -107,8 +116,8 @@ mod owed;
 struct Family {
     /// Its rows, a leaf each.
     rows: &'static [Row],
-    /// Its cells.
-    cells: &'static [byte_cell::Cell],
+    /// Its cells, a group after another.
+    cells: &'static [&'static [byte_cell::Cell]],
 }
 
 /// **A family's file is wired in by its declaration inside this macro's one call, and
@@ -144,8 +153,8 @@ use owed::{CELLS_OWED, OWED, OWING};
 
 use crate::support::byte_cell::{
     self, Aim, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding,
-    Kind, Layer, Lead, Line, Listed, Manifest, May, Plant, Planted, Prepared, Quote, REPO, Row,
-    Seen, Staged, Stands, When, Where, blob_of,
+    Kind, Layer, Lead, Line, Listed, Manifest, Mark, May, Plant, Planted, Prepared, Quote, REPO,
+    Refusal, Row, Seen, Staged, Stands, When, Where, blob_of,
 };
 use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
@@ -158,6 +167,12 @@ use crate::support::trial_corpus::{State, TrialCorpus};
 /// **The rows of the table**, a leaf each: every family's, in the order declared.
 fn rows() -> Vec<&'static Row> {
     FAMILIES.iter().flat_map(|family| family.rows).collect()
+}
+
+/// **A refusal a cell names**: the exit code, and words the command's output holds — the
+/// finding's code, or a run of the sentence that says why.
+const fn refuses(exit: i32, says: &'static str) -> Listed {
+    Listed::RefusesWith(Refusal { exit, says })
 }
 
 /// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused.
@@ -829,6 +844,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             listed: Listed::Acts,
             beside: None,
             aim,
+            marks: &[],
         }
     }
     const FRESH: Prepared = Prepared::Of(State::Fresh);
@@ -1151,6 +1167,53 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         ],
     ),
     (
+        &["task", "finalize"],
+        "T1",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
+    (&["task", "finalize"], "T2", &[Prepared::Of(State::Fresh)]),
+    (
+        &["task", "finalize"],
+        "T4",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
+    (
+        &["task", "finalize"],
+        "T5, the edge index",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["task", "finalize"],
+        "T5, the file-state hashes",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
+    (
+        &["task", "finalize"],
+        "T6",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
+    (
+        &["task", "finalize"],
+        "T6, moved aside",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (&["task", "discard"], "A1", &[Prepared::Of(State::Fresh)]),
+    (&["task", "discard"], "A5", &[Prepared::Of(State::Fresh)]),
+    (&["task", "discard"], "A6", &[Prepared::Of(State::Fresh)]),
+    (&["task", "discard"], "A7", &[Prepared::Of(State::Fresh)]),
+    (
         &["milestone", "finalize"],
         "M1",
         &[Prepared::Of(State::Fresh)],
@@ -1233,22 +1296,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["uninstall"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
-    (&["task", "finalize"], "T1", ITS_FAMILYS_CELLS),
-    (&["task", "finalize"], "T2", ITS_FAMILYS_CELLS),
-    (&["task", "finalize"], "T3", ITS_FAMILYS_CELLS),
-    (&["task", "finalize"], "T4", ITS_FAMILYS_CELLS),
-    (
-        &["task", "finalize"],
-        "T5, the edge index",
-        ITS_FAMILYS_CELLS,
-    ),
-    (
-        &["task", "finalize"],
-        "T5, the file-state hashes",
-        ITS_FAMILYS_CELLS,
-    ),
-    (&["task", "finalize"], "T6", ITS_FAMILYS_CELLS),
-    (&["task", "finalize"], "T6, moved aside", ITS_FAMILYS_CELLS),
+    (&["task", "finalize"], "T3", STAGED_UNDER_ANOTHER_LINE),
     (&["task", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["task", "finalize"],
@@ -1260,10 +1308,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["task", "discard"], "A1", ITS_FAMILYS_CELLS),
-    (&["task", "discard"], "A5", ITS_FAMILYS_CELLS),
-    (&["task", "discard"], "A6", ITS_FAMILYS_CELLS),
-    (&["task", "discard"], "A7", ITS_FAMILYS_CELLS),
     (&["task", "discard"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["task", "discard"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1295,6 +1339,10 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
 ];
+
+/// Why the line that lets a command stage excuses nothing by itself.
+const STAGED_UNDER_ANOTHER_LINE: &str = "no cell can: the comparison excuses a staged entry under the line that wrote the file, or \
+     under the commit's — this line is what lets the row stage at all";
 
 /// What would use a line of the ruling on a refusal's caches that no refusal of the
 /// leaf's cells has met.
@@ -2146,6 +2194,7 @@ impl<'a> Cell<'a> {
             .map(|(at, marker)| Planted {
                 at: at.to_string(),
                 marker: marker.to_string(),
+                staged: false,
             })
             .collect();
         let (before, after) = (
@@ -3248,6 +3297,208 @@ fn a_directory_a_command_writes_into_is_not_one_it_may_empty() {
     assert_eq!(class, Classification::Holds, "{why:#?}");
 }
 
+/// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
+/// expects — the exit code, and words the output holds — and one that refuses with another
+/// code, or without saying so, is *not the listed outcome*. A refusal that also changed
+/// something is that first, and shows the other class beside it.
+#[test]
+fn a_refusal_is_the_refusal_the_cell_names() {
+    let before = sandbox();
+    let named = Listed::RefusesWith(byte_cell::Refusal {
+        exit: 3,
+        says: "probe.refused",
+    });
+    let refused = |code, said| Cell {
+        code: Some(code),
+        said,
+        listed: named,
+        ..Cell::of(NOTHING, &before, &before)
+    };
+    comes_out(
+        &refused(3, "blocking · probe.refused — no"),
+        Classification::RefusesNothingChanged,
+    );
+    for (code, said, why) in [
+        (
+            1,
+            "blocking · probe.refused — no",
+            "ended with exit 1 and said so",
+        ),
+        (
+            3,
+            "blocking · probe.other — no",
+            "ended with exit 3 and did not say so",
+        ),
+        (1, "could not do it", "ended with exit 1 and did not say so"),
+    ] {
+        let (class, said) = refused(code, said).came_to();
+        assert_eq!(class, Classification::NotTheListedOutcome, "{said:#?}");
+        assert!(
+            said.iter().any(|line| line
+                .contains("is listed as refusing with exit 3 and `probe.refused`")
+                && line.contains(why)),
+            "{said:#?}"
+        );
+    }
+    // A cell that names its refusal and whose command exits 0 is not the listed outcome.
+    let (class, said) = Cell {
+        listed: named,
+        ..Cell::of(NOTHING, &before, &before)
+    }
+    .came_to();
+    assert_eq!(class, Classification::NotTheListedOutcome, "{said:#?}");
+    // A refusal that is listed without a name is held to refusing, and to nothing more.
+    comes_out(
+        &Cell {
+            listed: Listed::Refuses,
+            ..refused(1, "could not do it")
+        },
+        Classification::RefusesNothingChanged,
+    );
+    // Another refusal that also wrote: the write outranks, and the other class stands
+    // beside it.
+    let wrote = then(&before, |m| put(m, "repo/left", "left\n"));
+    let verdict = Cell {
+        after: &wrote,
+        ..refused(1, "could not do it")
+    }
+    .verdict()
+    .expect("the cell is one the frame can compare");
+    assert_eq!(verdict.classification, Classification::RefusedAndChanged);
+    assert!(
+        matches!(
+            verdict.also.as_slice(),
+            [(Classification::NotTheListedOutcome, why)] if why.len() == 1
+        ),
+        "{:#?}",
+        verdict.also
+    );
+}
+
+/// **A red cell shows every class it is red in**: its classification is the one that
+/// outranks the others, and each lower class the comparison found stands beside it with
+/// its reasons — so what else a command did in a cell where it lost bytes is read off the
+/// cell, and not hidden behind the loss.
+#[test]
+fn a_red_cell_shows_every_class_it_is_red_in() {
+    let before = planted_under_the_workbench();
+    let after = then(&before, |m| {
+        m.files.remove("repo/.jigc/logs/notes.md");
+        put(m, "outside/left", "left\n");
+        m.refs
+            .insert("refs/heads/other".to_string(), "c0".to_string());
+    });
+    let verdict = Cell {
+        planted: PLANT,
+        listed: Listed::Refuses,
+        ..Cell::of(NOTHING, &before, &after)
+    }
+    .verdict()
+    .expect("the cell is one the frame can compare");
+    assert_eq!(verdict.classification, Classification::Lost);
+    let also: Vec<Classification> = verdict.also.iter().map(|(class, _)| *class).collect();
+    assert_eq!(
+        also,
+        [
+            Classification::GitMoved,
+            Classification::WrittenOutside,
+            Classification::NotTheListedOutcome
+        ],
+        "{:#?}",
+        verdict.also
+    );
+    let shown = verdict.shown();
+    assert!(
+        shown.contains(
+            "also *git's state moved outside its allowance*:\nthe ref `refs/heads/other`"
+        ) && shown.contains("also *written outside its allowance*:\n`outside/left` was made"),
+        "{shown}"
+    );
+    // A cell that is red in one class shows that one, and nothing beside it.
+    let only = then(&before, |m| put(m, "outside/left", "left\n"));
+    let verdict = Cell {
+        planted: PLANT,
+        ..Cell::of(NOTHING, &before, &only)
+    }
+    .verdict()
+    .expect("the cell is one the frame can compare");
+    assert_eq!(verdict.classification, Classification::WrittenOutside);
+    assert!(verdict.also.is_empty(), "{:#?}", verdict.also);
+}
+
+/// **A staged doc that goes under the consent is one the command's output names**: the
+/// rule for prose handed to jigc has one exemption, the consent's — and only where the
+/// command said which doc went, by its identity, as *narrate under one* asks of a door
+/// that destroys a working area.
+#[test]
+fn a_staged_doc_that_goes_under_the_consent_is_one_the_output_names() {
+    const DISCARDS: Row = row(&[line(
+        "D1",
+        Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+    )]);
+    let base = sandbox();
+    let before = then(&base, |m| {
+        for at in [
+            "repo/.jigc",
+            "repo/.jigc/tasks",
+            "repo/.jigc/tasks/t",
+            "repo/.jigc/tasks/t/docs",
+        ] {
+            dir(m, at);
+        }
+        put(m, "repo/.jigc/tasks/t/docs/adr:one-way.md", "a decision\n");
+        put(m, "repo/.jigc/tasks/t/docs/commit:t.md", "a message\n");
+    });
+    let after = then(&before, |m| {
+        m.files
+            .retain(|path, _| !path.starts_with("repo/.jigc/tasks"));
+    });
+    let discarded = |consent, said| Cell {
+        base: Some(&base),
+        consent,
+        said,
+        ..Cell::of(DISCARDS, &before, &after)
+    };
+    comes_out(
+        &discarded(
+            true,
+            "discarded task t — dropped staged edits to: adr:one-way, commit:t",
+        ),
+        Classification::Holds,
+    );
+    for (consent, said) in [
+        (true, "discarded task t"),
+        (
+            true,
+            "discarded task t — dropped staged edits to: adr:another",
+        ),
+        (
+            false,
+            "discarded task t — dropped staged edits to: adr:one-way, commit:t",
+        ),
+    ] {
+        let (class, why) = discarded(consent, said).came_to();
+        assert_eq!(class, Classification::Lost, "{consent} `{said}`: {why:#?}");
+        assert!(
+            why.iter().any(|line| line
+                .contains("the staged doc `repo/.jigc/tasks/t/docs/adr:one-way.md` is gone")),
+            "{why:#?}"
+        );
+    }
+    // A row with no consent has no exemption to give.
+    const NO_CONSENT: Row = Row {
+        consent: None,
+        ..DISCARDS
+    };
+    comes_out(
+        &Cell {
+            row: NO_CONSENT,
+            ..discarded(true, "dropped staged edits to: adr:one-way")
+        },
+        Classification::Lost,
+    );
+}
+
 /// **The classifications, in their order.** A command that did not end is said first,
 /// whatever it left. At exit 0 a loss outranks a write outside the allowance, and git's
 /// state moved outranks it too; a cell that came out as listed holds, and one that did not
@@ -3273,6 +3524,7 @@ fn the_classifications_in_their_order() {
             planted: &[Planted {
                 at: PLANT[0].0.to_string(),
                 marker: MARKER.to_string(),
+                staged: false,
             }],
             ended: Ended {
                 ended: false,
@@ -3507,6 +3759,10 @@ rewrites-the-edited-file) echo rewritten > README.md ;;
 prunes-the-worktrees) git worktree prune ;;
 seeds-the-ignore-file) echo secrets > .gitignore ;;
 writes-a-baseline) mkdir -p .jigc/state && echo '{}' > .jigc/state/hashes.json ;;
+empties-the-directory) rm -r a-dir ;;
+drops-the-staged) git reset -q -- README.md ;;
+commits-nothing) git commit -q --allow-empty -m nothing ;;
+commits-what-is-staged) git commit -q -m staged ;;
 sleeps) exec sleep 30 ;;
 *) echo "the stand-in knows no '$1'" >&2; exit 64 ;;
 esac
@@ -3539,6 +3795,7 @@ const fn on_a_stand_in(
             listed: Listed::Acts,
             beside: None,
             aim: None,
+            marks: &[],
         },
         row,
         expected,
@@ -3659,6 +3916,115 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         NOTHING,
         Classification::WrittenOutside,
         "`repo/.jigc/state/hashes.json` was made, and no line covers it",
+    ),
+    // --- the plants of a family's cells: a link to a file, a directory, what is staged, a
+    // hook that rejects — and a lead-in that must refuse ---
+    on_a_stand_in(
+        &["writes-through-the-link"],
+        &[Lead::Plant(Plant::LinkToAFile {
+            at: "a-link.md",
+            outside: false,
+        })],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/byte-table-plant-0-only-of-its-cell.md` is gone",
+    ),
+    on_a_stand_in(
+        &["writes-through-the-link"],
+        &[Lead::Plant(Plant::LinkToAFile {
+            at: "a-link.md",
+            outside: true,
+        })],
+        NOTHING,
+        Classification::Lost,
+        "the planted `outside/byte-table-plant-0-only-of-its-cell.md` is gone",
+    ),
+    on_a_stand_in(
+        &["refuses"],
+        &[Lead::Plant(Plant::LinkToAFile {
+            at: "a-link.md",
+            outside: true,
+        })],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    on_a_stand_in(
+        &["empties-the-directory"],
+        &[Lead::Plant(Plant::Dir("a-dir"))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/a-dir/a-file-of-its-users.txt` is gone",
+    ),
+    OnAStandIn {
+        hangs: true,
+        ..on_a_stand_in(
+            &["drops-the-staged"],
+            &[Lead::Plant(Plant::Staged {
+                at: "README.md",
+                kept: false,
+            })],
+            NOTHING,
+            Classification::Lost,
+            "what was staged at `repo/README.md` is in the index no longer",
+        )
+    },
+    on_a_stand_in(
+        &["commits-what-is-staged"],
+        &[Lead::Plant(Plant::Staged {
+            at: "README.md",
+            kept: false,
+        })],
+        COMMITS_THE_INDEX,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["refuses"],
+        &[Lead::Plant(Plant::Staged {
+            at: "notes/staged-by-its-user.txt",
+            kept: false,
+        })],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    on_a_stand_in(
+        &["commits-what-is-staged"],
+        &[Lead::Plant(Plant::Staged {
+            at: "notes/staged-by-its-user.txt",
+            kept: true,
+        })],
+        COMMITS_THE_INDEX,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["commits-nothing"],
+        &[Lead::Plant(Plant::RejectingHook)],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    on_a_stand_in(
+        &["commits-nothing"],
+        &[
+            Lead::Step(Step::Script(
+                Place::Repo(".git/hooks/pre-commit"),
+                "#!/bin/sh\necho what the hook held\n",
+            )),
+            Lead::Plant(Plant::RejectingHook),
+        ],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    on_a_stand_in(
+        &["refuses"],
+        &[Lead::Refused(&["refuses"])],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
     ),
     // --- where a plant's bytes stand: at a path, within reach, in the store, nowhere ---
     on_a_stand_in(
@@ -3906,6 +4272,7 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
             listed: Listed::Refuses,
             beside: None,
             aim: None,
+            marks: &[],
         },
         row: NOTHING,
         expected: Classification::RefusesNothingChanged,
@@ -4089,6 +4456,30 @@ fn the_reader_reads_what_the_comparison_reads() {
         before.commits.len()
     );
 
+    // A hook the user's lines are put into keeps whatever else it held.
+    let hooked = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| {
+            matches!(
+                on.cell.leads,
+                [Lead::Step(_), Lead::Plant(Plant::RejectingHook)]
+            )
+        })
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of the hook that held something ran");
+    assert!(
+        matches!(
+            hooked.before.files.get("repo/.git/hooks/pre-commit"),
+            Some(Entry::File { bytes, mode, .. })
+                if bytes.starts_with(
+                    b"#!/bin/sh\necho 'byte-table-plant-1-only-of-its-cell' >&2\nexit 1\n"
+                ) && bytes.ends_with(b"echo what the hook held\n")
+                    && mode & 0o111 != 0
+        ),
+        "the user's lines stand after the hook's first line, and what it held stands after them"
+    );
+
     // The faults of a cell.
     let cell = |name, state, leads, leaf| byte_cell::Cell {
         name,
@@ -4099,6 +4490,7 @@ fn the_reader_reads_what_the_comparison_reads() {
         listed: Listed::Refuses,
         beside: None,
         aim: None,
+        marks: &[],
     };
     for (cell, says) in [
         (
@@ -4144,6 +4536,39 @@ fn the_reader_reads_what_the_comparison_reads() {
                 &["probe"],
             ),
             "no regular file stands there",
+        ),
+        (
+            cell(
+                "a-lead-in-that-must-refuse-and-does-not",
+                Prepared::Bare,
+                &[Lead::Refused(&["status-and-a-time"])],
+                &["probe"],
+            ),
+            "must refuse, and `jigc status-and-a-time` came to exit 0",
+        ),
+        (
+            cell(
+                "a-directory-over-a-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::Dir("README.md"))],
+                &["probe"],
+            ),
+            "something stands there already",
+        ),
+        (
+            cell(
+                "a-staged-change-at-a-directory",
+                Prepared::Bare,
+                &[
+                    Lead::Step(Step::Dir(Place::Repo("a-dir"))),
+                    Lead::Plant(Plant::Staged {
+                        at: "a-dir",
+                        kept: false,
+                    }),
+                ],
+                &["probe"],
+            ),
+            "what stands there is no regular file",
         ),
     ] {
         let fault = byte_cell::run(&built, &NOTHING, &cell).err();
@@ -4218,6 +4643,7 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
         listed: Listed::Acts,
         beside: None,
         aim: None,
+        marks: &[],
     };
     let brought = byte_cell::run(
         &Built::on(binary, Prepared::Of(State::Fresh)),
@@ -4299,13 +4725,177 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
     );
 }
 
+/// **The questions of reading the pilot's cells turn on, and the bounds they stand on**, as
+/// the committed list has them (`…/reshape/byte-table-readings.md`).
+const READINGS: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md"
+);
+
+/// A line a marked cell, as the readings file's last table holds it: the mark, and the
+/// cell.
+fn marked(cells: &[&byte_cell::Cell]) -> Vec<String> {
+    let mut out: Vec<(Mark, &str)> = cells
+        .iter()
+        .flat_map(|cell| cell.marks.iter().map(|mark| (*mark, cell.name)))
+        .collect();
+    out.sort();
+    out.into_iter()
+        .map(|(mark, cell)| format!("| {} | `{cell}` |", mark.named()))
+        .collect()
+}
+
+/// **Every way the marks of `cells` are not the ones a list of readings holds**: a mark
+/// for a silence the record's list has no entry for, or a bound that is none of the four;
+/// a cell marked twice with one mark; a marked cell the list's table has no line for; a
+/// line of the table for a cell that carries no such mark.
+fn unmarked(cells: &[&byte_cell::Cell], silences: &[u8], readings: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for cell in cells {
+        for (at, mark) in cell.marks.iter().enumerate() {
+            let known = match mark {
+                Mark::Reach => true,
+                Mark::Silence(entry) => silences.contains(entry),
+                Mark::Bound(number) => (1..=4).contains(number),
+            };
+            if !known {
+                out.push(format!(
+                    "`{}` carries the mark *{}*, which is no entry of the record's list and \
+                     none of the four bounds",
+                    cell.name,
+                    mark.named()
+                ));
+            }
+            if cell.marks[..at].contains(mark) {
+                out.push(format!(
+                    "`{}` carries the mark *{}* twice",
+                    cell.name,
+                    mark.named()
+                ));
+            }
+        }
+    }
+    let lines = marked(cells);
+    let listed: Vec<&str> = readings
+        .lines()
+        .filter(|line| line.starts_with("| ") && line.ends_with("` |"))
+        .collect();
+    for line in &lines {
+        if !listed.contains(&line.as_str()) {
+            out.push(format!(
+                "the list of readings has no line `{line}` in its table of the marked cells"
+            ));
+        }
+    }
+    for line in listed {
+        if !lines.iter().any(|marked| marked == line) {
+            out.push(format!(
+                "the list of readings has the line `{line}`, and no cell carries that mark"
+            ));
+        }
+    }
+    out
+}
+
+/// The numbers of the entries of the record's list of silences (its §6): every line that
+/// opens `**<n>. `.
+fn silences(record: &str) -> Vec<u8> {
+    record
+        .lines()
+        .filter_map(|line| line.strip_prefix("**")?.split_once(". ")?.0.parse().ok())
+        .collect()
+}
+
+/// **A mark names a question the list of readings has, and the list names every marked
+/// cell** — a mark changes a list and a count, and never a cell's construction: when a
+/// question is ruled, the mark leaves the cell and its line leaves the list, in one
+/// commit. On a fixture, fault by fault; then this tree's cells against the committed
+/// list.
+#[test]
+fn a_mark_names_a_question_the_list_of_readings_has() {
+    const fn cell(name: &'static str, marks: &'static [Mark]) -> byte_cell::Cell {
+        byte_cell::Cell {
+            name,
+            leaf: &["probe"],
+            state: Prepared::Bare,
+            leads: &[],
+            argv: &["probe"],
+            listed: Listed::Acts,
+            beside: None,
+            aim: None,
+            marks,
+        }
+    }
+    let (plain, one, two) = (
+        cell("plain", &[]),
+        cell("one", &[Mark::Silence(2)]),
+        cell("two", &[Mark::Reach, Mark::Bound(1)]),
+    );
+    let list = "| silence 2 | `one` |\n| what *held* means | `two` |\n| bound 1 | `two` |\n";
+    assert_eq!(
+        marked(&[&plain, &one, &two]),
+        [
+            "| what *held* means | `two` |",
+            "| silence 2 | `one` |",
+            "| bound 1 | `two` |"
+        ]
+    );
+    says(&unmarked(&[&plain, &one, &two], &[1, 2], list), &[]);
+    let (lost, twice) = (
+        cell("lost", &[Mark::Silence(9), Mark::Bound(5)]),
+        cell("twice", &[Mark::Reach, Mark::Reach]),
+    );
+    says(
+        &unmarked(&[&one, &lost, &twice], &[1, 2], list),
+        &[
+            (
+                "`lost` carries the mark *silence 9*",
+                "no entry of the record's list",
+            ),
+            (
+                "`lost` carries the mark *bound 5*",
+                "none of the four bounds",
+            ),
+            ("`twice` carries the mark *what *held* means* twice", ""),
+            ("no line `| what *held* means | `twice` |`", ""),
+            ("no line `| what *held* means | `twice` |`", ""),
+            ("no line `| silence 9 | `lost` |`", ""),
+            ("no line `| bound 5 | `lost` |`", ""),
+            (
+                "the line `| what *held* means | `two` |`",
+                "no cell carries that mark",
+            ),
+            (
+                "the line `| bound 1 | `two` |`",
+                "no cell carries that mark",
+            ),
+        ],
+    );
+    assert_eq!(
+        silences("**1. A thing.**\n**2. Another.** words\n**S1 — no**\n"),
+        [1, 2]
+    );
+
+    let wrong = unmarked(&cells(), &silences(RECORD), READINGS);
+    assert!(
+        wrong.is_empty(),
+        "the marks of the cells and the list of readings:\n\n  {}\n\na marked cell has its \
+         line in the last table of `…/reshape/byte-table-readings.md`, and a line there is \
+         a cell's mark",
+        wrong.join("\n  ")
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The cells — an arm a prepared state, and the expected-red list
 // ---------------------------------------------------------------------------
 
 /// Every cell of every family's file.
 fn cells() -> Vec<&'static byte_cell::Cell> {
-    FAMILIES.iter().flat_map(|family| family.cells).collect()
+    FAMILIES
+        .iter()
+        .flat_map(|family| family.cells)
+        .flat_map(|group| group.iter())
+        .collect()
 }
 
 /// The cells the gate runs, of `cells`: every one but a base cell in a state that is not
@@ -4332,7 +4922,33 @@ fn row_of(cell: &byte_cell::Cell) -> &'static Row {
 /// with. The keys are minted with the cells, in
 /// `completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md`, in the
 /// grammar the route catalog's have.
-const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[];
+const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
+    (
+        "r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced",
+        Classification::Lost,
+        &["task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file"],
+    ),
+    (
+        "r1-task-finalize-a-hand-edit-before-the-tasks-first-write-is-replaced-by-its-write-to-the-same-part",
+        Classification::Lost,
+        &["task-finalize-a-hand-edit-before-the-first-write-to-the-same-part"],
+    ),
+    (
+        "r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced",
+        Classification::Lost,
+        &["task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file"],
+    ),
+    (
+        "r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced",
+        Classification::Lost,
+        &["task-discard-a-change-staged-at-the-record-and-not-in-the-file"],
+    ),
+    (
+        "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
+        Classification::RefusedAndChanged,
+        &["task-discard-a-hook-that-rejects"],
+    ),
+];
 
 /// One entry of the expected-red list.
 struct ExpectedRed {
@@ -4531,8 +5147,14 @@ fn run_the_cells_of(state: Prepared) {
         match ran {
             Ok(ran) => {
                 results.push((cell.name, ran.verdict.classification));
+                if ran.verdict.hangs_on_reach && !cell.marks.contains(&Mark::Reach) {
+                    wrong.push(format!(
+                        "`{}` came out hanging on what *held* means, and carries no mark for it",
+                        cell.name
+                    ));
+                }
                 seen.push(format!(
-                    "`{}` — {}{}\n{}\nexcused, line by line: {}",
+                    "`{}` — {}{}{}\n{}\nexcused, line by line: {}",
                     cell.name,
                     ran.verdict.classification,
                     if ran.verdict.hangs_on_reach {
@@ -4540,6 +5162,7 @@ fn run_the_cells_of(state: Prepared) {
                     } else {
                         ""
                     },
+                    marks(cell),
                     ran.detail.trim_end(),
                     excused(&ran.verdict),
                 ));
@@ -4588,6 +5211,26 @@ fn run_the_cells_of(state: Prepared) {
 /// what the pilot's record asks for, and the gate's runner shows a passing test's output
 /// to nobody.
 const SECONDS: &str = env!("CARGO_TARGET_TMPDIR");
+
+/// A cell's marks, as a line of what it did says them — nothing for a cell with none.
+fn marks(cell: &byte_cell::Cell) -> String {
+    if cell.marks.is_empty() {
+        return String::new();
+    }
+    let named: Vec<String> = cell.marks.iter().map(|mark| mark.named()).collect();
+    format!(" — marked: {}", named.join(" · "))
+}
+
+/// What a cell is listed as, in a table's words.
+fn listed_as(cell: &byte_cell::Cell) -> String {
+    match cell.listed {
+        Listed::Acts => "acts".to_string(),
+        Listed::Refuses => "refuses".to_string(),
+        Listed::RefusesWith(refusal) => {
+            format!("refuses: exit {}, `{}`", refusal.exit, refusal.says)
+        }
+    }
+}
 
 /// What each line of a row excused, the lines that excused nothing left out.
 fn excused(verdict: &byte_cell::Verdict) -> String {
@@ -4685,6 +5328,12 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
         if cells[..at].iter().any(|other| other.name == cell.name) {
             wrong.push(format!("the name `{}` is two cells'", cell.name));
         }
+        if cell.listed == Listed::Refuses {
+            wrong.push(format!(
+                "`{}` is listed as refusing, and does not name its refusal",
+                cell.name
+            ));
+        }
         if let Some(beside) = cell.beside {
             let held = beside.split_once("::").is_some_and(|(suite, test)| {
                 fs::read_to_string(format!("{SUITES}/{suite}.rs"))
@@ -4729,9 +5378,14 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
         wrong.join("\n  ")
     );
     assert_eq!(
-        cells.len(),
-        12,
-        "the pilot's acceptance is twelve cells (the plan's §5)"
+        (
+            cells.len(),
+            in_the_gate(&cells).len(),
+            on_demand(&cells).len()
+        ),
+        (61, 49, 12),
+        "the pilot's acceptance is twelve cells (the plan's §5), and the task family's are \
+         forty-nine: thirty-seven in the gate, twelve on demand"
     );
 }
 
@@ -4872,6 +5526,8 @@ struct CameTo {
     /// Its classification — or, where the frame could not run it on that binary, why: a
     /// prepared state that binary could not build, a lead-in it refused.
     came: Result<Classification, String>,
+    /// The lower classes it is red in too.
+    also: Vec<Classification>,
     exit: String,
     hangs: bool,
     /// The cell's seconds in the frame: its sandbox, its leads, its three manifests, its
@@ -4890,6 +5546,7 @@ impl CameTo {
                 .next()
                 .unwrap_or_default()
                 .replace(&std::env::temp_dir().display().to_string(), "<tmp>/")),
+            also: Vec::new(),
             exit: "-".to_string(),
             hangs: false,
             seconds: 0.0,
@@ -4899,11 +5556,16 @@ impl CameTo {
     }
 
     fn shown(&self) -> String {
+        let also: String = self
+            .also
+            .iter()
+            .map(|class| format!("; also {class}"))
+            .collect();
         match &self.came {
             Ok(classification) if self.hangs => {
-                format!("{classification} (hangs on what *held* means)")
+                format!("{classification} (hangs on what *held* means){also}")
             }
-            Ok(classification) => classification.to_string(),
+            Ok(classification) => format!("{classification}{also}"),
             Err(why) => format!("not run: {why}"),
         }
     }
@@ -4952,6 +5614,7 @@ fn on(binary: &Path, cells: &[&byte_cell::Cell]) -> Vec<CameTo> {
                     came[at] = Some(match ran {
                         Ok(ran) => CameTo {
                             came: Ok(ran.verdict.classification),
+                            also: ran.verdict.also.iter().map(|(class, _)| *class).collect(),
                             exit: ran.exit,
                             hangs: ran.verdict.hangs_on_reach,
                             seconds: ran.seconds,
@@ -4978,22 +5641,25 @@ fn table(
     here: &[CameTo],
     expected: &[ExpectedRed],
 ) -> String {
-    let mut out = "cell\tcommand\tstate\tlisted as\tkey\tthe named binary\tits exit\tseconds\t\
-                   this tree's binary\tits exit\tseconds\n"
+    let mut out = "cell\tcommand\tstate\tlisted as\tmarks\tkey\tthe named binary\tits exit\t\
+                   seconds\tthis tree's binary\tits exit\tseconds\n"
         .to_string();
     for ((cell, there), here) in cells.iter().zip(there).zip(here) {
         let key = expected
             .iter()
             .find(|entry| entry.cell == cell.name)
             .map_or("-", |entry| entry.key);
+        let marks: Vec<String> = cell.marks.iter().map(|mark| mark.named()).collect();
         out.push_str(&format!(
-            "{}\tjigc {}\t{}\t{}\t{key}\t{}\t{}\t{:.1}\t{}\t{}\t{:.1}\n",
+            "{}\tjigc {}\t{}\t{}\t{}\t{key}\t{}\t{}\t{:.1}\t{}\t{}\t{:.1}\n",
             cell.name,
             cell.argv.join(" "),
             cell.state.name(),
-            match cell.listed {
-                Listed::Acts => "acts",
-                Listed::Refuses => "refuses",
+            listed_as(cell),
+            if marks.is_empty() {
+                "-".to_string()
+            } else {
+                marks.join(" · ")
             },
             there.shown(),
             there.exit,
@@ -5072,14 +5738,15 @@ fn the_table_runs_each_binary_on_the_state_that_binary_built() {
         listed: Listed::Acts,
         beside: None,
         aim: None,
+        marks: &[],
     };
     let (there, here) = (on(&refuses, &[&CELL]), on(&does_nothing, &[&CELL]));
     let printed = table(&[&CELL], &there, &here, &[]);
     let line = printed.lines().nth(1).unwrap_or_default();
     assert!(
         line.starts_with(
-            "a-cell-in-fresh\tjigc setup\tfresh\tacts\t-\tnot run: `fresh` could not be built \
-             on that binary: "
+            "a-cell-in-fresh\tjigc setup\tfresh\tacts\t-\t-\tnot run: `fresh` could not be \
+             built on that binary: "
         ) && line.contains("\t-\t0.0\tholds\texit 0\t"),
         "{printed}"
     );
@@ -5149,8 +5816,22 @@ fn the_cells_are_run_on_the_binary_a_variable_names() {
     );
     println!("== pairs ==\n{}", pairs(&there, &here));
     println!("== excused ==\n{}", excused_by_line(&cells, &there, &here));
+    println!("== marks ==\nmark\tcell\tthe named binary\tthis tree's binary");
+    let mut by_mark: Vec<(Mark, String)> = Vec::new();
+    for ((cell, there), here) in cells.iter().zip(&there).zip(&here) {
+        for mark in cell.marks {
+            by_mark.push((
+                *mark,
+                format!("{}\t{}\t{}", cell.name, there.shown(), here.shown()),
+            ));
+        }
+    }
+    by_mark.sort();
+    for (mark, line) in by_mark {
+        println!("{}\t{line}", mark.named());
+    }
     println!(
-        "== needs ==\n{}",
+        "\n== needs ==\n{}",
         needs_table(
             &rows(),
             &cells,
@@ -5252,10 +5933,7 @@ fn the_cells_on_demand_are_run_and_printed() {
             cell.name,
             cell.argv.join(" "),
             cell.state.name(),
-            match cell.listed {
-                Listed::Acts => "acts",
-                Listed::Refuses => "refuses",
-            },
+            listed_as(cell),
             came.shown(),
             came.exit,
         );

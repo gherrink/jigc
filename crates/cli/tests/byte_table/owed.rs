@@ -47,13 +47,12 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// the pilot's acceptance are a later task's to bring: the cell fence
 /// (`byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`) asks nothing
 /// of such a leaf need by need, and names it the day it also has a scheduled row. `B4`
-/// is the first cut's; `B5` and `B7` are what would follow if the human rules for it at
-/// the stop. A leaf leaves this list in the commit that brings its cells — after which
-/// every need of its row is a cell or a line of `scheduled-cells.tsv` with its reason.
+/// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
+/// and `B7` are what would follow if the human rules for it at the stop. A leaf leaves
+/// this list in the commit that brings its cells — after which every need of its row is a
+/// cell or a line of `scheduled-cells.tsv` with its reason.
 pub const CELLS_OWED: &[(&[&str], &str)] = &[
     (&["setup"], "B5"),
     (&["uninstall"], "B5"),
-    (&["task", "finalize"], "B4"),
-    (&["task", "discard"], "B4"),
     (&["milestone", "finalize"], "B7"),
 ];

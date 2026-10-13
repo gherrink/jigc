@@ -17,10 +17,10 @@
 //! tracks the settings file and the record* (`U3`): each lets the command do less, and the
 //! file it would spare is a plant, which no line excuses.
 
-use super::ON_A_REFUSAL;
+use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote,
-    Row, When, Where,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, May, Plant, Prepared, Quote, Row,
+    When, Where,
 };
 use crate::support::trial_corpus::State;
 
@@ -338,19 +338,25 @@ const THE_TEARDOWN_GUARD: &str =
 
 /// One cell of `uninstall` in `fresh`: a file the product did not write, in a directory
 /// the teardown removes (the plan's plant **D**).
-const fn uninstall_over(name: &'static str, leads: &'static [Lead], beside: &'static str) -> Cell {
+const fn uninstall_over(
+    name: &'static str,
+    leads: &'static [Lead],
+    says: &'static str,
+    beside: &'static str,
+) -> Cell {
     Cell {
         name,
         leaf: &["uninstall"],
         state: Prepared::Of(State::Fresh),
         leads,
         argv: &["uninstall"],
-        listed: Listed::Refuses,
+        listed: refuses(1, says),
         beside: Some(beside),
         aim: Some(Aim {
             line: "U1",
             kind: Kind::Foreign,
         }),
+        marks: &[],
     }
 }
 
@@ -360,24 +366,26 @@ const fn uninstall_over(name: &'static str, leads: &'static [Lead], beside: &'st
 /// the other side: `setup` with `HEAD` born, and `uninstall` over the same file one
 /// directory up, which that release refused.
 ///
-/// **Every cell here is listed as one that refuses**, because the row's doc says so: a
+/// **Every cell here is listed as one that refuses, and names its refusal**, because the
+/// row's doc says so: a
 /// file at a path the install replaces *"is refused before the first write while no
 /// commit holds its bytes, on an unborn `HEAD` as on a born one"* (`S4`), and a file jigc
 /// did not write under a directory of `.jigc/` is one of the four states that *"remove
 /// nothing"* (`U7`).
-pub const CELLS: &[Cell] = &[
+const ACCEPTANCE: &[Cell] = &[
     Cell {
         name: "setup-head-unborn-a-file-at-the-bootstrap",
         leaf: &["setup"],
         state: Prepared::Bare,
         leads: &[Lead::Under(Condition::HeadUnborn), AT_THE_BOOTSTRAP],
         argv: &["setup"],
-        listed: Listed::Refuses,
+        listed: refuses(1, "setup.dirty-install-path"),
         beside: Some(THE_INSTALL_GUARD),
         aim: Some(Aim {
             line: "S1",
             kind: Kind::Untracked,
         }),
+        marks: &[],
     },
     Cell {
         name: "setup-head-born-a-file-at-the-bootstrap",
@@ -385,31 +393,40 @@ pub const CELLS: &[Cell] = &[
         state: Prepared::Bare,
         leads: &[AT_THE_BOOTSTRAP],
         argv: &["setup"],
-        listed: Listed::Refuses,
+        listed: refuses(1, "setup.dirty-install-path"),
         beside: Some(THE_INSTALL_GUARD),
         aim: Some(Aim {
             line: "S1",
             kind: Kind::Untracked,
         }),
+        marks: &[],
     },
     uninstall_over(
         "uninstall-a-foreign-file-under-logs",
         &[Lead::Plant(Plant::File(".jigc/logs/notes.md"))],
+        "uninstall.foreign-bytes",
         THE_TEARDOWN_GUARD,
     ),
     uninstall_over(
         "uninstall-a-foreign-file-under-state",
         &[Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        "uninstall.foreign-bytes",
         THE_TEARDOWN_GUARD,
     ),
     uninstall_over(
         "uninstall-a-foreign-file-under-index",
         &[Lead::Plant(Plant::File(".jigc/index/notes.md"))],
+        "uninstall.foreign-bytes",
         THE_TEARDOWN_GUARD,
     ),
     uninstall_over(
         "uninstall-a-foreign-file-at-the-workbench-root",
         &[Lead::Plant(Plant::File(".jigc/notes.md"))],
+        "uninstall.untracked-workbench-file",
         "uninstall_workbench_subject::a_hand_dropped_workbench_file_blocks_and_the_install_survives",
     ),
 ];
+
+/// The family's cells: the acceptance's. Its other cells are a later task's, if the human
+/// rules for it at the pilot's stop.
+pub const CELLS: &[&[Cell]] = &[ACCEPTANCE];

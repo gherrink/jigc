@@ -210,10 +210,16 @@ pub struct Manifest {
 /// comparison needs it: where it stands, from the sandbox's root, and the bytes found
 /// nowhere else that it carries. A plant with no bytes is a fault of the cell — an empty
 /// file's blob is the one every empty file has, and would read as held.
+///
+/// **A staged piece** stands in the main checkout's index at its path and in no file: it
+/// is the user's as any plant is, and it stands for as long as an object within reach has
+/// its bytes — the index entry it was planted as, or a commit that took the entry in.
 #[derive(Clone, Debug)]
 pub struct Planted {
     pub at: String,
     pub marker: String,
+    /// Whether the piece stands in the index only.
+    pub staged: bool,
 }
 
 /// The sentence a line rests on: the doc, from the repository's root; the heading it
@@ -550,11 +556,33 @@ impl fmt::Display for Classification {
     }
 }
 
-/// What a cell is listed as: a command that acts, or one that refuses.
+/// **The refusal a cell expects**: the exit code, and words the command's output holds —
+/// the finding's code where the refusal is a finding, else a run of the sentence that
+/// says why. A cell of the table names its refusal: one that refuses for another reason
+/// than the one its plant was put in for is no answer to its plant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Refusal {
+    pub exit: i32,
+    pub says: &'static str,
+}
+
+/// What a cell is listed as: a command that acts, or one that refuses — and, for a cell
+/// of the table, with which refusal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Listed {
     Acts,
+    /// It refuses: any non-zero exit. The frame's own arms use it; a cell of the table
+    /// names its refusal.
     Refuses,
+    /// It refuses with this exit code, and its output holds these words.
+    RefusesWith(Refusal),
+}
+
+impl Listed {
+    /// Whether the cell is listed as one that refuses.
+    pub fn refuses(self) -> bool {
+        self != Listed::Acts
+    }
 }
 
 /// How the command under test ended.
@@ -587,12 +615,29 @@ pub struct Seen<'a> {
 /// the row excused** — every line, so that one that excuses much is seen and one that
 /// excuses nothing is too — and whether the classification would be another under a wider
 /// reading of *held*.
+///
+/// **A red cell shows every class it is red in**: the classification is the one that
+/// outranks the others, and `also` holds each lower class the comparison found, with its
+/// reasons — a file written outside the allowance beside a loss, a refusal that is not
+/// the one the cell names beside a refusal that changed something.
 #[derive(Clone, Debug)]
 pub struct Verdict {
     pub classification: Classification,
     pub why: Vec<String>,
+    pub also: Vec<(Classification, Vec<String>)>,
     pub excused: Vec<(&'static str, usize)>,
     pub hangs_on_reach: bool,
+}
+
+impl Verdict {
+    /// Every class the cell shows, the classification first, each with its reasons.
+    pub fn shown(&self) -> String {
+        let mut out = self.why.join("\n");
+        for (class, why) in &self.also {
+            out.push_str(&format!("\nalso *{class}*:\n{}", why.join("\n")));
+        }
+        out
+    }
 }
 
 /// Whether `path` is `pattern`, component for component, a `*` standing for any one.
@@ -810,7 +855,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             ));
         }
         let stood = seen.before.markers.get(&plant.marker);
-        if !stood.is_some_and(|stood| stood.files.contains(&plant.at)) {
+        let stands = match (plant.staged, stood) {
+            (false, Some(stood)) => stood.files.contains(&plant.at),
+            (true, Some(stood)) => stood.held && !stood.files.contains(&plant.at),
+            (_, None) => false,
+        };
+        if !stands {
             return Err(format!(
                 "the plant at `{}` does not stand there in the manifest taken before the \
                  command",
@@ -819,9 +869,13 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         }
     }
     let acted = seen.ended.code == Some(0);
-    let verdict = |classification, why: Vec<String>, tally: Option<&Tally<'_>>| Verdict {
+    let verdict = |classification,
+                   why: Vec<String>,
+                   also: Vec<(Classification, Vec<String>)>,
+                   tally: Option<&Tally<'_>>| Verdict {
         classification,
         why,
+        also,
         excused: row
             .lines
             .iter()
@@ -834,6 +888,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         return Ok(verdict(
             Classification::DidNotEnd,
             vec!["the command had not ended at the frame's limit".to_string()],
+            Vec::new(),
             None,
         ));
     }
@@ -860,6 +915,20 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     for plant in seen.planted {
         let stands = after.markers.get(&plant.marker).unwrap_or(&nowhere);
         if stands.files.contains(&plant.at) {
+            continue;
+        }
+        if plant.staged {
+            // Staged, and in no file: it stands while an object within reach has it —
+            // the index still, or a commit that took the entry in. What became of the
+            // entry is the index's and the commit's to answer, below.
+            if !stands.held {
+                tally.hangs |= stands.stored;
+                tally.lost.push(format!(
+                    "what was staged at `{}` is in the index no longer, and its bytes stand \
+                     at no path of the sandbox and in no object within reach",
+                    plant.at
+                ));
+            }
             continue;
         }
         let named = in_repo(&plant.at).unwrap_or(&plant.at);
@@ -1114,6 +1183,16 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             if after.files.contains_key(path) || committed.contains(blob) {
                 continue;
             }
+            // Under the consent, a staged doc the command's output names is one the
+            // caller was told goes: by its identity, the file's name without `.md`.
+            let identity = path
+                .rsplit('/')
+                .next()
+                .and_then(|name| name.strip_suffix(".md"))
+                .unwrap_or(path);
+            if seen.consent && row.consent.is_some() && seen.ended.said.contains(identity) {
+                continue;
+            }
             if tally.stands(blob) {
                 tally.git.push(format!(
                     "the staged doc `{path}` is gone from its working area and stands in no \
@@ -1205,37 +1284,65 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         }
     }
 
-    let (classification, why) = if !acted {
-        let changed: Vec<String> = [&tally.lost, &tally.git, &tally.outside]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect();
-        if !changed.is_empty() {
-            (Classification::RefusedAndChanged, changed)
-        } else if seen.listed == Listed::Acts {
-            (
+    // Every class the cell is red in, in the order they are read: the first is its
+    // classification, the others stand beside it.
+    let mut classes: Vec<(Classification, Vec<String>)> = Vec::new();
+    if acted {
+        classes.push((Classification::Lost, tally.lost.clone()));
+        classes.push((Classification::GitMoved, tally.git.clone()));
+        classes.push((Classification::WrittenOutside, tally.outside.clone()));
+        if seen.listed.refuses() {
+            classes.push((
                 Classification::NotTheListedOutcome,
-                vec!["the cell is listed as acting, and the command refused".to_string()],
-            )
-        } else {
-            (Classification::RefusesNothingChanged, Vec::new())
+                vec!["the cell is listed as refusing, and the command exited 0".to_string()],
+            ));
         }
-    } else if !tally.lost.is_empty() {
-        (Classification::Lost, tally.lost.clone())
-    } else if !tally.git.is_empty() {
-        (Classification::GitMoved, tally.git.clone())
-    } else if !tally.outside.is_empty() {
-        (Classification::WrittenOutside, tally.outside.clone())
-    } else if seen.listed == Listed::Refuses {
-        (
-            Classification::NotTheListedOutcome,
-            vec!["the cell is listed as refusing, and the command exited 0".to_string()],
-        )
     } else {
-        (Classification::Holds, Vec::new())
-    };
-    Ok(verdict(classification, why, Some(&tally)))
+        classes.push((
+            Classification::RefusedAndChanged,
+            [&tally.lost, &tally.git, &tally.outside]
+                .into_iter()
+                .flatten()
+                .cloned()
+                .collect(),
+        ));
+        let other = match seen.listed {
+            Listed::Acts => {
+                Some("the cell is listed as acting, and the command refused".to_string())
+            }
+            Listed::RefusesWith(refusal)
+                if seen.ended.code != Some(refusal.exit)
+                    || !seen.ended.said.contains(refusal.says) =>
+            {
+                Some(format!(
+                    "the cell is listed as refusing with exit {} and `{}`, and the command \
+                     ended with {} and {}",
+                    refusal.exit,
+                    refusal.says,
+                    seen.ended
+                        .code
+                        .map_or("no exit code".to_string(), |code| format!("exit {code}")),
+                    if seen.ended.said.contains(refusal.says) {
+                        "said so"
+                    } else {
+                        "did not say so"
+                    },
+                ))
+            }
+            _ => None,
+        };
+        classes.extend(other.map(|why| (Classification::NotTheListedOutcome, vec![why])));
+    }
+    let mut red = classes.into_iter().filter(|(_, why)| !why.is_empty());
+    let (classification, why) = red.next().unwrap_or((
+        if acted {
+            Classification::Holds
+        } else {
+            Classification::RefusesNothingChanged
+        },
+        Vec::new(),
+    ));
+    Ok(verdict(classification, why, red.collect(), Some(&tally)))
 }
 
 /// **The docs staged in a work unit**, each with its id: the regular `.md` files under a
@@ -1388,7 +1495,28 @@ pub enum Plant {
     /// and, where `moved_away`, its directory moved to the sandbox's `moved/` afterwards,
     /// so that git's registration names a directory that is not there.
     Worktree { moved_away: bool },
+    /// **L**, to a file — a symbolic link at this path of the repository whose target is
+    /// a file of the user's that is there: in the repository, at its root, or under
+    /// `outside/`. The link's target carries one marker, by its name, and the file it
+    /// points at another, in its bytes: a command that writes through the link leaves the
+    /// first standing and takes the second.
+    LinkToAFile { at: &'static str, outside: bool },
+    /// **K**, a directory in a file's place — a directory at this path of the repository,
+    /// holding one file of the user's.
+    Dir(&'static str),
+    /// **S**, and **N** — a change of the user's staged at this path of the repository: a
+    /// file with the marker, or the marker added as a line to the file that stands there,
+    /// then `git add`. Where not `kept`, the working file is put back as it was — taken
+    /// away, where nothing stood — so that the staged bytes stand in the index alone.
+    Staged { at: &'static str, kept: bool },
+    /// **H** — the user's own lines in the `pre-commit` hook git resolves, which reject
+    /// every commit: put in after the hook's first line where a hook stands — whatever
+    /// else it holds stays — and as a hook of their own where none does.
+    RejectingHook,
 }
+
+/// The name of the file a [`Plant::Dir`] holds.
+const INSIDE_THE_DIRECTORY: &str = "a-file-of-its-users.txt";
 
 /// **A condition the owner doc names for a command's guard**, which the acceptance runs
 /// on both of its sides (the plan's §3): the side that is not the prepared state's own is
@@ -1415,6 +1543,39 @@ pub enum Lead {
     /// What stands at this path, from the sandbox's root, is moved to the sandbox's
     /// `moved/` under the name it had.
     MovedAway(&'static str),
+    /// **The binary under test, run in the repository with these arguments, which must
+    /// refuse** — any exit that is not 0. It is how a cell runs its own command a second
+    /// time over what a first refusal left: the ruling on a refusal's caches is bounded
+    /// by *a refused command run again refuses again, with the plant standing*.
+    Refused(&'static [&'static str]),
+}
+
+/// **An open question a cell turns on, or a declared bound it stands on** — a mark. A
+/// marked cell is built like any other, comes out under the reading by which more is red,
+/// and says which question that reading is one of: **a ruling changes a mark and a list,
+/// and never a cell's construction**. A mark makes no cell green, and takes none off the
+/// expected-red list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Mark {
+    /// What *held* means — how far an object's reach goes (the plan's §7, question 1).
+    Reach,
+    /// A place where a design doc is silent or says two things: an entry of the committed
+    /// record's list, by its number (`…/reshape/byte-table-acceptance-rows.md` → §6).
+    Silence(u8),
+    /// One of the four bounds the human declared on 2026-10-06, by its number in the
+    /// plan's list (its §1.1).
+    Bound(u8),
+}
+
+impl Mark {
+    /// The mark, as a table prints it.
+    pub fn named(self) -> String {
+        match self {
+            Mark::Reach => "what *held* means".to_string(),
+            Mark::Silence(entry) => format!("silence {entry}"),
+            Mark::Bound(number) => format!("bound {number}"),
+        }
+    }
 }
 
 /// **A cell** — a write leaf with one argv, a prepared state with what is put into it, and
@@ -1438,6 +1599,8 @@ pub struct Cell {
     pub beside: Option<&'static str>,
     /// What the cell's plant is aimed at; `None` for a cell that plants nothing.
     pub aim: Option<Aim>,
+    /// The open questions the cell turns on and the bounds it stands on.
+    pub marks: &'static [Mark],
 }
 
 impl Cell {
@@ -1473,7 +1636,7 @@ impl Plant {
     /// Whether a plant of this shape can be one of `kind`.
     pub fn is_of(self, kind: Kind) -> bool {
         match self {
-            Plant::File(_) => matches!(kind, Kind::Untracked | Kind::Foreign),
+            Plant::File(_) => matches!(kind, Kind::Untracked | Kind::Foreign | Kind::FileForADir),
             Plant::Committed(_) => kind == Kind::Committed,
             Plant::LinkToNothing(_) => kind == Kind::LinkToNothing,
             Plant::Edit(_) => matches!(kind, Kind::EditBefore | Kind::EditAfter),
@@ -1484,6 +1647,19 @@ impl Plant {
                     Kind::WorktreeThere
                 }
             }
+            Plant::LinkToAFile { outside, .. } => {
+                kind == if outside {
+                    Kind::LinkOutside
+                } else {
+                    Kind::LinkInside
+                }
+            }
+            Plant::Dir(_) => kind == Kind::DirForAFile,
+            Plant::Staged { kept, .. } => {
+                kind == Kind::StagedThere
+                    || (kept && matches!(kind, Kind::StagedElsewhere | Kind::QuotedName))
+            }
+            Plant::RejectingHook => kind == Kind::RejectingHook,
         }
     }
 }
@@ -1578,23 +1754,32 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
         fs::rename(copy.repo(), repo).expect("bring the prepared repository in");
         fs::rename(copy.home(), home).expect("bring the prepared home in");
     });
-    let mut planted = Vec::new();
-    for (at, lead) in cell.leads.iter().enumerate() {
-        if let Lead::Plant(plant) = lead {
-            planted.extend(plant.planted(at));
-        }
-    }
+    // Every marker a plant of the cell could carry — a plant has up to two pieces, under
+    // one of these words each: the reader looks for all of them.
+    let markers = cell
+        .leads
+        .iter()
+        .enumerate()
+        .filter(|(_, lead)| matches!(lead, Lead::Plant(_)))
+        .flat_map(|(at, _)| ["only", "target", "committed", "staged"].map(|word| marker(at, word)))
+        .collect();
     let mut reader = Reader {
         sandbox: &sandbox,
-        markers: planted.iter().map(|plant| plant.marker.clone()).collect(),
+        markers,
         commits: BTreeMap::new(),
         holding: BTreeMap::new(),
         lists: 0,
     };
 
     let base = reader.read()?;
+    // The hooks directory git resolves, which a plant in the hook is put into.
+    let hooks = base.hooks.clone();
+    let mut planted = Vec::new();
     for (at, lead) in cell.leads.iter().enumerate() {
-        lead.done(&sandbox, &built.binary, at)
+        if let Lead::Plant(plant) = lead {
+            planted.extend(plant.planted(at, &hooks));
+        }
+        lead.done(&sandbox, &built.binary, at, &hooks)
             .map_err(|why| sandbox.shown(&why))?;
     }
     let before = if cell.leads.is_empty() {
@@ -1628,7 +1813,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
         cell.argv.join(" "),
         ended.exit(),
         ended.said.trim_end(),
-        verdict.why.join("\n")
+        verdict.shown()
     ));
     Ok(Ran {
         verdict,
@@ -1643,12 +1828,33 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
 impl Plant {
     /// The plant as the comparison needs it: where each piece of it stands, from the
     /// sandbox's root, with its marker.
-    fn planted(self, at: usize) -> Vec<Planted> {
+    fn planted(self, at: usize, hooks: &str) -> Vec<Planted> {
         let piece = |path: String, word: &str| Planted {
             at: path,
             marker: marker(at, word),
+            staged: false,
         };
         match self {
+            Plant::LinkToAFile { at: path, outside } => vec![
+                piece(format!("{REPO}/{path}"), "only"),
+                piece(
+                    format!(
+                        "{}/{}.md",
+                        if outside { "outside" } else { REPO },
+                        marker(at, "only")
+                    ),
+                    "target",
+                ),
+            ],
+            Plant::Dir(path) => vec![piece(
+                format!("{REPO}/{path}/{INSIDE_THE_DIRECTORY}"),
+                "only",
+            )],
+            Plant::Staged { at: path, kept } => vec![Planted {
+                staged: !kept,
+                ..piece(format!("{REPO}/{path}"), "only")
+            }],
+            Plant::RejectingHook => vec![piece(format!("{hooks}/pre-commit"), "only")],
             Plant::File(path)
             | Plant::Committed(path)
             | Plant::LinkToNothing(path)
@@ -1669,7 +1875,7 @@ impl Plant {
 
     /// Put the plant in. Nothing stands where a file or a link is planted: one written
     /// over a file of the state would be an edit, which is another plant.
-    fn put(self, sandbox: &Sandbox, at: usize) -> Result<(), String> {
+    fn put(self, sandbox: &Sandbox, at: usize, hooks: &str) -> Result<(), String> {
         let repo = sandbox.repo();
         let free = |path: &str| -> Result<PathBuf, String> {
             let file = repo.join(path);
@@ -1743,9 +1949,83 @@ impl Plant {
                     }
                 }
                 if moved_away {
-                    Lead::MovedAway(OWN_WORKTREE).done(sandbox, Path::new(""), at)?;
+                    Lead::MovedAway(OWN_WORKTREE).done(sandbox, Path::new(""), at, hooks)?;
                 }
                 Ok(())
+            }
+            Plant::LinkToAFile { at: path, outside } => {
+                let name = format!("{}.md", marker(at, "only"));
+                let target = if outside {
+                    sandbox.outside().join(&name)
+                } else {
+                    repo.join(&name)
+                };
+                if fs::symlink_metadata(&target).is_ok() {
+                    return Err(format!("the link's target `{name}` stands already"));
+                }
+                fs::write(&target, format!("{}\n", marker(at, "target"))).map_err(written(path))?;
+                std::os::unix::fs::symlink(&target, free(path)?).map_err(written(path))
+            }
+            Plant::Dir(path) => {
+                let dir = free(path)?;
+                fs::create_dir(&dir)
+                    .and_then(|()| {
+                        fs::write(
+                            dir.join(INSIDE_THE_DIRECTORY),
+                            format!("{}\n", marker(at, "only")),
+                        )
+                    })
+                    .map_err(written(path))
+            }
+            Plant::Staged { at: path, kept } => {
+                let file = repo.join(path);
+                let was = match fs::symlink_metadata(&file) {
+                    Ok(entry) if entry.is_file() => Some(fs::read(&file).map_err(written(path))?),
+                    Ok(_) => {
+                        return Err(format!(
+                            "a staged change goes to `{path}`, and what stands there is no \
+                             regular file"
+                        ));
+                    }
+                    Err(_) => None,
+                };
+                let mut bytes = was.clone().unwrap_or_default();
+                if was.is_some() {
+                    bytes.push(b'\n');
+                }
+                bytes.extend(format!("{}\n", marker(at, "only")).bytes());
+                fs::create_dir_all(file.parent().expect("a plant has a parent"))
+                    .and_then(|()| fs::write(&file, bytes))
+                    .map_err(written(path))?;
+                git(sandbox, &repo, &["add", "--", path])?;
+                match (kept, was) {
+                    (true, _) => Ok(()),
+                    (false, Some(was)) => fs::write(&file, was).map_err(written(path)),
+                    (false, None) => fs::remove_file(&file).map_err(written(path)),
+                }
+            }
+            Plant::RejectingHook => {
+                let hook = sandbox.root().join(hooks).join("pre-commit");
+                let stands = fs::read_to_string(&hook).unwrap_or_default();
+                let (first, rest) = match stands.split_once('\n') {
+                    Some((first, rest)) if first.starts_with("#!") => (first, rest),
+                    _ => ("#!/bin/sh", stands.as_str()),
+                };
+                let body = format!("{first}\necho '{}' >&2\nexit 1\n{rest}", marker(at, "only"));
+                // Placed by a child process, as the Linux rule asks of a file that may be
+                // executed: no thread of this process ever holds its write handle.
+                let staged = sandbox.staging().join(format!("plant-{at}-hook"));
+                fs::write(&staged, body).map_err(written("the hook"))?;
+                fs::create_dir_all(hook.parent().expect("a hook has a directory"))
+                    .map_err(written("the hook"))?;
+                let mut command = sandbox.child(Path::new("cp"));
+                command.arg("--").arg(&staged).arg(&hook);
+                let placed = sandbox.run(&mut command, route_case::LIMIT);
+                if !placed.success() {
+                    return Err(format!("the hook could not be placed: {}", placed.exit()));
+                }
+                fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))
+                    .map_err(written("the hook"))
             }
         }
     }
@@ -1784,8 +2064,22 @@ impl Lead {
     /// Do the lead, the `at`-th of its cell. A lead-in that is refused is a fault of the
     /// cell: the route catalog's runner says so by a panic, which is caught here and
     /// handed back as the fault it is.
-    fn done(self, sandbox: &Sandbox, binary: &Path, at: usize) -> Result<(), String> {
+    fn done(self, sandbox: &Sandbox, binary: &Path, at: usize, hooks: &str) -> Result<(), String> {
         match self {
+            Lead::Refused(args) => {
+                let mut command = sandbox.child(binary);
+                command.args(args);
+                let ran = sandbox.run(&mut command, route_case::LIMIT);
+                if ran.held.is_none() && ran.code != Some(0) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "the lead {at} of the cell must refuse, and `jigc {}` came to {}",
+                        args.join(" "),
+                        ran.exit()
+                    ))
+                }
+            }
             Lead::Step(step) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 sandbox.plant(binary, &[step]);
             }))
@@ -1797,7 +2091,7 @@ impl Lead {
                     .unwrap_or("a step of the cell failed");
                 format!("the lead {at} of the cell was not done: {said}")
             }),
-            Lead::Plant(plant) => plant.put(sandbox, at),
+            Lead::Plant(plant) => plant.put(sandbox, at, hooks),
             Lead::Under(condition) => condition.made(sandbox),
             Lead::MovedAway(path) => {
                 let from = sandbox.root().join(path);

@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-13, with the second commit of the task `B4`, which brought the family's cells: the sixth entry of §6 says what a cell found, and an eighth is listed — a change staged at a path the command stages itself — which three cells met. No line moved.*
+
 *Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
 
 **What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under.
@@ -510,7 +512,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 7 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 8 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -543,6 +545,8 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 **6. The rendered message's temporary file.** `design/finalize.md` → *6. Commit*: *"`git commit -F <rendered-message-file>` (a temp file, deleted after)"*. A file that is made and deleted leaves no difference; one left behind is a write no line covers, wherever it stands — under the system's temporary directory, which the table reads, or under `.jigc/`. No reading is needed unless a cell finds one.
 
+  *A cell found one, on 2026-10-13* — `task-discard-a-hook-that-rejects`: a sub-task's discard whose record commit a `pre-commit` hook rejects leaves `record-commit-msg.txt` in the sub-task's working area, on this tree and on the previous release. *Reading (a)*: the message's file is *deleted after* whether or not the commit landed, and a rejected commit *"leaves the record **and** the task exactly as the frame says"* (`A8`) — the file is a write a refusal may not make. *Reading (b)*: it is part of *the survivable frame on a rejecting hook*, which the doc names and does not describe — kept for the re-run the refusal prints. Under (a) the cell is *refused, and changed what a refusal may not*; under (b) it is covered, and the row gains a line with the sentence that says so, which no doc has yet. *Until ruled:* (a). A task's finalize over the same hook leaves no such file.
+
 **7. `task discard`, and the edge index when it settles a sub-task.**
 
 - *The words.* `design/finalize.md` → *7. Post-commit (best-effort)* declares, of a task's finalize, that the edge index's stamp is invalidated after its commit (`T5`). `design/team-ready-state.md` gives a sub-task's discard *"the family's whole discipline rather than a second one"* and lists it — *"the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook"* — and the edge index is not on the list.
@@ -550,6 +554,14 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *Reading (b)* — a command that commits a managed doc invalidates the stamp, as a finalize does; the list names what is the record doors' own.
 - *What each makes of the cells.* Under (a) such a write is *written outside its allowance*; under (b) it is covered. The cells it decides are the ones in which a sub-task's discard acts.
 - *Until ruled:* (a) — the row has no line for `.jigc/index/` at exit 0.
+
+**8. A change staged at a path the command stages itself, and not in the working file.**
+
+- *The words.* `design/finalize.md` → *5. Stage* (`T3`): *"This phase stages **jigc's own** managed artifacts into that existing index"*. `design/team-ready-state.md` → *The commit model* (`A6`): *"it stages and commits **only the record file** (`git add <record> && git commit -- <record>`, index-restricted), never sweeping the agent's in-flight index/worktree WIP"*. Neither says what becomes of a change the user staged **at that very path** and did not keep in the working file. One case of it is a declared bound — the first of the human's four of 2026-10-06: *content staged for a doc a task is updating, while the working file does not carry it, is replaced at finalize*.
+- *Reading (a)* — the bound is the rule wherever jigc stages a path of its own: what the user staged there and did not keep in the file is replaced, at the milestone's record and at `.jigc/version` as at a task's doc.
+- *Reading (b)* — the bound is one case, declared for a doc a task is updating. At the record, a staged change is *in-flight index WIP* the door *never sweeps*; at the stamp, it is no artifact of jigc's own: the command refuses, or keeps it.
+- *What each makes of the cells.* Three cells stage such a change and come out *lost* on this tree — the bytes are in the index no longer and in no object within reach. A bound takes no cell off the list of the red ones, so all three are red under either reading; under (a) all three stand on a declared bound, under (b) one does — the task's doc — and the other two are findings.
+- *Until ruled:* (b) — the two cells are marked with this entry, and the third with the bound.
 
 **Decided here, as a builder, and the human may overturn each:**
 

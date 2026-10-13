@@ -1,3 +1,15 @@
-# The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate.
-# Printed by `byte_table::the_cells_on_demand_are_run_and_printed`. No cell runs on demand yet: the first are the task `B4`'s.
+# The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate, beyond a line a cell.
+# Printed on 2026-10-13 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 42 at its start and 36 at its end: twelve cells, none red. The block below is the arm's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
+task-finalize-a-created-decision-in-bare	jigc task finalize record-a-decision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+task-finalize-a-created-decision-in-committed-singletons	jigc task finalize record-a-decision	committed-singletons	acts	holds	exit 0
+task-finalize-a-created-decision-in-migrated	jigc task finalize record-a-decision	migrated	acts	holds	exit 0
+task-finalize-a-created-decision-in-refs-post-hoc	jigc task finalize record-a-decision	refs-post-hoc	acts	holds	exit 0
+task-finalize-a-created-decision-in-chatty-hooks	jigc task finalize record-a-decision	chatty-hooks	acts	holds	exit 0
+task-finalize-a-created-decision-in-vendored	jigc task finalize record-a-decision	vendored	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-bare	jigc task discard do-the-thing	bare	refuses: exit 1, `no task `do-the-thing``	refuses, nothing changed	exit 1
+task-discard-a-sub-task-nobody-re-entered-in-committed-singletons	jigc task discard do-the-thing	committed-singletons	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-migrated	jigc task discard do-the-thing	migrated	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-the-thing	refs-post-hoc	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	holds	exit 0
