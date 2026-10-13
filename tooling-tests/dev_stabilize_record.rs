@@ -1380,6 +1380,7 @@ const WRITERS: &[Writer] = &[
         prepare: |rig| {
             ordered(rig, &ORDER);
             scoped(rig);
+            begun_attempt(rig, "1");
         },
         call: |rig, text, extra| {
             let mut entry = new_entry("audit-f3", "route", "breaks", json!({"audit-install": [1]}));
@@ -17499,11 +17500,16 @@ fn a_row_nobody_reached_is_not_counted_as_left_unverified() {
 
     // A LAUNCH THAT LEFT NO VERDICT: the verifier's report, and its attempt on record.
     let launch = |attempt: &str| {
+        begun_attempt(&rig, attempt);
         rig.run(&report(RUN, "1", "verify-r-1", attempt), BODY)
             .must(OK, "the verifier's report");
         rig.run(
             &apply(RUN, Some("1")),
-            &json!([call(check_reports(RUN, "1", attempt, &["verify-r-1"]), "")]).to_string(),
+            &json!([call(
+                check_reports(RUN, "1", attempt, &["attempt", "verify-r-1"]),
+                ""
+            )])
+            .to_string(),
         )
         .must(OK, "the record of that attempt");
         rig.run(&keeper("settle", RUN), "")
@@ -18735,8 +18741,22 @@ fn a_filing_for_an_attempt_the_round_has_not_begun_is_refused() {
     let rig = a_filing_run("filing-attempt", Some(5), Some(2));
     hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
     begun_attempt(&rig, "1");
-    reported(&rig, "r-1", "3");
-    reported(&rig, "r-2", "3");
+    // The reports of two verifiers under attempt 3 — which the writer of a report takes for
+    // no attempt nobody began, so a shell left them where a report lies.
+    for key in ["r-1", "r-2"] {
+        let body = format!("# verify-real of {key}\n\nDriven on both binaries.\n{ENDS}\n");
+        rig.run(&report(RUN, "1", &format!("verify-{key}"), "3"), &body)
+            .refused(
+                BAD_VALUE,
+                "a verifier's report of attempt 3, which nobody began",
+            );
+        fs::write(
+            rig.root
+                .join(report_path("1", &format!("verify-{key}"), "3")),
+            body,
+        )
+        .expect("a report a shell left");
+    }
     let before = rig.snapshot();
     let seen = file(&rig, "3", &filing("r-1", "refuted"));
     seen.refused(BAD_VALUE, "a filing of attempt 3, which nobody began");
@@ -19274,10 +19294,10 @@ fn a_handed_on_item_gets_a_key_its_verifiers_name_can_carry() {
     );
     assert!(all.contains(&"twice".to_owned()) && all.contains(&"twice-3".to_owned()));
     // A proposal that names nothing is no proposal.
+    begun_attempt(&rig, "2");
     reported(&rig, "twice", "2");
     let mut nameless = filing("twice", "refuted");
     nameless["hands_on"] = json!([noticed("?!", "route")]);
-    begun_attempt(&rig, "2");
     file(&rig, "2", &nameless).refused(BAD_VALUE, "a proposal without a letter or a digit");
 }
 
@@ -27356,5 +27376,687 @@ fn a_run_that_names_no_condition_is_told_where_the_opening_points() {
     assert!(
         !rig.read(&run_path()).contains("`condition`"),
         "and the run's table holds no row of it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// What the tools did not write strands no record, and a report's attempt is held (the
+// scoped review before the run in parts: the record script's two findings)
+// ---------------------------------------------------------------------------
+
+/// The reporters of the wave below: the attempt's marker, and the two verifiers.
+const WAVE: [&str; 3] = ["attempt", "verify-r-1", "verify-r-2"];
+
+/// A `test` stage of a run WITH A QUEUE as it stands once the wave that spent its budget has
+/// filed: round 1 tested, three route findings sent on, a budget of two, attempt 1 begun,
+/// and the verdicts of two of the three filed — in no record yet.
+fn a_spent_wave(label: &str) -> Rig {
+    let rig = a_filing_run(label, Some(2), Some(2));
+    hunted(
+        &rig,
+        &[("r-1", "route"), ("r-2", "route"), ("r-3", "route")],
+    );
+    begun_attempt(&rig, "1");
+    verified(&rig, "1", &filing("r-1", "refuted"));
+    verified(&rig, "1", &filing("r-2", "refuted"));
+    rig
+}
+
+/// The stage's record, as its second one is composed: the report check over the reporters
+/// the stage launched — and what the script takes of the filed files.
+fn the_stages_record(rig: &Rig) -> Seen {
+    rig.run(
+        &apply(RUN, Some("1")),
+        &json!([call(check_reports(RUN, "1", "1", &WAVE), "")]).to_string(),
+    )
+}
+
+/// A record of the human's rulings: the budget, raised at its stop.
+fn the_raise(rig: &Rig) -> Seen {
+    rig.run(
+        &apply(RUN, Some("1")),
+        &json!([call(run_set(RUN), &json!({"budget": 4}).to_string())]).to_string(),
+    )
+}
+
+/// What `pending` names among what is written once.
+fn written_once(rig: &Rig) -> Vec<String> {
+    let seen = rig.run(&keeper("pending", RUN), "");
+    seen.must(OK, "what of the run is pending");
+    seen.json()["once"]
+        .as_array()
+        .expect("what is written once")
+        .iter()
+        .map(|path| path.as_str().expect("a path").to_owned())
+        .collect()
+}
+
+/// What `set-aside` moved out of the tree, each as `[path, why]`.
+fn moved_aside(seen: &Seen) -> Vec<Value> {
+    seen.json()["aside"]
+        .as_array()
+        .expect("what left the tree")
+        .iter()
+        .map(|entry| json!([entry["path"], entry["why"]]))
+        .collect()
+}
+
+/// A file a hand, a file browser or an editor left in one of a round's two written-once
+/// directories: what it is, the directory below the run's, its name, and whether that name
+/// is a plain segment — a path this script takes.
+type Left = (&'static str, &'static str, &'static str, bool);
+
+const LEFT: [Left; 6] = [
+    (
+        "a dot-file among the filed verdicts",
+        "r1/verdicts",
+        ".DS_Store",
+        false,
+    ),
+    (
+        "an editor's copy among the filed verdicts, under a name of no plain segment",
+        "r1/verdicts",
+        "verify-r-3.a1.json~",
+        false,
+    ),
+    (
+        "a file among the filed verdicts under a plain name that is no verdict's",
+        "r1/verdicts",
+        "filing-draft.json",
+        true,
+    ),
+    (
+        "a file among the reports under a plain name that is no report's",
+        "r1/reports/test",
+        "filing.json",
+        true,
+    ),
+    (
+        "a dot-file among the reports",
+        "r1/reports/test",
+        ".DS_Store",
+        false,
+    ),
+    (
+        "a download's copy among the reports, under a name of no plain segment",
+        "r1/reports/test",
+        "verify-r-3.a1 (1).md",
+        false,
+    ),
+];
+
+/// **No file that the tools did not write can make a record unrecordable by the tools' own
+/// acts** (the scoped review before the run in parts, the record script's finding 1: *a
+/// `.DS_Store` among the filed verdicts refused every record — a ruling's too — and the
+/// refusal named a command that refuses the file*). In a run with a queue, of a file in one
+/// of a round's two written-once directories — its filed verdicts, a stage's reports —
+/// that no tool wrote:
+///
+/// - **under a plain name** it is a path this script takes: `pending` names it among what is
+///   written once, a record that reads its directory is refused over it and names what
+///   takes it out of the way, `set-aside` takes it, and the record is then made;
+/// - **under a name of no plain segment** — a dot-file, an editor's `~` copy, a name with a
+///   blank in it — it is no path of this script's, as its own journal and temporaries are
+///   none: no read names it, no check counts it, no record is refused over it, and no act
+///   moves it. (`set-aside` refuses the name, as it did.)
+///
+/// At a record of the stage — its report check, and the take — and at a record of the
+/// human's rulings, which takes what was filed first and checks no report.
+#[test]
+fn a_file_the_tools_did_not_write_makes_no_record_unrecordable() {
+    std::thread::scope(|scope| {
+        for (n, left) in LEFT.iter().enumerate() {
+            for ruling in [false, true] {
+                scope.spawn(move || a_record_over(n, left, ruling));
+            }
+        }
+    });
+}
+
+/// One cell of the arm above: the stage's record, or a record of the human's rulings, over
+/// one file nobody's tool wrote.
+fn a_record_over(n: usize, left: &Left, ruling: bool) {
+    let (what, dir, name, plain) = *left;
+    let at = if ruling {
+        "at a record of the human's rulings"
+    } else {
+        "at the stage's record"
+    };
+    let what = format!("{what}, {at}");
+    let rig = a_spent_wave(&format!("left-{n}-{}", u8::from(ruling)));
+    let stray = format!("completions/artifacts/{RUN}/{dir}/{name}");
+    let bytes: &[u8] = if plain {
+        b"{\"key\": \"r-3\", \"verdict\": \"refuted\"}\n"
+    } else {
+        b"\0\0\0\x01Bud1\0\0\x10\0 a file no tool of the run wrote \xff\n"
+    };
+    let reports = dir.ends_with("reports/test");
+    if ruling {
+        // The stage's record is made first: the rulings are recorded over a round whose
+        // budget is spent with a route item nobody reached.
+        the_stages_record(&rig).must(OK, &format!("{what}: the stage's record, before it"));
+        settled(&rig);
+        assert_eq!(rig.state()["next"], "rule", "{what}: the control");
+    }
+    fs::write(rig.root.join(&stray), bytes).expect("a file no tool wrote");
+    let record = |rig: &Rig| {
+        if ruling {
+            the_raise(rig)
+        } else {
+            the_stages_record(rig)
+        }
+    };
+    let both = json!([["r-1", true, null], ["r-2", true, null]]);
+
+    if !plain {
+        // NO PATH OF THIS SCRIPT'S: named by no read, counted by no check, refused by
+        // nothing — and moved by nothing.
+        let named = (written_once(&rig), json!(filed(&rig.state())));
+        let seen = record(&rig);
+        seen.must(OK, &format!("{what}: the record is made"));
+        assert!(
+            !named.0.contains(&stray),
+            "{what}: `pending` names no such file"
+        );
+        assert_eq!(
+            named.1, both,
+            "{what}: the state names the filed verdicts, and no such file"
+        );
+        let said = seen.json();
+        assert!(
+            !said.to_string().contains(name),
+            "{what}: the record's own line names no such file: {said}"
+        );
+        if !ruling {
+            assert_eq!(
+                json!([said["results"][0]["ok"], said["results"][0]["extra"]]),
+                json!([true, []]),
+                "{what}: the report check counts no such file: {said}"
+            );
+        }
+        let before = rig.snapshot();
+        rig.run(
+            &set_aside(RUN, Some(&rig.tmp.join("refused")), &[&stray]),
+            "",
+        )
+        .refused(
+            OUTSIDE,
+            &format!("{what}: set-aside, of a name that is no path"),
+        );
+        assert_eq!(rig.snapshot(), before, "{what}: and nothing was moved");
+        assert_eq!(
+            fs::read(rig.root.join(&stray)).expect("the file, where it was"),
+            bytes,
+            "{what}: the file is as it was left"
+        );
+    } else {
+        // A PATH THIS SCRIPT TAKES: named among what is written once, so that the report
+        // check's vet reaches it; taken out of the tree by `set-aside`.
+        assert!(
+            written_once(&rig).contains(&stray),
+            "{what}: `pending` names it among what is written once"
+        );
+        let before = rig.snapshot();
+        let seen = record(&rig);
+        if reports && ruling {
+            // A record of rulings checks no report: nothing of it reads that directory.
+            seen.must(OK, &format!("{what}: the rulings are recorded beside it"));
+        } else {
+            seen.refused(CHECK, &format!("{what}: a record over it"));
+            assert!(
+                seen.stderr.contains(name)
+                    && (reports || seen.stderr.contains("set-aside"))
+                    && seen.stderr.contains(if reports {
+                        "\"extra\""
+                    } else {
+                        "no-verdicts-name"
+                    }),
+                "{what}: the refusal names the file, and how it stands there: {}",
+                seen.stderr
+            );
+            assert_eq!(rig.snapshot(), before, "{what}: nothing was written");
+        }
+        // What the commit of a record would hold of it is refused by the vet, by its name.
+        let vetted = rig.run(&vet(RUN, None, &[&stray]), "");
+        vetted.must(VET_MISMATCH, &format!("{what}: the vet of it"));
+        assert_eq!(
+            json!([
+                vetted.json()["refused"][0]["path"],
+                vetted.json()["refused"][0]["why"]
+            ]),
+            json!([stray, "bad-id"]),
+            "{what}: {}",
+            vetted.stdout
+        );
+        let aside = rig.tmp.join("refused");
+        let moved = rig.run(&set_aside(RUN, Some(&aside), &[&stray]), "");
+        moved.must(OK, &format!("{what}: set-aside takes it"));
+        assert_eq!(moved_aside(&moved), [json!([stray, "bad-id"])], "{what}");
+        assert!(
+            !rig.root.join(&stray).exists()
+                && fs::read(aside.join(format!("{}__{name}", dir.replace('/', "__"))))
+                    .is_ok_and(|kept| kept == bytes),
+            "{what}: it left the tree, whole"
+        );
+        if !(reports && ruling) {
+            record(&rig).must(
+                OK,
+                &format!("{what}: the record, once it is out of the way"),
+            );
+        }
+    }
+    // What was recorded: the two verdicts, and — at the rulings — the raise.
+    settled(&rig);
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            filed(&read)
+                .iter()
+                .map(|entry| entry[1].clone())
+                .collect::<Vec<_>>(),
+            round_fact(&rig, "verdicts"),
+            read["budget"]["limit"],
+            read["next"]
+        ]),
+        json!([
+            [true, true],
+            "verify-r-1 a1, verify-r-2 a1",
+            if ruling { 4 } else { 2 },
+            if ruling { "verify" } else { "rule" }
+        ]),
+        "{what}: {read}"
+    );
+}
+
+/// **A file with a verdict's or a report's name that is none is still refused** — the other
+/// side of the arm above, as it was: what bears a name the tools write is held to what the
+/// tools would have written. A file among the filed verdicts under a verdict's name that no
+/// filing left refuses the stage's record and a record of rulings alike (`check`), naming
+/// the file, why and `set-aside`, which takes it; a report nobody launched is `extra`, and
+/// refuses the stage's record; a file under a report's name that is no report is refused by
+/// the vet and leaves the tree by `set-aside`.
+#[test]
+fn a_file_with_a_verdicts_or_a_reports_name_that_is_none_is_still_refused() {
+    let rig = a_spent_wave("left-named");
+    let forged = filed_path("verify-r-3", "1");
+    fs::write(
+        rig.root.join(&forged),
+        json!({"key": "r-3", "verdict": "refuted"}).to_string() + "\n",
+    )
+    .expect("a file no filing left");
+    for (what, seen) in [
+        ("the stage's record", the_stages_record(&rig)),
+        (
+            "a ruling's record",
+            rig.run(
+                &apply(RUN, Some("1")),
+                &json!([call(
+                    ledger_set(RUN),
+                    &json!({"key": "r-3", "disposition": "later"}).to_string()
+                )])
+                .to_string(),
+            ),
+        ),
+    ] {
+        seen.refused(CHECK, what);
+        assert!(
+            seen.stderr.contains(&forged)
+                && seen.stderr.contains("not-a-filing")
+                && seen.stderr.contains("set-aside"),
+            "{what}: {}",
+            seen.stderr
+        );
+    }
+    assert!(written_once(&rig).contains(&forged));
+    let aside = rig.tmp.join("refused");
+    let moved = rig.run(&set_aside(RUN, Some(&aside), &[&forged]), "");
+    moved.must(OK, "set-aside takes what is no filed verdict");
+    assert_eq!(moved_aside(&moved), [json!([forged, "bad-value"])]);
+
+    // A report nobody launched, which is a report: counted, extra, and it stays.
+    let unasked = report_path("1", "nobody", "1");
+    fs::write(rig.root.join(&unasked), BODY).expect("a report nobody launched");
+    let seen = the_stages_record(&rig);
+    seen.refused(CHECK, "a record beside a report nobody launched");
+    assert!(
+        seen.stderr.contains("\"extra\": [\"nobody.a1.md\"]"),
+        "{}",
+        seen.stderr
+    );
+    let kept = rig.run(&set_aside(RUN, Some(&aside), &[&unasked]), "");
+    kept.must(OK, "a report that is one is set aside by nothing");
+    assert_eq!(moved_aside(&kept), [] as [Value; 0]);
+    fs::remove_file(rig.root.join(&unasked)).expect("the human's: the report, removed");
+
+    // A file under a report's name that is no report: cut off before its last line.
+    let cut = report_path("1", "verify-r-3", "1");
+    fs::write(rig.root.join(&cut), "# verify-real of r-3\n\ncut off\n").expect("half a report");
+    let moved = rig.run(&set_aside(RUN, Some(&aside), &[&cut]), "");
+    moved.must(OK, "set-aside takes what is no report");
+    assert_eq!(moved_aside(&moved), [json!([cut, "truncated"])]);
+    the_stages_record(&rig).must(OK, "the record, once all three are out of the way");
+}
+
+/// **What `pending` names beside the reports, and what it does not** (finding 1, the
+/// reviewer's change (i): *a file with no report's name among the reports is treated as the
+/// verdicts' directory is treated since the task that built it*). In a run with a queue a
+/// regular file under a plain name among a stage's reports — the `test` stage's, a `fix`
+/// cycle's — is named among what is written once, and `set-aside` takes it. A LINK and a
+/// DIRECTORY there are named by nothing, and `pending` answers over them as it did. And IN A
+/// RUN WITHOUT AN ORDER every call answers as it did: the file is `extra` to the report
+/// check, named by no read, and refused by `set-aside` for its name — a dot-file too.
+#[test]
+fn a_file_without_a_reports_name_is_named_and_set_aside_in_a_run_with_a_queue_only() {
+    let rig = a_spent_wave("left-reports");
+    let below = |rel: &str| format!("completions/artifacts/{RUN}/{rel}");
+    let (test, cycle) = (
+        below("r1/reports/test/notes.txt"),
+        below("r1/reports/fix/c1/notes.txt"),
+    );
+    fs::create_dir_all(rig.root.join(below("r1/reports/fix/c1"))).expect("a cycle's reports");
+    fs::create_dir(rig.root.join(below("r1/reports/test/drafts"))).expect("a directory there");
+    symlink(
+        rig.root.join(report_path("1", "attempt", "1")),
+        rig.root.join(below("r1/reports/test/linked.txt")),
+    )
+    .expect("a link there");
+    for path in [&test, &cycle] {
+        fs::write(rig.root.join(path), "by hand\n").expect("a note by hand");
+    }
+    let once = written_once(&rig);
+    assert_eq!(
+        once.iter()
+            .filter(|path| !path.ends_with(".md") && !path.ends_with(".json"))
+            .collect::<Vec<_>>(),
+        [&test, &cycle],
+        "the two files, and neither the link nor the directory: {once:?}"
+    );
+    let aside = rig.tmp.join("refused");
+    let moved = rig.run(&set_aside(RUN, Some(&aside), &[&test, &cycle]), "");
+    moved.must(OK, "set-aside takes both");
+    assert_eq!(
+        moved_aside(&moved),
+        [json!([test, "bad-id"]), json!([cycle, "bad-id"])]
+    );
+    // A table is still set aside by nothing, nor a file beside a round's tables.
+    for (status, path) in [
+        (BAD_VALUE, ledger_path()),
+        (BAD_VALUE, below("r1/notes.txt")),
+        (BAD_ID, below("r1/checks/notes.txt")),
+    ] {
+        rig.run(&set_aside(RUN, Some(&aside), &[&path]), "")
+            .refused(status, &path);
+    }
+
+    // OVER A RECORD THAT CANNOT BE READ `pending` still answers — it is what the step that
+    // takes a damaged batch back stands on — and names what it named before there was a
+    // queue to know of.
+    fs::write(rig.root.join(&test), "by hand\n").expect("the note, again");
+    assert!(written_once(&rig).contains(&test), "the control");
+    let facts = rig.read(&run_path());
+    let bent = facts.replace("`route under-confirmed, ", "`nonsense, ");
+    assert_ne!(bent, facts, "the run's order, bent by a hand: {facts}");
+    fs::write(rig.root.join(run_path()), bent).expect("a hand in the run's facts");
+    rig.run(&state(RUN), "")
+        .refused(CORRUPT, "the control: the run's facts are not the script's");
+    assert!(
+        !written_once(&rig).contains(&test),
+        "`pending` answers, and names no such file"
+    );
+    let seen = rig.run(&check_reports(RUN, "1", "1", &WAVE), "");
+    seen.must(REPORTS_MISMATCH, "the report check answers too");
+    assert_eq!(
+        seen.json()["extra"],
+        json!(["drafts", "linked.txt", "notes.txt"])
+    );
+    rig.run(&set_aside(RUN, Some(&aside), &[&test]), "")
+        .refused(BAD_ID, "and `set-aside` takes no such file");
+
+    // IN A RUN WITHOUT AN ORDER, as it was.
+    let plain = Rig::new("left-reports-no-order");
+    plain
+        .run(&report(RUN, "1", "audit-install", "1"), BODY)
+        .must(OK, "a report");
+    let stage = plain.root.join(below("r1/reports/test"));
+    fs::write(stage.join("notes.txt"), "by hand\n").expect("a note by hand");
+    fs::write(stage.join(".DS_Store"), b"\0Bud1\0").expect("a dot-file");
+    let seen = plain.run(&check_reports(RUN, "1", "1", &["audit-install"]), "");
+    seen.must(
+        REPORTS_MISMATCH,
+        "the report check of a run without an order",
+    );
+    assert_eq!(seen.json()["extra"], json!([".DS_Store", "notes.txt"]));
+    assert_eq!(
+        written_once(&plain),
+        [report_path("1", "audit-install", "1")],
+        "and `pending` names the report alone"
+    );
+    plain
+        .run(&set_aside(RUN, Some(&aside), &[&test]), "")
+        .refused(BAD_ID, "set-aside of the note, in a run without an order");
+}
+
+/// **A dot-file rides no commit a push would publish** (finding 1: *a dot-file that is
+/// passed over must not ride a record's commit unseen*). The commit step of a record adds
+/// the paths `pending` names and the files of the applied batch, by name, and neither names
+/// a file under a name of no plain segment; and where a hand commits one, the push's vet
+/// refuses that commit for the path (`outside`) — nothing of the range is published.
+#[test]
+fn a_file_under_no_plain_name_is_in_no_record_and_is_refused_where_a_hand_commits_it() {
+    let rig = a_spent_wave("left-pushed");
+    let below = |rel: &str| format!("completions/artifacts/{RUN}/{rel}");
+    let dots = [
+        below("r1/reports/test/.DS_Store"),
+        below("r1/verdicts/.DS_Store"),
+    ];
+    for path in &dots {
+        fs::write(rig.root.join(path), b"\0Bud1\0").expect("a dot-file");
+    }
+    let applied = the_stages_record(&rig);
+    applied.must(OK, "the stage's record");
+    let pending = rig.run(&keeper("pending", RUN), "").json();
+    let named = format!("{} {}", pending["once"], pending["batch"]["files"]);
+    assert!(
+        !named.contains(".DS_Store") && !applied.stdout.contains(".DS_Store"),
+        "what a record's commit adds by name holds no such file: {named}"
+    );
+    settled(&rig);
+
+    // A HAND'S COMMIT that holds them: the range's vet refuses it, for each path.
+    rig.init_repository();
+    let git = |args: &[&str]| {
+        let out = rig
+            .hermetic(Command::new("git"))
+            .args(args)
+            .current_dir(&rig.root)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["add", "-A"]);
+    git(&[
+        "-c",
+        "user.name=rig",
+        "-c",
+        "user.email=rig@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "-m",
+        "docs(record): what a hand added",
+    ]);
+    let published = rig.run(&strings(&["vet", "--range", "--", "HEAD"]), "");
+    published.must(VET_MISMATCH, "a commit that holds a dot-file of the run");
+    let refused: Vec<Value> = published.json()["refused"]
+        .as_array()
+        .expect("what the range's vet refused")
+        .iter()
+        .map(|entry| json!([entry["path"], entry["why"]]))
+        .collect();
+    assert_eq!(
+        refused,
+        [json!([dots[0], "outside"]), json!([dots[1], "outside"])],
+        "{}",
+        published.stdout
+    );
+}
+
+/// **A verifier's report and a triage's entries are taken only for an attempt that is
+/// begun** (the scoped review before the run in parts, the record script's finding 2:
+/// *`report` holds a report's attempt number to nothing — three reports of a verifier under
+/// attempts nobody began put two attempts without a record on the round, and the row on
+/// the human's list as launched twice after no launch*). In a run with a queue an attempt of
+/// the `test` stage begins on record by its marker — a report of that attempt under a
+/// reporter that is no finding's verifier (`dev/stabilize-step begin`) — and what a
+/// filing's attempt is held to (`T3a`, acceptance (iii)) a verifier's report and a
+/// triage's rendering are held to as well: neither begins an attempt, and neither is taken
+/// for one nobody began. The refusal sends nobody to another attempt number.
+/// WHAT IS NOT HELD, and pinned as it is: a report of any other reporter — an
+/// instrument's, the scope's, the preflight's — under an attempt nobody began IS that
+/// attempt's first report, which this script cannot tell from its marker; a report of the
+/// `fix` stage, no attempt of which the harness begins on record; and every report of a run
+/// without an order.
+#[test]
+fn a_verifiers_report_and_a_triage_are_taken_only_for_an_attempt_that_is_begun() {
+    let mut rig = a_filing_run("report-attempt", Some(5), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    // Before the round holds any report: no attempt is begun, and that is a refusal.
+    rig.run(&report(RUN, "1", "verify-r-1", "1"), BODY).refused(
+        BAD_VALUE,
+        "a verifier's report, where the round holds no report",
+    );
+    begun_attempt(&rig, "1");
+    rig.run(
+        &apply(RUN, Some("1")),
+        &json!([call(check_reports(RUN, "1", "1", &["attempt"]), "")]).to_string(),
+    )
+    .must(OK, "the attempt's record");
+    settled(&rig);
+    let stands = |rig: &Rig| {
+        let read = rig.state();
+        json!([
+            read["rounds"][0]["test_attempt"],
+            read["rounds"][0]["test_unrecorded"],
+            read["position"]["test"],
+            routed(&read, "r-1"),
+            finding(&read, "r-1")["awaits"],
+            read["next"]
+        ])
+    };
+    let nothing_unrecorded = json!([
+        1,
+        0,
+        {"round": 1, "attempt": 2, "verify": true},
+        at("verify", "queued"),
+        {"why": "unverified", "passes": 0, "retry": "due"},
+        "verify"
+    ]);
+    assert_eq!(stands(&rig), nothing_unrecorded, "the control");
+
+    // A VERIFIER'S REPORT under an attempt nobody began — three of them, as the review
+    // drove it — and the entries of A TRIAGE under one.
+    let body = format!("# verify-real of r-1\n\nDriven on both binaries.\n{ENDS}\n");
+    let before = rig.snapshot();
+    for attempt in ["3", "4", "5"] {
+        let seen = rig.run(&report(RUN, "1", "verify-r-1", attempt), &body);
+        seen.refused(
+            BAD_VALUE,
+            &format!("a verifier's report of attempt {attempt}, which nobody began"),
+        );
+        assert!(
+            seen.stderr.contains(&format!("attempt {attempt}"))
+                && seen.stderr.contains("not begun")
+                && seen.stderr.contains("nothing was written"),
+            "it names the attempt, and says that nobody began it: {}",
+            seen.stderr
+        );
+        assert!(
+            !seen.stderr.contains("next attempt") && !seen.stderr.contains("re-run"),
+            "it sends nobody to another attempt number: {}",
+            seen.stderr
+        );
+    }
+    let entries = json!([again_entry("r-2", "breaks", json!({"hunt-a": [1]}))]);
+    let seen = hand_over(&rig, "5", &[("hunt-a", 1)], &entries);
+    seen.refused(
+        BAD_VALUE,
+        "the entries of a triage of attempt 5, which nobody began",
+    );
+    assert!(
+        seen.stderr.contains("attempt 5")
+            && seen.stderr.contains("not begun")
+            && !seen.stderr.contains("next attempt"),
+        "{}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+    assert_eq!(
+        stands(&rig),
+        nothing_unrecorded,
+        "and nothing of the state moved"
+    );
+
+    // THE ATTEMPT BEGUN, both are taken — and a verifier's own report began none.
+    begun_attempt(&rig, "2");
+    rig.run(&report(RUN, "1", "verify-r-1", "2"), &body)
+        .must(OK, "a verifier's report of an attempt that is begun");
+    hand_over(&rig, "2", &[("hunt-a", 1)], &entries)
+        .must(OK, "a triage's entries of an attempt that is begun");
+    rig.run(&report(RUN, "1", "verify-r-2", "3"), &body)
+        .refused(
+            BAD_VALUE,
+            "attempt 3, which a verifier's report of attempt 2 did not begin",
+        );
+    assert_eq!(
+        json!([
+            rig.state()["rounds"][0]["test_attempt"],
+            finding(&rig.state(), "r-1")["awaits"]["passes"]
+        ]),
+        json!([2, 1]),
+        "one launch of the verifier, in the attempt the stage began"
+    );
+
+    // WHAT IS NOT HELD, as it was. A report of a reporter that is no finding's verifier is,
+    // under an attempt nobody began, that attempt's first report: the marker is one.
+    rig.run(&report(RUN, "1", "review-setup", "3"), BODY).must(
+        OK,
+        "an instrument's report: the script cannot tell it from the marker",
+    );
+    rig.run(&report(RUN, "1", "verify-r-2", "3"), &body)
+        .must(OK, "and attempt 3 is begun by it");
+    // A report of the `fix` stage: the harness begins no attempt of it on record.
+    let mut fix = report(RUN, "1", "verify-r-1", "4");
+    fix[3] = "--stage=fix".to_owned();
+    fix.push("--cycle=1".to_owned());
+    rig.run(&fix, &body)
+        .must(OK, "a report of the `fix` stage, under whatever attempt");
+    // A run without an order: every report as it was.
+    let plain = Rig::new("report-attempt-no-order");
+    plain
+        .run(&report(RUN, "1", "verify-r-1", "5"), &body)
+        .must(OK, "a report of a run without an order");
+
+    // OVER A WRITE THAT WAS KILLED BETWEEN ITS FILES a report settles it first, as every
+    // writer does — and is then held to the attempt as any is.
+    with_kill_switch(&mut rig, "STUB_KILL_AT_REPLACE", 2);
+    let seen = rig.run(
+        &triage_set(RUN, "1"),
+        &json!({"key": "r-2", "grade": "breaks", "verdict": "refuted", "refutation": "intended"})
+            .to_string(),
+    );
+    assert_eq!((seen.code, seen.signal), (None, Some(9)), "{seen:?}");
+    rig.env.truncate(0);
+    rig.run(&state(RUN), "")
+        .refused(INTERRUPTED, "the control: a write killed between its files");
+    rig.run(&report(RUN, "1", "verify-r-1", "7"), &body)
+        .refused(
+            BAD_VALUE,
+            "a verifier's report of attempt 7, over a killed write",
+        );
+    assert_eq!(
+        routed(&rig.state(), "r-2"),
+        at("recorded", "not-a-break"),
+        "and the killed write was finished first"
     );
 }

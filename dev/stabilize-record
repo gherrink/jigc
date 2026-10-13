@@ -112,6 +112,20 @@
 #       apart. Input that is JSON needs no such line: cut off, it is not JSON.
 #       ONE TEXT IS NOT TAKEN HERE: a report that opens as the entries a triage handed over,
 #       rendered by this script, is written by `triage` and by nothing else (bad-value).
+#       A VERIFIER REPORTS IN AN ATTEMPT THAT IS BEGUN (the scoped review before the run in
+#       parts, finding 2) — IN A RUN WITH A QUEUE, of the `test` stage: a report under the
+#       reporter `verify-<key>` is what a launch of that finding's verifier is counted by,
+#       and its attempt what the stage's attempts are counted from (state), so it is taken
+#       only where the attempt's marker lies among the round's `test` reports — a report of
+#       that attempt under a reporter that is no finding's verifier, which the stage writes
+#       before it launches an agent (verdict: (iii)). Else it is refused (bad-value) and
+#       nothing is written. THE ATTEMPT IS THE ONE THE CALL WAS HANDED: a call typed as it
+#       was handed that is refused so is what its agent returns, and it is tried under no
+#       other number. NOT HELD, because nothing here can hold it: a report of any other
+#       reporter — an instrument's, the scope's, the preflight's — under an attempt nobody
+#       began IS that attempt's first report, which this script cannot tell from the
+#       marker, whose name is the harness's; a report of the `fix` stage, no attempt of
+#       which is begun on record; and every report of a run without an order.
 #
 #   dev/stabilize-record ledger-add --run R [--scratch DIR]... <rows.json
 #       One JSON object per finding, or an array of them:
@@ -636,7 +650,10 @@
 #       findings folded into each row, and nothing else writes that.
 #       TAKEN IN A RUN WITH A QUEUE — in a run without an order the writer is refused
 #       (bad-value), nothing is written, and a triage returns its entries as it always did —
-#       for a round the run has begun, or the one the state hands a `test` stage.
+#       for a round the run has begun, or the one the state hands a `test` stage. AND FOR AN
+#       ATTEMPT THAT IS BEGUN, as a verifier's report is (report): the rendering is a report
+#       under a reporter that is no finding's verifier, so under an attempt nobody began it
+#       would read as that attempt's marker — it is refused (bad-value), and writes nothing.
 #       Prints ITS DIGEST, one line, with no text of an entry in it — what a triage's
 #       return is held to: {"triage": the path, "sha256": the hash of the file's bytes,
 #       "round", "reporter", "attempt", "handed": {source: count}, "findings": how many in
@@ -1001,12 +1018,15 @@
 #                      left: what is left of the limit — 0 once it is spent, null where
 #                      there is none: then nothing is ever spent}
 #         filed        ONLY IN A RUN WITH AN ORDER: WHAT IS FILED — every file among the
-#                      rounds' filed verdicts (verdict), in the rounds' order and by
+#                      rounds' filed verdicts (verdict) UNDER A PLAIN NAME — what lies
+#                      there under any other is no path of this script's, and is named by
+#                      nothing (WHAT NO TOOL WROTE, below) — in the rounds' order and by
 #                      reporter and attempt within one: [{round, file, reporter, attempt,
 #                      key, verdict, sha256: of the file's bytes, counts, why, recorded,
 #                      handed_on: the keys of the items it hands on}]. `counts` is whether
 #                      the state reads it as a verdict; where it does not, `why`:
-#                        no-verdicts-name  a file there that has no filed verdict's name
+#                        no-verdicts-name  a file there, under a plain name, that has no
+#                                          filed verdict's name
 #                        not-a-filing      not the text the writer left under that name,
 #                                          or not under its own seal
 #                        report-gone, report-changed   the report it was filed beside
@@ -1534,7 +1554,9 @@
 #       {"check": "reports", "ok", "dir", "attempt", "missing", "extra",
 #       "other_attempts", "reports"}: a launched reporter with no report is missing;
 #       anything else in the stage's directory is extra, by file name — a report nobody
-#       launched, a stray file, the temporary of a killed write. Both fail. Reports of
+#       launched, a stray file. Both fail. NOT COUNTED: this script's own temporary — a
+#       write in flight, or what a killed one left — and, IN A RUN WITH A QUEUE, a file
+#       under a name that is no plain segment (WHAT NO TOOL WROTE, below). Reports of
 #       other attempts are listed and decide nothing. `reports` is each launched report
 #       that is there, with the sha256 of its bytes: a check kept in an applied batch
 #       says WHICH bytes it was a check of, and `vet` holds it to the disk again.
@@ -1618,7 +1640,10 @@
 #       takes — its report gone or changed since, another text under the name, another
 #       binary, no verdict's name — REFUSES THE BATCH (check), naming the file, why, and
 #       what takes it out of the way: the report check sets it aside (set-aside), after
-#       which its finding is unverified again. The calls of the batch then read the
+#       which its finding is unverified again. THE RECORD REFUSES OVER WHAT `set-aside`
+#       TAKES, AND OVER NOTHING ELSE: a file there under a name that is no plain segment
+#       is named by nothing and refuses nothing (WHAT NO TOOL WROTE, below). The calls of
+#       the batch then read the
 #       tables with what was taken: a row a caller adds under a key a filing minted is
 #       `existing` (ledger-add), and a verdict a call says for a finding the batch took
 #       from its file is refused (triage-set). The journal keeps the files the batch
@@ -1847,7 +1872,9 @@
 #       the files on disk that are written once and never rewritten: every report,
 #       each round's scope, and every file among a round's filed verdicts — a filed
 #       verdict, and a file there under a plain name that has no verdict's name, which is
-#       named so that the vet reaches it and it can be set aside; and THIS SCRIPT'S OWN TEMPORARIES that a killed write left
+#       named so that the vet reaches it and it can be set aside — and, IN A RUN WITH A QUEUE,
+#       a file beside a stage's reports under a plain name that has no report's name, named
+#       for the same (WHAT NO TOOL WROTE, below); and THIS SCRIPT'S OWN TEMPORARIES that a killed write left
 #       (the read holds the shared lock, so none of them is a live writer's). Whether a
 #       file is in a commit is git's to say, and this script reads no git:
 #       dev/stabilize-step holds a tree to this answer, and has `recover` finish what
@@ -1940,7 +1967,11 @@
 #       finding whose filed verdict left is unverified again, which the state says. AND A
 #       FILE AMONG A ROUND'S FILED VERDICTS WITHOUT A VERDICT'S NAME IS TAKEN TOO (the
 #       plan's T3b): the vet refuses it by its name (bad-id), it is no filed verdict, and
-#       nothing else removes it — a stage is not stranded on a file a hand left there. A
+#       nothing else removes it — a stage is not stranded on a file a hand left there. AND
+#       SO IS, IN A RUN WITH A QUEUE, A FILE BESIDE A STAGE'S REPORTS WITHOUT A REPORT'S NAME
+#       (WHAT NO TOOL WROTE, below). A PATH IS OF PLAIN SEGMENTS, here as for `vet`: a file
+#       under any other name is refused as an argument (outside), is taken by nothing —
+#       and nothing of this script is refused over it. A
 #       table is never set aside: a batch is taken back whole (discard). Prints {"aside":
 #       [{path, why, detail, to}], "vetted": {path: sha256}}.
 #
@@ -2106,6 +2137,41 @@
 # the record's commit (nothing is committed, and the batch is taken back), and every push
 # it makes (nothing is pushed). A push made by hand with plain git is outside this.
 #
+# WHAT NO TOOL WROTE, IN A ROUND'S TWO WRITTEN-ONCE DIRECTORIES (the scoped review before the
+# run in parts, the record script's finding 1). Two directories of a round are read BY
+# LISTING THEM — a stage's reports (check-reports, pending) and the round's filed verdicts
+# (state, apply, pending) — so a file that a hand, a file browser or an editor leaves in
+# one is met by this script. IN A RUN WITH A QUEUE NO SUCH FILE MAKES A RECORD UNRECORDABLE
+# BY THIS SCRIPT'S OWN ACTS:
+#   under a plain name    — a segment as every path of this script's has them: of A-Z a-z
+#                         0-9 `.` `_` `-`, opening with neither `.` nor `-` — it is a
+#                         path this script takes. `pending` NAMES it among what is written
+#                         once, so the report check's vet reaches it; a record that reads
+#                         its directory is REFUSED over it — the take, over one among the
+#                         filed verdicts (check: no-verdicts-name); a batch's report check,
+#                         over one beside the reports (`extra`) — and `set-aside` TAKES it
+#                         out of the tree, refused by its name (bad-id). What bears a
+#                         verdict's or a report's name is held to what its writer would
+#                         have left, as ever.
+#   under any other name  — a dot-file (`.DS_Store`), an editor's copy (`x.md~`), a name
+#                         with a blank in it — it is NO PATH OF THIS SCRIPT'S, as its own
+#                         journal and temporaries are none: NAMED BY NO READ, COUNTED BY NO
+#                         CHECK, REFUSED BY NO RECORD, MOVED BY NO ACT (`set-aside` and `vet`
+#                         refuse the name: outside). AND IT IS IN NO RECORD'S COMMIT: the
+#                         commit step adds the paths `pending` names and the files of the
+#                         applied batch, each by name, and holds the tree to exactly those
+#                         (dev/stabilize-step record) — so where git shows the file every
+#                         step refuses the tree and names it (dirty: the human's), and
+#                         where git is told to ignore it nothing adds it. A commit a hand
+#                         made that holds one is refused by the push's vet, for the path
+#                         (vet --range: outside), and nothing of the range is pushed.
+# NOT COVERED: A LINK AND A DIRECTORY there. Under a plain name each still refuses the record
+# that reads its directory, and `set-aside` takes it where it is named by hand; `pending`
+# names neither, so no report check reaches one — and refuses to answer (outside) over a
+# link among the filed verdicts, or one under a report's name, as it did. AND A RUN WITHOUT
+# AN ORDER IS ANSWERED AS IT WAS: whatever lies beside its reports is `extra`, named by no
+# read and taken by no act.
+#
 # What a writer does to its text, in order — every writer alike, because every write
 # goes through one function:
 #
@@ -2180,7 +2246,9 @@
 #                     lead, or is not outside it, or in a run that has no queue; a
 #                     filing without its report, under a reporter that is not the key's,
 #                     of an attempt nobody began, on another binary, for a row that
-#                     awaits no verdict, or in a run without an order; the entries of a
+#                     awaits no verdict, or in a run without an order; a verifier's
+#                     report, or the entries of a triage, of an attempt nobody began, in
+#                     a run with a queue; the entries of a
 #                     triage with a handed finding in no entry or in two, with a finding
 #                     found again that brings a row's cells, or in a run without an order;
 #                     a report that opens as a triage's rendered entries and is not that
@@ -3640,6 +3708,18 @@ def has_queue(run_dir):
     return run_facts(*read_run(run_dir)[::2]).get("order") is not None
 
 
+def known_queue(run_dir):
+    """Whether the run is KNOWN to be a run with a queue, for a call that answers over tables
+    it does not read (pending, check-reports, set-aside) and takes one thing more in such a
+    run: WHAT NO TOOL WROTE (the header). A run whose own record cannot be read is answered
+    as a run without an order — as it was — and never refused here: `pending` is what the
+    step that takes a damaged batch back stands on."""
+    try:
+        return has_queue(run_dir)
+    except Refusal:
+        return False
+
+
 def run_rows(facts):
     """The run's facts as the rows of their table — the condition's heading as a cell of
     its own, in no backticks: a heading may end with one."""
@@ -3808,6 +3888,27 @@ def latest_tested(read, round_number, what):
     return last
 
 
+def begun(run_dir, parts, attempt):
+    """WHETHER AN ATTEMPT OF A STAGE IS BEGUN ON RECORD: its marker lies among the stage's
+    reports (`parts`) — a report of that attempt under a reporter that is no finding's
+    verifier, written before any agent of the attempt is launched (dev/stabilize-step
+    begin). This script does not know the marker's name, which is the harness's: so every
+    such report is one, and A VERIFIER'S OWN REPORT BEGINS NONE. The one predicate a filing
+    (verdict), a verifier's report (report) and a triage's entries (triage) are held to."""
+    directory = below(run_dir, parts)
+    names = os.listdir(directory) if os.path.isdir(directory) else []
+    return any(named and named.group(2) == attempt and not named.group(1).startswith(VERIFIER) for named in map(REPORT_NAME.fullmatch, names))
+
+
+def hold_to_its_attempt(run_dir, run, parts, attempt, what, begins_none):
+    """Refuse what is handed over for an attempt of a round's `test` stage that nobody began
+    (the scoped review before the run in parts, the record script's finding 2). THE WORDS SEND
+    NOBODY TO ANOTHER ATTEMPT NUMBER: the attempt is the one the call was handed, and a call
+    typed as it was handed that is refused here is a halt."""
+    if not begun(run_dir, parts, attempt):
+        refuse("bad-value", "%s: attempt %s of round %s's `test` stage is not begun on record — no report of that attempt under a reporter that is no finding's verifier lies in %s. An attempt's first write is its marker, which the stage writes before it launches an agent (dev/stabilize-step begin), and %s. The attempt is the one the call was handed: where the call is typed as it was handed, this line is what its agent returns — it is tried under no other number; nothing was written" % (what, attempt, parts[0][1:], "/".join(ARTIFACTS + (run,) + tuple(parts)), begins_none))
+
+
 # --- the subcommands --------------------------------------------------------------
 
 
@@ -3816,6 +3917,17 @@ def report(args):
     parts = stage_parts(args)
     name = "%s.a%s.md" % (slug(args.reporter, "reporter"), number(args.attempt, "attempt"))
     scratch = scratch_roots(args)
+
+    def asked(read):
+        """Whether the state takes the report: for this round — and, IN A RUN WITH A QUEUE,
+        A VERIFIER'S REPORT OF THE `test` STAGE ONLY FOR AN ATTEMPT THAT IS BEGUN (the header:
+        report). Such a report is what a launch of the finding's verifier is counted by, and
+        its attempt what the stage's attempts are counted from: under an attempt nobody
+        began it would count a launch nobody made, and an attempt that left no record."""
+        a_round(read, args.round, "a report of round %s" % args.round)
+        if "queue" in read and args.stage == "test" and args.reporter.startswith(VERIFIER):
+            hold_to_its_attempt(run_dir, args.run, parts, args.attempt, "the report of `%s`, a finding's verifier" % args.reporter, "a verifier's own report begins none")
+
     # Asked before the report is read, and again by the write itself.
     if os.path.lexists(below(run_dir, parts + [name])):
         refuse("exists", "%s exists — a re-run passes the next attempt" % "/".join(ARTIFACTS + (args.run,) + tuple(parts) + (name,)))
@@ -3826,13 +3938,13 @@ def report(args):
     try:
         killed = bool(read_journal(run_dir)["placing"])
         if not killed:
-            a_round(document(run_dir, args.run), args.round, "a report of round %s" % args.round)
+            asked(document(run_dir, args.run))
     finally:
         os.close(asking)
     if killed:
         # A write was killed between its files: it is settled first, as every writer does.
         one_writer(run_dir)
-        a_round(document(run_dir, args.run), args.round, "a report of round %s" % args.round)
+        asked(document(run_dir, args.run))
     try:
         text = stdin_bytes().decode("utf-8")
     except ValueError:
@@ -4732,9 +4844,7 @@ def verdict(args):
     # (iii) THE ATTEMPT IS ONE THE ROUND HAS BEGUN ON RECORD: its marker — a report of that
     # attempt under a reporter that is no finding's verifier, written before any agent of
     # the attempt is launched (dev/stabilize-step begin). A verifier's own report begins none.
-    directory = below(run_dir, parts)
-    begun = [REPORT_NAME.fullmatch(name) for name in os.listdir(directory)]
-    if not any(named and named.group(2) == attempt and not named.group(1).startswith(VERIFIER) for named in begun):
+    if not begun(run_dir, parts, attempt):
         refuse("bad-value", "%s: attempt %s of round %s's `test` stage is not begun on record — no report of that attempt under a reporter that is no finding's verifier lies in %s, and an attempt's first write is its marker (dev/stabilize-step begin); nothing was written" % (what, attempt, round_number, "/".join(ARTIFACTS + (args.run,) + tuple(parts))))
     # (v) ONCE IS ONCE PER KEY PER ROUND: no second file, under whatever attempt — and none
     # beside a verdict the round's record holds.
@@ -5027,6 +5137,10 @@ def triage(args):
     if "queue" not in read:
         refuse("bad-value", "the entries of round %s's triage: the run holds no order, and so has no queue — a triage hands its entries over through this writer in a run with a queue (run-set: order), and in any other run it returns them as it always did; nothing was written" % round_number)
     a_round(read, round_number, "the entries of round %s's triage" % round_number)
+    # … FOR AN ATTEMPT THAT IS BEGUN (the header: triage): the rendering is a report of its
+    # attempt, and under a reporter that is no finding's verifier — written for an attempt
+    # nobody began it would be read as that attempt's marker.
+    hold_to_its_attempt(run_dir, args.run, parts[:-1], attempt, "the entries of round %s's triage, handed over as `%s`" % (round_number, reporter), "the entries a triage hands over begin none")
     # AS THE ROWS THEY WILL BE: a new finding names its kind, and a grade cites a listed bound.
     hold_kinds(run_dir, [row for _, row, _ in held if row is not None])
     hold_to_the_list(run_dir, [("entry %d (%s)" % (n, stored["key"]), grade) for n, (stored, _, grade) in enumerate(held, 1)])
@@ -5529,9 +5643,12 @@ def filed_in(run_dir, numbers, keys, on_record):
         rel = "/".join(ARTIFACTS + (os.path.basename(run_dir),) + tuple(parts))
         within = []
         for name in os.listdir(directory) if os.path.isdir(directory) else []:
-            path = os.path.join(directory, name)
-            if TEMPORARY.fullmatch(name) and os.path.isfile(path) and not os.path.islink(path):
-                # This script's own temporary: a filing in flight, or what a killed one left.
+            if not SEGMENT.fullmatch(name):
+                # NO PATH OF THIS SCRIPT'S (the header: WHAT NO TOOL WROTE): this script's own
+                # temporary — a filing in flight, or what a killed one left — and whatever
+                # else lies there under a name that is no plain segment: a dot-file, an
+                # editor's copy. No act of this script takes such a name (run_file), so
+                # nothing here names it, and no record is refused over it.
                 continue
             shaped = VERDICT_NAME.fullmatch(name)
             entry = {"round": number_, "file": "%s/%s" % (rel, name), "reporter": shaped and shaped.group(1), "attempt": shaped and int(shaped.group(2)), "key": None, "verdict": None, "sha256": None, "counts": False, "why": "no-verdicts-name", "recorded": False, "handed_on": [], "record": None}
@@ -6801,6 +6918,7 @@ def check_reports(args):
     attempt = int(number(args.attempt, "attempt"))
     launched = distinct([slug(name, "reporter") for name in args.names], "reporter")
     directory = below(run_dir, parts)
+    queue = known_queue(run_dir)
     seen, extra, other = {}, [], []
     for name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
         path = os.path.join(directory, name)
@@ -6808,6 +6926,11 @@ def check_reports(args):
         if TEMPORARY.fullmatch(name) and os.path.isfile(path) and not os.path.islink(path):
             # This script's own temporary: a write in flight, or what a killed one left —
             # which the next writer removes. It is no report, and nobody launched it.
+            continue
+        if queue and not SEGMENT.fullmatch(name):
+            # IN A RUN WITH A QUEUE, NO PATH OF THIS SCRIPT'S (the header: WHAT NO TOOL WROTE):
+            # a name that is no plain segment is counted by no check, as it is named by no
+            # read and taken by no act — and so stops no record.
             continue
         if parsed is None or os.path.islink(path) or not os.path.isfile(path):
             extra.append(name)
@@ -7209,6 +7332,7 @@ def pending(args):
     fcntl.flock(os.open(run_dir, os.O_RDONLY), fcntl.LOCK_SH)
     held = read_journal(run_dir)
     prefix = "/".join(ARTIFACTS + (args.run,))
+    queue = known_queue(run_dir)
     once = []
     for number_ in numbered(run_dir, [], "r"):
         name = "r%d" % number_
@@ -7218,7 +7342,15 @@ def pending(args):
         for parts in stages:
             directory = below(run_dir, parts)
             for report_name in sorted(os.listdir(directory)) if os.path.isdir(directory) else []:
+                beside = os.path.join(directory, report_name)
                 if REPORT_NAME.fullmatch(report_name) and os.path.isfile(below(run_dir, parts + [report_name])):
+                    once.append("/".join([prefix] + parts + [report_name]))
+                elif queue and SEGMENT.fullmatch(report_name) and os.path.isfile(beside) and not os.path.islink(beside):
+                    # … AND, IN A RUN WITH A QUEUE, A FILE THERE UNDER A PLAIN NAME THAT IS NO
+                    # REPORT'S (the header: WHAT NO TOOL WROTE) — named for what a file among
+                    # the filed verdicts is named for, below: so that the vet reaches it
+                    # and `set-aside` takes it out of the tree. (A link, a directory and a
+                    # name of no plain segment are named by nothing, as they were.)
                     once.append("/".join([prefix] + parts + [report_name]))
         # … and the round's filed verdicts, each written once (the plan's T3a) — AND A FILE
         # THERE THAT HAS NO VERDICT'S NAME (T3b): it is no filed verdict, and it is named
@@ -7640,8 +7772,12 @@ def set_aside(args):
             # A FILE AMONG A ROUND'S FILED VERDICTS WITHOUT A VERDICT'S NAME (the plan's T3b)
             # is no filed verdict, and leaves the tree like one that has the name and is
             # none: the vet refuses it by its name (below), and nothing else removes it.
+            # AND SO DOES, IN A RUN WITH A QUEUE, A FILE BESIDE THE REPORTS WITHOUT A REPORT'S
+            # NAME (the header: WHAT NO TOOL WROTE). (A file beside the held checks' verdicts
+            # is read by its name alone, and no directory listing meets it: not taken.)
             segments = rel[len(prefix):].split("/") if isinstance(rel, str) and rel.startswith(prefix) else []
-            if refusal.kind != "bad-id" or not (len(segments) == 3 and segments[1] == "verdicts" and all(SEGMENT.fullmatch(segment) for segment in segments)):
+            stray = (len(segments) == 3 and segments[1] == "verdicts") or (len(segments) > 2 and segments[1] == "reports" and known_queue(run_dir))
+            if refusal.kind != "bad-id" or not (stray and all(SEGMENT.fullmatch(segment) for segment in segments)):
                 raise
             continue
         if not report and not scope and not filed:

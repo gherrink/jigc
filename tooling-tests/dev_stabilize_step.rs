@@ -12556,6 +12556,136 @@ fn a_file_without_a_verdicts_name_among_the_filed_verdicts_strands_no_stage() {
     stage.git_state().refused("dirty");
 }
 
+/// **A file without a report's name among the reports strands no stage of a run with a
+/// queue** (the scoped review before the run in parts, the record script's finding 1: *a
+/// file that is no verdict and no report, in one of the run's two written-once directories*).
+/// In a run with a queue the record script names such a file among what is written once
+/// where its name is plain, so — with no line of this tool changed — the tree that holds it
+/// is one a stage starts from, the report check's vet refuses it by its name, and it leaves
+/// the tree as a file among the filed verdicts does; the report check then counts nothing
+/// extra, and the stage goes on to its record. A FILE UNDER A NAME OF NO PLAIN SEGMENT — a
+/// dot-file — is no path of the record script's: where git shows it the tree is the
+/// human's, as anything else in it; and where git is told to ignore it, it stops no step,
+/// no check counts it, and the record's commit — which adds what the record script names,
+/// by name — does not hold it.
+#[test]
+fn a_file_without_a_reports_name_among_the_reports_strands_no_stage_of_a_run_with_a_queue() {
+    let stage = Stage::between_its_two_records("report-stray");
+    let rig = &stage.rig;
+    stage.verified("f-1");
+    let stray = format!("{RUN_DIR}/r1/reports/test/filing.json");
+    rig.write(&stray, "{\"key\": \"f-1\", \"verdict\": \"refuted\"}\n");
+    let seen = stage.git_state();
+    let line = seen.done("git-state", "ready");
+    assert!(
+        line["untracked"]
+            .as_array()
+            .expect("the pending files")
+            .contains(&json!(stray)),
+        "a tree a stage starts from: {}",
+        seen.raw
+    );
+
+    // AT A RECORD OF THE HUMAN'S RULINGS, which no report check comes before: the file is a
+    // pending path, so the batch is applied beside it — and its commit step stages the file
+    // by name, the vet refuses it, the batch is taken back and the file leaves the tree
+    // there. Nothing is committed, and the tree is one the next invocation starts from.
+    let copy = stage.copy("report-stray-ruled");
+    let ruled = Stage {
+        batch: json!([{"argv": ["ledger-set", "--run", RUN],
+                       "stdin": json!({"key": "f-2", "disposition": "later"}).to_string()}]),
+        ..copy
+    };
+    ruled.apply(SECOND);
+    let scratch = ruled.rig.scratch.display().to_string();
+    let head = ruled.rig.rev("HEAD");
+    let seen = ruled.rig.step(&[
+        "record",
+        "--branch",
+        LOOP,
+        "--run-dir",
+        RUN_DIR,
+        "--gate",
+        &ruled.gate,
+        "--calls",
+        "1",
+        "--checks",
+        "0",
+        "--scratch",
+        &scratch,
+    ]);
+    let said = seen.refused("unvetted");
+    assert_eq!(
+        json!([
+            said["vet"]["refused"][0]["path"],
+            said["vet"]["refused"][0]["why"],
+            said["vet"]["refused"].as_array().map(Vec::len),
+            said["aside"][0]["path"],
+            said["discarded"]
+        ]),
+        json!([stray, "bad-id", 1, stray, true]),
+        "the commit step of a record of rulings: {}",
+        seen.raw
+    );
+    assert!(!ruled.rig.root.join(&stray).exists() && ruled.rig.rev("HEAD") == head);
+    let seen = ruled.git_state();
+    assert_eq!(
+        seen.done("git-state", "ready")["pending"],
+        Value::Null,
+        "{}",
+        seen.raw
+    );
+
+    let seen = stage.second_check(&["attempt", "verify-f-1"]);
+    let line = seen.done("check-reports", "checked");
+    assert_eq!(
+        json!([
+            line["check"]["ok"],
+            line["check"]["extra"],
+            line["aside"][0]["path"],
+            line["aside"][0]["why"],
+            line["aside"].as_array().map(Vec::len)
+        ]),
+        json!([true, [], stray, "bad-id", 1]),
+        "the file leaves the tree, no other does, and the check counts nothing extra: {}",
+        seen.raw
+    );
+    assert!(!rig.root.join(&stray).exists());
+
+    // A DOT-FILE THERE, AND ONE AMONG THE FILED VERDICTS. Where git shows them: the human's.
+    let dots = [
+        format!("{RUN_DIR}/r1/reports/test/.DS_Store"),
+        format!("{RUN_DIR}/r1/verdicts/.DS_Store"),
+    ];
+    for dot in &dots {
+        rig.write(dot, "Bud1\n");
+    }
+    let seen = stage.git_state();
+    seen.refused("dirty");
+    assert!(
+        dots.iter().all(|dot| seen.raw.contains(dot.as_str())),
+        "the refusal names both: {}",
+        seen.raw
+    );
+    // Where git is told to ignore them: they stop nothing, and no commit holds them.
+    fs::write(rig.root.join(".git/info/exclude"), ".DS_Store\n").expect("git's own ignore list");
+    stage.git_state().done("git-state", "ready");
+    stage.records_what_was_filed();
+    assert_eq!(
+        routed_as(&stage.state(), "f-1"),
+        json!(["recorded", "not-a-break"])
+    );
+    assert!(
+        dots.iter().all(|dot| rig.root.join(dot).is_file()),
+        "nothing moved them"
+    );
+    assert_eq!(
+        rig.git(&["ls-files", "--", &dots[0], &dots[1]]),
+        "",
+        "and the record's commit holds neither"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // While a batch is composed (the build plan of the reshaped `test` stage, K3)
 // ---------------------------------------------------------------------------

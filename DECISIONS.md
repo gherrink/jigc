@@ -2,6 +2,136 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — Two findings of the scoped review, repaired in the record script: no file that the tools did not write, in a round's two written-once directories, makes a record unrecordable by the tools' own acts; and a verifier's report and a triage's entries are taken only for an attempt that is begun (the staged plan's `R0`, its two findings in the record script; the fixer's choices inside them)
+
+**What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) drove the committed record script at `dbb1cc84` through all four parts with the real opening, found the path sound, and reproduced two things in [`dev/stabilize-record`](dev/stabilize-record) — one that **strands state**, one that **records falsely**. Both are repaired there, each with arms that were red on the parent commit's script; the script's header holds both, the first as a section of its own, *WHAT NO TOOL WROTE*. **No line of code of [`dev/stabilize-step`](dev/stabilize-step) changed** — two sentences of its header did — **and nothing of the harness, its fence, an agent's definition, the canary's tool or the simulation.** Both conditions of the build's first phase hold: a run without an order answers every call as it did (`a_run_without_an_order_holds_the_bytes_it_held`, unmodified — and every change of finding 1 that a run without an order could meet is switched on the run's order); and for a run with a queue whose directories hold only what the tools wrote, nothing changed — every arm of the four suites that drives such a run is green unmodified but the four named below.
+
+### 1 — A file that is no verdict and no report
+
+**The mechanism.** Two directories of a round are read *by listing them*: a stage's reports (`check-reports`, `pending`) and the round's filed verdicts (the state's read `filed_in`, the take, `pending`). Every other file of a run is read by its name. So a file that a hand, a file browser or an editor leaves in one of the two is met by the script — and since `T3b` the take refuses every record over one among the filed verdicts, **a ruling's record too**, because every batch takes what was filed first. For a file under a plain name that refusal names an exit that works (`set-aside`). For a name that is no plain segment — `.DS_Store`, which a visit with a file browser leaves on this platform — it named a command that refuses the file (`outside`), `pending` did not name it, and with the budget spent nothing the tools hand out moved until a hand deleted the file. And beside the reports nothing took a stray file at all: `extra` to the report check, named by no read, refused by `set-aside` for its name — the row `T3b`'s entry left open (*a stray file among the reports is still removable by nothing*).
+
+**The four shapes held as the review described them** — each driven on the parent's script by the arm below, at a record of a stage and at a record of rulings:
+
+| A file | The stage's record, on the parent | A record of rulings, on the parent |
+|---|---|---|
+| `.DS_Store` among the filed verdicts | `refused check: … r1/verdicts/.DS_Store (no-verdicts-name). Such a file leaves the tree by the report check (…; dev/stabilize-record set-aside …)` | the same line |
+| `filing-draft.json` among the filed verdicts | refused `check`, and `set-aside` takes it — green on the parent, a pin | the same: what is missing there is the harness's report check, which is the next task's |
+| `filing.json` beside the reports | `check-reports` does not hold: `"extra": ["filing.json"]`; `pending` omits it; `set-aside` is refused `bad-id` | recorded — a record of rulings checks no report; `pending` omits the file |
+| `.DS_Store` beside the reports | `"extra": [".DS_Store"]` | recorded |
+
+**The repair, in a run with a queue.** One rule, read off what the script already was: *a path of this script's is of plain segments* (`run_file`; its journal and its temporaries, the files it never commits, are the names that are none).
+
+- **Under a plain name a file is a path the script takes** — the reviewer's change (i), taken. `pending` names a regular file beside a stage's reports that has no report's name, as it names one among the filed verdicts since `T3b`; `set-aside` takes it, refused by its name (`bad-id`). So the step tool's report check, which sets aside whatever of `pending`'s answer git shows untracked and the vet refuses, **moves it out of the tree with no line of that tool changed** (`written_once`, `set_aside`: unchanged), and the report check then counts nothing extra.
+- **Under any other name a file is no path of the script's** — of the reviewer's two for (ii), the first: *passed over*. The state's read of the filed verdicts and the report check skip it as they skip the script's own temporaries: named by no read, counted by no check, refused by no record, moved by no act. *The record refuses over what `set-aside` takes, and over nothing else* — which is `T3b`'s own sentence about a file that is `no-such-row`, now true of every file.
+
+**What becomes of a dot-file** — the brief's question, and why passing over one does not let it ride a commit unseen:
+
+| | among the filed verdicts | beside a stage's reports |
+|---|---|---|
+| at a record of a stage | the take reads no such name: nothing of the state names it, the record is made | the batch's report check counts no such name: not `extra`, the record is made |
+| at a record of rulings | as above — the take is every batch's | nothing of such a batch reads that directory |
+| at the report check | `pending` names no such file, so nothing vets it and nothing moves it; `set-aside`, named by hand, refuses the name (`outside`) | the same; and the record script's own `check-reports` passes it over |
+| at the commit | **in no record's commit**: the commit step adds the paths `pending` names and the applied batch's files, each by name, and holds the tree to exactly those. Where git shows the file, every act of the step tool that reads the tree refuses it before that and names it (`dirty`, the human's — as anything else in the tree, and as `T3b` had written of such a name); where git is told to ignore it, nothing adds it | the same |
+| at the push | in no commit the tools made. A commit a hand made that holds one is refused by the push's vet for the path (`vet --range`: `outside`), and nothing of the range is pushed | the same |
+
+So for a dot-file git shows, a hand still removes it — and the refusal that says so is the step tool's `dirty`, which names the file and whose it is, where it was a `check` line that named a command that does not work. For one git is told to ignore — the case in which the old refusal was reached at all through the harness — nothing stops.
+
+**Chosen — and what was rejected.**
+
+- **Switched on the run's order, where a run without an order could meet it.** A run without an order has no filed verdicts; it has reports. There the report check counts a dot-file `extra`, `pending` names no stray and `set-aside` takes none, as they did — three arms pin exactly that for such a run — the step suite's `git_state_refuses_a_tree_that_holds_more_than_reports` and `hostile_content_reaches_no_digest`, the simulation's `an_attempt_whose_agents_all_died_is_counted_and_a_dead_second_preflight_voids_what_it_owed` — and are green unmodified. *Rejected:* the rule for every run — it is the better rule, and it is not the phase's condition.
+- **The switch never refuses.** `pending`, `check-reports` and `set-aside` answer over tables they do not read, and `pending` is what the step that takes a damaged batch back stands on: a run whose own facts cannot be read is answered as a run without an order (`known_queue`), and `state` says what is wrong with it. *Rejected:* reading the fact strictly — a hand's edit of `run.md` would then stop `discard`.
+- **One rule for every name that is no plain segment**, not for dot-files alone: an editor's `x.md~` and a download's `x (1).md` are as likely as `.DS_Store`, and `set-aside` refuses all of them alike. *Rejected:* dot-files only — a second class of name that is refused and removable by nothing.
+- **Passed over, not refused in plainer words** — the reviewer's second branch of (ii). The script promises of the two directories that what lies there is *written once* and named by `pending`, that a commit holds what is named, and that the push's vet refuses a path of no plain segment. All three hold without a refusal; a refusal would leave a `.DS_Store` git ignores able to stop every ruling, which is the finding.
+- **A link and a directory are not named.** `pending` names a regular file and no link, where it reached for neither before; a link among the reports under a plain name is `extra` as it was. *Rejected:* naming them — the step tool holds `pending`'s answer to `git status`, which shows no empty directory, and a link below the run's directory is `outside` by the script's oldest rule.
+- **A file beside the held checks' verdicts is not taken.** That directory is read by name alone; nothing lists it, so nothing there can stop a record.
+- **`filed_in` has one skip where it had the temporaries' own.** A temporary's name is no plain segment; the one rule covers it.
+
+### 2 — A report's attempt
+
+**The mechanism.** `report` asked only for the round. The highest attempt any report's name carries is the stage's attempt on disk (`reports_in`), the attempts above the last record are the ones that left none — two, and the stage is the human's — and every `verify-<key>.a<A>.md` is a launch of that finding's verifier (`launched_in`) — two with no verdict, and the row is the human's. `verdict` held a filing's attempt to a begun attempt's marker (`T3a`, acceptance (iii)); `report` and `triage` held theirs to nothing.
+
+**Held as described.** On the parent, from a state with nothing unrecorded: `report --reporter verify-r-1 --attempt 3` exits 0 and prints `…/r1/reports/test/verify-r-1.a3.md`.
+
+**The repair.** In a run with a queue, **a report of the `test` stage under a finding's verifier, and the entries a triage hands over, are taken only for an attempt that is begun** — the predicate `verdict` has, now one function (`begun`) that all three ask: a report of that attempt under a reporter that is no finding's verifier lies among the round's `test` reports. Else `bad-value`, nothing written, nothing of the state moved. **The refusal sends nobody to another number**: *the attempt is the one the call was handed: where the call is typed as it was handed, this line is what its agent returns — it is tried under no other number.*
+
+**The other reporters' roads — what cannot be held, and why.**
+
+- **An instrument's reporter, the scope's, the preflight's: not held, and not holdable by this predicate.** The marker *is* a report under a reporter that is no finding's verifier; its name is the harness's, and the script does not know it (`T3a`'s choice). So a report of any such reporter under an attempt nobody began is, to the script, that attempt's first report: holding it to the predicate would refuse `begin` its own write. The arm pins it as it is. *What would hold it:* the marker written by a writer of its own, or its reporter's name on record — a mechanism, and not this repair's.
+- *Weighed and not built:* holding such a report to the state's position (the attempt a stage is handed is the highest on disk and one). It closes a number that skips, and not the one an agent would type: the `exists` refusal still says *a re-run passes the next attempt*, and the next attempt is exactly the one the position hands.
+- **A report of the `fix` stage: not held.** The harness begins no attempt of that stage on record (`beginAttempt` is called by the `test` stage's three paths only), so every report of it is written beside no marker: this is the stage *that reports with no marker*, and the hold would stop it whole.
+- **A run without an order: not held.** Nothing there counts a launch.
+
+### Red first
+
+Five arms of the record suite were written before the script changed and run on the parent's: **four red, one green — a pin, and it says so.** The sixth, the step suite's, followed its code; the six were then run once more against the parent's two scripts: five red, the pin green.
+
+| Arm | On the parent |
+|---|---|
+| `dev_stabilize_record::a_file_the_tools_did_not_write_makes_no_record_unrecordable` — six files, at a record of a stage and at one of rulings: twelve cells | eight red: the four of a name of no plain segment among the filed verdicts (`refused check: … (no-verdicts-name). Such a file leaves the tree by …set-aside…`), the two of one beside the reports at the stage's record (`"extra": [".DS_Store"]`), the two of a plain name beside the reports (*`pending` names it among what is written once*). Four green: a plain name among the filed verdicts, which `set-aside` took already; a name of no plain segment beside the reports at a record of rulings, which reads no report |
+| `…::a_file_without_a_reports_name_is_named_and_set_aside_in_a_run_with_a_queue_only` | `pending` names neither file |
+| `…::a_file_under_no_plain_name_is_in_no_record_and_is_refused_where_a_hand_commits_it` | at the stage's record: the `check` line above |
+| `…::a_verifiers_report_and_a_triage_are_taken_only_for_an_attempt_that_is_begun` | `a verifier's report of attempt 3, which nobody began: expected exit 7` — exit 0, the report written |
+| `…::a_file_with_a_verdicts_or_a_reports_name_that_is_none_is_still_refused` | green: the other side, as it was — a file under a verdict's name that no filing left refuses a stage's record and a ruling's; a report nobody launched is `extra`; half a report leaves by `set-aside` |
+| `dev_stabilize_step::a_file_without_a_reports_name_among_the_reports_strands_no_stage_of_a_run_with_a_queue` — written after the record script's change, and run against the parent's two scripts afterwards | `git-state` refuses `dirty`: *the tree holds more than what dev/stabilize-record wrote and no commit holds yet: ?? …/r1/reports/test/filing.json* |
+
+**What that last line says of the third shape.** Through the step tool a file under a plain name beside the reports never reached the report check's `extra`: the read every stage starts from refused the tree first, named the file and said whose it is. The review met `extra` on the record script alone. So for that shape the change is not from a refusal that misleads to one that does not — it is from *a hand removes it* to *the report check removes it*, which is what the property asks; and it has a cost at a record of rulings, below.
+
+Every expected value of the five record arms was written before the first run on the changed script, and the five were green at it.
+
+**What followed its code, and says so.** The step suite's arm, above — and its part for a record of rulings, written last and green at its first run. Three assertions, added where a mutant about to be run had nothing against it, each green at its first run: a verifier's report in a round that holds no report at all; a verifier's report over a write killed between its files, which takes the script's other path to the same question; and `pending`, the report check and `set-aside` over facts a hand bent. And one word of the refusal: it said of a triage's entries that they *begins none*; corrected after the mutants were run, and the arm of the attempt run again.
+
+**Mutants of the finished script** — thirty-four, each one edit, the arms that name its property run on each — nine of the record suite, two of the step suite — the script put back and its hash compared after. **All thirty-four died at their first run.** (They were run twice: the runner's own pattern for the names of the arms that went red did not read a padded count, so the names below are the second run's. All died in both.)
+
+| Of | The edits | What went red |
+|---|---|---|
+| finding 1, the read of the filed verdicts (3) | a name of no plain segment is an entry, as it was · only a dot-file is passed over · every file without a verdict's name is | the arm of the twelve cells — and `T3b`'s `a_file_among_the_filed_verdicts_without_a_verdicts_name_is_refused` for the last |
+| finding 1, the report check (4) | such a name is `extra`, as it was · passed over in every run · only a dot-file is · every file without a report's name is | the twelve cells; *in every run* by the arm's part for a run without an order, and by that alone |
+| finding 1, `pending` (5) | names no file without a report's name · names one in every run · a link · a directory · a name of no plain segment | `a_file_without_a_reports_name_is_named_and_set_aside_in_a_run_with_a_queue_only`; the cells for the first and the last |
+| finding 1, `set-aside` (4) | takes none beside the reports · takes one in every run · one beside the held checks' verdicts too · none among the filed verdicts | the same arm; the cells; `T3b`'s two arms for the last |
+| finding 1, the switch (3) | every run is known to have a queue · none is · facts that cannot be read refuse the read | the same arm — the last by its part over facts a hand bent, and by that alone |
+| finding 2, `report` (6) | held to no attempt, as it was · held in a run without an order too · of the `fix` stage too · every reporter's, the marker's too · over a killed write held to its round alone · with no write killed held to its round alone | `a_verifiers_report_and_a_triage_are_taken_only_for_an_attempt_that_is_begun`; *the marker's too* by every arm that begins an attempt |
+| finding 2, `triage` (1) | held to no attempt, as it was | the arm of the attempt |
+| finding 2, the predicate (5) | any report of the attempt begins it, a verifier's too · a marker of any attempt begins every attempt · none is ever begun · every one is · a round with no report directory is a fault | `T3a`'s `a_filing_for_an_attempt_the_round_has_not_begun_is_refused`, and the arm of the attempt |
+| finding 2, the hold and its words (3) | refused where the attempt IS begun · the words say *the next attempt* · the words do not name the attempt | the arm of the attempt |
+
+**No mutant, and no pin beyond the arms' few words:** the header's sentences, and the refusal's beyond *attempt N*, *not begun*, *nothing was written* and the absence of *next attempt* and *re-run*.
+
+**The assertions this commit carried** — all in the record suite, all of finding 2, each an arm that wrote a verifier's report or a triage's entries with no marker of the attempt on disk:
+
+- the suite's table of writers, the row of `triage`: its preparation begins attempt 1 — which seven arms of the table run through (`every_writer_replaces_a_host_path`, `every_writer_stops_hard_on_a_denylist_hit_…`, `every_writer_stops_hard_on_a_secret_shaped_string`, `a_scanner_that_could_not_run_…`, `a_write_killed_at_its_last_step_leaves_nothing`, `an_undeclared_scratch_area_…`, `no_table_cell_can_redden_the_install_line_fence`);
+- `a_filing_for_an_attempt_the_round_has_not_begun_is_refused` — the two verifiers' reports of attempt 3 are refused by the writer now, and the arm says so; they are then left there as a shell leaves a file, so that the filing's own hold is still what refuses the filing;
+- `a_handed_on_item_gets_a_key_its_verifiers_name_can_carry` — attempt 2 is begun before the handed-on item's verifier reports in it: two lines in the other order;
+- `a_row_nobody_reached_is_not_counted_as_left_unverified` — a launch that left no verdict is a launch in an attempt the stage began: its marker, and the marker's name in the report check.
+
+**Nothing in the step suite, the simulation, the fence or the canary's suite**: the whole tooling target ran on the changed scripts before the first of these was carried — 586 of 596, the ten red the ten arms above. No count the canary's setup prints (`expect`) moved: no step was added to or taken from a stage.
+
+**What the next task owes because of this** — the harness's finding of the same review: *no report check before a record of rulings, nor before a record composed with no wave.*
+
+- **Made unnecessary:** anything for a file under a name of no plain segment. In neither directory does one refuse a record, a ruling's or a stage's; there is nothing to set aside and nothing to say.
+- **Left, as it was:** a file under a plain name among the filed verdicts refuses a record of rulings (`check`), and the line names the report check — which the harness does not run there. `dev/stabilize-step check-reports` is that act; its second half wants a stage, an attempt and the launched reporters, which a record of rulings has not. Which act the harness asks there is that task's.
+- **Left, and new:** a file under a plain name beside the reports is now a pending path — `git-state` starts from the tree that holds it, where it refused `dirty`. A stage's report check moves it out. **A record of rulings does not meet it until its commit**: the batch is applied, the gate runs, the commit step stages the file by name, the vet refuses it (`bad-id`), the batch is taken back and the file set aside — `unvetted`, nothing committed, one gate spent, and a tree the invocation after starts from, which records the same rulings. (Driven on the step tool, in the step suite's arm; through the harness by nothing.) With the report check before the rulings batch that is the next task's, the file leaves first and nothing is spent. **Until then a stray file beside the reports costs a record of rulings a gate, where it cost a hand.**
+- **The same for a record composed with no wave**: its batch holds a report check, so a plain-named stray there refuses it (`check`: `extra`), and the composing step's own sentence already says that the report check comes first.
+- *Part 1's reading:* a verifier or a triage that is refused for its attempt returns a line that tells it to return the line. No agent has read it.
+- `T10`: [stabilization-workflow.md](implementation/stabilization-workflow.md) says nothing of what lies in a round's directories unwritten by the tools, nor of what begins an attempt; untouched.
+
+**What is not established.**
+
+- **No agent has met either refusal.** That a verifier refused for its attempt halts, and does not try another number, is what the words ask; the agents' definitions class `bad-value` as *repair the text and send again*, and say nothing of a number.
+- **Through the harness, nothing was driven.** That a stage goes on past a plain-named file beside its reports is the step suite's arm — the step tool's two acts and the record script — and no scenario of the simulation; that the harness's read of the report check takes an `aside` entry whose file is no reporter's is read from `checked`, which names an entry by its file's reporter and finds none.
+- **Git's ignore list** is driven as the clone's own `info/exclude`; a user's global one is the same mechanism and was not driven. No file a file browser wrote was used: the arms write the bytes.
+- **A link and a directory in either directory** are not covered. Driven once by hand on the finished script, not pinned beyond what `pending` names: under a plain name each refuses the record that reads its directory, and `set-aside`, named by hand, takes it; `pending` names neither, so no report check reaches one.
+- **An instrument's report under an attempt nobody began** begins it, as it did — pinned, not held; and the `exists` refusal's *a re-run passes the next attempt* still points every reporter that is no verifier at exactly that.
+- **`fix`-stage reports** are held to nothing, as they were.
+- **The switch's answer over facts that cannot be read** is pinned for `pending`, for the report check and for `set-aside` on one bent row; a run directory in any other damaged state was not driven.
+- **Not read whole for this task:** the record suite beyond its rig, its tables, the arms of `T1` to `T3b` and of `K2`, and the arms named here; the step tool beyond the report check, the commit step, the push, the read a stage starts from and its header's sections on them; the harness beyond how it begins an attempt, reads a report check and names a reporter; the simulation and the fence beyond the lines that pin a stray file.
+
+**Seen and not touched.**
+
+- **`pending` refuses to answer (`outside`) over a link among the filed verdicts under a plain name**, and over one under a report's name beside the reports: every act of the step tool that asks it then refuses `record`. A hand's doing, and the script's rule for a link; it is a row for the ledger.
+- **A report nobody launched that reads as a report** stops the stage's record as `extra`, and `set-aside` leaves it: it is a report. As it was — the property here is of what bears no name of the tools'.
+- **The header said that the report check counts the temporary of a killed write as `extra`**; the code has passed one over since the re-review's `R4`, and the header's section on the one write said so. The sentence is corrected with the paragraph it stands in.
+- **`dev/stabilize-canary check`** prints `pending_paths` from `git status`, and so shows a dot-file git does not ignore; it reads nothing of `pending`'s answer, and was not touched.
+
 ## 2026-10-13 — Three findings of the scoped review, repaired: a name whose start left no record is dead and never a name refused for ever; a held build is answered green only while its binary is the file it hashed; and a baseline is kept only by the run that compared against it whole (the staged plan's `R0`, its three findings in the step tool and the regression tool; the fixer's choices inside them)
 
 **What.** The scoped review before part 1 ([staged-canary.md](completions/artifacts/M55/stabilization-build/reshape/staged-canary.md) §10, `R0`) drove the committed tools at `dbb1cc84` in a throwaway root and reproduced three states that **strand a run**: each is a state the tool itself leaves, is answered the same way at every later call, and has no exit but a hand in the scratch root. All three are repaired in [`dev/stabilize-step`](dev/stabilize-step) and [`dev/regression-set`](dev/regression-set), each with an arm that was red on the parent commit's tools. **No line of the harness, of its fence, of an agent's definition or of the canary's tool changed**; a run without an order answers every call as it did (`a_run_without_an_order_holds_the_bytes_it_held`, unmodified), and a held command or a baseline that ends as the suites drove them ends as it did.

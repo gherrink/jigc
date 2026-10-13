@@ -120,7 +120,10 @@
 #       VERDICT IS VETTED AS ONE — the text its writer left, under its own seal, beside
 #       the report whose hash it keeps — and one that is none, or a file there without a
 #       verdict's name, leaves the tree the same way: its finding is then unverified
-#       again, which the record script's state says. Then `dev/stabilize-record
+#       again, which the record script's state says. AND IN A RUN WITH A QUEUE SO DOES A
+#       FILE BESIDE A STAGE'S REPORTS UNDER A PLAIN NAME THAT IS NO REPORT'S: the record
+#       script names it among what is written once (its header: WHAT NO TOOL WROTE), and no
+#       line of this tool reads what such a file is. Then `dev/stabilize-record
 #       check-reports` with these
 #       arguments: the reporter whose file left has left none, and is `missing`. A
 #       missing or an extra report is the check's answer, not a refusal. Prints {status:
@@ -407,7 +410,8 @@
 # no dirty tree. This tool asks that script (`pending`) and holds `git status` to the
 # answer, path by path: an UNTRACKED file that is one of the run's written-once files —
 # a report, a round's scope, a file among a round's filed verdicts (a filed verdict, or
-# a file a hand left there under a plain name: the report check moves that one out); an
+# a file a hand left there under a plain name: the report check moves that one out — as
+# it does, in a run with a queue, a file a hand left beside a stage's reports); an
 # untracked or modified file of THE APPLIED BATCH whose
 # content is still what the batch wrote; either of them STAGED, while a batch is applied
 # — what that record's own commit step staged and did not commit; and the script's own
