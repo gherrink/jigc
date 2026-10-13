@@ -1,8 +1,10 @@
-//! **The byte table's row for `jigc task finalize`** (`crates/cli/tests/byte_table.rs`) —
-//! lifted quote for quote from the committed record
+//! **The byte table's rows for the task family** — `jigc task finalize` and `jigc task
+//! discard` (`crates/cli/tests/byte_table.rs`) — lifted quote for quote from the committed
+//! record
 //! (`completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md`,
-//! §3), under the rules the install family's file states. `jigc task discard` joins this
-//! file with its row in the plan's task `B4`.
+//! §3 and §3a), under the rules the install family's file states. `jigc task discard`'s
+//! row was written from its docs in the plan's task `B4`, in a commit of its own before a
+//! cell of it ran.
 //!
 //! **What of the record is no line.** `T7` is where *on a refusal: no* comes from. `T8` is
 //! the rule for prose handed to jigc, which the frame holds a staged doc to by itself
@@ -102,7 +104,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "T5, the edge index",
-            Allows::Files(Where::Under(".jigc/index"), May::WriteWhole),
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
             &[
                 Quote {
                     doc: "design/finalize.md",
@@ -113,7 +115,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "T5, the file-state hashes",
-            Allows::Files(Where::Under(".jigc/state"), May::WriteWhole),
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
             &[
                 Quote {
                     doc: "design/finalize.md",
@@ -154,8 +156,89 @@ pub const FINALIZE: Row = Row {
     ],
 };
 
+/// The heading of the sub-task discard's section of `design/team-ready-state.md`.
+const THE_SUB_TASK_TERMINAL: &str =
+    "`jigc task discard <sub-id>` — the per-sub-task terminal (M49)";
+
+/// **`jigc task discard`** — the record's §3a. Its consent is `--force` (`A4`).
+///
+/// **What of the record is no line.** `A2` and `A3` are the two states the command refuses
+/// over, and with `A8` where *on a refusal: no* comes from; `A4` is the row's consent;
+/// `A9` and `A10` are conditions the cells construct — an ordinary task, which no record
+/// names, and a sub-task nobody re-entered. `A5` to `A7` hold for a sub-task's discard
+/// and carry that condition in words only: each lets the command do less where the task
+/// is an ordinary one.
+pub const DISCARD: Row = Row {
+    leaf: &["task", "discard"],
+    consent: Some("--force"),
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "A1",
+            Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+            &[Quote {
+                doc: "design/write-commands.md",
+                heading: "The verbs",
+                words: "`discard` destroys a working area, and `.jigc/tasks/<id>/docs/*.md` is the only copy of every doc staged in it.",
+            }],
+        ),
+        line(
+            "A5",
+            Allows::Files(Where::Path("docs/milestone-records/*"), May::WriteWhole),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_SUB_TASK_TERMINAL,
+                    words: "The item's `status` flips to `discarded` through the byte-stable item-leaf splice; **the header stays `active` and every sibling item is byte-untouched**",
+                },
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "Source of truth",
+                    words: "M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)",
+                },
+            ],
+        ),
+        line(
+            "A6",
+            Allows::Commit(Holding::OnlyTheLines),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: "The commit model — path-scoped commit at each milestone op",
+                    words: "it stages and commits **only the record file** (`git add <record> && git commit -- <record>`, index-restricted), never sweeping the agent's in-flight index/worktree WIP",
+                },
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_SUB_TASK_TERMINAL,
+                    words: "the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook",
+                },
+            ],
+        ),
+        line(
+            "A7",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_SUB_TASK_TERMINAL,
+                    words: "the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook",
+                },
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: "Engine capability 1 (write) — `set: on-transition` machine-maintained leaves",
+                    words: "the hash jigc recorded at its last landed record write — lives in `.jigc/state/`, which no clone carries",
+                },
+            ],
+        ),
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
 /// The family's rows.
-pub const ROWS: &[Row] = &[FINALIZE];
+pub const ROWS: &[Row] = &[FINALIZE, DISCARD];
 
 // ---------------------------------------------------------------------------
 // The cells

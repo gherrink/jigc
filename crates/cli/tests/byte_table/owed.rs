@@ -10,12 +10,12 @@ pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 /// of the plan that owes it. `B4` is the first cut's; `B5` to `B9` are what would follow if
 /// the human rules for it at the stop, and until then their leaves stand here rather than
 /// on the scheduled list, which is for a leaf with a reason to wait. The four leaves of the
-/// acceptance left this list with the task `B2c`, which brought their rows. `ingest` and
+/// acceptance left this list with the task `B2c`, which brought their rows, and `task
+/// discard` with the first commit of `B4`, which brought its own. `ingest` and
 /// `unmanage` joined it with the task `B3`, whose count holds them touched under the plan's
 /// rule where the plan's script had not: they stand under `B5`, the install family's task,
 /// whose docs they share with `setup` and `uninstall`.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["task", "discard"], "B4"),
     (&["ingest"], "B5"),
     (&["unmanage"], "B5"),
     (&["doc", "create"], "B6"),
@@ -54,5 +54,6 @@ pub const CELLS_OWED: &[(&[&str], &str)] = &[
     (&["setup"], "B5"),
     (&["uninstall"], "B5"),
     (&["task", "finalize"], "B4"),
+    (&["task", "discard"], "B4"),
     (&["milestone", "finalize"], "B7"),
 ];

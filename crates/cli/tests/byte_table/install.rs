@@ -76,7 +76,7 @@ pub const SETUP: Row = Row {
         ),
         line(
             "S4",
-            Allows::Files(Where::Under(".jigc/config"), May::WriteWhole),
+            Allows::Files(Where::Under(".jigc/config"), May::Rebuilt),
             &[
                 Quote {
                     doc: "design/assistant-adapter.md",

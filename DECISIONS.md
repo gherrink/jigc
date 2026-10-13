@@ -2,6 +2,58 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-13 — `jigc task discard` has its row, written from its docs before a cell of it runs — four lines over quoted sentences, six rules that are no line, and one more place where a doc is silent; and three lines of the acceptance's rows that let a file go where no sentence does are corrected, red first (the byte table's pilot, task `B4`, the first of its three commits)
+
+**What.** The plan's task `B4` is one family end to end — `jigc task finalize` and `jigc task discard` — in three commits: the row from the docs, the cells, the record ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §8). This is the first: [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) gains §3a, and [task.rs](crates/cli/tests/byte_table/task.rs) the row as data, lifted from it quote for quote. No cell is added, **no binary was run to learn what the command writes**, and no product source changes.
+
+### The row
+
+Owner docs: `design/write-commands.md` → *The verbs* (the paragraph *Abandoning a task*), and `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*, with *The working area's two populations* and *The commit model*.
+
+| line | the place | what may happen there | when |
+|---|---|---|---|
+| `A1` | `.jigc/tasks/<task-id>/` and everything under it | removed | nothing in it is staged that no commit has, and nothing in it is foreign — or under the consent |
+| `A5` | the milestone's committed record, `docs/milestone-records/<slug>.md` | written — one item's status flipped | the task is a sub-task a committed record names |
+| `A6` | one commit on the checked-out branch, holding the record and nothing else | — | the same |
+| `A7` | `.jigc/state/` | rebuilt — the record's baseline, advanced | the same, and the commit landed |
+| `C1` to `C3` | the caches, on a refusal | rebuilt | as in every row |
+
+**Six entries are rules or conditions and no line**: `A2` and `A3` — the two states the command refuses over, a staged doc no commit has and a file jigc did not write, each *removing nothing* · `A4` — the consent is `--force`, for both, and what goes under it is named · `A8` — it settles before it destroys, so a rejected commit leaves the record **and** the working area · `A9` — an ordinary task's discard writes no record and lands no commit · `A10` — a sub-task nobody re-entered stages nothing and needs no consent, which is the one construction in which the command acts without its flag.
+
+**The command is two commands by what it is handed**, and no line carries which: `A5` to `A7` hold for a sub-task and say so in words. Each lets the command do nothing where the doc says it does nothing — an ordinary task — so a line without the condition allows no write the doc forbids.
+
+**What the docs do not say of it**, listed and not made up ([the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6): whether a sub-task's discard that exits 0 writes under `.jigc/index/` — **a seventh entry of the list**: the doc gives the command *the family's whole discipline* and lists it, and the edge index is not on the list, while a task's finalize invalidates its stamp · what a rejected record commit leaves of the message it rendered (the sixth entry, which this command's doc does not answer: *the survivable frame on a rejecting hook* is named and not described) · whether the milestone's `tasks.json` is rewritten when one item settles (the first entry's open point (i)).
+
+### Three lines corrected, red first
+
+The builder before left a lead: as data, *written whole* over a directory lets anything under it happen — a file gone included. Each of the four lines that said it was read against its sentence again:
+
+| line | its sentence | lets a file go | |
+|---|---|---|---|
+| `S4`, `.jigc/config/` | *"initializes the in-repo project layer (`.jigc/config/`) when absent"* | no | **corrected**: *rebuilt* |
+| `T5`, `.jigc/index/` · `.jigc/state/` | *"Invalidate the edge-index stamp"* · *"Update `file-state` hashes"* | no — and the first can be read the other way: a stamp is invalidated by taking its file away too | **corrected**: *rebuilt*, the reading under which more is red |
+| `M10`, the same two | *"Post-commit runs once for the whole batch"* | no, as `T5` | **corrected**: *rebuilt* |
+| `M1`, a milestone's `merged/` | *"**clears and rebuilds every call**"* | yes | as it was |
+
+**Red first** ([`a_directory_a_command_writes_into_is_not_one_it_may_empty`](crates/cli/tests/byte_table.rs)): the arm drives the table's own rows over a file of the product's own gone from each of the five places, at exit 0. Against the rows as they were lifted it was red at its first assertion — `jigc setup`, a file gone from `.jigc/config`, came out *holds*. The entries' words in the record did not change: each already said *written*. `May::Rebuilt`, the word the ruling on a refusal's caches brought, is the one that says it — *a file made or written whole, a directory made, nothing gone* — and carries these lines too; no word joined the vocabulary.
+
+### Decided here — as a builder, and open to being overturned
+
+- **The letter is `A`**, from the doc's own heading, *Abandoning a task*: `D` is the plan's letter for a plant.
+- **`A5` says *written whole*, which lets more than its sentence**: the sentence is *one item's leaf, and every sibling byte-untouched*, and the vocabulary has no word for it. Stated in the record as a shortfall of the row. A word for it would be the family's whose docs speak of a splice — the milestone's.
+- **Its home state is `fresh`**: both of its two commands happen there, and nothing smaller has a task.
+- **`ingest`, `unmanage`: nothing here.** The row is one leaf's.
+
+### The lists
+
+The table has five rows and 62 lines. `task discard` leaves the list of leaves owed a row; its cells are owed by `B4`, with `task finalize`'s — the next commit empties both. Its row needs 22 cells: its refusing cell, its base cell and six more of it in the other prepared states, one for a file the product did not write in the working area, nine for the record, three for the commit, one for the baseline's directory. The eight lines it brings stand on the list of the lines no cell excuses a difference under, until its cells run.
+
+### Not established
+
+- **That any cell of the row comes out as listed** — the cells are the next commit's, and the row is not touched from what one shows.
+- **That the row is complete.** `design/validation.md` and `design/command-output-contract.md` were not read for it; neither is an owner doc of what the command writes.
+- **What *rebuilt* at exit 0 lets through that it should not**: a file of a cache written with anything. A manifest shows that a cache was written and never whether what was written is true — as the ruling's entry says of a refusal.
+
 ## 2026-10-13 — The byte table's fence is whole, and the count its bound stands on is committed: what a row needs a cell for is read off its lines, each need has a cell, a scheduled row or its leaf's cells owed; a cell on demand has its line; every line of a row excuses a difference somewhere or is named; and of the 36 write leaves the fix pass touched 30 under the plan's rule — 36 under the widest reading, at most 26 under the narrowest (the byte table's pilot, task `B3`)
 
 **What.** The eighth task of the byte table's pilot ([the plan](completions/artifacts/M55/stabilization-build/reshape/byte-table-plan.md) → §1.4, §3, §8): the rest of the fence over [byte_table.rs](crates/cli/tests/byte_table.rs), the scheduled list of cells, and [the count](completions/artifacts/M55/stabilization-build/reshape/byte-table-leaves-touched-since-rc24.md). No row and no cell changed what it holds, and no product source changes.

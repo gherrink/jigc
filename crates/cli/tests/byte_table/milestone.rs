@@ -181,7 +181,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M10, the edge index",
-            Allows::Files(Where::Under(".jigc/index"), May::WriteWhole),
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
             &[
                 Quote {
                     doc: "design/finalize.md",
@@ -192,7 +192,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M10, the file-state hashes",
-            Allows::Files(Where::Under(".jigc/state"), May::WriteWhole),
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
             &[
                 Quote {
                     doc: "design/finalize.md",

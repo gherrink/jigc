@@ -252,7 +252,9 @@ pub enum May {
     TakeOutOf,
     Removed,
     /// Made, or written whole, as a regular file — or a directory made. **Nothing is
-    /// gone**: what a refusal may do to a cache, which is rebuilt and never taken away.
+    /// gone**: what a refusal may do to a cache, which is rebuilt and never taken away —
+    /// and what a command that acts may do in a directory it writes into, where no
+    /// sentence of its doc lets a file of that directory go.
     Rebuilt,
     /// Made or replaced by a regular file that is, byte for byte, a doc staged in a work
     /// unit.

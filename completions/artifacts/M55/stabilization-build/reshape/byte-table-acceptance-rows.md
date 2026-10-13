@@ -5,7 +5,9 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
-**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize`.
+*Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
+
+**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under.
 
 **How a line is written.** Its number; the place it speaks of; what may happen there; when, where the doc gives a condition; and whether it still holds when the command refuses. Under it, set off as a quotation, **the sentence the line rests on — a run of the doc's own bytes, markup included, never a paraphrase** — and under that the doc and the heading the sentence stands under. A line that needs two sentences quotes both, each with its own source. The quotation is what `B1`'s fence holds against the doc: a doc that moves reddens the row.
 
@@ -283,6 +285,94 @@ Owner doc: `design/finalize.md`.
 
 ---
 
+## 3a. `jigc task discard`
+
+*Written 2026-10-13, as the first of the three commits of the plan's task `B4`: the row from its docs, before a cell of it runs. No binary was run to learn what the command writes, and no list of files was taken from the product's source.*
+
+Owner docs: `design/write-commands.md` → *The verbs* (the paragraph *Abandoning a task*), `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*, with *The working area's two populations* and *The commit model*.
+
+**The command is two commands by what it is handed.** An ordinary task is named by no committed record, and its discard removes a working area and nothing else (A9). A milestone's sub-task is named by one, and its discard settles the record first — one item's status, in a commit of the record alone — and then removes the area (A5 to A8). Which of the two a cell runs is the cell's construction, and no line carries it as a condition: A5 to A7 let an ordinary task's discard write a record that is not there, commit what was not written and advance a baseline — each lets the command do nothing where the doc says it does nothing, so a line without the condition allows no write the doc forbids.
+
+**A1 — the task's working area, `.jigc/tasks/<task-id>/`: removed.** When: nothing in it is staged that no commit has a copy of, and nothing in it is a file jigc did not write — or under the consent (A4). On a refusal: no (A2, A3, A8).
+
+> `discard` destroys a working area, and `.jigc/tasks/<id>/docs/*.md` is the only copy of every doc staged in it.
+
+— `design/write-commands.md` → *The verbs*
+
+**A2 — it refuses over a staged doc no commit has a copy of, and removes nothing.** Not a line: it is one of the two states A1's *when* names, and where *on a refusal: no* comes from. The second sentence is why an ordinary task's discard refuses from the moment the task exists.
+
+> a working area staging a `docs/*.md` blocks with **`task-discard.staged-prose`** and removes nothing
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+> **The consequence is stated, not discovered: an ordinary discard needs the consent from the moment the task exists.**
+
+— `design/write-commands.md` → *The verbs*
+
+**A3 — it refuses over a file jigc did not write in the working area, naming every path.** Not a line: the other state of A1's *when*.
+
+> That is **`task-discard.foreign-bytes`**, over jigc's own writer registry's complement ([team-ready-state.md](team-ready-state.md) → The working area's two populations), naming every path and routing at *move it out / delete it / consent*.
+
+— `design/write-commands.md` → *The verbs*
+
+**A4 — the consent is `--force`, for both, and what it takes is named.** A cell under the consent spelling is exempt from the plant's rule only where the command's output names the planted path; and a doc staged in the area that goes under the consent is held to the same: the output names it.
+
+> `--force` is the single consent for both, inert where nothing is staged and nothing is foreign
+
+— `design/write-commands.md` → *The verbs*
+
+> What a door *does* with it is that door's own disposition — refuse without a consent, narrate under one, or move it aside
+
+— `design/team-ready-state.md` → *The working area's two populations — jigc's writer set, and its complement (M52)*
+
+**A5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — one item's status flipped, and nothing else of it.** When: the task is a sub-task a committed record names. On a refusal: no (A8). The line as data says *written whole*: the vocabulary has no word for *one leaf of one item, and every other byte as it was*, so the line lets more than its sentence does — a stated shortfall of the row, not a reading of the doc. The place is `M5`'s, from the same sentence of `design/storage.md`.
+
+> The item's `status` flips to `discarded` through the byte-stable item-leaf splice; **the header stays `active` and every sibling item is byte-untouched**
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+> M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)
+
+— `design/storage.md` → *Source of truth*
+
+**A6 — one commit on the checked-out branch, holding the record of A5 and nothing else: not the index as it stood.** When: the task is a sub-task a committed record names. On a refusal: no (A8).
+
+> it stages and commits **only the record file** (`git add <record> && git commit -- <record>`, index-restricted), never sweeping the agent's in-flight index/worktree WIP
+
+— `design/team-ready-state.md` → *The commit model — path-scoped commit at each milestone op*
+
+> the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+**A7 — `.jigc/state/`: written — the record's baseline, advanced to what the commit landed.** When: the task is a sub-task a committed record names, and the commit landed. On a refusal: no — what a refusal may do there is `C2` (§4a). The first sentence is A6's second, which names *the baseline advance*; the second says where a baseline stands.
+
+> the hash jigc recorded at its last landed record write — lives in `.jigc/state/`, which no clone carries
+
+— `design/team-ready-state.md` → *Engine capability 1 (write) — `set: on-transition` machine-maintained leaves*
+
+**A8 — it settles before it destroys, and a rejected commit leaves both as they were.** Not a line: it is where A5 to A7 take their *on a refusal: no* from, and it is the order a cell's refusal is read against — a refusal leaves the record **and** the working area.
+
+> The record commit runs **before** the working area is removed, so a rejected `pre-commit` hook leaves the record *and* the task exactly as the frame says
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+**A9 — an ordinary task's discard writes no record and lands no commit.** Not a line: the condition A5 to A7 carry in words.
+
+> An ordinary task is named by no record, and a dev-only project (no methodology pack) resolves no `milestone-record` doctype at all: both discard exactly as before, writing no record and landing no commit.
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+**A10 — a sub-task nobody has re-entered stages nothing, and its discard needs no consent.** Not a line: it is the one construction in which the command acts without its consent flag, which is what the family's base cell is built from.
+
+> `milestone add-task` stages nothing at mint, so settling a never-re-entered sub-task needs no consent
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
+
+**What the docs do not say of `task discard`:** whether a discard that exits 0 writes under `.jigc/index/` — the record it rewrites is a managed doc, and `task finalize`'s own doc declares the edge index's stamp invalidated after its commit (`T5`) while this command's says nothing of it (§6, entry 7); what a rejected record commit leaves of the message it rendered (§6, entry 6, which this command's doc does not answer either: *the survivable frame on a rejecting hook* is named and not described); whether the milestone's `tasks.json` cache is rewritten when one item settles (the ruling's line `C3` covers a refusal, and the row has no line for exit 0 — §6, entry 1, *what the ruling leaves open*, (i)). **Declared, and not a line here:** a settled sub-task's worktree is not this command's to remove — the row has no line for a registration, so one that went would be red; and a sub-task the record has already settled is refused (*The terminal is terminal*), which is a state a cell constructs.
+
+---
+
 ## 4. `jigc milestone finalize`
 
 Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-ready-state.md` and `design/storage.md`.
@@ -420,7 +510,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 6 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 7 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -453,6 +543,14 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 **6. The rendered message's temporary file.** `design/finalize.md` → *6. Commit*: *"`git commit -F <rendered-message-file>` (a temp file, deleted after)"*. A file that is made and deleted leaves no difference; one left behind is a write no line covers, wherever it stands — under the system's temporary directory, which the table reads, or under `.jigc/`. No reading is needed unless a cell finds one.
 
+**7. `task discard`, and the edge index when it settles a sub-task.**
+
+- *The words.* `design/finalize.md` → *7. Post-commit (best-effort)* declares, of a task's finalize, that the edge index's stamp is invalidated after its commit (`T5`). `design/team-ready-state.md` gives a sub-task's discard *"the family's whole discipline rather than a second one"* and lists it — *"the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook"* — and the edge index is not on the list.
+- *Reading (a)* — the list is the discipline, whole: a discard that exits 0 writes nothing under `.jigc/index/`.
+- *Reading (b)* — a command that commits a managed doc invalidates the stamp, as a finalize does; the list names what is the record doors' own.
+- *What each makes of the cells.* Under (a) such a write is *written outside its allowance*; under (b) it is covered. The cells it decides are the ones in which a sub-task's discard acts.
+- *Until ruled:* (a) — the row has no line for `.jigc/index/` at exit 0.
+
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.
@@ -467,18 +565,18 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 
 | a line says | which lines needed it |
 |---|---|
-| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5 and C3, with one component left open for a milestone's id or its record's name |
-| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; C1, C2 |
+| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5, A5 and C3, with one component left open for a milestone's id or its record's name |
+| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2 |
 | a place that is **the `pre-commit` hook in the hooks directory git resolves** — not a fixed path | S10; U4 |
 | a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2 |
-| **written whole** — made, or replaced by any bytes | S1, S4, S5, S6, S8; T2, T5; M1, M5, M10 |
+| **written whole** — made, or replaced by any bytes; over a directory, anything under it, a file gone included | S1, S5, S6, S8; T2; M1, M5; A5 |
 | **merged into** — every line that stood there stays, in order | S2, S3, S7, S9, S10 |
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
-| **removed** | S6; U1, U4, U5; T6; M6 |
-| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3 |
+| **removed** | S6; U1, U4, U5; T6; M6; A1 |
+| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table |
 | **a copy of a staged doc**, as a regular file | T1; M2 |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
-| **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11 |
+| **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
 | **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** | M3 |
 | **the index staged** at the places the row's other lines wrote | T3 (and S11, M3, through their commits) |
@@ -486,6 +584,8 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | a condition read off the state before the command: **the repository has no commit** | S9 |
 | a condition read off how the command ended: **it refused** (added 2026-10-13, for the ruling) | C1, C2, C3 |
 | **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); every other line (no) |
-| **the consent's flag**, under which a planted path named in the output may go | S14; U8 |
+| **the consent's flag**, under which a planted path named in the output may go | S14; U8; A4 |
+
+**Corrected 2026-10-13, with the first commit of the task `B4`: `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole*.** As data, *written whole* over a directory lets anything under it happen — a file of it gone too — which the acceptance's cells had no occasion to meet. Each of the three was read against its sentence again: *"initializes the in-repo project layer (`.jigc/config/`) when absent"*, *"Invalidate the edge-index stamp"* and *"Update `file-state` hashes"* let a file be made or written, and none lets one go; `M1` alone says the command **clears** its directory, and keeps the word. The entries' words did not change — each already said *written* — only the word they are carried by. **One of the three sentences can be read the other way**: a stamp can be invalidated by taking its file away. The line follows the reading under which more is red, and a cell that meets a stamp's file gone is this note's to answer for.
 
 Three conditions a doc gives could not be put as something a manifest shows, and are words in their lines only: *where its install commit can carry the settings file* (S6), *what stands there is jigc's own copy* (S8, U5; T2), and *git tracks the settings file and the record* (U3). Each lets the command do **less** — leave a file alone — so a line without the condition allows no write the doc forbids to anything but a file somebody edited, and such a file is a plant, which no line excuses.

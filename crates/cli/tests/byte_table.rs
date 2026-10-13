@@ -5,10 +5,10 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has four rows and twelve cells — the pilot's acceptance**: this file
-//! is the plan's tasks `B1` to `B3` — the arms that hold the comparison, the reader and
-//! the runner to their rules, the fences, and the rows and the cells of the four
-//! commands the acceptance needs, a family a file under `byte_table/` ([`FAMILIES`]).
+//! cell. **The table has five rows — the four of the pilot's acceptance, and `jigc task
+//! discard`'s — and the acceptance's twelve cells**: this file is the plan's tasks `B1` to
+//! `B4` — the arms that hold the comparison, the reader and the runner to their rules, the
+//! fences, and the rows and the cells, a family a file under `byte_table/` ([`FAMILIES`]).
 //!
 //! **The cells run in the arm of their prepared state** ([`ARMS`],
 //! [`run_the_cells_of`]): the state is built once on the binary this suite was built
@@ -443,8 +443,9 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        4,
-        "the table has the four rows of the pilot's acceptance: {rows:?}"
+        5,
+        "the table has the four rows of the pilot's acceptance and `jigc task discard`'s: \
+         {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -1259,6 +1260,22 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
+    (&["task", "discard"], "A1", ITS_FAMILYS_CELLS),
+    (&["task", "discard"], "A5", ITS_FAMILYS_CELLS),
+    (&["task", "discard"], "A6", ITS_FAMILYS_CELLS),
+    (&["task", "discard"], "A7", ITS_FAMILYS_CELLS),
+    (&["task", "discard"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["task", "discard"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["task", "discard"],
+        "C3, the base pin",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (
+        &["task", "discard"],
+        "C3, the task list",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
     (&["milestone", "finalize"], "M2", ITS_FAMILYS_CELLS),
     (
         &["milestone", "finalize"],
@@ -1706,6 +1723,10 @@ const DOCS: &[(&str, &str)] = &[
     (
         "design/team-ready-state.md",
         include_str!("../../../design/team-ready-state.md"),
+    ),
+    (
+        "design/write-commands.md",
+        include_str!("../../../design/write-commands.md"),
     ),
 ];
 
@@ -3151,6 +3172,80 @@ fn a_refusal_may_rebuild_a_cache_and_may_not_take_one_away() {
         &Cell::of(CACHE, &before, &made),
         Classification::WrittenOutside,
     );
+}
+
+/// **A line lets a file under a directory go only where its sentence does** — the lines of
+/// the table's own rows, each driven over a file of the product's own that stands in a
+/// directory the row lets its command write into when it acts: the project layer `setup`
+/// initializes, and the edge index and the file-state hashes a finalize writes after its
+/// commit. No sentence of those lines lets a file go — *initializes … when absent*,
+/// *invalidate the edge-index stamp*, *update `file-state` hashes* — so one that is gone
+/// is *written outside its allowance*, and one written again holds. Its pair is the one
+/// directory whose sentence says the command **clears** it: a milestone's `merged/`.
+///
+/// Red first against the rows as they were lifted: each of the five lines said *written
+/// whole* over a directory, which lets anything under it happen, a file gone included.
+#[test]
+fn a_directory_a_command_writes_into_is_not_one_it_may_empty() {
+    let row_of = |leaf: &[&str]| {
+        **rows()
+            .iter()
+            .find(|row| row.leaf == leaf)
+            .expect("the leaf has a row")
+    };
+    let cache = |place: &str| format!("repo/{place}/a-file-of-the-products.json");
+    let with = |place: &str| {
+        then(&sandbox(), |m| {
+            dir(m, "repo/.jigc");
+            dir(m, &format!("repo/{place}"));
+            put(m, &cache(place), "{}\n");
+        })
+    };
+    let base = sandbox();
+    let came = |leaf: &[&str], before: &Manifest, after: &Manifest| {
+        Cell {
+            base: Some(&base),
+            ..Cell::of(row_of(leaf), before, after)
+        }
+        .came_to()
+    };
+    for (leaf, place) in [
+        (&["setup"][..], ".jigc/config"),
+        (&["task", "finalize"], ".jigc/index"),
+        (&["task", "finalize"], ".jigc/state"),
+        (&["milestone", "finalize"], ".jigc/index"),
+        (&["milestone", "finalize"], ".jigc/state"),
+    ] {
+        let before = with(place);
+        let gone = then(&before, |m| {
+            m.files.remove(&cache(place));
+        });
+        let (class, why) = came(leaf, &before, &gone);
+        assert_eq!(
+            class,
+            Classification::WrittenOutside,
+            "`jigc {}`, a file gone from `{place}`: {why:#?}",
+            leaf.join(" ")
+        );
+        let again = then(&before, |m| put(m, &cache(place), "{\"again\": true}\n"));
+        let (class, why) = came(leaf, &before, &again);
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "`jigc {}`, a file written again under `{place}`: {why:#?}",
+            leaf.join(" ")
+        );
+    }
+    // The pair: `materialize` *clears and rebuilds* a milestone's `merged/` every call.
+    let merged = ".jigc/milestones/a-milestone/merged";
+    let before = then(&with(merged), |m| {
+        dir(m, "repo/.jigc/milestones/a-milestone")
+    });
+    let cleared = then(&before, |m| {
+        m.files.remove(&cache(merged));
+    });
+    let (class, why) = came(&["milestone", "finalize"], &before, &cleared);
+    assert_eq!(class, Classification::Holds, "{why:#?}");
 }
 
 /// **The classifications, in their order.** A command that did not end is said first,
