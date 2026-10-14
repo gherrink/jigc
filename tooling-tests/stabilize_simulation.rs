@@ -199,6 +199,14 @@
 //! relayed whole unless a scenario garbles it, and a hold is run in the foreground. The
 //! script side of each verdict is [`dev_stabilize_probe`](super::dev_stabilize_probe)'s.
 //!
+//! **The stand-in refuses what the runtime refuses to load** ([DECISIONS.md](../DECISIONS.md)
+//! → *2026-10-15 — The harness a session invokes is generated, without its comments*): a
+//! script over 524,288 bytes, with the runtime's own words, before a line of it runs
+//! ([`the_runtimes_stand_in_refuses_a_script_over_the_runtimes_limit`]). Until then the
+//! stand-in read the harness with no limit, and every arm here passed a harness a session
+//! could not start. What this suite runs is the GENERATED harness, the file a session
+//! invokes; its commented source is read by none of these arms.
+//!
 //! **Without `node`** the suite cannot run a stage: it fails under CI and passes anywhere
 //! else, and the gate's summary says which tests passed without running
 //! ([`node_or_skip`]).
@@ -860,6 +868,65 @@ fn every_kind_script() -> Value {
 /// independent drive: the verdict its verifier contests is the human's by that filing. Then
 /// what the orchestrator reads, and the invocations that follow: the stage refused while the
 /// round is open, and the human's rulings recorded by the one step.
+/// The Workflow tool's limit on a script, in bytes, and its words for a script past it
+/// (observed 2026-10-13: `Workflow script file <path> exceeds 524288 bytes`).
+const RUNTIME_LIMIT: usize = 524_288;
+
+/// THE STAND-IN LOADS WHAT THE RUNTIME LOADS, AND NOTHING LARGER: a script one byte over the
+/// limit is refused with the runtime's words, before any of it runs, and the one at the limit
+/// runs. *Not established:* that the runtime takes a script of exactly 524,288 bytes — its
+/// words say `exceeds`, and this reads them so.
+#[test]
+fn the_runtimes_stand_in_refuses_a_script_over_the_runtimes_limit() {
+    if !can_run() {
+        return;
+    }
+    let dir = RigDir::new("stabilize-runtime-limit");
+    let scenario = dir.path().join("scenario.json");
+    fs::write(&scenario, "{}").expect("write the scenario");
+    let ran = |size: usize| {
+        let script = dir.path().join(format!("script-{size}.js"));
+        let code = "log('the script ran')\nreturn 'ran'\n// ";
+        let padded = format!("{code}{}\n", "x".repeat(size - code.len() - 1));
+        assert_eq!(padded.len(), size);
+        fs::write(&script, padded).expect("write the script");
+        let out = Command::new("node")
+            .arg(repo_root().join(RUNTIME))
+            .arg(&script)
+            .arg(&scenario)
+            .stdin(Stdio::null())
+            .output()
+            .expect("run node");
+        let said: Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+            panic!(
+                "the stand-in prints one JSON line ({e}): {}",
+                String::from_utf8_lossy(&out.stdout)
+            )
+        });
+        (out.status.success(), said, script)
+    };
+    let (ok, said, _) = ran(RUNTIME_LIMIT);
+    assert!(
+        ok && said["result"] == json!("ran"),
+        "a script at the limit runs: {said}"
+    );
+    let (ok, said, script) = ran(RUNTIME_LIMIT + 1);
+    assert!(!ok, "a script over the limit fails the invocation: {said}");
+    assert_eq!(
+        said["fatal"],
+        json!([format!(
+            "Workflow script file {} exceeds {RUNTIME_LIMIT} bytes",
+            script.display()
+        )]),
+        "the stand-in refuses with the runtime's words"
+    );
+    assert_eq!(
+        said["logs"],
+        json!([]),
+        "and before a line of the script ran"
+    );
+}
+
 #[test]
 fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
     if !can_run() {

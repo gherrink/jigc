@@ -7140,7 +7140,7 @@ const PURE: &str = r#"
 import { readFileSync } from 'node:fs'
 const [script, callsJson] = process.argv.slice(2)
 const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
-const pure = source.slice(0, source.indexOf('\n// ---- args: parsed, and refused before any agent ----\n'))
+const pure = source.slice(0, source.indexOf('\nlet parsedArgs = args\n'))
 const calls = JSON.parse(callsJson)
 const names = [...new Set(calls.map((call) => call[0]))]
 const made = new Function(pure + '\nreturn { ' + names.join(', ') + ' }')()

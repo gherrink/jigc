@@ -893,7 +893,7 @@ fn g_the_cross_model_pass_is_launched_only_for_an_item_the_invocation_names() {
     );
     // The description every permission dialog shows names it not at all.
     assert!(
-        !full[..full.find("\n// ---- constants").expect("the constants")]
+        !full[..full.find("\nconst STAGES = ").expect("the constants")]
             .lines()
             .filter(|line| !line.starts_with("//"))
             .any(|line| line.to_lowercase().contains(&tool))
@@ -990,7 +990,7 @@ fn h_the_self_test_launches_no_agent_and_the_script_keeps_the_runtimes_limits() 
     // Everything above the args is declarations and pure functions: the self-test calls
     // only what stands there, and nothing there can launch or wait for an agent.
     let pure = &full[..full
-        .find("\n// ---- args: parsed, and refused before any agent ----\n")
+        .find("\nlet parsedArgs = args\n")
         .expect("the script's first statement that runs")];
     let pure = code(pure);
     for launching in [
@@ -1008,7 +1008,7 @@ fn h_the_self_test_launches_no_agent_and_the_script_keeps_the_runtimes_limits() 
             "`{launching}` stands above the script's first statement, among what the self-test may call"
         );
     }
-    let after = &full[full.find("\n// ---- args: parsed").expect("as above")..];
+    let after = &full[full.find("\nlet parsedArgs = args\n").expect("as above")..];
     let first: Vec<String> = code(after)
         .lines()
         .filter(|line| line.starts_with("if (") || line.starts_with("return "))
@@ -1618,7 +1618,7 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         .find("\n  if (hasQueue(state)) {\n")
         .expect("the path of a run with a queue")..];
     let queued = &queued[..queued
-        .find("\n  }\n  // And the rows whose triage nobody finished")
+        .find("\n  }\n  for (const source of ledgerSource(v.run, state)) sources.push(source)")
         .expect("the path closes before the other path's triage")];
     let composed = queued
         .find("await composeRecord(")
@@ -4316,7 +4316,7 @@ const COMPOSER: &str = r#"
 import { readFileSync } from 'node:fs'
 const [script, rowsJson] = process.argv.slice(2)
 const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
-const pure = source.slice(0, source.indexOf('\n// ---- args: parsed, and refused before any agent ----\n'))
+const pure = source.slice(0, source.indexOf('\nlet parsedArgs = args\n'))
 const rows = JSON.parse(rowsJson)
 const setup = `
 const SHA = 'a'.repeat(40)
@@ -4761,7 +4761,7 @@ const CENSUS: &str = r#"
 import { readFileSync } from 'node:fs'
 const [script, namesJson] = process.argv.slice(2)
 const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
-const pure = source.slice(0, source.indexOf('\n// ---- args: parsed, and refused before any agent ----\n'))
+const pure = source.slice(0, source.indexOf('\nlet parsedArgs = args\n'))
 const names = JSON.parse(namesJson)
 const read = `
 function optionalOf(schema, at) {
@@ -4972,7 +4972,7 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         .expect("the path of a run with a queue");
     let branch_ends = branch_at
         + tested[branch_at..]
-            .find("\n  }\n  // And the rows whose triage nobody finished")
+            .find("\n  }\n  for (const source of ledgerSource(v.run, state)) sources.push(source)")
             .expect("the path closes before the other path's triage");
     let queued = code(&tested[branch_at..branch_ends]);
     let waves = code(function(&full, "verifyWaves"));

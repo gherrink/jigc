@@ -26,6 +26,8 @@ mod dev_gate_report;
 mod dev_regression_set;
 #[path = "../dev_stabilize_canary.rs"]
 mod dev_stabilize_canary;
+#[path = "../dev_stabilize_harness.rs"]
+mod dev_stabilize_harness;
 #[path = "../dev_stabilize_probe.rs"]
 mod dev_stabilize_probe;
 #[path = "../dev_stabilize_record.rs"]

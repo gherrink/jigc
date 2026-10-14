@@ -180,8 +180,10 @@
 //     async function; how the runtime runs it is its own.
 //   - `pipeline`, `workflow` and `budget` are there and unused by the harness: the first
 //     two fail the run if called.
+//   - the runtime's limit on a script's size IS held: a script over 524,288 bytes is refused
+//     with the runtime's words and none of it runs (below, SCRIPT_LIMIT).
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -773,13 +775,21 @@ async function parallel(thunks) {
 }
 const unavailable = (name) => () => fail('`' + name + '` is not modelled by the stand-in')
 
-const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
-const body = vm.runInContext('(async function (agent, parallel, pipeline, log, phase, args, budget, workflow) {\n' + source + '\n})', context, { filename: script })
+// THE RUNTIME'S LIMIT ON A SCRIPT: the Workflow tool refuses one over 524,288 bytes, by path
+// and inline alike, before any of it runs — in these words (observed 2026-10-13). Until this
+// stand-in held it too, every suite passed a harness a session could not start.
+const SCRIPT_LIMIT = 524288
 let result = null
-try {
-  result = await body(agent, parallel, unavailable('pipeline'), (message) => { logs.push(String(message)) }, (title) => { note('phase ' + title) }, into(scenario.args), into({ total: null }), unavailable('workflow'))
-} catch (e) {
-  fatal.push('the script threw: ' + ((e && e.stack) || e))
+if (statSync(script).size > SCRIPT_LIMIT) {
+  fatal.push('Workflow script file ' + script + ' exceeds ' + SCRIPT_LIMIT + ' bytes')
+} else {
+  const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
+  const body = vm.runInContext('(async function (agent, parallel, pipeline, log, phase, args, budget, workflow) {\n' + source + '\n})', context, { filename: script })
+  try {
+    result = await body(agent, parallel, unavailable('pipeline'), (message) => { logs.push(String(message)) }, (title) => { note('phase ' + title) }, into(scenario.args), into({ total: null }), unavailable('workflow'))
+  } catch (e) {
+    fatal.push('the script threw: ' + ((e && e.stack) || e))
+  }
 }
 const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
 process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
