@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-15, with the first commit of the task `B5`, which records the human's rulings on the first cut: entries 2, 5, 6 and 8 of §6 are ruled and say how, entry 3 is read under the ruling on entry 2, and the plan's first question of reading is ruled (§6, *Decided here*); `S12` says it is no line and why; `uninstall`'s row gains `U9`, whose sentence is the ruling on entry 5 as [DECISIONS.md](../../../../../DECISIONS.md) records it, and §7 the word it is carried by. No other line moved.*
+
 *Changed 2026-10-13, with the second commit of the task `B4`, which brought the family's cells: the sixth entry of §6 says what a cell found, and an eighth is listed — a change staged at a path the command stages itself — which three cells met. No line moved.*
 
 *Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
@@ -109,13 +111,13 @@ Owner docs: `design/assistant-adapter.md`, `design/project-setup.md`.
 
 — `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*
 
-**S12 — the index, at the paths of S1 to S10: staged.** When: on a refusal that came **after** the install's first write, and then the written files of S1 to S10 stand too. On a refusal: yes, that one — see §6, entry 2, for why no cell can be held to this line yet.
+**S12 — the index, at the paths of S1 to S10: staged.** When: on a refusal that came **after** the install's first write, and then the written files of S1 to S10 stand too. On a refusal: yes, that one, as the doc has it. **No line of the row** — by the human's ruling of 2026-10-14 on §6, entry 2: every refusal of `setup` leaves the repository as it was, caches aside, so the row holds `S13` on every refusal, and this sentence is a design inconsistency, recorded in [byte-table-findings.md](byte-table-findings.md) and corrected with the product's fix.
 
 > records the install footprint (M51's `record_install_footprint`) over the paths it wrote in that run, clean against `HEAD` before it and dirty at the failure, and **stages them**
 
 — `design/project-setup.md` → *Idempotency & irreversibility — the acceptance obligation*
 
-**S13 — a refusal before the first write changes nothing.** This is the sentence S1 to S11 take their *on a refusal: no* from.
+**S13 — a refusal before the first write changes nothing.** This is the sentence S1 to S11 take their *on a refusal: no* from — and, by the ruling on §6, entry 2, the rule for **every** refusal of `setup`, after the first write too.
 
 > **And because the ask is pre-write, the refusal installs nothing**
 
@@ -133,7 +135,7 @@ Owner docs: `design/assistant-adapter.md`, `design/project-setup.md`.
 
 — `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*
 
-**What the docs do not say of `setup`:** where the record of S12 is kept (§6, entry 3); where *the spawn launch-template* of the boundary table is written (§6, entry 4); whether a `setup` that exits 0 writes under `.jigc/index/` or `.jigc/state/` (§6, entry 1 — which the ruling of 2026-10-12 leaves open: it speaks of a refusal). **Declared, and not a line here:** a `CLAUDE.md` or a settings file that is a link is followed to a regular file inside the checkout, which then becomes a member of the install (*`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph on a file the install replaces) — the row gains that line with its sentence when a cell plants a link there, which no cell of the first cut does.
+**What the docs do not say of `setup`:** where the record of S12 is kept (§6, entry 3, read under the ruling on entry 2); where *the spawn launch-template* of the boundary table is written (§6, entry 4); whether a `setup` that exits 0 writes under `.jigc/index/` or `.jigc/state/` (§6, entry 1 — which the ruling of 2026-10-12 leaves open: it speaks of a refusal). **Declared, and not a line here:** a `CLAUDE.md` or a settings file that is a link is followed to a regular file inside the checkout, which then becomes a member of the install (*`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph on a file the install replaces) — the row gains that line with its sentence when a cell plants a link there, which no cell of the first cut does.
 
 ---
 
@@ -197,7 +199,13 @@ Owner doc: `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt
 
 — `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt/cleanup (M21)*
 
-**What the docs do not say of `uninstall`:** what it does to git's index, and whether it commits (§6, entry 5). So the row has **no line for the index and none for a commit**.
+**U9 — one commit on the checked-out branch, holding what U1 to U5 changed at a path a commit held, all of it, and nothing else: not the index as it stood, and no edit of the user's that no commit holds.** When: always. On a refusal: no (U7). The sentence is the human's ruling of 2026-10-14 on §6, entry 5, as `DECISIONS.md` records it — the doc is silent, and the ruling says what the command does. A removal or a taking-out at a tracked path that the working tree keeps with no commit carrying it is outside this line.
+
+> **The teardown lands as one dedicated, path-scoped commit of what it removed**, the inverse of `setup`'s install commit, and **never carries the user's own uncommitted edits** at a path it touches
+
+— `DECISIONS.md` → *2026-10-15 — The human's six rulings on the byte table's first cut, recorded: the families `B5` to `B9` are built now; what is held reaches what a reflog names; a change staged at a path jigc stages itself is a finding beyond the one declared bound; every refusal of `setup` leaves the repository as it was; `uninstall` lands its teardown in one path-scoped commit; a rejected record commit's message file is a finding (the byte table, task `B5`, the first of its commits)*
+
+**What the docs do not say of `uninstall`:** what it does to git's index, and whether it commits (§6, entry 5) — **ruled on 2026-10-14**, and carried by `U9`. Whether it refuses over an edit of the user's at a path it touches, or commits only jigc's part of that path, the ruling leaves to the fixer; the row holds what both answers share — no such edit rides the commit.
 
 ---
 
@@ -512,7 +520,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entry 1 is ruled** (2026-10-12) and says how it is carried; entries 2 to 8 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 5, 6 and 8 are ruled** (2026-10-12 and 2026-10-14), each saying how it is carried; **entry 3 is read under the ruling on entry 2**; entries 4 and 7 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -528,7 +536,7 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *What the ruling leaves open.* **(i) Exit 0.** The ruling speaks of a refusal. Whether a command that exits 0 may write a cache its own doc names no write to — `setup` is the one of the four — is not said; the lines hold on a refusal only, so such a write is *written outside its allowance* until somebody rules. No cell of the first cut turns on it. **(ii) The file↔state hashes are called rebuildable and have no rebuild.** The sentence C1 and C2 quote says both caches are *rebuildable from the committed docs*; the next paragraph of the same section says the hashes *"carry **no stamp and no rebuild path**"*. So a refusal that writes under `.jigc/state/` is not rebuilding from the tree: it is recording a baseline, and a baseline recorded over a file somebody edited is exactly a cache that says other than the commit does. `C2` lets the write, by the doc's first sentence and the ruling's word; whether that is what was meant is the human's, and it is where the bound that is not held would bite. **(iii) A minted work unit is no cache.** A task area or a milestone area that a refusal leaves behind, and that a later command reads as authority, is covered by none of the three lines and stays red, cell by cell, until ruled (the plan's §7, question 2).
 - *The inconsistency* between the two docs is recorded, and fixed by nobody here: [byte-table-findings.md](byte-table-findings.md) → `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`.
 
-**2. `setup` refuses in two ways, and the docs tell them apart by the moment, which no manifest shows.**
+**2. `setup` refuses in two ways, and the docs tell them apart by the moment, which no manifest shows. Ruled on 2026-10-14: every refusal of `setup` leaves the repository as it was.**
 
 - *The words.* S13: *"because the ask is pre-write, the refusal installs nothing"*. S12: a run that *"fails after its first write"* *"records the install footprint … over the paths it wrote in that run … and **stages them**"*. And of the ask repeated before the commit, in the same paragraph as S13: *"where that ask fires the install is written and staged"*. One finding code, `setup.dirty-install-path`, is the first refusal's and the third's.
 - *Reading (a)* — a refusal of `setup` may leave S1 to S10 written and staged: S12 holds on every refusal. A refusal before the first write that had nevertheless written would pass.
@@ -536,16 +544,27 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *A third way, which is a change to the plan and so the human's:* the cell says which of the two refusals it constructs, as it says whether it expects a refusal at all, and the row carries a line for each.
 - *What each makes of the cells.* No cell of the first cut turns on it: the acceptance's two `setup` cells refuse before the first write, and their plant is held by the plant's rule under either reading. The cells it decides are `B5`'s — a rejecting hook at `setup`'s commit.
 - *Until ruled:* (b). S12 is recorded and is no line of the row as data.
+- *The ruling* — the human's, of 2026-10-14, after asking for the robust and future-proofed answer (*"Yes agreed."*), as the orchestrating session handed it on: **every refusal of `setup` leaves the repository as it was** (caches aside, by the ruling on entry 1). A failure after the first write **rolls back** every path the run wrote — each was clean against `HEAD`, absent, or an untracked file `setup` read to merge into, so its bytes before the run are known — instead of staging them; the install-footprint record keeps only the job of a run that was killed mid-write. It is reading (b), and more: not a reading of the two sentences but the rule the product is held to.
+- *How it is carried.* The row holds `S13` on every refusal — its lines say *on a refusal: no*, as they did — and `S12` is no line. **S12's sentence is a design inconsistency**, recorded in [byte-table-findings.md](byte-table-findings.md) → `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`, to be corrected with the product's fix. A cell that shows staging after a late failure is red, and a finding.
+- *What each makes of the cells.* The cells it decides are the late failures — a hook that rejects the install's commit, and a hooks directory that cannot be written; `B5` builds them.
 
-**3. Where `setup` keeps the record of a failed run.** S12's sentence names *the install footprint* and M51's function, and no path. `design/project-setup.md` → *Flow 2 hardening* lists *the install-footprint record a failed first `setup` writes* among jigc's own files under `.jigc/index/`, `.jigc/state/` and `.jigc/logs/` without saying which. No line is written for it; it is decided with entry 2, whose cells are the only ones that would see it.
+**3. Where `setup` keeps the record of a failed run — read under the ruling on entry 2.** S12's sentence names *the install footprint* and M51's function, and no path. `design/project-setup.md` → *Flow 2 hardening* lists *the install-footprint record a failed first `setup` writes* among jigc's own files under `.jigc/index/`, `.jigc/state/` and `.jigc/logs/` without saying which.
+
+- *What it becomes.* Under the ruling, **no refusal leaves the record**: a refusal rolls back, and the record keeps only the job of a run killed mid-write — which is no cell, since the table's command always ends. So a record a refusal of `setup` leaves is a write a refusal may not make, wherever it stands.
+- *What the table can and cannot hold of it.* No doc names its path. If it stands under `.jigc/state/` or `.jigc/index/`, the lines `C1` and `C2` — written as places, *everything under the directory* — would excuse it on a refusal as a rebuilt cache, which it is not: it is rebuilt from nothing committed, and it records one run's own job. **The table cannot tell it apart from a cache without a path no doc gives**, and taking one from the product's source is what a row may not do. So a cell that left only the record would read *refuses, nothing changed*; the late-failure cells are red on other grounds today — the paths written and staged — and that is what holds them. It is put to the human as a question of `B5`.
 
 **4. *The spawn launch-template + its install-time validation*.** `design/project-setup.md` → *The boundary that frames everything: command vs workflow* lists it among what `jigc setup` generates. No sentence read says where it is written — whether it is a file of its own or part of one S1 to S8 already name. No line is written for it; a file `setup` writes that no line covers is red, and would be this entry.
 
-**5. `uninstall`, git's index, and a commit.** The doc says what leaves the working tree. It does not say whether the entries of the removed files leave the index, or whether the teardown commits anything. *Reading (a)*: the working tree only — the removals are the user's to commit, as `relocate`'s move is. *Reading (b)*: it may stage what it removed. Under (a) a staged removal is *git's state moved outside its allowance*; under (b) it is covered. Every acting `uninstall` cell turns on it. *Until ruled:* (a) — the row has no line for the index.
+**5. `uninstall`, git's index, and a commit. Ruled on 2026-10-14: one dedicated, path-scoped commit of what it removed.** The doc says what leaves the working tree. It does not say whether the entries of the removed files leave the index, or whether the teardown commits anything. *Reading (a)*: the working tree only — the removals are the user's to commit, as `relocate`'s move is. *Reading (b)*: it may stage what it removed. Under (a) a staged removal is *git's state moved outside its allowance*; under (b) it is covered. Every acting `uninstall` cell turns on it.
+
+- *The ruling* — the human's, of 2026-10-14, option A (*"Agree on A"*), as the orchestrating session handed it on: **the teardown lands as one dedicated, path-scoped commit of what it removed, the inverse of `setup`'s install commit, and never carries the user's own uncommitted edits at a path it touches** — it refuses over them, or commits only jigc's part: which, the fixer settles. Neither reading as put; a third.
+- *How it is carried.* `U9` (§2), a commit line whose sentence is the ruling's, and a word for it in the vocabulary (§7): what the row's lines change at a tracked path lands in the commit, all of it, and no bytes of the user's that no commit held ride it. **Today's teardown, which leaves its removals in the working tree, is red in every acting cell** — *written outside its allowance*, under one finding, and no loss: what it removed from the tree, a commit still holds.
 
 **6. The rendered message's temporary file.** `design/finalize.md` → *6. Commit*: *"`git commit -F <rendered-message-file>` (a temp file, deleted after)"*. A file that is made and deleted leaves no difference; one left behind is a write no line covers, wherever it stands — under the system's temporary directory, which the table reads, or under `.jigc/`. No reading is needed unless a cell finds one.
 
   *A cell found one, on 2026-10-13* — `task-discard-a-hook-that-rejects`: a sub-task's discard whose record commit a `pre-commit` hook rejects leaves `record-commit-msg.txt` in the sub-task's working area, on this tree and on the previous release. *Reading (a)*: the message's file is *deleted after* whether or not the commit landed, and a rejected commit *"leaves the record **and** the task exactly as the frame says"* (`A8`) — the file is a write a refusal may not make. *Reading (b)*: it is part of *the survivable frame on a rejecting hook*, which the doc names and does not describe — kept for the re-run the refusal prints. Under (a) the cell is *refused, and changed what a refusal may not*; under (b) it is covered, and the row gains a line with the sentence that says so, which no doc has yet. *Until ruled:* (a). A task's finalize over the same hook leaves no such file.
+
+  *Ruled on 2026-10-14*, option A (*"Agree on A"*): **the file is deleted whether or not the commit landed**, as `design/finalize.md` says and as `task finalize` does. The leftover `record-commit-msg.txt` is a finding — [byte-table-findings.md](byte-table-findings.md) → `r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area` — and the cell loses its mark.
 
 **7. `task discard`, and the edge index when it settles a sub-task.**
 
@@ -562,12 +581,13 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *Reading (b)* — the bound is one case, declared for a doc a task is updating. At the record, a staged change is *in-flight index WIP* the door *never sweeps*; at the stamp, it is no artifact of jigc's own: the command refuses, or keeps it.
 - *What each makes of the cells.* Three cells stage such a change and come out *lost* on this tree — the bytes are in the index no longer and in no object within reach. A bound takes no cell off the list of the red ones, so all three are red under either reading; under (a) all three stand on a declared bound, under (b) one does — the task's doc — and the other two are findings.
 - *Until ruled:* (b) — the two cells are marked with this entry, and the third with the bound.
+- *Ruled on 2026-10-14*, option B (*"Yes agree on B"*): **the declared bound (1) stays one case, a doc a task is updating.** The staged change replaced at `.jigc/version` at `task finalize`, and at the milestone's record at `task discard`, are **findings** — each a key and a row of [byte-table-findings.md](byte-table-findings.md) — and their cells lose this entry's mark. The third keeps the bound's.
 
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.
 - **A directory on the way to a covered write is covered with it, and so is one that empties under a covered removal.** No doc says of `.jigc/` or `.claude/skills/jigc/` that the directory is made; U5's second sentence says it of the removal. The table reads a directory as an entry, so the rule is needed and is stated once, here.
-- **The plan's first question of reading is not this record's** — *bytes no git object holds*, and how far *holds* reaches. Nothing read for these rows says which reach is meant; the plan's §7 has the three readings, and a cell follows the narrowest.
+- **The plan's first question of reading is not this record's** — *bytes no git object holds*, and how far *holds* reaches. Nothing read for these rows says which reach is meant; the plan's §7 has the three readings. **Ruled on 2026-10-14**, reading (b) (*"Agree on B"*): what a ref, a registered checkout's `HEAD`, an index or the newest stash entry reaches, **and what any reflog still names**; the bare object store is not held.
 
 ---
 
@@ -591,6 +611,7 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
 | **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** | M3 |
+| **a commit** holding **all of what the row's other lines changed at a tracked path, and nothing else — no edit of the user's that no commit held** (added 2026-10-15, for the ruling on §6, entry 5) | U9 |
 | **the index staged** at the places the row's other lines wrote | T3 (and S11, M3, through their commits) |
 | **a worktree's registration removed**, at a path under a named directory | U6; M7 |
 | a condition read off the state before the command: **the repository has no commit** | S9 |

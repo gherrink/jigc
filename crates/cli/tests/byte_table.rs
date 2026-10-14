@@ -1292,6 +1292,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["uninstall"], "U4, removed", ITS_FAMILYS_CELLS),
     (&["uninstall"], "U5", ITS_FAMILYS_CELLS),
     (&["uninstall"], "U6", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U9", ITS_FAMILYS_CELLS),
     (&["uninstall"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["uninstall"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -1750,8 +1751,12 @@ fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
 // The quote fence
 // ---------------------------------------------------------------------------
 
-/// The design docs an allowance line may quote, by their path from the repository's root.
+/// The docs an allowance line may quote, by their path from the repository's root: the
+/// design docs, and the decisions log for a ruling that stands where a design doc is silent.
 const DOCS: &[(&str, &str)] = &[
+    // A ruling of the human's is a line's sentence where the design doc is silent and the
+    // ruling says what the command does: `uninstall`'s `U9`, until the doc says it.
+    ("DECISIONS.md", include_str!("../../../DECISIONS.md")),
     (
         "design/assistant-adapter.md",
         include_str!("../../../design/assistant-adapter.md"),
@@ -2139,7 +2144,6 @@ fn read(mut manifest: Manifest, markers: &[&str]) -> Manifest {
                 Stands {
                     files,
                     held: manifest.held.iter().any(|id| holds(id.as_bytes())),
-                    stored: manifest.objects.iter().any(|id| holds(id.as_bytes())),
                 },
             )
         })
@@ -2467,9 +2471,10 @@ fn a_plant_with_no_bytes_is_a_fault_of_the_cell() {
 /// **The product's own file rewritten is no loss.** A file a lead-in of the cell wrote is
 /// rewritten: under a line that covers it the cell holds; with no line it is *written
 /// outside its allowance* and never *lost*, though the old bytes stand nowhere. The same
-/// rewrite of a file the prepared state held — nobody's lead-in wrote it — is *lost*; and
-/// where the store still has those bytes and nothing reaches them, the verdict says that
-/// it hangs on what *held* means.
+/// rewrite of a file the prepared state held — nobody's lead-in wrote it — is *lost*;
+/// where the store still has those bytes and nothing reaches them it is *lost* too — the
+/// bare store is not held (the human's ruling of 2026-10-14) — and where an object within
+/// reach has them it is *written outside its allowance*.
 #[test]
 fn the_products_own_file_rewritten_is_no_loss() {
     const CACHES: Row = row(&[line(
@@ -2493,18 +2498,10 @@ fn the_products_own_file_rewritten_is_no_loss() {
     // The prepared state's own bytes: the same rewrite, and no lead-in wrote the file.
     let prepared = Cell::of(NOTHING, &before, &after);
     comes_out(&prepared, Classification::Lost);
-    assert!(!prepared.verdict().expect("a cell").hangs_on_reach);
     let stored = then(&after, |m| {
         m.objects.insert(blob_of("{\"stamp\":\"c0\"}\n"));
     });
-    let hangs = Cell::of(NOTHING, &before, &stored)
-        .verdict()
-        .expect("a cell");
-    assert_eq!(hangs.classification, Classification::Lost);
-    assert!(
-        hangs.hangs_on_reach,
-        "the store has the bytes and nothing reaches them"
-    );
+    comes_out(&Cell::of(NOTHING, &before, &stored), Classification::Lost);
     let held = then(&stored, |m| {
         m.held.insert(blob_of("{\"stamp\":\"c0\"}\n"));
     });
@@ -2906,6 +2903,127 @@ fn a_commit_holds_what_its_line_declares() {
         why.iter()
             .any(|why| why.contains("holds a link at `.jigc/version`")),
         "{why:#?}"
+    );
+}
+
+/// **A commit that must carry what the lines changed** — the human's ruling of 2026-10-14
+/// on `uninstall` (`Holding::AllTheLinesChanged`): the teardown lands as one path-scoped
+/// commit of what it removed, and never carries the user's own uncommitted edits. A
+/// tracked file taken out of and a tracked file removed, with no commit, are *written
+/// outside its allowance* — the change is the commit's to land — and the same two in a
+/// commit that carries them hold. A file nobody tracked goes with no commit, and holds.
+/// And a commit that carries a line of the user's that no commit held — an edit swept in
+/// at the path the command changed — is *git's state moved outside its allowance*; under
+/// a row whose commit holds only the lines, the same is not this rule's to see.
+#[test]
+fn a_commit_that_must_carry_what_the_lines_changed() {
+    const REMOVED: Line = line("U1", Allows::Files(Where::Under(".jigc"), May::Removed));
+    const TAKEN: Line = line(
+        "U2",
+        Allows::Files(Where::Path("CLAUDE.md"), May::TakeOutOf),
+    );
+    const TEARS_DOWN_IN_A_COMMIT: Row = row(&[
+        REMOVED,
+        TAKEN,
+        line("U9", Allows::Commit(Holding::AllTheLinesChanged)),
+    ]);
+    const TEARS_DOWN: Row = row(&[
+        REMOVED,
+        TAKEN,
+        line("U9", Allows::Commit(Holding::OnlyTheLines)),
+    ]);
+    const INSTALLED: &str = "# the project\n@.jigc/AGENT.md\n";
+    const TAKEN_OUT: &str = "# the project\n";
+    const EDITED: &str =
+        "# the project\nbyte-table-plant-0 a line of the user's\n@.jigc/AGENT.md\n";
+    const EDITED_TAKEN_OUT: &str = "# the project\nbyte-table-plant-0 a line of the user's\n";
+    let installed = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/state");
+        put(m, "repo/.jigc/AGENT.md", "agent\n");
+        put(m, "repo/.jigc/state/hashes.json", "{}\n");
+        put(m, "repo/CLAUDE.md", INSTALLED);
+        commit(
+            m,
+            "c1",
+            &[
+                (".jigc/AGENT.md", Some((0o100_644, "agent\n"))),
+                ("CLAUDE.md", Some((0o100_644, INSTALLED))),
+            ],
+        );
+    });
+    let torn = |claude: &str| {
+        let claude = claude.to_string();
+        move |m: &mut Manifest| {
+            m.files.retain(|path, _| !path.starts_with("repo/.jigc"));
+            put(m, "repo/CLAUDE.md", &claude);
+        }
+    };
+    let in_the_tree = then(&installed, torn(TAKEN_OUT));
+    let in_a_commit = then(&in_the_tree, |m| {
+        commit(
+            m,
+            "c2",
+            &[
+                (".jigc/AGENT.md", None),
+                ("CLAUDE.md", Some((0o100_644, TAKEN_OUT))),
+            ],
+        );
+    });
+    let (got, why) = Cell::of(TEARS_DOWN_IN_A_COMMIT, &installed, &in_the_tree).came_to();
+    assert_eq!(got, Classification::WrittenOutside, "{why:#?}");
+    for path in ["repo/.jigc/AGENT.md", "repo/CLAUDE.md"] {
+        assert!(
+            why.iter()
+                .any(|why| why.contains(path) && why.contains("no commit the command made")),
+            "{path}: {why:#?}"
+        );
+    }
+    assert!(
+        !why.iter().any(|why| why.contains("hashes.json")),
+        "a file nobody tracked goes with no commit: {why:#?}"
+    );
+    comes_out(
+        &Cell::of(TEARS_DOWN_IN_A_COMMIT, &installed, &in_a_commit),
+        Classification::Holds,
+    );
+    comes_out(
+        &Cell::of(TEARS_DOWN, &installed, &in_the_tree),
+        Classification::Holds,
+    );
+
+    // The user's own line, in no commit, at the path the teardown takes a line out of.
+    let edited = then(&installed, |m| put(m, "repo/CLAUDE.md", EDITED));
+    let swept = then(&edited, |m| {
+        torn(EDITED_TAKEN_OUT)(m);
+        commit(
+            m,
+            "c2",
+            &[
+                (".jigc/AGENT.md", None),
+                ("CLAUDE.md", Some((0o100_644, EDITED_TAKEN_OUT))),
+            ],
+        );
+    });
+    let edit: &[(&str, &str)] = &[("repo/CLAUDE.md", MARKER)];
+    let (got, why) = Cell {
+        planted: edit,
+        ..Cell::of(TEARS_DOWN_IN_A_COMMIT, &edited, &swept)
+    }
+    .came_to();
+    assert_eq!(got, Classification::GitMoved, "{why:#?}");
+    assert!(
+        why.iter().any(
+            |why| why.contains("repo/CLAUDE.md") && why.contains("no object within reach held")
+        ),
+        "{why:#?}"
+    );
+    comes_out(
+        &Cell {
+            planted: edit,
+            ..Cell::of(TEARS_DOWN, &edited, &swept)
+        },
+        Classification::Holds,
     );
 }
 
@@ -3754,6 +3872,7 @@ refuses) exit 1 ;;
 writes-its-own) mkdir -p .jigc && echo own > .jigc/own.txt ;;
 rewrites-its-own) echo other > .jigc/own.txt ;;
 overwrites-the-committed-plant) echo other > notes.txt ;;
+drops-the-last-commit) git reset -q --hard HEAD~1 ;;
 writes-through-the-link) echo prose > a-link.md ;;
 rewrites-the-edited-file) echo rewritten > README.md ;;
 prunes-the-worktrees) git worktree prune ;;
@@ -3769,13 +3888,12 @@ esac
 "#;
 
 /// One cell on the stand-in: the row it is compared under, what it must come out as, and
-/// a piece of why. `hangs` is whether the verdict must say it hangs on what *held* means.
+/// a piece of why.
 struct OnAStandIn {
     cell: byte_cell::Cell,
     row: Row,
     expected: Classification,
     why: &'static str,
-    hangs: bool,
 }
 
 const fn on_a_stand_in(
@@ -3800,7 +3918,6 @@ const fn on_a_stand_in(
         row,
         expected,
         why,
-        hangs: false,
     }
 }
 
@@ -3858,6 +3975,16 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
     // --- the plants: a committed file, a link to nothing, an edit, the user's worktree ---
     on_a_stand_in(
         &["overwrites-the-committed-plant"],
+        &[Lead::Plant(Plant::Committed("notes.txt"))],
+        NOTHING,
+        Classification::GitMoved,
+        "the planted `repo/notes.txt` is gone from every path of the sandbox, and an object \
+         within reach still has its bytes",
+    ),
+    // The commit that holds the plant is reached by nothing but the reflogs that name it:
+    // held, by the human's ruling of 2026-10-14 on what *held* means — reflogs included.
+    on_a_stand_in(
+        &["drops-the-last-commit"],
         &[Lead::Plant(Plant::Committed("notes.txt"))],
         NOTHING,
         Classification::GitMoved,
@@ -3956,19 +4083,16 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         Classification::Lost,
         "the planted `repo/a-dir/a-file-of-its-users.txt` is gone",
     ),
-    OnAStandIn {
-        hangs: true,
-        ..on_a_stand_in(
-            &["drops-the-staged"],
-            &[Lead::Plant(Plant::Staged {
-                at: "README.md",
-                kept: false,
-            })],
-            NOTHING,
-            Classification::Lost,
-            "what was staged at `repo/README.md` is in the index no longer",
-        )
-    },
+    on_a_stand_in(
+        &["drops-the-staged"],
+        &[Lead::Plant(Plant::Staged {
+            at: "README.md",
+            kept: false,
+        })],
+        NOTHING,
+        Classification::Lost,
+        "what was staged at `repo/README.md` is in the index no longer",
+    ),
     on_a_stand_in(
         &["commits-what-is-staged"],
         &[Lead::Plant(Plant::Staged {
@@ -4062,16 +4186,13 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         Classification::GitMoved,
         "an object within reach still has its bytes",
     ),
-    OnAStandIn {
-        hangs: true,
-        ..on_a_stand_in(
-            &["stores-then-removes"],
-            A_PLANT,
-            REMOVES,
-            Classification::Lost,
-            "in no object within reach",
-        )
-    },
+    on_a_stand_in(
+        &["stores-then-removes"],
+        A_PLANT,
+        REMOVES,
+        Classification::Lost,
+        "in no object within reach",
+    ),
     // --- the file layer beside the repository, `tmp/` as every child's `TMPDIR` ---
     on_a_stand_in(
         &["writes-outside"],
@@ -4277,7 +4398,6 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         row: NOTHING,
         expected: Classification::RefusesNothingChanged,
         why: "",
-        hangs: false,
     },
     // --- what a lead-in of the cell wrote is the product's own ---
     on_a_stand_in(
@@ -4342,19 +4462,10 @@ fn the_reader_reads_what_the_comparison_reads() {
                 // Why: the piece stands in a line of it — or it says nothing, as expected.
                 let says = verdict.why.iter().any(|why| why.contains(on.why))
                     || on.why.is_empty() && verdict.why.is_empty();
-                if verdict.classification != on.expected
-                    || !says
-                    || verdict.hangs_on_reach != on.hangs
-                {
+                if verdict.classification != on.expected || !says {
                     wrong.push(format!(
-                        "{named} came out *{}* (hangs on reach: {}), and *{}* with `{}` was \
-                         expected (hangs on reach: {}):\n{}",
-                        verdict.classification,
-                        verdict.hangs_on_reach,
-                        on.expected,
-                        on.why,
-                        on.hangs,
-                        ran.detail
+                        "{named} came out *{}*, and *{}* with `{}` was expected:\n{}",
+                        verdict.classification, on.expected, on.why, ran.detail
                     ));
                 }
                 if ran
@@ -4753,7 +4864,6 @@ fn unmarked(cells: &[&byte_cell::Cell], silences: &[u8], readings: &str) -> Vec<
     for cell in cells {
         for (at, mark) in cell.marks.iter().enumerate() {
             let known = match mark {
-                Mark::Reach => true,
                 Mark::Silence(entry) => silences.contains(entry),
                 Mark::Bound(number) => (1..=4).contains(number),
             };
@@ -4828,13 +4938,13 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
     let (plain, one, two) = (
         cell("plain", &[]),
         cell("one", &[Mark::Silence(2)]),
-        cell("two", &[Mark::Reach, Mark::Bound(1)]),
+        cell("two", &[Mark::Silence(1), Mark::Bound(1)]),
     );
-    let list = "| silence 2 | `one` |\n| what *held* means | `two` |\n| bound 1 | `two` |\n";
+    let list = "| silence 2 | `one` |\n| silence 1 | `two` |\n| bound 1 | `two` |\n";
     assert_eq!(
         marked(&[&plain, &one, &two]),
         [
-            "| what *held* means | `two` |",
+            "| silence 1 | `two` |",
             "| silence 2 | `one` |",
             "| bound 1 | `two` |"
         ]
@@ -4842,7 +4952,7 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
     says(&unmarked(&[&plain, &one, &two], &[1, 2], list), &[]);
     let (lost, twice) = (
         cell("lost", &[Mark::Silence(9), Mark::Bound(5)]),
-        cell("twice", &[Mark::Reach, Mark::Reach]),
+        cell("twice", &[Mark::Bound(2), Mark::Bound(2)]),
     );
     says(
         &unmarked(&[&one, &lost, &twice], &[1, 2], list),
@@ -4855,13 +4965,13 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
                 "`lost` carries the mark *bound 5*",
                 "none of the four bounds",
             ),
-            ("`twice` carries the mark *what *held* means* twice", ""),
-            ("no line `| what *held* means | `twice` |`", ""),
-            ("no line `| what *held* means | `twice` |`", ""),
+            ("`twice` carries the mark *bound 2* twice", ""),
             ("no line `| silence 9 | `lost` |`", ""),
+            ("no line `| bound 2 | `twice` |`", ""),
+            ("no line `| bound 2 | `twice` |`", ""),
             ("no line `| bound 5 | `lost` |`", ""),
             (
-                "the line `| what *held* means | `two` |`",
+                "the line `| silence 1 | `two` |`",
                 "no cell carries that mark",
             ),
             (
@@ -5147,21 +5257,10 @@ fn run_the_cells_of(state: Prepared) {
         match ran {
             Ok(ran) => {
                 results.push((cell.name, ran.verdict.classification));
-                if ran.verdict.hangs_on_reach && !cell.marks.contains(&Mark::Reach) {
-                    wrong.push(format!(
-                        "`{}` came out hanging on what *held* means, and carries no mark for it",
-                        cell.name
-                    ));
-                }
                 seen.push(format!(
-                    "`{}` — {}{}{}\n{}\nexcused, line by line: {}",
+                    "`{}` — {}{}\n{}\nexcused, line by line: {}",
                     cell.name,
                     ran.verdict.classification,
-                    if ran.verdict.hangs_on_reach {
-                        " (it hangs on what *held* means)"
-                    } else {
-                        ""
-                    },
                     marks(cell),
                     ran.detail.trim_end(),
                     excused(&ran.verdict),
@@ -5529,7 +5628,6 @@ struct CameTo {
     /// The lower classes it is red in too.
     also: Vec<Classification>,
     exit: String,
-    hangs: bool,
     /// The cell's seconds in the frame: its sandbox, its leads, its three manifests, its
     /// command.
     seconds: f64,
@@ -5548,7 +5646,6 @@ impl CameTo {
                 .replace(&std::env::temp_dir().display().to_string(), "<tmp>/")),
             also: Vec::new(),
             exit: "-".to_string(),
-            hangs: false,
             seconds: 0.0,
             excused: Vec::new(),
             detail: why.to_string(),
@@ -5562,9 +5659,6 @@ impl CameTo {
             .map(|class| format!("; also {class}"))
             .collect();
         match &self.came {
-            Ok(classification) if self.hangs => {
-                format!("{classification} (hangs on what *held* means){also}")
-            }
             Ok(classification) => format!("{classification}{also}"),
             Err(why) => format!("not run: {why}"),
         }
@@ -5616,7 +5710,6 @@ fn on(binary: &Path, cells: &[&byte_cell::Cell]) -> Vec<CameTo> {
                             came: Ok(ran.verdict.classification),
                             also: ran.verdict.also.iter().map(|(class, _)| *class).collect(),
                             exit: ran.exit,
-                            hangs: ran.verdict.hangs_on_reach,
                             seconds: ran.seconds,
                             excused: ran.verdict.excused,
                             detail: ran.detail,

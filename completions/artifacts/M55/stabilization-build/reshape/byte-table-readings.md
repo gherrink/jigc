@@ -1,14 +1,16 @@
 # The byte table's pilot — the questions of reading, and the cells each one decides
 
-*Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question. In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
+*Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
 
-Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turn on an open question or stand on a declared bound**; each is named below with what it showed on this tree's binary and on the previous release's on 2026-10-13.
+Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction.
 
-## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — open
+## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — ruled on 2026-10-14: reading (b)
 
 - *The words.* The exit rule's first clause: *"no jigc command at exit 0 destroys bytes no git object holds"* ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-04 — The exit rule, revised*).
 - *The readings.* (a) reachable — from a ref, a registered checkout's `HEAD`, an index, the newest stash entry; (b) that, and what any reflog still names; (c) in the object store, reachable or not.
-- *What the frame does.* It follows (a), and a verdict says where it would be another under (c): the bytes are in the store and nothing reaches them. (b) is not carried apart from (c).
+- *What the frame did.* It followed (a), and a verdict said where it would be another under (c): the bytes are in the store and nothing reaches them. (b) was not carried apart from (c).
+- *The ruling* — the human's, of 2026-10-14, option B (*"Agree on B"*): **reachable from a ref, a registered checkout's `HEAD`, an index, the newest stash entry, and what any reflog still names; the bare object store is not held.** The three cells of the shape below stay *lost*.
+- *What the frame does now.* It asks git for what any reflog reaches as well, and no verdict says it hangs on the question: there is none. The mark leaves the three cells.
 - *The cells.* **Three, and all three are the same shape**: a change the user staged at a path the command stages itself, and did not keep in the working file — at a doc a task is updating, at `.jigc/version`, and at the milestone's record. In each the command exits 0 and the staged bytes are in the index no longer. **Under (a) each is *lost*. Under (b) each is *lost* too**: a blob that stood only in an index is named by no reflog. **Under (c) none is**: `git add` wrote the blob, and it is in the store until git collects it. All three come out the same on the previous release.
 - No other verdict of the 61 hangs on it, on either binary. The cell of the user's own worktree moved away is red on the previous release by the worktree's registration, whichever reading holds.
 
@@ -19,30 +21,36 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *The ruling's second bound is held in two cells*: *a refused command run again refuses again, with the plant standing*. `task-finalize-an-untracked-file-at-the-created-docs-home-run-again` and `task-finalize-a-hand-edit-after-the-first-write-run-again` run their command once as a lead that must refuse and then as the cell's command: each refuses again with the refusal it names, the plant stands, and the second refusal changes nothing — the cache the first rebuilt is as the first left it.
 - *Open, and met by no cell.* **No refusal of the 61 wrote under `.jigc/state/`**, so the point the ruling leaves open there is not met. **No refusal left a task area or a milestone area behind.** Whether a cache a refusal wrote is true is not held by the frame at all.
 
-## 3. `jigc setup` refuses in two ways (the record's entry 2) — open, and no cell turns on it
+## 3. `jigc setup` refuses in two ways (the record's entry 2) — ruled on 2026-10-14: every refusal leaves the repository as it was
 
-- The two cells of `setup` refuse before the first write, and the frame finds no difference. The cells it decides are a rejecting hook at the install's commit — `S11 × H` in the fence's words — in the family's own task.
+- *The ruling* — the human's, after asking for the robust and future-proofed answer (*"Yes agreed."*): **every refusal of `setup` leaves the repository as it was**, caches aside; a failure after the first write rolls back every path the run wrote instead of staging them. The row holds `S13` on every refusal, and `S12`'s sentence is a design inconsistency, recorded in [byte-table-findings.md](byte-table-findings.md).
+- The two cells of `setup` of the first cut refuse before the first write, and the frame finds no difference. The cells it decides are the late failures — a rejecting hook at the install's commit, `S11 × H` in the fence's words, and a hooks directory that cannot be written — in the install family's task.
 
-## 4. `jigc uninstall`, git's index, and a commit (the record's entry 5) — open, and no cell turns on it
+## 4. `jigc uninstall`, git's index, and a commit (the record's entry 5) — ruled on 2026-10-14: one dedicated, path-scoped commit
 
-- All four cells of `uninstall` refuse on this tree, and remove nothing. On the previous release three of them act, and are *lost* by the plant's rule before any line is asked. The cells it decides are the family's base cell and every planted cell in which `uninstall` acts.
+- *The ruling* — option A (*"Agree on A"*): the teardown lands as one dedicated, path-scoped commit of what it removed, and never carries the user's own uncommitted edits at a path it touches. The row's line `U9` quotes it.
+- All four cells of `uninstall` of the first cut refuse on this tree, and remove nothing. On the previous release three of them act, and are *lost* by the plant's rule before any line is asked. The cells it decides are the install family's base cell and every planted cell in which `uninstall` acts: a teardown that leaves its removals in the working tree is red in each.
 
-## 5. Where `setup` keeps the record of a failed run · the spawn launch-template (the record's entries 3 and 4) — open, and met by no cell
+## 5. Where `setup` keeps the record of a failed run (the record's entry 3) — read under the ruling on entry 2 · the spawn launch-template (entry 4) — open, and met by no cell
 
-## 6. The rendered message's temporary file (the record's entry 6) — open, and met by one cell
+- *Entry 3, as it reads now*: no refusal leaves the record; it keeps only the job of a run killed mid-write, which is no cell. A record left by a refusal under `.jigc/state/` or `.jigc/index/` would be excused by `C1` or `C2` all the same — the table cannot tell it from a cache without a path no doc gives (the record's §6, entry 3).
+
+## 6. The rendered message's temporary file (the record's entry 6) — ruled on 2026-10-14: the file is deleted whether or not the commit landed
 
 - *The cell.* `task-discard-a-hook-that-rejects`: the record commit of a sub-task's discard is rejected by the user's `pre-commit` hook; the command exits 1 and says *nothing was committed … the task's working area is intact*; and `record-commit-msg.txt` stands in that working area, where it did not before. *Refused, and changed what a refusal may not* — on this tree and on the previous release.
-- *The readings* are the record's: (a) the file is a write a refusal may not make; (b) it is part of *the survivable frame on a rejecting hook*, which a doc names and none describes. The cell follows (a).
+- *The readings* are the record's: (a) the file is a write a refusal may not make; (b) it is part of *the survivable frame on a rejecting hook*, which a doc names and none describes. The cell followed (a).
+- *The ruling* — option A (*"Agree on A"*): the file is deleted whether or not the commit landed, as `design/finalize.md` says and as `task finalize` does. **The leftover file is a finding**, under its key, and the cell loses its mark.
 - *Its sibling shows nothing.* `task-finalize-a-hook-that-rejects` leaves no file: only the edge index, rebuilt. **Nothing was left under the sandbox's `tmp/`** by any of the 61 cells on either binary.
 
 ## 7. `jigc task discard`, and the edge index when it settles a sub-task (the record's entry 7) — open, and met by no cell
 
 - Five cells of the gate settle a sub-task at exit 0 on this tree, and five more on demand. None wrote under `.jigc/index/`: each wrote the record and under `.jigc/state/`, and took the working area away. So the cells do not turn on the entry, and no cell carries its mark.
 
-## 8. A change staged at a path the command stages itself, and not in the working file (the record's entry 8) — open, and met by three cells
+## 8. A change staged at a path the command stages itself, and not in the working file (the record's entry 8) — ruled on 2026-10-14: the bound is one case
 
-- *The cells.* `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` — the declared bound's own case; `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file`; `task-discard-a-change-staged-at-the-record-and-not-in-the-file`. Each is *lost*, and hangs on §1.
+- *The cells.* `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` — the declared bound's own case; `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file`; `task-discard-a-change-staged-at-the-record-and-not-in-the-file`. Each is *lost*, under §1's ruling as before it.
 - *Under reading (a)* — the bound is the rule wherever jigc stages a path of its own — all three stand on a declared bound. *Under (b)* — the bound is one case — the first stands on it and the other two are findings. **All three are red under either**: a bound makes no cell green.
+- *The ruling* — option B (*"Yes agree on B"*): **the declared bound (1) stays one case, a doc a task is updating.** The second and the third are findings, each under its key, and lose this entry's mark; the first keeps the bound's.
 - *What a neighbour shows.* A file staged at a **created** doc's home, and not in the tree, is refused on this tree (`finalize.promote-clobber`) where the previous release replaced it at exit 0. A change staged **before** the task existed is refused on this tree (`finalize.carried-staged`, seen by hand and no cell: its position is not the plan's).
 
 ## 9. A hand edit that rides jigc's commit, and an index entry changed at a path the command does not name (the plan's questions 3 and 4) — answered per command, open at three
@@ -61,11 +69,5 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 
 | mark | cell |
 |---|---|
-| what *held* means | `task-discard-a-change-staged-at-the-record-and-not-in-the-file` |
-| what *held* means | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
-| what *held* means | `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file` |
-| silence 6 | `task-discard-a-hook-that-rejects` |
-| silence 8 | `task-discard-a-change-staged-at-the-record-and-not-in-the-file` |
-| silence 8 | `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |

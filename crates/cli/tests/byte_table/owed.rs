@@ -7,9 +7,10 @@
 pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 
 /// **The owed list** — the pilot's write leaves that have no row yet, each under the task
-/// of the plan that owes it. `B4` is the first cut's; `B5` to `B9` are what would follow if
-/// the human rules for it at the stop, and until then their leaves stand here rather than
-/// on the scheduled list, which is for a leaf with a reason to wait. The four leaves of the
+/// of the plan that owes it. `B4` was the first cut's; `B5` to `B9` are built now, one
+/// family per builder — the human's ruling of 2026-10-13 at the pilot's stop, option A —
+/// and their leaves stand here until each family brings its rows; the scheduled list is for
+/// the six leaves the same ruling leaves for before the port. The four leaves of the
 /// acceptance left this list with the task `B2c`, which brought their rows, and `task
 /// discard` with the first commit of `B4`, which brought its own. `ingest` and
 /// `unmanage` joined it with the task `B3`, whose count holds them touched under the plan's
@@ -48,7 +49,7 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// (`byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`) asks nothing
 /// of such a leaf need by need, and names it the day it also has a scheduled row. `B4`
 /// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
-/// and `B7` are what would follow if the human rules for it at the stop. A leaf leaves
+/// and `B7` are built now, by the human's ruling of 2026-10-13. A leaf leaves
 /// this list in the commit that brings its cells — after which every need of its row is a
 /// cell or a line of `scheduled-cells.tsv` with its reason.
 pub const CELLS_OWED: &[(&[&str], &str)] = &[

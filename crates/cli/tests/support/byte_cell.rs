@@ -50,12 +50,10 @@
 //! are read in is [`compare`]'s; everything but [`Classification::Holds`] and
 //! [`Classification::RefusesNothingChanged`] is red.
 //!
-//! **What *held* means is an open question of reading** (the plan's §7, question 1), and a
-//! cell follows the narrowest reading: bytes are held where a ref, a checkout's `HEAD`, an
-//! index or the newest stash entry reaches an object that has them ([`Manifest::held`]).
-//! Where the bytes are in the object store and nothing reaches them, the verdict says that
-//! it hangs on the question ([`Verdict::hangs_on_reach`]); the reading in between —
-//! reachable through a reflog — is not carried apart from the store.
+//! **What *held* means is the human's ruling of 2026-10-14** (the plan's §7, question 1,
+//! reading (b)): bytes are held where a ref, a registered checkout's `HEAD`, an index, the
+//! newest stash entry or any reflog reaches an object that has them ([`Manifest::held`]).
+//! The bare object store is not held: bytes that only it has are lost.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -162,13 +160,12 @@ pub struct Commit {
     pub changed: BTreeMap<String, Option<(u32, String)>>,
 }
 
-/// Where a plant's marker stands: the files of the sandbox that hold it, whether an object
-/// within reach does ([`Manifest::held`]'s reach), and whether any object of the store does.
+/// Where a plant's marker stands: the files of the sandbox that hold it, and whether an
+/// object within reach does ([`Manifest::held`]'s reach).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Stands {
     pub files: BTreeSet<String>,
     pub held: bool,
-    pub stored: bool,
 }
 
 /// **A picture of a sandbox, as data** — what the comparison is of (the plan's §2, *The
@@ -197,8 +194,9 @@ pub struct Manifest {
     pub config: String,
     /// Every object id of the store.
     pub objects: BTreeSet<String>,
-    /// **The ids held under the narrowest reading**: what a ref, a checkout's `HEAD`, an
-    /// index or the newest stash entry reaches.
+    /// **The ids held**: what a ref, a registered checkout's `HEAD`, an index, the newest
+    /// stash entry or any reflog reaches — the human's ruling of 2026-10-14 on what
+    /// *held* means. The bare object store is not held.
     pub held: BTreeSet<String>,
     /// The commits within that reach, by id.
     pub commits: BTreeMap<String, Commit>,
@@ -280,6 +278,14 @@ pub enum Holding {
     TheIndex,
     /// What every other checkout of the sandbox had staged.
     TheWorktrees,
+    /// **Only what the row's lines changed, and every change of theirs to a tracked path**
+    /// — a path the main checkout's index held before the command: such a change lands in
+    /// a commit the command made, and one the working tree keeps with no commit carrying
+    /// it is outside the allowance. **Nor may the commit carry bytes of the user's that no
+    /// object within reach held before** — a plant's edit swept in with the command's own
+    /// change at the same path. The human's ruling of 2026-10-14 on `uninstall`
+    /// (the record's §6, entry 5).
+    AllTheLinesChanged,
 }
 
 /// What a line allows.
@@ -611,10 +617,9 @@ pub struct Seen<'a> {
     pub listed: Listed,
 }
 
-/// What one cell came to: the classification, why, **how many differences each line of
-/// the row excused** — every line, so that one that excuses much is seen and one that
-/// excuses nothing is too — and whether the classification would be another under a wider
-/// reading of *held*.
+/// What one cell came to: the classification, why, and **how many differences each line
+/// of the row excused** — every line, so that one that excuses much is seen and one that
+/// excuses nothing is too.
 ///
 /// **A red cell shows every class it is red in**: the classification is the one that
 /// outranks the others, and `also` holds each lower class the comparison found, with its
@@ -626,7 +631,6 @@ pub struct Verdict {
     pub why: Vec<String>,
     pub also: Vec<(Classification, Vec<String>)>,
     pub excused: Vec<(&'static str, usize)>,
-    pub hangs_on_reach: bool,
 }
 
 impl Verdict {
@@ -683,7 +687,6 @@ struct Tally<'a> {
     lost: Vec<String>,
     git: Vec<String>,
     outside: Vec<String>,
-    hangs: bool,
 }
 
 impl<'a> Tally<'a> {
@@ -812,16 +815,10 @@ impl<'a> Tally<'a> {
     }
 
     /// Whether the bytes under `blob` still stand after the command: at a path of the
-    /// sandbox, or in an object within reach. Where only the store has them, the verdict
-    /// hangs on the question of reach.
-    fn stands(&mut self, blob: &str) -> bool {
+    /// sandbox, or in an object within reach. The store alone is no reach.
+    fn stands(&self, blob: &str) -> bool {
         let after = self.seen.after;
-        if after.files.values().any(|entry| entry.blob() == Some(blob)) || after.held.contains(blob)
-        {
-            return true;
-        }
-        self.hangs |= after.objects.contains(blob);
-        false
+        after.files.values().any(|entry| entry.blob() == Some(blob)) || after.held.contains(blob)
     }
 }
 
@@ -882,7 +879,6 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             .enumerate()
             .map(|(at, line)| (line.id, tally.map_or(0, |tally| tally.excused[at])))
             .collect(),
-        hangs_on_reach: tally.is_some_and(|tally| tally.hangs),
     };
     if !seen.ended.ended {
         return Ok(verdict(
@@ -906,7 +902,6 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         lost: Vec::new(),
         git: Vec::new(),
         outside: Vec::new(),
-        hangs: false,
     };
 
     // --- The plants: the user's, whatever the row declares. ---
@@ -922,7 +917,6 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             // the index still, or a commit that took the entry in. What became of the
             // entry is the index's and the commit's to answer, below.
             if !stands.held {
-                tally.hangs |= stands.stored;
                 tally.lost.push(format!(
                     "what was staged at `{}` is in the index no longer, and its bytes stand \
                      at no path of the sandbox and in no object within reach",
@@ -962,7 +956,6 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 plant.at
             ));
         } else {
-            tally.hangs |= stands.stored;
             tally.lost.push(format!(
                 "the planted `{}` is gone, and its bytes stand at no path of the sandbox and in \
                  no object within reach",
@@ -1030,6 +1023,15 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         .collect();
     let mut by: BTreeMap<&str, usize> = BTreeMap::new();
     let mut open: Vec<&Diff<'_>> = Vec::new();
+    // Whether the change the line at `at` let the command make at `path` is one the row's
+    // commit must carry: the row's commit holds all the lines changed, the line is of the
+    // file layer, and the main checkout's index held the path.
+    let must_land = |at: usize, path: &str| {
+        holding == Some(Holding::AllTheLinesChanged)
+            && matches!(row.lines[at].allows, Allows::Files(..))
+            && in_repo(path)
+                .is_some_and(|rel| main.0.is_some_and(|was| was.index.contains_key(rel)))
+    };
     for diff in &diffs {
         // A line's, or the checkout following the commit the command made there.
         let follows = || {
@@ -1041,11 +1043,30 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             };
             commits.filter(|_| same)
         };
-        match tally.covering(diff).or_else(follows) {
+        match tally.covering(diff) {
+            // A change a line lets the command make at a tracked path, which the row's
+            // commit must carry, and no commit the command made does.
+            Some(at) if must_land(at, diff.path) && follows().is_none() => {
+                tally.outside.push(format!(
+                    "`{}` {} under the line `{}`, and no commit the command made carries it: \
+                     its row lands that change in a commit",
+                    diff.path,
+                    match diff.after {
+                        Some(_) => "is not what it was",
+                        None => "is gone",
+                    },
+                    row.lines[at].id
+                ));
+            }
             Some(at) => {
                 by.insert(diff.path, at);
             }
-            None => open.push(diff),
+            None => match follows() {
+                Some(at) => {
+                    by.insert(diff.path, at);
+                }
+                None => open.push(diff),
+            },
         }
     }
     // A directory on the way to a covered write is covered with it, and so is one that
@@ -1173,6 +1194,26 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                         "a commit the command made removes `{path}`, which no line declares"
                     ),
                 });
+            }
+        }
+    }
+    // Under a commit that holds all the lines changed, no bytes of the user's ride it: a
+    // plant no object within reach held before, which one holds now, was swept into git by
+    // the command.
+    if holding == Some(Holding::AllTheLinesChanged) {
+        for plant in seen.planted.iter().filter(|plant| !plant.staged) {
+            let held = |manifest: &Manifest| {
+                manifest
+                    .markers
+                    .get(&plant.marker)
+                    .is_some_and(|stands| stands.held)
+            };
+            if !held(before) && held(after) {
+                tally.git.push(format!(
+                    "a commit or the index the command left carries the bytes planted at `{}`, \
+                     which no object within reach held before",
+                    plant.at
+                ));
             }
         }
     }
@@ -1557,8 +1598,6 @@ pub enum Lead {
 /// expected-red list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Mark {
-    /// What *held* means — how far an object's reach goes (the plan's §7, question 1).
-    Reach,
     /// A place where a design doc is silent or says two things: an entry of the committed
     /// record's list, by its number (`…/reshape/byte-table-acceptance-rows.md` → §6).
     Silence(u8),
@@ -1571,7 +1610,6 @@ impl Mark {
     /// The mark, as a table prints it.
     pub fn named(self) -> String {
         match self {
-            Mark::Reach => "what *held* means".to_string(),
             Mark::Silence(entry) => format!("silence {entry}"),
             Mark::Bound(number) => format!("bound {number}"),
         }
@@ -2440,9 +2478,10 @@ impl Reader<'_> {
                 }
             }
 
-            // What is held, under the narrowest reading: what a ref, a registered
-            // checkout's `HEAD` or its index, or the newest stash entry reaches.
-            let mut reach = vec!["rev-list", "--objects", "--all"];
+            // What is held, as the human ruled it on 2026-10-14: what a ref, a registered
+            // checkout's `HEAD` or its index, the newest stash entry, or any reflog
+            // reaches.
+            let mut reach = vec!["rev-list", "--objects", "--all", "--reflog"];
             reach.extend(roots.iter().map(String::as_str));
             for line in text(&self.asked(&repo, &reach, None, None)?).lines() {
                 held.insert(line.split(' ').next().unwrap_or_default().to_string());
@@ -2610,7 +2649,6 @@ impl Reader<'_> {
                 Stands {
                     files,
                     held: manifest.held.iter().any(has),
-                    stored: manifest.objects.iter().any(has),
                 },
             );
         }

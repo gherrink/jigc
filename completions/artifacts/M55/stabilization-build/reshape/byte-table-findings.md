@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-15, with the first commit of the install family's task (`B5`), for the human's rulings of 2026-10-14: §1 gains the inconsistency the ruling on `setup`'s refusals names; in §4 three keys lose the open question each was carried with — what *held* means is ruled, reading (b), and the cells stay *lost*; the record's entries 6 and 8 are ruled, and the cells they named are findings. No cell's classification moved.*
+
 ## 1. Where two design docs say two things — recorded here, and corrected by nobody in this lane
 
 ### `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`
@@ -27,6 +29,20 @@ and `design/storage.md` → *Edge index lifecycle*, the first row of its table o
 **Where it was met.** Writing the row of `jigc task finalize` from the docs ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 1): the row could not say whether a refused finalize may leave the caches changed, because the two docs answer differently. The plan's own run of a refused `jigc task finalize` on this tree left three new files under `.jigc/index/` ([byte-table-plan.md](byte-table-plan.md) → §1.2).
 
 **What was ruled, and what was not.** The table follows the storage design: a refusal may rebuild a cache, and no cell is red for it (the record's §4a, lines `C1` to `C3`). Which of the two sentences is corrected, and to what, is not ruled here and no design doc is edited in this lane. A neighbour of the same question is in the record's §6, entry 1, *what the ruling leaves open*: `design/storage.md` → *Derived caches* calls the file↔state hashes *rebuildable from the committed docs* in one sentence and says in the next paragraph that they *"carry **no stamp and no rebuild path**"* — one doc, two sentences.
+
+### `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`
+
+*Recorded 2026-10-15, as the human's ruling of 2026-10-14 on the record's §6, entry 2, asks: S12's sentence is "a design inconsistency to record … and to correct with the product's fix — not a line of the row". For the stabilization run's ledger: doctype `inconsistency`, one design doc against the rule the product is held to and a second doc's sentence.*
+
+**One side** — `design/project-setup.md` → *Idempotency & irreversibility — the acceptance obligation* (from M54's S22), of a `setup` that fails after its first write:
+
+> records the install footprint (M51's `record_install_footprint`) over the paths it wrote in that run, clean against `HEAD` before it and dirty at the failure, and **stages them**
+
+**The other side** — the ruling: **every refusal of `setup` leaves the repository as it was** (caches aside); a failure after the first write rolls back every path the run wrote — each was clean against `HEAD`, absent, or an untracked file `setup` read to merge into, so its bytes before the run are known — instead of staging them; the install-footprint record keeps only the job of a run that was killed mid-write. And `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*:
+
+> **And because the ask is pre-write, the refusal installs nothing**
+
+**What disagrees.** The first doc declares a refusal that leaves the install written and staged; the second says a refusal installs nothing, and the ruling makes that the rule for every refusal. **What follows** is a change to the product — the rollback — and the first doc's sentence corrected with it. The cells that show it are the install family's late failures.
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
@@ -101,30 +117,30 @@ Each row says what the cell is, what it came to, the sentence it is held against
 ### `r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced`
 
 - *The cell.* `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file`, in `committed-singletons`: after the task's last write, a line is added to `VISION.md`, staged, and the working file put back as it was.
-- *What it came to.* **Lost**, and it hangs on what *held* means: exit 0, the staged bytes are in the index no longer, and in the store with nothing reaching them.
+- *What it came to.* **Lost**: exit 0, the staged bytes are in the index no longer, and in the store with nothing reaching them — not held, by the human's ruling of 2026-10-14 on what *held* means (reading (b): a reflog names no blob that only an index held).
 - *Held against.* The clause; and **it stands on a declared bound**, the first of the four: *content staged for a doc a task is updating, while the working file does not carry it, is replaced at finalize*.
 - *The previous release.* The same: *lost*, exit 0.
 
 ### `r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced`
 
 - *The cell.* `task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file`, in `fresh`: the same act at `.jigc/version`, last before the finalize of a task that created a decision.
-- *What it came to.* **Lost**, hanging on what *held* means: exit 0, *1 file committed* — the decision — and the index entry of `.jigc/version` is no longer what the user staged.
-- *Held against.* The clause; and `T3`'s sentence, *"This phase stages **jigc's own** managed artifacts into that existing index"* — what the user staged there was not jigc's own. No declared bound names this path: the record's §6, entry 8, has the two readings.
+- *What it came to.* **Lost**: exit 0, *1 file committed* — the decision — and the index entry of `.jigc/version` is no longer what the user staged; the bytes are in the store alone, which is not held (reading (b), ruled).
+- *Held against.* The clause; and `T3`'s sentence, *"This phase stages **jigc's own** managed artifacts into that existing index"* — what the user staged there was not jigc's own. No declared bound names this path: **a finding**, by the human's ruling of 2026-10-14 on the record's §6, entry 8 — the bound is one case, a doc a task is updating.
 - *The previous release.* The same: *lost*, exit 0.
 - *Beside it.* A hand edit to the stamp **in the working file** is left alone on this tree — *jigc left it untouched and out of this commit* — where the previous release replaced it at exit 0: *lost* there, *holds* here.
 
 ### `r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced`
 
 - *The cell.* `task-discard-a-change-staged-at-the-record-and-not-in-the-file`, in `fresh`: a milestone with one sub-task nobody re-entered; a line is added to the milestone's committed record, staged, and the working file put back; the sub-task is discarded.
-- *What it came to.* **Lost**, hanging on what *held* means: exit 0, `record commit: …`, and the staged bytes are in the index no longer.
-- *Held against.* The clause; and `A6`'s sentence — the record's commit *"stages and commits **only the record file** … never sweeping the agent's in-flight index/worktree WIP"*: the staged change was index work in flight, at the one path the door stages. A hand edit **in the working file** is refused at the same door (`reconciliation.conflict-block`), on both binaries. The record's §6, entry 8.
+- *What it came to.* **Lost**: exit 0, `record commit: …`, and the staged bytes are in the index no longer, and in no object within reach (reading (b), ruled).
+- *Held against.* The clause; and `A6`'s sentence — the record's commit *"stages and commits **only the record file** … never sweeping the agent's in-flight index/worktree WIP"*: the staged change was index work in flight, at the one path the door stages. A hand edit **in the working file** is refused at the same door (`reconciliation.conflict-block`), on both binaries. **A finding**, by the ruling on the record's §6, entry 8.
 - *The previous release.* The same: *lost*, exit 0.
 
 ### `r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area`
 
 - *The cell.* `task-discard-a-hook-that-rejects`, in `fresh`: the same sub-task, and the user's own lines in the `pre-commit` hook, which reject every commit.
 - *What it came to.* **Refused, and changed what a refusal may not.** Exit 1, *nothing was committed — the milestone record still names task:do-the-thing as it did, and the task's working area is intact*; and `.jigc/tasks/do-the-thing/record-commit-msg.txt` was made.
-- *Held against.* `A8`'s sentence — *"a rejected `pre-commit` hook leaves the record *and* the task exactly as the frame says"* — and `design/finalize.md` → *6. Commit*: *"a temp file, deleted after"*. The record's §6, entry 6, has the two readings: the file may be part of *the survivable frame*, which no doc describes.
+- *Held against.* `A8`'s sentence — *"a rejected `pre-commit` hook leaves the record *and* the task exactly as the frame says"* — and `design/finalize.md` → *6. Commit*: *"a temp file, deleted after"*. **A finding**, by the human's ruling of 2026-10-14 on the record's §6, entry 6: the file is deleted whether or not the commit landed, as `design/finalize.md` says and as `task finalize` does.
 - *The previous release.* The same.
 - *Beside it.* `task-finalize-a-hook-that-rejects` leaves no file.
 

@@ -220,9 +220,11 @@ pub const SETUP: Row = Row {
     ],
 };
 
-/// **`jigc uninstall`** — the record's §2. It has no line for the index and none for a
-/// commit: the doc is silent on both (the record's §6, entry 5), and until that is ruled
-/// a staged removal is *git's state moved outside its allowance*.
+/// **`jigc uninstall`** — the record's §2. Its doc is silent on git's index and on a
+/// commit (the record's §6, entry 5), and the human ruled on 2026-10-14: the teardown
+/// lands as one path-scoped commit of what it removed and never carries the user's own
+/// uncommitted edits — `U9`, whose sentence is the ruling's. A removal of a tracked file
+/// the working tree keeps with no commit carrying it is outside the allowance.
 pub const UNINSTALL: Row = Row {
     leaf: &["uninstall"],
     consent: Some("--force"),
@@ -309,6 +311,17 @@ pub const UNINSTALL: Row = Row {
                     words: "A door removes a registration from `.git/worktrees/` **only at a path it created** under `<jigc_home>/.jigc/worktrees/` — a sub-task's `<sub-task-id>`, or a boundary's own `.combine-*` — **by path**, one record at a time (`git worktree remove --force <path>`), and **a run that refuses removes none**",
                 },
             ],
+        ),
+        // The human's ruling of 2026-10-14 on the record's §6, entry 5: the row's one line
+        // whose sentence is a ruling and not a design doc's, until the doc says it.
+        line(
+            "U9",
+            Allows::Commit(Holding::AllTheLinesChanged),
+            &[Quote {
+                doc: "DECISIONS.md",
+                heading: "2026-10-15 — The human's six rulings on the byte table's first cut, recorded: the families `B5` to `B9` are built now; what is held reaches what a reflog names; a change staged at a path jigc stages itself is a finding beyond the one declared bound; every refusal of `setup` leaves the repository as it was; `uninstall` lands its teardown in one path-scoped commit; a rejected record commit's message file is a finding (the byte table, task `B5`, the first of its commits)",
+                words: "**The teardown lands as one dedicated, path-scoped commit of what it removed**, the inverse of `setup`'s install commit, and **never carries the user's own uncommitted edits** at a path it touches",
+            }],
         ),
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],

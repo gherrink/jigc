@@ -686,7 +686,9 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 ///   `.jigc/displaced/<task-id>/` with its relative paths intact"*;
 /// - **a hand edit to `.jigc/version`** (`T2`) is left: the stamp is refreshed *"where it
 ///   is jigc's to write"*; a change staged at it and not in the file is met by no
-///   sentence, and the cell is listed as one that acts.
+///   sentence, and the cell is listed as one that acts — and since the human's ruling of
+///   2026-10-14 on the record's §6, entry 8, its replacement is a finding: the declared
+///   bound is one case, a doc a task is updating.
 ///
 /// Two cells run their own command a second time over what a first refusal left
 /// ([`Lead::Refused`]): the ruling on a refusal's caches is bounded by *a refused command
@@ -807,7 +809,7 @@ const FINALIZE_CELLS: [Cell; 24] = [
         at("T1", Kind::StagedThere),
     ),
     Cell {
-        marks: &[Mark::Bound(1), Mark::Reach],
+        marks: &[Mark::Bound(1)],
         ..finalize(
             "task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file",
             SINGLETONS,
@@ -891,23 +893,20 @@ const FINALIZE_CELLS: [Cell; 24] = [
         Listed::Acts,
         at("T2", Kind::EditAfter),
     ),
-    Cell {
-        marks: &[Mark::Reach, Mark::Silence(8)],
-        ..finalize(
-            "task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file",
-            FRESH,
-            a_decision!(
-                [],
-                [Lead::Plant(Plant::Staged {
-                    at: ".jigc/version",
-                    kept: false,
-                })]
-            ),
-            FINALIZE_THE_DECISION,
-            Listed::Acts,
-            at("T2", Kind::StagedThere),
-        )
-    },
+    finalize(
+        "task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: ".jigc/version",
+                kept: false,
+            })]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::StagedThere),
+    ),
     finalize(
         "task-finalize-a-file-staged-elsewhere",
         FRESH,
@@ -1047,8 +1046,8 @@ const FINALIZE_ELSEWHERE: [Cell; 5] = [
 /// - **the record** (`A5`): a hand edit *"conflict-blocks on drift"*
 ///   (`design/team-ready-state.md` → *Engine capability 1*); a change staged at it and not
 ///   in the working file is met by no sentence of the row's docs — the cell is listed as
-///   one that acts, since no sentence says the state is refused, and what the command
-///   does with the staged bytes is the cell's to show;
+///   one that acts, since no sentence says the state is refused, and its replacement is a
+///   finding by the human's ruling of 2026-10-14 on the record's §6, entry 8;
 /// - **what is staged elsewhere stays out of the record's commit** (`A6`: *"never
 ///   sweeping the agent's in-flight index/worktree WIP"*), and **a hook that rejects**
 ///   leaves *"the record **and** the task exactly as the frame says"* (`A8`);
@@ -1121,23 +1120,20 @@ const DISCARD_CELLS: [Cell; 15] = [
         refuses(1, "reconciliation.conflict-block"),
         at("A5", Kind::EditAfter),
     ),
-    Cell {
-        marks: &[Mark::Reach, Mark::Silence(8)],
-        ..discard(
-            "task-discard-a-change-staged-at-the-record-and-not-in-the-file",
-            &[
-                A_SUB_TASK[0],
-                A_SUB_TASK[1],
-                Lead::Plant(Plant::Staged {
-                    at: THE_RECORD,
-                    kept: false,
-                }),
-            ],
-            DISCARD_THE_SUB_TASK,
-            Listed::Acts,
-            at("A5", Kind::StagedThere),
-        )
-    },
+    discard(
+        "task-discard-a-change-staged-at-the-record-and-not-in-the-file",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::Staged {
+                at: THE_RECORD,
+                kept: false,
+            }),
+        ],
+        DISCARD_THE_SUB_TASK,
+        Listed::Acts,
+        at("A5", Kind::StagedThere),
+    ),
     discard(
         "task-discard-a-file-staged-elsewhere",
         &[
@@ -1166,20 +1162,17 @@ const DISCARD_CELLS: [Cell; 15] = [
         Listed::Acts,
         at("A6", Kind::QuotedName),
     ),
-    Cell {
-        marks: &[Mark::Silence(6)],
-        ..discard(
-            "task-discard-a-hook-that-rejects",
-            &[
-                A_SUB_TASK[0],
-                A_SUB_TASK[1],
-                Lead::Plant(Plant::RejectingHook),
-            ],
-            DISCARD_THE_SUB_TASK,
-            refuses(1, "`git commit` was rejected"),
-            at("A6", Kind::RejectingHook),
-        )
-    },
+    discard(
+        "task-discard-a-hook-that-rejects",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::RejectingHook),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "`git commit` was rejected"),
+        at("A6", Kind::RejectingHook),
+    ),
     discard(
         "task-discard-a-foreign-file-under-the-file-state-hashes",
         &[
