@@ -15,10 +15,9 @@ pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 /// discard` with the first commit of `B4`, which brought its own. `ingest` and
 /// `unmanage` joined it with the task `B3`, whose count holds them touched under the plan's
 /// rule where the plan's script had not: they stand under `B5`, the install family's task,
-/// whose docs they share with `setup` and `uninstall`.
+/// whose docs they share with `setup` and `uninstall`, and left it with that task's
+/// second commit, which brought their rows.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["ingest"], "B5"),
-    (&["unmanage"], "B5"),
     (&["doc", "create"], "B6"),
     (&["doc", "add-item"], "B6"),
     (&["doc", "remove-item"], "B6"),
@@ -55,5 +54,7 @@ pub const OWED: &[(&[&str], &str)] = &[
 pub const CELLS_OWED: &[(&[&str], &str)] = &[
     (&["setup"], "B5"),
     (&["uninstall"], "B5"),
+    (&["ingest"], "B5"),
+    (&["unmanage"], "B5"),
     (&["milestone", "finalize"], "B7"),
 ];

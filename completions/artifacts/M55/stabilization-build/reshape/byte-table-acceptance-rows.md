@@ -5,13 +5,15 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-15, with the second commit of the task `B5`: the rows of `jigc ingest` (§2b) and `jigc unmanage` (§2c) are written from their docs, before a cell of either runs; one more place where docs say two things is listed (§6, entry 9). No line moved.*
+
 *Changed 2026-10-15, with the first commit of the task `B5`, which records the human's rulings on the first cut: entries 2, 5, 6 and 8 of §6 are ruled and say how, entry 3 is read under the ruling on entry 2, and the plan's first question of reading is ruled (§6, *Decided here*); `S12` says it is no line and why; `uninstall`'s row gains `U9`, whose sentence is the ruling on entry 5 as [DECISIONS.md](../../../../../DECISIONS.md) records it, and §7 the word it is carried by. No other line moved.*
 
 *Changed 2026-10-13, with the second commit of the task `B4`, which brought the family's cells: the sixth entry of §6 says what a cell found, and an eighth is listed — a change staged at a path the command stages itself — which three cells met. No line moved.*
 
 *Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
 
-**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under.
+**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under; since `B5`, the rows of `jigc ingest` and `jigc unmanage`, which the install family's cells are run under with `setup`'s and `uninstall`'s.
 
 **How a line is written.** Its number; the place it speaks of; what may happen there; when, where the doc gives a condition; and whether it still holds when the command refuses. Under it, set off as a quotation, **the sentence the line rests on — a run of the doc's own bytes, markup included, never a paraphrase** — and under that the doc and the heading the sentence stands under. A line that needs two sentences quotes both, each with its own source. The quotation is what `B1`'s fence holds against the doc: a doc that moves reddens the row.
 
@@ -206,6 +208,60 @@ Owner doc: `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt
 — `DECISIONS.md` → *2026-10-15 — The human's six rulings on the byte table's first cut, recorded: the families `B5` to `B9` are built now; what is held reaches what a reflog names; a change staged at a path jigc stages itself is a finding beyond the one declared bound; every refusal of `setup` leaves the repository as it was; `uninstall` lands its teardown in one path-scoped commit; a rejected record commit's message file is a finding (the byte table, task `B5`, the first of its commits)*
 
 **What the docs do not say of `uninstall`:** what it does to git's index, and whether it commits (§6, entry 5) — **ruled on 2026-10-14**, and carried by `U9`. Whether it refuses over an edit of the user's at a path it touches, or commits only jigc's part of that path, the ruling leaves to the fixer; the row holds what both answers share — no such edit rides the commit.
+
+---
+
+## 2b. `jigc ingest`
+
+*Written 2026-10-15, as the first commit of the install family's cells (the plan's task `B5`): the row from its docs, before a cell of it runs. No binary was run to learn what the command writes, and no list of files was taken from the product's source.*
+
+Owner doc: `design/project-setup.md` → *Flow 2 — existing project: bounded detect-and-route ingestion*, its sections *The bounded slice — three net-new but tractable pieces* and *Idempotency & irreversibility — the acceptance obligation*.
+
+**The command adopts what it finds conformant, and nothing else changes.** Adoption is a registration: the doc's edges into the edge index and its hash into the file-state record. Which candidate is adopted is the classifier's — a manifest shows only what was registered — and the cells construct a candidate of each verdict.
+
+**I1 — `.jigc/state/` and everything under it: rebuilt — the adopted doc's file-state hash, recorded.** When: a candidate was adoptable. On a refusal: no — what a refusal may do there is `C2` (§4a).
+
+> Adopting a foreign `adoptable` doc is a distinct action: **parse → conformance-gate → `index.absorb_doc` (so an adopted `adr`'s `supersedes` edge is indexed) → record the file-state hash**.
+
+— `design/project-setup.md` → *The bounded slice — three net-new but tractable pieces*
+
+**I2 — `.jigc/index/` and everything under it: rebuilt — the adopted doc's edges, indexed.** When: a candidate was adoptable. On a refusal: no — `C1`. The sentence is I1's.
+
+**I3 — adoption moves and rewrites no file.** Not a line: it is why the row has no line for any file outside `.jigc/index/` and `.jigc/state/`, a candidate's own included.
+
+> Adopt is **register-only — it never moves or rewrites a file**
+
+— `design/project-setup.md` → *The bounded slice — three net-new but tractable pieces*
+
+**I4 — it adopts nothing it has not schema-checked, and leaves the rest untouched.** Not a line: the rule a non-conformant candidate's cell is held to — routed, not registered.
+
+> `jigc ingest` **adopts nothing it has not schema-checked** (closing the `baseline-adopt` hole) and **rewrites no prose** (detect-and-route, never auto-migrate). The non-conformant case routes to a human; the unmanaged case is left untouched.
+
+— `design/project-setup.md` → *Idempotency & irreversibility — the acceptance obligation*
+
+**What the docs do not say of `ingest`:** whether it commits — no sentence read says so, and the row has no commit line; whether it refuses at all inside a repository jigc is set up in — *"ingest already hard-requires a git repo"* is its only refusal named, and every prepared state is one.
+
+---
+
+## 2c. `jigc unmanage`
+
+*Written 2026-10-15, with §2b.*
+
+Owner doc: `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt/cleanup (M21)*, the item *Teardown / cleanup (G5)*. Its letter is `X`, for *the detach report* `design/command-output-contract.md` calls its output: `U` is `uninstall`'s.
+
+**X1 — `.jigc/state/` and everything under it: rebuilt — the doc's baseline dropped from the file-state record.** When: the path is a managed doc. On a refusal: no — `C2`.
+
+> **(a) un-manage a doc** — drop a single managed doc from the file-state record + its `edges.json` entries, leaving the file on disk (the inverse of `adopt`'s register-only mutation)
+
+— `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt/cleanup (M21)*
+
+> un-manage touches only jigc's own index/state (asserted: the doc's bytes on disk are unchanged) and is idempotent (re-run on an already-unmanaged doc is a clean no-op, not an error)
+
+— `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt/cleanup (M21)*
+
+**X2 — `.jigc/index/` and everything under it: rebuilt — the doc's edges dropped.** When: the path is a managed doc. On a refusal: no — `C1`. The sentences are X1's.
+
+**What the docs do not say of `unmanage`, or say two ways:** whether it commits. `design/project-setup.md` says it *"touches only jigc's own index/state"*, both of which are gitignored, so there is nothing for a commit to hold; `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)* calls it one of *"the other top-level direct-store ops"* beside a verb that is *"task-less and self-committing"*, and → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)* says `migrate-corpus` *"unlike them … has **never committed its own writes**"* — `rename` and `unmanage`. §6, entry 9. The row has no commit line.
 
 ---
 
@@ -520,7 +576,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 5, 6 and 8 are ruled** (2026-10-12 and 2026-10-14), each saying how it is carried; **entry 3 is read under the ruling on entry 2**; entries 4 and 7 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 5, 6 and 8 are ruled** (2026-10-12 and 2026-10-14), each saying how it is carried; **entry 3 is read under the ruling on entry 2**; entries 4, 7 and 9 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -582,6 +638,13 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *What each makes of the cells.* Three cells stage such a change and come out *lost* on this tree — the bytes are in the index no longer and in no object within reach. A bound takes no cell off the list of the red ones, so all three are red under either reading; under (a) all three stand on a declared bound, under (b) one does — the task's doc — and the other two are findings.
 - *Until ruled:* (b) — the two cells are marked with this entry, and the third with the bound.
 - *Ruled on 2026-10-14*, option B (*"Yes agree on B"*): **the declared bound (1) stays one case, a doc a task is updating.** The staged change replaced at `.jigc/version` at `task finalize`, and at the milestone's record at `task discard`, are **findings** — each a key and a row of [byte-table-findings.md](byte-table-findings.md) — and their cells lose this entry's mark. The third keeps the bound's.
+
+**9. `unmanage`, and a commit — two docs say two things.**
+
+- *What the product should do, by the project's principles.* **Not commit.** The command writes only jigc's own gitignored caches — the file-state record and the edge index — so a commit would hold nothing of what it did; an empty commit, or one that sweeps the index, is git's state moved for no write of the command's. *One command behaves as its siblings* points the same way once the siblings are read for what they write: `rename` and `migrate-corpus` move committed docs, and commit them; `unmanage` moves none. **The doc sentence that would change** is `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*, which counts `unmanage` among *"the other top-level direct-store ops"* of a verb that is *"task-less and self-committing"*, and → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*, which says `migrate-corpus` *"unlike them … has **never committed its own writes**"*. **The product change that follows**: none, if the product commits nothing — a correction of the two sentences only.
+- *The words.* `design/project-setup.md` → *Flow 2 hardening*: *"un-manage touches only jigc's own index/state (asserted: the doc's bytes on disk are unchanged)"* — both gitignored. `design/write-commands.md`, the two sentences above.
+- *Reading (a)* — it touches only the caches, and commits nothing: a commit is *git's state moved outside its allowance*. *Reading (b)* — it is self-committing, as its siblings: a commit of what it wrote would be covered — and it wrote nothing a commit can hold.
+- *What each makes of the cells.* The cells in which `unmanage` acts; under (a) red only where it commits. *Until ruled:* (a) — the row has no commit line.
 
 **Decided here, as a builder, and the human may overturn each:**
 

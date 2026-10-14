@@ -5,10 +5,10 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has five rows — the four of the pilot's acceptance, and `jigc task
-//! discard`'s — and 61 cells: the acceptance's twelve, and the task family's forty-nine**
-//! (`jigc task finalize`, `jigc task discard`), of which twelve run on demand. This file
-//! is the plan's tasks `B1` to `B4` — the arms that hold the comparison, the reader and the
+//! cell. **The table has seven rows — the four of the pilot's acceptance, `jigc task
+//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 61 cells: the acceptance's
+//! twelve, and the task family's forty-nine** (`jigc task finalize`, `jigc task discard`),
+//! of which twelve run on demand. This file is the plan's tasks `B1` to `B5` — the arms that hold the comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
 //!
@@ -458,9 +458,9 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        5,
-        "the table has the four rows of the pilot's acceptance and `jigc task discard`'s: \
-         {rows:?}"
+        7,
+        "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, and \
+         `jigc ingest`'s and `jigc unmanage`'s: {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -1293,6 +1293,18 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["uninstall"], "U5", ITS_FAMILYS_CELLS),
     (&["uninstall"], "U6", ITS_FAMILYS_CELLS),
     (&["uninstall"], "U9", ITS_FAMILYS_CELLS),
+    (&["ingest"], "I1", ITS_FAMILYS_CELLS),
+    (&["ingest"], "I2", ITS_FAMILYS_CELLS),
+    (&["ingest"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["ingest"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["ingest"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["ingest"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["unmanage"], "X1", ITS_FAMILYS_CELLS),
+    (&["unmanage"], "X2", ITS_FAMILYS_CELLS),
+    (&["unmanage"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["unmanage"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["unmanage"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["unmanage"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["uninstall"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),

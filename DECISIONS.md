@@ -2,6 +2,35 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-15 — `jigc ingest` and `jigc unmanage` have their rows, written from their docs before a cell of either runs — two lines each over quoted sentences, two rules that are no line, and one more place where two docs say two things: whether `unmanage` commits (the byte table, task `B5`, the second of its commits)
+
+**What.** The install family's task `B5` holds four leaves, by the human's ruling of 2026-10-13: `setup`, `uninstall`, and `ingest` and `unmanage`, which the count holds touched under the plan's rule. This commit writes the two new rows from their docs — [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) gains §2b and §2c — and lifts them into [install.rs](crates/cli/tests/byte_table/install.rs) quote for quote. **No cell is added, no binary was run to learn what either command writes**, and no product source changes.
+
+### The rows
+
+Owner doc of both: `design/project-setup.md` — *Flow 2*, its *bounded slice* and its *acceptance obligation*, for `ingest`; *Flow 2 hardening*, the item *Teardown / cleanup (G5)*, for `unmanage`.
+
+| line | the place | what may happen there | when |
+|---|---|---|---|
+| `I1` · `I2` | `.jigc/state/` · `.jigc/index/` | rebuilt — the adopted doc's hash recorded, its edges indexed | a candidate was adoptable |
+| `X1` · `X2` | `.jigc/state/` · `.jigc/index/` | rebuilt — the doc's baseline and edges dropped | the path is a managed doc |
+| `C1` to `C3` | the caches, on a refusal | rebuilt | as in every row |
+
+**Two entries are rules and no line**: `I3` — *"Adopt is **register-only — it never moves or rewrites a file**"* — and `I4` — it *"adopts nothing it has not schema-checked … The non-conformant case routes to a human; the unmanaged case is left untouched"*. They are why the row has no line for any file outside the two caches. **`unmanage`'s letter is `X`**, for *the detach report* `design/command-output-contract.md` calls its output: `U` is `uninstall`'s and `M` `milestone finalize`'s.
+
+**Their home states**: `ingest` in `fresh`, where a cell puts a candidate in; `unmanage` in `committed-singletons`, the smallest prepared state that holds a managed doc — `fresh` holds none. **Neither names a consent.**
+
+**One more place where two docs say two things** — [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, entry 9, written as the human's rule of 2026-10-14 asks, leading with what the product should do: **`unmanage` should not commit** — it writes only gitignored caches, so a commit would hold none of its writes — and the sentences of `design/write-commands.md` that count it among the *self-committing* direct-store ops change. Until ruled, the row has no commit line.
+
+### The lists
+
+The table has seven rows and 75 lines. `ingest` and `unmanage` leave the owed list of leaves and join the list of leaves whose cells are owed, under `B5`. Each row needs ten cells — its refusing cell, its base cell and six more in the other prepared states, and an untracked file under each of its two caches. Their four lines of their own stand on the list of lines that excuse nothing, until their cells run.
+
+### Not established
+
+- **That either row is complete.** `design/command-output-contract.md` was read for what each prints and no more; `design/validation.md` and `design/reconciliation.md`, where an adopted doc's later life is, were not read for it.
+- **That `ingest` adopts only under a schema's home**, as the classifier's sentence has it: the row allows the two caches whatever was adopted, and which candidate went in is the classifier's, not a manifest's.
+
 ## 2026-10-15 — The human's six rulings on the byte table's first cut, recorded: the families `B5` to `B9` are built now; what is held reaches what a reflog names; a change staged at a path jigc stages itself is a finding beyond the one declared bound; every refusal of `setup` leaves the repository as it was; `uninstall` lands its teardown in one path-scoped commit; a rejected record commit's message file is a finding (the byte table, task `B5`, the first of its commits)
 
 **What.** The human ruled at the pilot's stop ([byte-table-pilot.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-pilot.md)) on the families after it and on five of the open questions its cells carried. This commit records the six rulings, as the orchestrating session handed them on, and brings the records and the suite to them: [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) (§1 `S12`, §2 `U9`, §6, §7), [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md), [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md), the marks the cells carry, and the frame where a ruling changes what it reads. **No cell's construction changed**, and no product source.

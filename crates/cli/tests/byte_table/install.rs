@@ -1,8 +1,9 @@
-//! **The byte table's rows for the install family** — `jigc setup` and `jigc uninstall`
+//! **The byte table's rows for the install family** — `jigc setup`, `jigc uninstall`,
+//! `jigc ingest` and `jigc unmanage`
 //! (`crates/cli/tests/byte_table.rs`). A row is what its command may change, line by
 //! line, **lifted quote for quote from the committed record**
 //! (`completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md`,
-//! §1 and §2): a line's `id` is its number there, and the quote fence holds every quote
+//! §1, §2, §2b and §2c): a line's `id` is its number there, and the quote fence holds every quote
 //! to its design doc and to the record. A line is never changed here without the record
 //! changing in the same commit, and never from what a command did.
 //!
@@ -330,8 +331,82 @@ pub const UNINSTALL: Row = Row {
     ],
 };
 
+/// The sentence `ingest`'s two lines rest on.
+const ADOPTS: &[Quote] = &[Quote {
+    doc: "design/project-setup.md",
+    heading: "The bounded slice — three net-new but tractable pieces",
+    words: "Adopting a foreign `adoptable` doc is a distinct action: **parse → conformance-gate → `index.absorb_doc` (so an adopted `adr`'s `supersedes` edge is indexed) → record the file-state hash**.",
+}];
+
+/// **`jigc ingest`** — the record's §2b. Adoption is a registration and nothing else: the
+/// doc's hash into the file-state record, its edges into the edge index. **What of the
+/// record is no line**: `I3` — adopt never moves or rewrites a file — and `I4` — it
+/// adopts nothing it has not schema-checked, and leaves the rest untouched — are why the
+/// row has no line for any file outside the two caches. Its doc names no consent.
+pub const INGEST: Row = Row {
+    leaf: &["ingest"],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "I1",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            ADOPTS,
+        ),
+        line(
+            "I2",
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            ADOPTS,
+        ),
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The sentences `unmanage`'s two lines rest on.
+const DETACHES: &[Quote] = &[
+    Quote {
+        doc: "design/project-setup.md",
+        heading: "Flow 2 hardening — full ingest/adopt/cleanup (M21)",
+        words: "**(a) un-manage a doc** — drop a single managed doc from the file-state record + its `edges.json` entries, leaving the file on disk (the inverse of `adopt`'s register-only mutation)",
+    },
+    Quote {
+        doc: "design/project-setup.md",
+        heading: "Flow 2 hardening — full ingest/adopt/cleanup (M21)",
+        words: "un-manage touches only jigc's own index/state (asserted: the doc's bytes on disk are unchanged) and is idempotent (re-run on an already-unmanaged doc is a clean no-op, not an error)",
+    },
+];
+
+/// **`jigc unmanage`** — the record's §2c, letter `X` for the *detach report* its output
+/// is called. It touches the two caches and nothing else; whether it commits, two docs say
+/// two ways (the record's §6, entry 9), and until that is ruled the row has no commit
+/// line. Its doc names no consent.
+pub const UNMANAGE: Row = Row {
+    leaf: &["unmanage"],
+    consent: None,
+    home: Prepared::Of(State::CommittedSingletons),
+    lines: &[
+        line(
+            "X1",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            DETACHES,
+        ),
+        line(
+            "X2",
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            DETACHES,
+        ),
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
 /// The family's rows.
-pub const ROWS: &[Row] = &[SETUP, UNINSTALL];
+pub const ROWS: &[Row] = &[SETUP, UNINSTALL, INGEST, UNMANAGE];
 
 // ---------------------------------------------------------------------------
 // The cells
