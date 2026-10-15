@@ -709,30 +709,62 @@ const STEP_SHA_RE = /, "sha256": "([0-9a-f]{64})"\}$/
 function lostStep(r, why) {
   return { status: 'halted', relay: why, halt: { root_cause: why, evidence: typeof r.line === 'string' ? '(a line of ' + r.line.length + ' characters came back; it is not passed on)' : '(the step returned no line)', tree_state: '(not read: the step\'s line was not the command\'s)', recommendation: 'read the tree and the branches before the step is asked for again: its command may have run' } }
 }
-function readStep(r, act) {
-  if (!r) return null
-  if (r.status !== 'ran') return { status: 'halted', halt: r.halt || null }
-  const lost = (why) => lostStep(r, why)
+function readStep(r, act, exact) {
+  return stepRead(r, act, exact).said
+}
+function stepRead(r, act, exact) {
+  if (!r) return { said: null }
+  if (r.status !== 'ran') return { said: { status: 'halted', halt: r.halt || null } }
+  const lost = (why) => ({ said: lostStep(r, why) })
   if (typeof r.line !== 'string') return lost('the step returned no line')
-  const line = r.line.replace(/\n$/, '')
-  const tail = STEP_SHA_RE.exec(line)
-  if (!tail || sha256(line.slice(0, tail.index) + '}') !== tail[1]) return lost('the relayed line does not end with the sha256 of itself, as `' + STEP_TOOL + '` prints it: it was altered on its way, or is not the command\'s')
+  const held = asPrinted(r.line, exact)
+  if (!held) return lost('the relayed line does not end with the sha256 of itself, as `' + STEP_TOOL + '` prints it: it was altered on its way, or is not the command\'s')
   let said = null
   try {
-    said = JSON.parse(line)
+    said = JSON.parse(held.line)
   } catch (e) {
     return lost('the relayed line is not JSON: ' + ((e && e.message) || e))
   }
   if (!plain(said) || said.act !== act || typeof said.status !== 'string') return lost('the relayed line is not the line of `' + STEP_TOOL + ' ' + act + '`')
-  return said
+  return { said, line: held.line, mended: held.mended }
+}
+function asPrinted(relayed, exact) {
+  const line = relayed.replace(/\n$/, '')
+  const tail = STEP_SHA_RE.exec(line)
+  if (!tail) return null
+  const body = line.slice(0, tail.index)
+  if (sha256(body + '}') === tail[1]) return { line, mended: null }
+  const mended = exact ? null : mendSlip(body, tail[1])
+  return mended ? { line: mended.body + line.slice(tail.index), mended: mended.field } : null
+}
+const MEND_TRIES = 4096
+function mendSlip(body, want) {
+  const fields = Array.from(body.matchAll(/"([^"\\]+)":("[^"\\]*"|-?\d+|true|false|null)(?=[,}\]])/g), (m) => ({ key: m[1], value: m[2], at: m.index + m[0].length - m[2].length }))
+  const under = {}
+  for (const f of fields) {
+    if (!Object.prototype.hasOwnProperty.call(under, f.key)) under[f.key] = []
+    if (!under[f.key].includes(f.value)) under[f.key].push(f.value)
+  }
+  let tries = 0
+  for (const f of fields) {
+    for (const value of under[f.key]) {
+      if (value === f.value) continue
+      if (++tries > MEND_TRIES) return null
+      const text = body.slice(0, f.at) + value + body.slice(f.at + f.value.length)
+      if (sha256(text + '}') === want) return { body: text, field: { key: f.key, relayed: f.value, printed: value } }
+    }
+  }
+  return null
 }
 const DIGEST_RE = /^[\x20-\x7e]*$/
-function readDigest(r, act) {
-  const said = readStep(r, act)
+function readDigest(r, act, label) {
+  const read = stepRead(r, act)
+  const said = read.said
   if (!said || r.status !== 'ran' || said.relay) return said
-  const line = r.line.replace(/\n$/, '')
+  const line = read.line
   if (!Array.isArray(said.unfit) || !('file' in said) || !('file_sha256' in said)) return lostStep(r, 'the relayed line is no digest of `' + STEP_TOOL + ' ' + act + '` — it names neither what did not fit nor the file that holds the rest: it is the line the tool prints unasked, or another\'s')
   if (!DIGEST_RE.test(line) || line.includes('\\')) return lostStep(r, 'the relayed line holds a backslash or a character outside printable ASCII, and a digest of `' + STEP_TOOL + '` holds neither: it was altered on its way, or is not the digest that was asked for')
+  if (read.mended && label) log('the relayed line of `' + label + '` came back with ONE value altered — `' + read.mended.key + '` as ' + read.mended.relayed + ' where the tool printed ' + read.mended.printed + ' — and is read as the tool printed it: that value put back, the line hashes to the sha256 it ends with')
   if (said.unfit.length) return Object.assign(lostStep(r, 'the digest of `' + STEP_TOOL + ' ' + act + '` could not print ' + said.unfit.filter((name) => typeof name === 'string' && /^[a-z0-9_.-]+$/.test(name)).join(', ') + ': a value did not fit the shape its field declares, and this script acts on no line with a field struck out. THE ACT MAY HAVE RUN — its own line, whole, is in the file the digest names'), { unfit: true, said: said.status, file: said.file, file_sha256: said.file_sha256 })
   return said
 }
@@ -1627,6 +1659,10 @@ function selfTest() {
   check('a relay that is another act\'s line, or no act\'s', !!relay(line, 'push').relay && !!relay(printed([1])).relay && !!relay(printed({ status: 'read' })).relay && !!relay(printed({ act: 'state' })).relay)
   check('no relay', readStep(null, 'state') === null && !!readStep({ status: 'ran' }, 'state').relay && readStep({ status: 'ran' }, 'state').status === 'halted')
   check('a step that halted without a line is passed on as its halt', readStep({ status: 'halted', halt: { root_cause: 'x' } }, 'state').halt.root_cause === 'x' && !readStep({ status: 'halted' }, 'state').relay && readStep({ status: 'halted' }, 'state').halt === null)
+  const clauseTable = printed({ act: 'state', status: 'read', state: { clauses: [['no-lost-files', 'never-selected'], ['working-product', 'never-selected'], ['usable-by-agents', 'no-instrument'], ['migration-works', 'no-instrument']].map(([clause, retry]) => ({ clause, status: 'void', round: null, commit: null, behind: null, retry })) } })
+  const slipped = clauseTable.replace('"working-product","status":"void","round":null,"commit":null,"behind":null,"retry":"never-selected"', '"working-product","status":"void","round":null,"commit":null,"behind":null,"retry":"no-instrument"')
+  check('a relay with one value slipped to another the line holds under that name is read as the tool printed it, and says which value', slipped !== clauseTable && relay(slipped).status === 'read' && JSON.stringify(relay(slipped)) === JSON.stringify(relay(clauseTable)) && relay(slipped).state.clauses[1].retry === 'never-selected' && JSON.stringify(stepRead({ status: 'ran', line: slipped + '\n' }, 'state').mended) === JSON.stringify({ key: 'retry', relayed: '"no-instrument"', printed: '"never-selected"' }) && stepRead({ status: 'ran', line: clauseTable }, 'state').mended === null)
+  check('… and no line is read that does not hash: two slips, a value that stands nowhere else in the line under its name, a read that is exact, a hash that is not the line\'s', !!relay(slipped.replace('"migration-works","status":"void"', '"migration-works","status":"read"')).relay && relay(clauseTable.replace('"retry":"never-selected"', '"retry":"due"')).state.clauses[0].retry === 'never-selected' && !!relay(clauseTable.replace('"status":"read"', '"status":"void"')).relay && !!readStep({ status: 'ran', line: slipped }, 'state', true).relay && !!relay(slipped.replace(/"sha256": "[0-9a-f]{64}"/, '"sha256": "' + 'f'.repeat(64) + '"')).relay)
   const refusedLine = printed({ act: 'land', status: 'halted', refused: 'merge-differs', merge_commit: 'a'.repeat(40), halt: { root_cause: 'merge-differs: x', evidence: 'e', tree_state: 't', recommendation: 'r' } })
   check('a refusal is read as a halted step that says why, with what the act had established', relay(refusedLine, 'land').status === 'halted' && relay(refusedLine, 'land').halt.root_cause === 'merge-differs: x' && relay(refusedLine, 'land').merge_commit === 'a'.repeat(40) && !relay(refusedLine, 'land').relay)
   for (const next of ['fix', 'rule', 'close', 'verify', 'unsettled', 'retest', 'stop', 'test', 'triage', 'not-ready', '', null, 7]) {
@@ -1942,6 +1978,8 @@ function selfTest() {
   const struck = asDigest(digest({ act: 'push', status: 'ready', branch: null, head: null, unfit: ['branch', 'head'] }), 'push')
   check('a digest with a field struck out is a step that is not acted on, and names the file its own line is in', struck.status === 'halted' && struck.unfit === true && struck.said === 'ready' && struck.relay.includes('could not print branch, head') && struck.relay.includes('THE ACT MAY HAVE RUN') && struck.file === 'lines/push.0123456789abcdef.json')
   check('what is no line at all, and a step whose agent halted, are read as before', readDigest(null, 'state') === null && !!readDigest({ status: 'ran' }, 'state').relay && readDigest({ status: 'halted', halt: { root_cause: 'x' } }, 'state').halt.root_cause === 'x' && !!asDigest(stateDigest, 'push').relay && !JSON.stringify(relay(line.replace('"fix"', '"fox"'))).includes('fox'))
+  const waited = digest({ act: 'hold-wait', status: 'done', name: 'gate-c1-a1', facts: { steps: [{ step: 'build', exit: 0 }, { step: 'test', exit: 1 }, { step: 'fmt', exit: 0 }] } })
+  check('a digest of any act with one value slipped is read as the tool printed it', asDigest(waited.replace('"step":"fmt","exit":0', '"step":"fmt","exit":1'), 'hold-wait').status === 'done' && asDigest(waited.replace('"step":"fmt","exit":0', '"step":"fmt","exit":1'), 'hold-wait').facts.steps[2].exit === 0 && !!asDigest(waited.replace('"step":"test","exit":1', '"step":"test","exit":0'), 'hold-wait').relay)
 
   check('every refusal of the tool has a row that says whose it is and what leaves it', Object.keys(STEP_REFUSALS).length === 29 && Object.keys(STEP_REFUSALS).every((word) => /^[a-z][a-z-]*$/.test(word) && isText(STEP_REFUSALS[word].whose) && isText(STEP_REFUSALS[word].leaves) && stepRefusal(word).startsWith('`' + word + '` — ' + STEP_REFUSALS[word].whose + ': ')))
   check('a word the table lacks is said to be one', stepRefusal('no-such-word').includes('has no row') && !stepRefusal('locked').includes('has no row'))
@@ -1995,9 +2033,10 @@ function selfTest() {
   check('the bytes of a text', utf8Length('') === 0 && utf8Length('a\u00e9\u2014\ud83d\ude00') === 1 + 2 + 3 + 4)
   const probeLine = printed({ act: 'state', status: 'read', state: { run: 'probe', door: 'a \u2014 b' } })
   const probeOwn = sha256(JSON.stringify({ act: 'state', status: 'read', state: { run: 'probe', door: 'a \u2014 b' } }))
-  const relayed = (text) => probeRelayed({ status: 'ran', line: text }, readStep({ status: 'ran', line: text }, 'state'))
+  const relayed = (text) => probeRelayed({ status: 'ran', line: text }, readStep({ status: 'ran', line: text }, 'state', true))
   check('a relayed line that holds is its own hash, and its bytes', relayed(probeLine) === probeOwn + ':' + utf8Length(probeLine) && relayed(probeLine + '\n') === probeOwn + ':' + utf8Length(probeLine))
   check('a relayed line that does not hold is altered, and its bytes', relayed(probeLine.replace('probe', 'prob')) === 'altered:' + (utf8Length(probeLine) - 1) && relayed('not json') === 'altered:8' && relayed(probeLine.replace('\u2014', '-')) === 'altered:' + (utf8Length(probeLine) - 2))
+  check('a probe reads the relay exactly: a line with one value slipped is altered there, though a stage reads it', relayed(slipped) === 'altered:' + utf8Length(slipped) && relay(slipped).status === 'read')
   check('no line came back', probeRelayed(null, null) === 'none:0' && probeRelayed({ status: 'ran' }, readStep({ status: 'ran' }, 'state')) === 'none:0' && probeRelayed({ status: 'halted', halt: { root_cause: 'x' } }, readStep({ status: 'halted', halt: { root_cause: 'x' } }, 'state')) === 'none:0')
   const probeReview = (id) => probeReviewPrompt(id, { file: '/tmp/scratch-1/probe/required/bin/jigc', sha256: 'c'.repeat(64) })
   check('a probe\'s reviewer is handed the binary line a stage\'s reviewer is, and no report', probeReview('b').includes('\nBINARY: candidate `/tmp/scratch-1/probe/required/bin/jigc` sha256 ' + 'c'.repeat(64) + ' (commit ' + '0'.repeat(40) + ', label probe). Return the sha256 you asserted for the candidate as `asserted_sha256`.\n') && !probeReview('b').includes('\n' + LABELS.report) && !probeReview('a').includes('\n' + LABELS.report))
@@ -2080,7 +2119,7 @@ function gitStep(label, phaseTitle, prompt, schema, again, seen) {
   return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL }, again, seen)
 }
 async function toolStep(label, phaseTitle, act, prompt, seen) {
-  return readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)
+  return readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act, 'git:' + label)
 }
 async function hold(job) {
   let started = null
@@ -2672,7 +2711,7 @@ async function watched(call) {
 }
 async function probeAct(label, act, what, flags) {
   const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA)
-  return { raw, read: readStep(raw, act) }
+  return { raw, read: readStep(raw, act, true) }
 }
 function faultOf(read) {
   if (!read) return 'nothing came back'
@@ -2709,7 +2748,7 @@ async function runProbe() {
     for (const n of PROBE_ENTRIES) {
       const batch = probeBatch(s, n)
       const { back, tries } = await watched(() => roleStep('record', 'probe:payload:e' + n, 'Probe', probePayloadPrompt(s, n, batch), STEP_SCHEMA))
-      const read = readStep(back, 'hash')
+      const read = readStep(back, 'hash', true)
       const relayed = read && read.status === 'hashed' && SHA256_RE.test(String(read.file_sha256)) ? read.file_sha256 : 'none'
       observed.push({ case: 'e' + n, tries, composed: { file: batch.file, sha256: batch.sha256 }, relayed, fault: faultOf(read) })
       cases.push('e' + n + ':' + triesOf(tries) + ':' + batch.sha256 + ':' + relayed)

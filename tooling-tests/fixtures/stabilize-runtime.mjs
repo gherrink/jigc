@@ -36,6 +36,13 @@
 // a stage read until 2026-10-07; `byte` — the digest with one character changed;
 // `non-ascii` — the digest with one character replaced by one outside ASCII AND ITS HASH MADE
 // TO FIT, so that nothing but the harness's own look at the line can tell it.
+// `slip` — the digest with ONE VALUE SLIPPED, as the staged canary's part 1 got the state's
+// back on three tries of three (2026-10-16): a field's value replaced by another value the
+// line holds under the same name — `"retry":"never-selected"` as the `"no-instrument"` of the
+// rows below it — the hash it ends with as printed. The first field whose own value stands
+// under its name at another place of the line too, and another value at a third. `slip-lone`
+// — the same slip of the first field whose value stands NOWHERE ELSE under its name: what
+// the line held there is not in what came back.
 // `mistypes` gives, by a git step's label, [what stands in the step's ONE command, what its
 // agent typed there]: A STEP THAT DID NOT TYPE ITS COMMAND AS IT STANDS — one word of it
 // altered on its way through an agent, a status typed `green` for `void`. The command that
@@ -333,6 +340,17 @@ function readByKey(label, prompt) {
 function relayed(line) {
   return line.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
 }
+// slipped — a line with ONE value slipped (`relays`: `slip`, `slip-lone`), or null where it
+// holds no field to slip so.
+function slipped(line, lone) {
+  const fields = Array.from(line.matchAll(/"([^"\\]+)":("[^"\\]*"|-?\d+|true|false|null)(?=[,}\]])/g), (m) => ({ key: m[1], value: m[2], at: m.index + m[0].length - m[2].length }))
+  for (const f of fields) {
+    const same = fields.filter((g) => g.key === f.key && g !== f)
+    const other = same.find((g) => g.value !== f.value)
+    if (other && same.some((g) => g.value === f.value) !== lone) return line.slice(0, f.at) + other.value + line.slice(f.at + f.value.length)
+  }
+  return null
+}
 function gitStep(label, prompt) {
   const first = prompt.split('\n').find((line) => line.startsWith('1. `')) || ''
   const command = first.slice(4, first.lastIndexOf('`'))
@@ -363,6 +381,11 @@ function gitStep(label, prompt) {
   // Handed back byte for byte: a relay that happened to be faithful is still not a digest.
   if (how === 'document') return { status: 'ran', line: out.stdout }
   if (how === 'byte') return { status: 'ran', line: out.stdout.replace('"status":"', '"status":"x') }
+  if (how === 'slip' || how === 'slip-lone') {
+    const line = slipped(out.stdout, how === 'slip-lone')
+    if (!line) fail('the scenario has the git step `' + label + '` slip a value, and its line holds no field to slip: ' + out.stdout)
+    return { status: 'ran', line }
+  }
   if (how === 'non-ascii') {
     const body = out.stdout.replace(/\n$/, '').replace(/, "sha256": "[0-9a-f]{64}"\}$/, '}').replace('"status":"', '"status":"\u2014')
     return { status: 'ran', line: body.slice(0, -1) + ', "sha256": "' + createHash('sha256').update(body).digest('hex') + '"}\n' }

@@ -4725,6 +4725,91 @@ fn a_step_that_hands_back_anything_but_its_digest_is_caught_as_altered() {
     assert_eq!(sim.rig.status(), "");
 }
 
+/// **A digest that comes back with ONE VALUE SLIPPED is read as the tool printed it** (the
+/// staged canary's part 1, 2026-10-16). The state's digest came back from its agent with one
+/// row's `"retry":"never-selected"` as the `"no-instrument"` of the rows below it — on three
+/// tries of three, the same slip — and the stage halted at its state read, every retry
+/// failing alike. The value put back where the line holds it under the same name makes the
+/// line hash to the sha256 it ends with, and that line is the tool's: the read is taken on its
+/// FIRST try, and the log says which value came back as what. A slip of a value the line
+/// holds nowhere else under its name is no line this harness can put back: that read is asked
+/// for again twice and the stage halts, as before.
+#[test]
+fn a_digest_relayed_with_one_value_slipped_is_read_as_the_tool_printed_it() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::opened("slipped", &one_area());
+    let head = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({"stopAfter": "state"})),
+        json!({"relays": {"git:state:test-1": "slip"}}),
+    );
+    assert_eq!(ran.result["status"], "stopped", "{}", ran.result);
+    assert_eq!(
+        ran.agents(),
+        ["git:state", "git:state:test-1"],
+        "read on its first try: {:?}",
+        ran.logs
+    );
+    let mended: Vec<&String> = ran
+        .logs
+        .iter()
+        .filter(|line| line.contains("came back with ONE value altered"))
+        .collect();
+    assert_eq!(mended.len(), 1, "{:?}", ran.logs);
+    assert!(
+        mended[0].starts_with(
+            "the relayed line of `git:state:test-1` came back with ONE value altered — `"
+        ) && mended[0].contains(" where the tool printed ")
+            && !ran
+                .logs
+                .iter()
+                .any(|line| line.contains("state relay rejected")),
+        "{:?}",
+        ran.logs
+    );
+
+    // A SLIP NOTHING IN THE LINE CAN PUT BACK: asked for again twice, and then no state.
+    let relays: serde_json::Map<String, Value> = state_reads("test-1")
+        .into_iter()
+        .map(|label| (label, json!("slip-lone")))
+        .collect();
+    let lone = sim.invoke(sim.args("test", json!({})), json!({"relays": relays}));
+    assert_eq!(
+        json!([lone.result["status"], lone.result["halted"]["phase"]]),
+        json!(["halted", "state"]),
+        "{}",
+        lone.result
+    );
+    assert!(
+        lone.result["halted"]["reason"]
+            .as_str()
+            .is_some_and(|why| why.contains("does not end with the sha256 of itself")),
+        "{}",
+        lone.result
+    );
+    assert_eq!(
+        lone.agents(),
+        [
+            "git:state",
+            "git:state:test-1",
+            "git:state:test-1:again1",
+            "git:state:test-1:again2"
+        ]
+    );
+    assert!(
+        !lone
+            .logs
+            .iter()
+            .any(|line| line.contains("came back with ONE value altered")),
+        "{:?}",
+        lone.logs
+    );
+    assert_eq!(sim.rig.rev("HEAD"), head);
+    assert_eq!(sim.rig.status(), "");
+}
+
 /// **An invocation that only looks finishes nothing and says what is owed; the one after it
 /// finishes it** (the second repair plan's `K2` through `K3`; the re-review's `R-L1` and
 /// `R-M1`). `stopAfter: 'state'` over a batch a record step applied and did not commit,

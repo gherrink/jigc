@@ -417,7 +417,7 @@ fn b_every_build_git_call_runs_on_sonnet() {
     }
     assert!(
         function(&full, "toolStep").contains(
-            "readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)"
+            "readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act, 'git:' + label)"
         ),
         "a step that is one command of the tool goes through `gitStep`, and so through that call — read as a digest, and asked for again as its one command"
     );
@@ -2134,7 +2134,7 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
             if line.contains("carryPrompt(v, round, take, part), CARRY_SCHEMA)") {
                 "the part's re-cut"
             } else if line
-                .contains("readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act)")
+                .contains("readDigest(await gitStep(label, phaseTitle, prompt, STEP_SCHEMA, RUN_AGAIN, seen), act, 'git:' + label)")
             {
                 "toolStep"
             } else if line.contains(
@@ -2275,8 +2275,9 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
          tool stands: {step}"
     );
     assert!(
-        function(&full, "probeAct").contains("return { raw, read: readStep(raw, act) }"),
-        "and its line is read as every step's line is, as the act that was asked for"
+        function(&full, "probeAct").contains("return { raw, read: readStep(raw, act, true) }"),
+        "and its line is read as every step's line is, as the act that was asked for — and \
+         exactly as it came back: a probe measures the relay, and mends no value of it"
     );
 
     // NO CODE OF A PROBE NAMES A RUN, A ROUND OR A BRANCH, and none reaches what a stage
@@ -2819,7 +2820,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     // to naming what did not fit and the file with the rest, and to nothing struck out.
     let digest = function(&full, "readDigest");
     for held in [
-        "const said = readStep(r, act)",
+        "const read = stepRead(r, act)",
         "!DIGEST_RE.test(line) || line.includes('\\\\')",
         "!Array.isArray(said.unfit) || !('file' in said) || !('file_sha256' in said)",
         "if (said.unfit.length) return ",
@@ -2832,8 +2833,13 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         ours.matches("readStep(").count(),
-        4,
-        "`readStep` is declared once and called by `readDigest`, by a probe's step and by the probe that relays a line of its own — a stage's step never goes around `readDigest`"
+        3,
+        "`readStep` is declared once and called by a probe's step and by the probe that relays a line of its own, each EXACT — a stage's step never goes around `readDigest`"
+    );
+    assert_eq!(
+        ours.matches("stepRead(").count(),
+        3,
+        "`stepRead` — the one reader of a relayed line, which mends one slipped value by the line's own hash — is declared once and called by `readStep` and by `readDigest`, and by nothing else"
     );
     assert!(
         !function(&full, "lostStep").contains("? r.line :")
