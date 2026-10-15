@@ -1150,6 +1150,15 @@ const COMPOSE_REFUSALS = {
   'check': { again: false, says: 'a check of the batch does not hold — a launched reporter\'s report is missing, a file nobody launched lies among the reports, a key is no row — or a file among the filed verdicts is no verdict. The stage\'s report check came before this step, so something changed between the two', then: null },
   'pending': { again: false, says: 'another batch is applied and not committed — one this stage did not compose: it appeared while the stage ran', then: 'pending' },
   'no-change': { again: false, says: 'every file the record would write is what the run holds already — and an attempt\'s first record always writes that the attempt reached it', then: ' Nothing was written and NO BATCH IS LEFT. No discard is asked for.' },
+  'hygiene': { again: false, says: 'the public-hygiene scan stopped a file the record would write — gitleaks found a secret-shaped string in it, or the denylist matched: a credential is never committed, even a revoked one, and the scan is never widened to let one through', then: ' What was committed stands, and the reports the stage filed are still untracked under the run\'s directory. What wrote the string is changed — a report its reporter rewrites, a field a tool names — and the stage is invoked again; the step\'s own line holds the record script\'s whole refusal.' },
+}
+// scanHits — what the public-hygiene scan stopped, as the composing step's digest names it
+// (dev/stabilize-step compose: `hits`): each file by its path in the repository and the
+// rule — gitleaks' by its id, the denylist by that word — and never what matched. '' where
+// the step named none: the step's own line holds the refusal whole.
+function scanHits(hits) {
+  const named = Array.isArray(hits) ? hits.filter((hit) => plain(hit) && isText(hit.rule)) : []
+  return named.length ? '. It stopped ' + named.map((hit) => (hit.rule === 'denylist' ? 'a match of the denylist' : 'gitleaks\' rule `' + hit.rule + '`') + (Number.isInteger(hit.line) ? ' at line ' + hit.line : '') + ' of ' + (isText(hit.path) ? '`' + hit.path + '`' : 'a file the step\'s line names')).join('; ') : ''
 }
 
 // ---- pure helpers (everything from here to `selfTest` runs no agent) ----
@@ -3276,7 +3285,7 @@ function selfTest() {
   const composing = composePrompt(tested, 'fix/rc24-tier1', subjectSaid, said)
   check('the composing step is ONE command of the tool: the branch, the run\'s directory, the round, the attempt, the subject as one quoted word, the sha256 of the words\' canonical form, and the words after `--`', composing.includes('\n1. `dev/stabilize-step compose --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --round 2 --attempt 4 --subject \'' + subjectSaid + '\' --sha256 ' + sha256(wordsText('rc24-tier1', 2, 4, subjectSaid, said)) + ' --scratch /tmp/scratch-1 --digest /tmp/scratch-1 -- ' + said.join(' ') + '`\n') && composing.startsWith('GIT STEP — ') && !composing.includes(LABELS.record) && !composing.includes(PAYLOAD_ENDS))
   check('a composing step that is asked for again is told that the tool refused the words, and to type the command as it stands', wordsAgain(1).startsWith('AGAIN (1): ') && wordsAgain(1).includes('typed as it stands') && wordsAgain(1).includes('nothing was written') && !wordsAgain(1).includes('`'))
-  check('of the words a composed record is refused with, `words` is asked for again — once — and every other halts, each saying what it means', WORDS_AGAIN === 1 && Object.keys(COMPOSE_REFUSALS).filter((word) => COMPOSE_REFUSALS[word].again).join() === 'words' && ['words', 'check', 'pending', 'no-change'].every((word) => COMPOSE_REFUSALS[word] && COMPOSE_REFUSALS[word].says.split(' ').length >= 10) && COMPOSE_REFUSALS['no-change'].then.includes('NO BATCH IS LEFT') && COMPOSE_REFUSALS.pending.then === 'pending')
+  check('of the words a composed record is refused with, `words` is asked for again — once — and every other halts, each saying what it means', WORDS_AGAIN === 1 && Object.keys(COMPOSE_REFUSALS).filter((word) => COMPOSE_REFUSALS[word].again).join() === 'words' && ['words', 'check', 'pending', 'no-change', 'hygiene'].every((word) => COMPOSE_REFUSALS[word] && COMPOSE_REFUSALS[word].says.split(' ').length >= 10) && COMPOSE_REFUSALS['no-change'].then.includes('NO BATCH IS LEFT') && COMPOSE_REFUSALS.pending.then === 'pending')
   // THEN THE STAGE VERIFIES, IN WAVES: a verifier is handed its key and the read that prints
   // its row, the kit's call first, and the ONE call that files its verdict, spelled whole —
   // and what comes back is held to that call's line, as far as this script can hold one.
@@ -3945,7 +3954,7 @@ async function composeRecord(label, branch, ctx, dir, subject, words) {
   const word = typeof c.refused === 'string' ? c.refused : null
   const said = word === 'record' && typeof c.refusal === 'string' ? c.refusal : null
   const row = said ? COMPOSE_REFUSALS[said] || { says: 'a word of `' + RECORD_TOOL + '` this script has no row for: the step\'s own line holds that script\'s refusal', then: null } : null
-  if (row) return { fault: 'the record was not composed: `' + RECORD_TOOL + '` refused the composing step `' + said + '` — ' + row.says + '. Nothing was written', refused: word, refusal: said, step: stepFile(c), then: row.then === 'pending' ? recordThen(v.run, branch, null) : row.then }
+  if (row) return { fault: 'the record was not composed: `' + RECORD_TOOL + '` refused the composing step `' + said + '` — ' + row.says + scanHits(c.hits) + '. Nothing was written', refused: word, refusal: said, step: stepFile(c), then: row.then === 'pending' ? recordThen(v.run, branch, null) : row.then }
   if (word) return { fault: 'the step that composes the record refused ' + stepRefusal(word, branch), refused: word, refusal: null, step: stepFile(c), then: recordThen(v.run, branch, null) }
   return { fault: 'the step that composes the record did not answer with a batch it applied: ' + (c.relay || (c.halt && c.halt.root_cause) || 'it said `' + c.status + '`'), refused: null, refusal: null, step: stepFile(c), halt: c.relay ? null : c.halt || null, then: recordThen(v.run, branch, null) }
 }

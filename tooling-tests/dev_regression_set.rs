@@ -2711,7 +2711,7 @@ impl Driven {
             .collect();
         assert_eq!(
             fields,
-            ["detail", "dir", "key", "refused", "unkept", "used"],
+            ["detail", "dir", "refused", "sha256", "unkept", "used"],
             "{}",
             self.called.raw
         );
@@ -2720,7 +2720,7 @@ impl Driven {
 
     /// The key of the baseline the run left in the directory: a sha256.
     fn key(&self) -> String {
-        let key = self.baseline()["key"]
+        let key = self.baseline()["sha256"]
             .as_str()
             .unwrap_or_else(|| panic!("the run left a kept baseline: {}", self.called.raw));
         assert!(
@@ -2742,7 +2742,7 @@ impl Driven {
     fn used(&self, kept: &Path, key: &str) {
         assert_eq!(
             self.baseline(),
-            &json!({"dir": kept, "used": true, "refused": null, "detail": null, "key": key,
+            &json!({"dir": kept, "used": true, "refused": null, "detail": null, "sha256": key,
                     "unkept": null}),
             "the kept baseline is used: {}",
             self.called.raw
@@ -2790,7 +2790,7 @@ impl Driven {
             (
                 &said["dir"],
                 &said["used"],
-                &said["key"],
+                &said["sha256"],
                 said["unkept"]["why"].as_str()
             ),
             (&json!(kept), &json!(false), &Value::Null, Some(why)),
@@ -2851,6 +2851,20 @@ fn the_candidates_run() -> [String; 2] {
 /// and what the compiler is — in the previous release's tree.
 const ASKED_FOR_THE_KEY: [&str; 2] = ["nextest --version", "rustc -vV in previous"];
 
+/// THE LINE OF A RUN THAT KEPT ITS BASELINE, as the tool prints it — green, its fields
+/// under whatever names the tool gives them: what they are named is this suite's to hold
+/// ([`Driven::baseline`]), and whether a record of them passes the scan is the simulation's,
+/// which composes a record from this line and scans it with the machine's own gitleaks
+/// ([`a_record_composed_from_the_regression_tools_own_line_passes_the_machines_own_gitleaks`](super::stabilize_simulation)):
+/// what the tool names a field is what a record commits, and a stand-in's line names it as
+/// its scenario does.
+pub(crate) fn a_kept_baselines_line() -> Value {
+    let rig = Rig::new();
+    let list = both_rows(&rig);
+    let kept = rig.ask(&a_run(), &rig.keeping(&list));
+    kept.called.verdict("green").clone()
+}
+
 #[test]
 fn a_kept_baseline_is_used_and_the_previous_release_is_not_built_again() {
     let rig = Rig::new();
@@ -2866,7 +2880,7 @@ fn a_kept_baseline_is_used_and_the_previous_release_is_not_built_again() {
     let key = first.key();
     assert_eq!(
         first.baseline(),
-        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key,
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "sha256": key,
                 "unkept": null}),
         "nothing was kept, so nothing is refused: {}",
         first.called.raw
@@ -3239,7 +3253,7 @@ fn a_kept_baseline_that_was_not_finished_is_refused_and_built_afresh() {
         "not the previous release's binary before the baseline",
     );
     assert_eq!(
-        (&ended.baseline()["refused"], &ended.baseline()["key"]),
+        (&ended.baseline()["refused"], &ended.baseline()["sha256"]),
         (&json!("incomplete"), &Value::Null),
         "{}",
         ended.called.raw
@@ -3486,7 +3500,7 @@ fn a_baseline_is_kept_only_by_the_run_that_compared_against_it_whole() {
     let key = first.key();
     assert_eq!(
         first.baseline(),
-        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "key": key,
+        &json!({"dir": kept, "used": false, "refused": null, "detail": null, "sha256": key,
                 "unkept": null}),
         "a baseline that is fit is kept: {}",
         first.called.raw
@@ -3554,7 +3568,7 @@ fn a_kept_baseline_another_run_holds_is_not_shared() {
                 &of_it["dir"],
                 &of_it["used"],
                 &of_it["refused"],
-                &of_it["key"]
+                &of_it["sha256"]
             ),
             (&json!(kept), &json!(false), &json!("locked"), &Value::Null),
             "{}",

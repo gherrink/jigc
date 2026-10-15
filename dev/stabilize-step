@@ -254,8 +254,11 @@
 #       the record would write is what the run holds: nothing was filed since the stage's
 #       last record), `check` (a check of the batch does not hold, or a file among the
 #       filed verdicts is no verdict — the stage's report check comes BEFORE this step),
-#       `pending` (another batch is applied), or any other of its words. Nothing was
-#       written by a step refused so.
+#       `pending` (another batch is applied), `hygiene` (the public-hygiene scan stopped a
+#       file the record would write — and the step says, as `hits` in the digest too, each
+#       file by its path and the rule: [{path, rule, line}], `rule` gitleaks' rule or
+#       `denylist`, never what matched), or any other of its words. Nothing was written by a
+#       step refused so.
 #       AND THE STEP IS REPEATABLE: asked again while the batch its words composed is
 #       applied and in no commit — the journal keeps HASH with the batch — it writes
 #       nothing and answers `applied` again, with what it met in `found` (`applied`,
@@ -305,10 +308,10 @@
 #       command that names the same path. THE DIRECTORY IS NO JOB'S: it lies under no
 #       `hold/S/`, and two commands may name it, one after the other. AND NAMING IT IS NO
 #       KEY: that tool uses what is kept there only while its own key holds, and says what
-#       became of it in its line (`baseline: {dir, used, refused, detail, key, unkept}`),
-#       which is in the verdict's file, whole — this tool reads none of it, and a verdict
-#       is what it is without the flag. The path is part of what a job was asked, like
-#       every flag:
+#       became of it in its line (`baseline: {dir, used, refused, detail, sha256,
+#       unkept}`), which is in the verdict's file, whole — this tool reads none of it, and a
+#       verdict is what it is without the flag. The path is part of what a job was asked,
+#       like every flag:
 #       the same name with another path, or with none, is refused (taken). The directories
 #       on the way to it are made; a link on the way, or at it, is refused (usage) before
 #       anything is started; the directory itself is that tool's to make.
@@ -1784,7 +1787,39 @@ COMPOSE_THEN = {
     "no-change": "nothing was written, and no batch is left: every file the record would write is what the run holds already — nothing was filed since the stage's last record, and there is nothing to commit",
     "check": "nothing of the batch was written. A check of the batch does not hold, or a file among the filed verdicts is no verdict: the stage's report check (`dev/stabilize-step check-reports`) comes before this step — it says which launched reporter left no report, and moves a file that is no report or no verdict out of the tree — and the step is then asked for again, with the reporters the stage launched",
     "pending": "nothing was written: another batch is applied and not committed. `dev/stabilize-step git-state` says where it stands; `dev/stabilize-step record` commits it, or `dev/stabilize-step discard` takes it back",
+    "hygiene": "nothing was written. The public-hygiene scan stopped a file the record would write — gitleaks found a secret-shaped string in it, or the denylist matched — and `hits` names each file by its path and the rule, never what matched. A credential is never committed, even a revoked one, and the scan is not widened to pass one: what wrote the string is changed — a report its reporter rewrites, a field a tool names — and the stage is invoked again",
 }
+# WHAT THE PUBLIC-HYGIENE SCAN STOPPED, of a composing step the record script refused
+# `hygiene` — read off that script's one line (its hygiene_scan), so that the halt can name
+# each file and the rule and never what matched: gitleaks' `rule <id> at line <n>[ of <path>]`,
+# where a batch of one file names no path and the file is that one; the denylist's
+# `<path>[:<line>]`, by where. A hit whose path or rule is not of the digest's shapes is left
+# out, and so is all of it where the line is not one of those two: the file the digest names
+# holds the line whole.
+HYGIENE_LEAKS = re.compile(r"stabilize-record: refused hygiene: gitleaks found a secret-shaped string in (.+?): (.+?) — a credential is never committed")
+HYGIENE_RULE = re.compile(r"rule (\S+) at line ([0-9]+)(?: of (\S+))?")
+HYGIENE_DENIED = re.compile(r"stabilize-record: refused hygiene: the denylist matches at (.+?) — by where, never by what")
+HYGIENE_HITS = 50
+
+
+def hygiene_hits(said):
+    """[{path, rule, line}] — what the record script's refusal `said` names of the files the
+    public-hygiene scan stopped (HYGIENE_LEAKS, HYGIENE_DENIED)."""
+    hits = []
+    leaks = HYGIENE_LEAKS.match(said)
+    denied = HYGIENE_DENIED.match(said)
+    if leaks:
+        scanned = leaks.group(1).split(", ")
+        for found in leaks.group(2).split("; "):
+            rule = HYGIENE_RULE.fullmatch(found)
+            if rule:
+                hits.append({"path": rule.group(3) or (scanned[0] if len(scanned) == 1 else None), "rule": rule.group(1), "line": int(rule.group(2))})
+    elif denied:
+        for place in denied.group(1).split(", "):
+            at = re.fullmatch(r"(.+):([0-9]+)", place)
+            hits.append({"path": at.group(1) if at else place, "rule": "denylist", "line": int(at.group(2)) if at else None})
+    path, rule = PLAIN_VALUES["path"], PLAIN_VALUES["id"]
+    return [hit for hit in hits if (hit["path"] is None or (len(hit["path"]) <= path[1] and path[0].fullmatch(hit["path"]))) and len(hit["rule"]) <= rule[1] and rule[0].fullmatch(hit["rule"])][:HYGIENE_HITS]
 
 
 def compose(args, facts):
@@ -1815,6 +1850,8 @@ def compose(args, facts):
         word = REFUSED_BY_RECORD.match(composing.err)
         if word:
             facts.update(refusal=word.group(1))
+            if word.group(1) == "hygiene":
+                facts.update(hits=hygiene_hits(composing.err.split("\n")[0]))
         refuse("record", "dev/stabilize-record did not compose the stage's record%s" % (": it refused `%s`" % word.group(1) if word else ""), composing.shown(), COMPOSE_THEN.get(word.group(1) if word else None, "nothing was written: the refusal is the record script's, and its one line says what the call lacks"))
     facts.update(status="applied", round=int(args.round), attempt=int(args.attempt), record=printed["composed"]["record"], applied={"calls": printed["applied"], "checks": [result for result in printed["results"] if isinstance(result, dict) and "check" in result]}, files=printed["files"], filed=printed.get("filed") or [])
 
@@ -2434,7 +2471,7 @@ DIGEST = {
     "round-commits": {"all": ["sha", 200], "inside": ["sha", 200], "outside": ["sha", 200]},
     "carry": {**ON, **PUSHED, "picked": [{"from": "sha", "to": "sha"}, 200], **MET},
     "record": {**ON, "commit": "sha", "round": "count?", "paths": "count", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "gate": {"ok": "flag", "verdict": "word", "red": "count", "known": "count", "new": "count", "candidate": "sha?"}, "vet": VET, "discarded": "flag", "aside": ASIDE, **MET},
-    "compose": {**ON, "round": "count?", "attempt": "count", "record": "word", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "files": "count", "filed": "count", "refusal": "word", **MET},
+    "compose": {**ON, "round": "count?", "attempt": "count", "record": "word", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "files": "count", "filed": "count", "refusal": "word", "hits": [{"path": "path?", "rule": "id", "line": "count?"}, HYGIENE_HITS], **MET},
     "discard": {**ON, "unstaged": "count", "discarded": "count", **MET},
     "table": {"acts": ["word", 50], "arrivals": ["word", 50], "kept": "count", "holds": ["word", 20], "slice": "count"},
     "sync-main": {"head": "sha", "origin_main": "sha", "resolved_logs": ["path", 10], **MET},

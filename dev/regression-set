@@ -227,13 +227,18 @@
 # the run it would be without --baseline: a build of its own, in its own directory, and
 # nothing read or written in DIR.
 #
-# WHAT THE LINE SAYS OF IT — `baseline: {dir, used, refused, detail, key, unkept}`, in the
-# line of a run that names DIR and in no other: `used`, whether the baseline kept there
+# WHAT THE LINE SAYS OF IT — `baseline: {dir, used, refused, detail, sha256, unkept}`, in
+# the line of a run that names DIR and in no other: `used`, whether the baseline kept there
 # was used and the previous release not built; `refused`, the word by which a baseline
 # that was there was not used — a member of the key, `incomplete`, `record` or `locked` —
 # with its sentence in `detail`, which says what the member is now and what the baseline
-# was kept with; `key`, the sha256 of the key of the baseline the run left in DIR, null
-# where it left none; and `unkept`, null where the run used the kept baseline, left one
+# was kept with; `sha256`, the sha256 of the key of the baseline the run left in DIR, null
+# where it left none — NAMED AS EVERY OTHER HASH OF THE LINE IS, and never `key`: a record
+# commits this line, and gitleaks' `generic-api-key` reads a `key` beside a 64-hex value as
+# a credential, so under that name no record of a run with a regression item could be
+# written (the staged canary's part 2, 2026-10-15), while the record kept in DIR, which no
+# record commits, holds the key itself under `key`, an object no rule reads as a secret;
+# and `unkept`, null where the run used the kept baseline, left one
 # there or was shut out (`locked`) — else {why, detail}: WHAT THE RUN BUILT THERE WAS NOT
 # KEPT, by the word the run was void by, or `baseline` for a test no row excludes, and
 # in a sentence. So a void line says of itself whether the kept directory can be its
@@ -959,7 +964,7 @@ class Kept:
         self.key = {"previous": previous, "exclusions": digest(rows),
                     "tool": sha256_of(os.path.realpath(__file__))}
         self.said = {"dir": directory, "used": False, "refused": None, "detail": None,
-                     "key": None, "unkept": None}
+                     "sha256": None, "unkept": None}
         self.built = None
         run.facts["baseline"] = self.said
         # THE LOCK. A run swaps the candidate's binary in at a path inside the kept
@@ -1111,7 +1116,7 @@ class Kept:
             run.facts["at_baked_path"][moment] = record["around"][moment]
         for name in KEPT_FILES + (RECORD,):
             shutil.copyfile(self.path(name), os.path.join(run.evidence, name))
-        self.said.update(used=True, key=digest(self.key))
+        self.said.update(used=True, sha256=digest(self.key))
         run.save()
 
     def hold(self, binaries):
@@ -1156,7 +1161,7 @@ class Kept:
             handle.write("\n")
         os.replace(staged, self.path(RECORD))
         shutil.copyfile(self.path(RECORD), os.path.join(run.evidence, RECORD))
-        self.said["key"] = digest(self.key)
+        self.said["sha256"] = digest(self.key)
         run.save()
 
     def rest(self):
@@ -1166,7 +1171,7 @@ class Kept:
         candidate's binary there, and the next run refuses the baseline: by `jigc` where
         it was kept before that run, by `incomplete` where that run built it. A baseline
         that was not kept is not put to rest either: it has no record, and is removed."""
-        if self.said["key"] is None:
+        if self.said["sha256"] is None:
             return
         try:
             staged = self.run.facts["baked_path"] + ".rest"

@@ -221,7 +221,8 @@ use serde_json::{Value, json};
 use crate::support::child_stdin;
 use crate::support::goldens::update_mode;
 
-use super::dev_stabilize_record::DENY_TERM;
+use super::dev_regression_set::a_kept_baselines_line;
+use super::dev_stabilize_record::{DENY_TERM, STUB_SECRET, gitleaks_stub};
 use super::dev_stabilize_step::{
     GATE_KIND, Held, LONG_COMMAND, LOOP, RUN, RUN_DIR, StepRig, as_recorded, failing_commit,
     harness_pure, node_or_skip, sha256,
@@ -7813,7 +7814,7 @@ fn a_second_stage_against_one_previous_release_names_the_same_baseline() {
     let again = sim.invoke(
         sim.args("test", json!({"clause": "working-product"})),
         json!({"held": {"regression-set": {
-            "status": "green", "baseline": {"key": key}}}}),
+            "status": "green", "baseline": {"sha256": key}}}}),
     );
     assert_eq!(
         json!([again.result["status"], again.result["halted"]]),
@@ -7869,7 +7870,7 @@ fn a_second_stage_against_one_previous_release_names_the_same_baseline() {
                 kept["evidence"]["line"]["baseline"]
             ]),
             json!([kept_in, {"dir": format!("<scratch>/{kept_in}"), "used": false,
-                             "refused": null, "detail": null, "key": key, "unkept": unkept}]),
+                             "refused": null, "detail": null, "sha256": key, "unkept": unkept}]),
             "run {run}: the line's six fields, as the regression tool prints them: {kept}"
         );
         assert!(
@@ -7883,6 +7884,236 @@ fn a_second_stage_against_one_previous_release_names_the_same_baseline() {
         json!([["green", null], []]),
         "{state}"
     );
+}
+
+/// The machine's own gitleaks, where it has one — and where it has none, what a test that
+/// needs it does: `unrun` says what was not run. It returns None and the caller passes, BUT
+/// NOT SILENTLY: beside the line on stderr the skip is written to the file the gate names
+/// (`JIGC_GATE_SKIPS`), and `dev/gate` prints it in its own summary, as it does a missing
+/// `node` ([`node_or_skip`]). CI's tooling legs carry no gitleaks — only its `hygiene` job
+/// installs one, and that scans the pushed range, never a record a test composes — so there
+/// a test that needs it runs nothing, and what holds the scan instead is the local gate and
+/// the record script's own scan at every real record.
+fn gitleaks_or_skip(unrun: &str) -> Option<PathBuf> {
+    let found = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join("gitleaks"))
+            .find(|candidate| candidate.is_file())
+    });
+    if found.is_none() {
+        let skipped = format!("SKIPPED: `gitleaks` is not on PATH, so {unrun}");
+        eprintln!("{skipped}");
+        if let Some(skips) = std::env::var_os("JIGC_GATE_SKIPS") {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&skips)
+                .unwrap_or_else(|e| panic!("open the gate's skip file: {e}"));
+            std::io::Write::write_all(&mut file, format!("{skipped}\n").as_bytes())
+                .expect("write the skip to the gate's file");
+        }
+    }
+    found
+}
+
+/// The machine's own gitleaks over `target`, with this repository's configuration: the
+/// rules of its findings, by `(rule, file)`, the file as gitleaks names it.
+fn gitleaks_finds(gitleaks: &Path, target: &Path) -> Vec<(String, String)> {
+    let report = RigDir::new("sim-gitleaks-report");
+    let path = report.path().join("report.json");
+    let out = Command::new(gitleaks)
+        .args([
+            "dir",
+            "--no-banner",
+            "--no-color",
+            "--redact",
+            "--exit-code",
+            "77",
+        ])
+        .args(["--report-format", "json", "--report-path"])
+        .arg(&path)
+        .arg("--config")
+        .arg(repo_root().join(".gitleaks.toml"))
+        .arg(target)
+        .output()
+        .expect("run the machine's gitleaks");
+    let code = out.status.code();
+    assert!(
+        code == Some(0) || code == Some(77),
+        "gitleaks ran and answered — exit {code:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let found: Value = serde_json::from_str(&fs::read_to_string(&path).expect("gitleaks' report"))
+        .expect("gitleaks' report is JSON");
+    let found: Vec<(String, String)> = found
+        .as_array()
+        .expect("a list of findings")
+        .iter()
+        .map(|leak| (text(&leak["RuleID"]), text(&leak["File"])))
+        .collect();
+    assert_eq!(
+        code == Some(77),
+        !found.is_empty(),
+        "its exit and its report agree"
+    );
+    found
+}
+
+/// **What the tools write into a record passes the scan the record is held to — the
+/// machine's own gitleaks, with this repository's configuration** (the staged canary's part
+/// 2, run by the human on 2026-10-15: NO RECORD OF A RUN THAT HELD A REGRESSION ITEM COULD BE
+/// COMPOSED — the regression tool named the sha256 of its kept baseline's key `key`, the
+/// record carries the tool's line, and gitleaks' `generic-api-key` reads a `key` beside a
+/// 64-hex value as a credential; `dev/stabilize-record` refused it `hygiene`, as it must).
+/// No suite met it: every record a stage writes here is scanned by a stand-in for gitleaks
+/// that flags one planted string, and the stand-in for the regression set prints the field
+/// its scenario names, with a hash of one repeated digit no entropy rule flags. Here the
+/// line is THE TOOL'S OWN — a run of `dev/regression-set` that kept its baseline, under its
+/// suite's stand-ins for cargo — and its baseline is handed to the stand-in for the long
+/// command as the tool printed it, but for the directory, which is the stage's; the
+/// stand-in for gitleaks is removed; and the stage's first record is composed, scanned by
+/// gitleaks and committed. A BEFORE-CONTROL FIRST: the tool's hash under the name the tool
+/// wrote until this repair is a hit of the same scanner and configuration, so a scanner that
+/// flags nothing cannot pass this arm.
+#[test]
+fn a_record_composed_from_the_regression_tools_own_line_passes_the_machines_own_gitleaks() {
+    if !can_run() {
+        return;
+    }
+    let Some(gitleaks) = gitleaks_or_skip(
+        "no record composed from the regression tool's own line was scanned by gitleaks",
+    ) else {
+        return;
+    };
+    let line = a_kept_baselines_line();
+    let mut baseline = line["baseline"].clone();
+    let fields = baseline
+        .as_object_mut()
+        .unwrap_or_else(|| panic!("the line says what became of its baseline: {line}"));
+    fields.remove("dir");
+    let hash = fields
+        .values()
+        .filter_map(Value::as_str)
+        .find(|value| value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit()))
+        .unwrap_or_else(|| panic!("the line names its kept baseline by a sha256: {line}"))
+        .to_owned();
+
+    // THE BEFORE-CONTROL: the same hash, under the name the tool wrote until 2026-10-15.
+    let control = RigDir::new("sim-gitleaks-control");
+    fs::write(
+        control.path().join("regression-set.a1.json"),
+        format!("{{\n \"baseline\": {{\n  \"key\": \"{hash}\"\n }}\n}}\n"),
+    )
+    .expect("write the control");
+    assert_eq!(
+        gitleaks_finds(&gitleaks, control.path())
+            .into_iter()
+            .map(|(rule, _)| rule)
+            .collect::<Vec<_>>(),
+        ["generic-api-key"],
+        "the scanner and its configuration read a sha256 named `key` as a credential"
+    );
+
+    let sim = Sim::queued(
+        "queue-real-gitleaks",
+        &with_held_checks(&["regression-set"]),
+    );
+    fs::remove_file(sim.rig.dir().join("bin/gitleaks")).expect("remove the stand-in");
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"held": {"regression-set": {"status": "green", "baseline": baseline}}})),
+    );
+    ends_at_its_first_record(&sim, &ran, &candidate, 1, "stop");
+    let check = format!("{RUN_DIR}/r1/checks/regression-set.a1.json");
+    let kept: Value =
+        serde_json::from_str(sim.rig.read(&check).trim_end()).expect("the verdict on record");
+    let said = &kept["evidence"]["line"]["baseline"];
+    assert_eq!(
+        json!([
+            said["sha256"],
+            said.as_object()
+                .map(|o| o.keys().cloned().collect::<Vec<_>>())
+        ]),
+        json!([
+            hash,
+            ["detail", "dir", "refused", "sha256", "unkept", "used"]
+        ]),
+        "the record carries the tool's hash under the tool's name: {kept}"
+    );
+    assert_eq!(
+        gitleaks_finds(&gitleaks, &sim.rig.root.join(RUN_DIR)),
+        [],
+        "and the run's directory, as committed, is clean to the same scanner"
+    );
+}
+
+/// The stand-in for gitleaks of the record suite, but naming THE FILES it found the planted
+/// string in — each by its path in the repository it scanned, as gitleaks' report does — so
+/// that what a refusal of the record script says of them is the shape a real hit has.
+fn gitleaks_stub_naming_files() -> String {
+    let stub = gitleaks_stub();
+    let hit = r#"    if [ -n "$report" ]; then printf '[{"RuleID":"stub-rule","StartLine":3}]' >"$report"; fi"#;
+    assert!(
+        stub.contains(hit),
+        "the record suite's stand-in reports its hit so:\n{stub}"
+    );
+    stub.replace(
+        hit,
+        &format!(
+            "    if [ -n \"$report\" ]; then\n        sep='['; out=''\n        for found in $(cd \"$repo\" && grep -rl --exclude-dir=.git {STUB_SECRET} .); do\n            out=\"$out$sep{{\\\"RuleID\\\":\\\"stub-rule\\\",\\\"StartLine\\\":3,\\\"File\\\":\\\"${{found#./}}\\\"}}\"; sep=','\n        done\n        printf '%s]' \"$out\" >\"$report\"\n    fi"
+        ),
+    )
+}
+
+/// **A record the public-hygiene scan stops halts the stage saying what stopped it, and
+/// where** (the staged canary's part 2, 2026-10-15: the stage halted at its record with
+/// *`hygiene`, a word of `dev/stabilize-record` this script has no row for*, and the human
+/// had to open the step's own line to learn that a file the record would write held a
+/// secret-shaped string, and which). The refusal has its row: the halt says that the scan
+/// stopped a file the record would write, and names each file by its path in the repository
+/// and the rule — never the string — from the composing step's digest; nothing was written.
+#[test]
+fn a_record_the_hygiene_scan_stops_halts_naming_each_file_and_its_rule() {
+    if !can_run() {
+        return;
+    }
+    let sim = Sim::queued("queue-hygiene", &with_held_checks(&["regression-set"]));
+    placed_executable::write(
+        &sim.rig.dir().join("bin/gitleaks"),
+        gitleaks_stub_naming_files(),
+    );
+    let candidate = sim.rig.rev("HEAD");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        small_stage(json!({"held": {"regression-set": {"status": "green",
+            "baseline": {"detail": format!("the environment held {STUB_SECRET}")}}}})),
+    );
+    let result = &ran.result;
+    assert_eq!(
+        json!([
+            result["status"],
+            result["halted"]["phase"],
+            result["halted"]["refused"]
+        ]),
+        json!(["halted", "record", "record"]),
+        "{result}"
+    );
+    let reason = text(&result["halted"]["reason"]);
+    for said in [
+        "refused the composing step `hygiene` — the public-hygiene scan stopped a file the record would write",
+        &format!(
+            "gitleaks' rule `stub-rule` at line 3 of `{RUN_DIR}/r1/checks/regression-set.a1.json`"
+        ),
+        ". Nothing was written",
+    ] {
+        assert!(reason.contains(said), "the halt says `{said}`: {reason}");
+    }
+    assert!(
+        !reason.contains("has no row for") && !reason.contains(STUB_SECRET),
+        "the word has its row, and the halt never says what matched: {reason}"
+    );
+    assert_eq!(sim.rig.rev("HEAD"), candidate, "nothing was recorded");
 }
 
 /// **A gate that stands red is not the answer to a stage started again** (`T5b`: *a job that
@@ -14159,6 +14390,59 @@ fn what_the_runtime_does_with_a_return_that_lacks_a_required_field_is_the_probes
         judged(&ran),
         [("a", "other"), ("b", "halted")].map(|(c, v)| (c.to_owned(), v.to_owned()))
     );
+}
+
+// ---------------------------------------------------------------------------
+// A machine without gitleaks
+// ---------------------------------------------------------------------------
+
+/// The arm that scans a composed record with the machine's own gitleaks, on a machine
+/// without gitleaks, driven: this binary is run again for that one test, with a `PATH` on
+/// which only `node` answers. It passes, and NOT SILENTLY — the skip is on stderr and in the
+/// file the gate names, under CI as anywhere else (CI's tooling legs carry no gitleaks:
+/// [`gitleaks_or_skip`]).
+#[test]
+fn without_gitleaks_the_record_scan_arm_passes_and_tells_the_gate() {
+    if !can_run() {
+        return;
+    }
+    let here = RigDir::new("stabilize-sim-no-gitleaks");
+    let bin = here.path().join("bin");
+    fs::create_dir_all(&bin).expect("create the bin directory");
+    let node = std::env::split_paths(&std::env::var_os("PATH").expect("a PATH"))
+        .map(|dir| dir.join("node"))
+        .find(|candidate| candidate.is_file())
+        .expect("node is on PATH");
+    std::os::unix::fs::symlink(&node, bin.join("node")).expect("link node");
+    for ci in [None, Some("true")] {
+        let skips = here.path().join(format!("skips-{}", ci.unwrap_or("local")));
+        let mut command = Command::new(std::env::current_exe().expect("this test binary"));
+        command
+            .args([
+                "--exact",
+                "stabilize_simulation::a_record_composed_from_the_regression_tools_own_line_passes_the_machines_own_gitleaks",
+                "--nocapture",
+            ])
+            .env("PATH", &bin)
+            .env("JIGC_GATE_SKIPS", &skips)
+            .env_remove("CI");
+        if let Some(ci) = ci {
+            command.env("CI", ci);
+        }
+        let out = command.output().expect("run this test binary");
+        let said = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(out.status.success(), "CI {ci:?}: the test passes: {said}");
+        let skipped = "SKIPPED: `gitleaks` is not on PATH, so no record composed from the regression tool's own line was scanned by gitleaks";
+        assert!(
+            said.contains(skipped),
+            "CI {ci:?}: and says so on stderr: {said}"
+        );
+        assert_eq!(
+            fs::read_to_string(&skips).expect("the gate's skip file"),
+            format!("{skipped}\n"),
+            "CI {ci:?}: and in the file the gate names, which is where somebody sees it"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
