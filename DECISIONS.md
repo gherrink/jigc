@@ -2,6 +2,22 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-15 — The install family's numbers are on record: 113 cells, 47 red on this tree under seven keys and every one red on the previous release; a cell of the family in one to two seconds outside a gate and under three inside one; the family adds about 24 s to a gate, as the pilot's projection had it; the whole table under the ruling projected at about 680 gate cells and five minutes of the gate's one-at-a-time chain (the byte table, task `B5`, the last of its commits)
+
+**What.** The family's record — [byte-table-install-family.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family.md) — and beside it the arm on a named binary as it printed every cell of the table, [byte-table-install-family-cells.tsv](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family-cells.tsv). No cell, row, frame or product source changes. **Nothing of `B6` to `B10` is built.**
+
+**The numbers, each with its source in the record.** 113 cells — 89 in the gate, 24 on demand; 47 red in the gate on this tree under seven keys, four on demand; the table at 174 cells and 52 red in the gate under twelve keys. **Every one of the 47 is red on the previous release**, 40 in the same class; that release is red in 78 of the family's 119 cells. A cell of the family costs 0.7 to 2.4 s outside a gate and 0.9 to 6.2 s, about 2.6 on the mean, inside the gate of its commit; the three arms that run cells were 56.2 s of that gate's one-at-a-time chain, about 24 s more than at the pilot's stop. **The projection** — at the table's 22.5 gate cells a leaf, the 24 leaves the ruling still owes bring about 540, and the whole table about 680 gate cells and five minutes of the chain, the `milestone` family's fan-outs counted at their measured rate.
+
+**The plan's pattern held at `B5`**: the rows from the docs in a commit of their own, then the cells. It bent in two places, each in its entry: the cells came in one commit and not in commits of about ten — a gate of this day took 25 to 30 minutes under another lane's load, and the family's 113 cells are one construction a kind — and one arm of the frame that held the wall clock had to hold the cell's own seconds once the `bare` arm grew to 68 cells.
+
+**What `B6` to `B9` need that the plan does not name** — for the human, and decided by nobody here:
+
+1. **A plant put in the place of a file that stands** — still not built; the task family's fourteen needs wait for it, and the install family's eight edits wait for a file the never-adopted repository does not have.
+2. **A word for the file a link leads to**, if the human rules on the record's §6, entry 12, that a link at a merged path is followed: no line can name it.
+3. **The arm of `bare` is now the largest**, 68 cells: the families after this one add to `fresh` and `committed-singletons`, and a state whose cells take a lead-in of eleven commands (a landed task) costs three to four seconds a cell.
+4. **`B7`'s states hold worktrees**, which no copy carries: each cell provisions after the copy, at a fan-out's nine seconds a cell inside a gate.
+5. **The doc-only arm and `squash: false`** are still spellings no cell names.
+
 ## 2026-10-15 — The install family's cells: `jigc setup`, `jigc uninstall`, `jigc ingest` and `jigc unmanage` — 113 beside the acceptance's six, 89 in the gate and 24 on demand — and 47 are red on this tree under seven keys, every one red on the previous release too: no byte of the user's is lost by a refusal, two staged changes are lost at exit 0, every acting teardown leaves its removals uncommitted, every late failure of `setup` leaves the install written, and every acting `setup` makes a directory its doc does not name (the byte table, task `B5`, the third of its commits)
 
 **What.** The cells of the install family ([install.rs](crates/cli/tests/byte_table/install.rs)), on the rows of the two commits before this one; one plant the frame needed for them, **M** — a line of the user's own in a file jigc merges into or takes lines out of, and in the hook ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)) — red first; the lists. No row was touched, and no product source changes.
