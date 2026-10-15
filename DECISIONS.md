@@ -2,6 +2,58 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-15 — The install family's cells: `jigc setup`, `jigc uninstall`, `jigc ingest` and `jigc unmanage` — 113 beside the acceptance's six, 89 in the gate and 24 on demand — and 47 are red on this tree under seven keys, every one red on the previous release too: no byte of the user's is lost by a refusal, two staged changes are lost at exit 0, every acting teardown leaves its removals uncommitted, every late failure of `setup` leaves the install written, and every acting `setup` makes a directory its doc does not name (the byte table, task `B5`, the third of its commits)
+
+**What.** The cells of the install family ([install.rs](crates/cli/tests/byte_table/install.rs)), on the rows of the two commits before this one; one plant the frame needed for them, **M** — a line of the user's own in a file jigc merges into or takes lines out of, and in the hook ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)) — red first; the lists. No row was touched, and no product source changes.
+
+### The cells, on this tree's binary
+
+| leaf | in the gate | hold | refuse, nothing changed | red | on demand |
+|---|---:|---:|---:|---:|---:|
+| `setup` | 66 | 1 | 33 | 32 | 6 — none red |
+| `uninstall` | 15 | 0 | 0 | 15 | 6 — one holds, one refuses, four red by `U9` |
+| `ingest` | 4 | 4 | 0 | 0 | 6 — none red, one refuses |
+| `unmanage` | 4 | 4 | 0 | 0 | 6 — none red, one refuses |
+
+**The seven keys**, each in [byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §6 with its cells, the sentence it is held against and the previous release:
+
+| key | cells | came to |
+|---|---:|---|
+| `r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names` | 14 | *written outside its allowance* — an empty `.jigc/state/`; marked, the record's §6, entry 1 (i) |
+| `r1-setup-replaces-a-file-the-user-committed-at-a-path-it-writes-whole` | 3 | *git's state moved outside its allowance*; marked, entry 10 |
+| `r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head` | 1 | *git's state moved outside its allowance*; entry 12 |
+| `r1-setup-replaces-a-change-staged-at-a-path-it-writes-whole` | 2 | ***lost*** — at `.jigc/version` and at the guide |
+| `r1-setup-refuses-after-its-first-write-and-leaves-the-install-written` | 12 | *refused, and changed what a refusal may not* — the human's ruling on entry 2 |
+| `r1-uninstall-leaves-its-teardown-in-the-working-tree-and-commits-nothing` | 13 | *written outside its allowance* — `U9`, the ruling on entry 5 |
+| `r1-uninstall-refuses-over-a-settings-file-it-cannot-parse-after-removing-the-workbench` | 2 | *refused, and changed what a refusal may not* — `U7` |
+
+**Every one of the 47 is red on the previous release too** (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 123 s at a load of 8 to 9): 40 in the same class, seven in another. Twenty-seven cells of the family are red there and not here — among them four plants lost at exit 0, a file or a link at a path the install replaces.
+
+### What the frame gained, red first
+
+**Plant M** — `Plant::UsersLine(path)` and `Plant::UsersHook`: a line of the user's own added to what stands at the path, or the file made with it; and in the `pre-commit` hook git resolves, put in as the rejecting hook's lines are, letting every commit through. Against a frame that declared the two and put in nothing, the two cells on the stand-in that hold them were faults — *the plant does not stand there in the manifest taken before the command*; built, each is *lost* where the stand-in rewrites the file or the hook.
+
+**One arm of the frame corrected, and said**: `a_command_that_does_not_end_is_ended` held the wall clock from before its cell's run, and so the wait for a place in the process's one gate; with the family's 66 cells of `bare` in that gate beside it, a plain `cargo test` of the suite measured 34 s twice and went red. It holds the cell's own seconds now. The gate's runner runs a test a process and never met it; CI's leg runs `cargo test`.
+
+### Decided here — as a builder, and open to being overturned
+
+- **`setup`'s hook place is moved into the working tree for the cells that put something in it** (`core.hooksPath`, set by a lead-in): what stands at the hook's place is then a file the reader reads — `S10`'s place is *the hooks dir git resolves*, wherever that is. **A hooks directory that cannot be written is a file in its place**, not a permission bit, which is a declared bound.
+- **A rejecting hook at `setup`'s commit is no late failure**: the install commit runs no hook (`--no-verify`, a code comment's reasoning, no doc's — the record's §6, entry 11). The late failures the ruling on entry 2 decides are a hooks directory that cannot be written, a directory or a link at the hook's place, a directory at a path the install merges into, and a change staged at an install path, which the ask before the commit catches after the install is written.
+- **A cell that refuses names the refusal its doc says it takes, with the words read off a run where no doc gives them** — six refusal codes of `setup`'s, `uninstall.remove-allowlist`, and *this project isn't set up*.
+- **Thirteen needs of `setup` wait, with their reason** ([scheduled-cells.tsv](crates/cli/tests/byte_table/scheduled-cells.tsv)): an edit at each of its eight file places — no file stands there in the never-adopted repository, and committing one first is a second plant; a file in the place of the root's directory, which no file can take, twice; and a file at `.jigc`, three times the construction of the cell aimed at `S1`.
+- **`uninstall`'s and `setup`'s base cells in `fresh` run after a task landed** — the refusing spelling of each is its plain argv there, so its base cell needs a lead.
+- **The three lines of `uninstall` that change a tracked path (`U2`, `U3`, `U5`) excuse nothing**: no teardown commits, so each such change is outside `U9`, and is named in the list of lines that excuse nothing with what would use them.
+
+### The lists
+
+174 cells — 138 in the gate, 36 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again). The list of leaves whose cells are owed holds `milestone finalize` alone. The marked cells are 22, with 25 marks ([the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md)). Three more places where a doc is silent are listed (the record's §6, entries 10 to 12), each leading with what the product should do.
+
+### Not established
+
+- **That a refusal's words are the right ones** beyond the run they were read off.
+- **What each cell costs inside a gate**: this commit's gate is the first measurement; the record's commit has it.
+- **That `ingest` registers only the conformant candidate**: its cells show the two caches written, not which entry.
+
 ## 2026-10-15 — `jigc ingest` and `jigc unmanage` have their rows, written from their docs before a cell of either runs — two lines each over quoted sentences, two rules that are no line, and one more place where two docs say two things: whether `unmanage` commits (the byte table, task `B5`, the second of its commits)
 
 **What.** The install family's task `B5` holds four leaves, by the human's ruling of 2026-10-13: `setup`, `uninstall`, and `ingest` and `unmanage`, which the count holds touched under the plan's rule. This commit writes the two new rows from their docs — [the record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) gains §2b and §2c — and lifts them into [install.rs](crates/cli/tests/byte_table/install.rs) quote for quote. **No cell is added, no binary was run to learn what either command writes**, and no product source changes.

@@ -6,9 +6,10 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has seven rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 61 cells: the acceptance's
-//! twelve, and the task family's forty-nine** (`jigc task finalize`, `jigc task discard`),
-//! of which twelve run on demand. This file is the plan's tasks `B1` to `B5` — the arms that hold the comparison, the reader and the
+//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 174 cells: the acceptance's
+//! twelve, the task family's forty-nine** (`jigc task finalize`, `jigc task discard`) **and
+//! the install family's hundred and thirteen** (`setup`, `uninstall`, `ingest`,
+//! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to `B5` — the arms that hold the comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
 //!
@@ -1029,19 +1030,25 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
          the plan that owes them",
         wrong.join("\n  ")
     );
-    // Not vacuous: with nothing owed, the rows of the acceptance are named for what the
-    // acceptance's cells do not answer — and the cells that are there answer something.
+    // Not vacuous: with nothing owed and nothing scheduled, every scheduled need and every
+    // need of a leaf whose cells are owed is named — and the cells that are there answer
+    // the rest.
     let bare = unmet(&rows, &cells, &[], &[]);
     let needed: usize = rows.iter().map(|row| needs(row).len()).sum();
+    let waiting = scheduled_cells(SCHEDULED_CELLS).len();
     assert!(
-        bare.len() > 100 && bare.len() < needed,
-        "with nothing owed, {} of {needed} needs are unmet",
+        bare.len() > waiting && bare.len() < needed,
+        "with nothing owed and nothing scheduled, {} of {needed} needs are unmet, where \
+         {waiting} are scheduled",
         bare.len()
     );
     assert!(
         bare.iter().any(|line| line
-            == "`jigc uninstall` needs a cell for *refusing*, and has no cell and no scheduled \
-                row for it")
+            == "`jigc milestone finalize` needs a cell for *refusing*, and has no cell and no \
+                scheduled row for it")
+            && bare
+                .iter()
+                .any(|line| line.contains("*S1 × E, after the first write*"))
             && !bare.iter().any(|line| line.contains("*U1 × D*")),
         "{bare:#?}"
     );
@@ -1158,6 +1165,36 @@ fn every_cell_on_demand_has_its_line_in_the_committed_table() {
 /// for is named, and so is one listed for a state in whose cells it excuses nothing. A
 /// line no cell of any state excuses a difference under stands on [`EXCUSES_NOTHING`].
 const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
+    (&["setup"], "S1", &[Prepared::Bare]),
+    (&["setup"], "S2", &[Prepared::Bare]),
+    (&["setup"], "S3", &[Prepared::Bare]),
+    (&["setup"], "S4", &[Prepared::Bare]),
+    (&["setup"], "S5", &[Prepared::Bare]),
+    (&["setup"], "S6, written", &[Prepared::Bare]),
+    (&["setup"], "S7", &[Prepared::Bare]),
+    (&["setup"], "S8", &[Prepared::Bare]),
+    (&["setup"], "S9", &[Prepared::Bare]),
+    (&["setup"], "S10", &[Prepared::Bare]),
+    (&["setup"], "S11", &[Prepared::Bare]),
+    (&["setup"], "C2", &[Prepared::Bare]),
+    (&["uninstall"], "U1", &[Prepared::Of(State::Fresh)]),
+    (&["uninstall"], "U4", &[Prepared::Of(State::Fresh)]),
+    (&["uninstall"], "U4, removed", &[Prepared::Of(State::Fresh)]),
+    (&["ingest"], "I1", &[Prepared::Of(State::Fresh)]),
+    (&["ingest"], "I2", &[Prepared::Of(State::Fresh)]),
+    (
+        &["unmanage"],
+        "X1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["unmanage"],
+        "X2",
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
+    ),
     (
         &["task", "finalize"],
         "C1",
@@ -1269,38 +1306,23 @@ const ITS_FAMILYS_CELLS: &str = "the cells of its family, which are owed";
 /// a cell has met it yet. A line that is on neither list, or on both, is named
 /// ([`unaccounted`]).
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
-    (&["setup"], "S1", ITS_FAMILYS_CELLS),
-    (&["setup"], "S2", ITS_FAMILYS_CELLS),
-    (&["setup"], "S3", ITS_FAMILYS_CELLS),
-    (&["setup"], "S4", ITS_FAMILYS_CELLS),
-    (&["setup"], "S5", ITS_FAMILYS_CELLS),
-    (&["setup"], "S6, written", ITS_FAMILYS_CELLS),
-    (&["setup"], "S6, removed", ITS_FAMILYS_CELLS),
-    (&["setup"], "S7", ITS_FAMILYS_CELLS),
-    (&["setup"], "S8", ITS_FAMILYS_CELLS),
-    (&["setup"], "S9", ITS_FAMILYS_CELLS),
-    (&["setup"], "S10", ITS_FAMILYS_CELLS),
-    (&["setup"], "S11", ITS_FAMILYS_CELLS),
+    (
+        &["setup"],
+        "S6, removed",
+        A_RECORD_WHERE_THE_COMMIT_CANNOT_CARRY_IT,
+    ),
     (&["setup"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["setup"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["setup"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["setup"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
-    (&["uninstall"], "U1", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U2", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U3", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U4", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U4, removed", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U5", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U6", ITS_FAMILYS_CELLS),
-    (&["uninstall"], "U9", ITS_FAMILYS_CELLS),
-    (&["ingest"], "I1", ITS_FAMILYS_CELLS),
-    (&["ingest"], "I2", ITS_FAMILYS_CELLS),
+    (&["uninstall"], "U2", NOT_UNTIL_THE_TEARDOWN_COMMITS),
+    (&["uninstall"], "U3", NOT_UNTIL_THE_TEARDOWN_COMMITS),
+    (&["uninstall"], "U5", NOT_UNTIL_THE_TEARDOWN_COMMITS),
+    (&["uninstall"], "U6", A_REGISTRATION_UNDER_THE_WORKBENCH),
+    (&["uninstall"], "U9", NOT_UNTIL_THE_TEARDOWN_COMMITS),
     (&["ingest"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["ingest"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["ingest"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["ingest"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
-    (&["unmanage"], "X1", ITS_FAMILYS_CELLS),
-    (&["unmanage"], "X2", ITS_FAMILYS_CELLS),
     (&["unmanage"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["unmanage"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["unmanage"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -1352,6 +1374,23 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
 ];
+
+/// What would use a line of `uninstall`'s whose change lands at a tracked path, and the
+/// commit line itself: the teardown's commit — none is made on this tree, so each such
+/// change is outside the allowance (`U9`, the human's ruling of 2026-10-14), and the line
+/// excuses nothing.
+const NOT_UNTIL_THE_TEARDOWN_COMMITS: &str = "a teardown that lands its changes at a tracked path in a commit, as `U9` asks: on this \
+     tree it commits nothing, so such a change is outside the allowance and no line excuses it";
+
+/// What would use `U6`: a registration under `.jigc/worktrees/`.
+const A_REGISTRATION_UNDER_THE_WORKBENCH: &str = "a registration under `.jigc/worktrees/` — a milestone's sub-task provisioned before the \
+     teardown, which no cell of the install family makes: the milestone family's (`B7`)";
+
+/// What would use `S6, removed`: a settings record standing where the install commit
+/// cannot carry the settings file.
+const A_RECORD_WHERE_THE_COMMIT_CANNOT_CARRY_IT: &str = "a settings record standing where the install commit cannot carry the settings file — an \
+     ignored or untracked `.claude/settings.json`, which no cell of the family constructs: before \
+     the port";
 
 /// Why the line that lets a command stage excuses nothing by itself.
 const STAGED_UNDER_ANOTHER_LINE: &str = "no cell can: the comparison excuses a staged entry under the line that wrote the file, or \
@@ -4003,6 +4042,21 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         "the planted `repo/notes.txt` is gone from every path of the sandbox, and an object \
          within reach still has its bytes",
     ),
+    // A line of the user's own, in a file jigc merges into and in the hook (plant **M**).
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::UsersLine("README.md"))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/README.md` is gone",
+    ),
+    on_a_stand_in(
+        &["writes-the-hook"],
+        &[Lead::Plant(Plant::UsersHook)],
+        HOOKS,
+        Classification::Lost,
+        "the planted `repo/.git/hooks/pre-commit` is gone",
+    ),
     on_a_stand_in(
         &["writes-through-the-link"],
         &[Lead::Plant(Plant::LinkToNothing("a-link.md"))],
@@ -4711,7 +4765,6 @@ fn a_command_that_does_not_end_is_ended() {
     let scratch = ScratchDir::new("byte-table-stand-in-held");
     let built = Built::on(&the_stand_in(&scratch), Prepared::Bare);
     let held = on_a_stand_in(&["sleeps"], &[], NOTHING, Classification::DidNotEnd, "");
-    let started = std::time::Instant::now();
     let ran = byte_cell::run_within(&built, &held.row, &held.cell, Duration::from_secs(2))
         .expect("the cell is one the frame can run");
     assert_eq!(
@@ -4725,10 +4778,13 @@ fn a_command_that_does_not_end_is_ended() {
         "{}",
         ran.exit
     );
+    // The cell's own seconds, from its copy to its verdict — not the wait for a place in
+    // the process's one gate, which the arms of the prepared states hold for as long as
+    // their pools run where every test shares a process (`cargo test`).
     assert!(
-        started.elapsed() < Duration::from_secs(25),
-        "the command was ended at the limit, and not waited out: {:?}",
-        started.elapsed()
+        ran.seconds < 25.0,
+        "the command was ended at the limit, and not waited out: {:.1}s",
+        ran.seconds
     );
 }
 
@@ -5045,6 +5101,93 @@ fn row_of(cell: &byte_cell::Cell) -> &'static Row {
 /// `completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md`, in the
 /// grammar the route catalog's have.
 const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
+    (
+        "r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names",
+        Classification::WrittenOutside,
+        &[
+            "setup-a-file-staged-elsewhere",
+            "setup-a-file-staged-under-a-name-git-quotes",
+            "setup-a-file-where-the-guides-directory-goes",
+            "setup-a-hook-that-rejects",
+            "setup-at-the-guide-a-committed-file",
+            "setup-at-the-guide-a-directory",
+            "setup-at-the-guide-a-link-to-a-file-in-the-repository",
+            "setup-at-the-guide-a-link-to-a-file-outside-it",
+            "setup-at-the-guide-a-link-to-nothing",
+            "setup-at-the-guide-an-untracked-file",
+            "setup-head-unborn-at-the-root-ignore-the-users-own-file",
+            "setup-in-a-repository-jigc-was-never-set-up-in",
+            "setup-the-users-own-hook",
+            "setup-under-the-project-layer-an-untracked-file",
+        ],
+    ),
+    (
+        "r1-setup-replaces-a-file-the-user-committed-at-a-path-it-writes-whole",
+        Classification::GitMoved,
+        &[
+            "setup-at-the-bootstrap-a-committed-file",
+            "setup-at-the-settings-record-a-committed-file",
+            "setup-at-the-stamp-a-committed-file",
+        ],
+    ),
+    (
+        "r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head",
+        Classification::GitMoved,
+        &["setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository"],
+    ),
+    (
+        "r1-setup-replaces-a-change-staged-at-a-path-it-writes-whole",
+        Classification::Lost,
+        &[
+            "setup-at-the-guide-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-stamp-a-change-staged-and-not-in-the-tree",
+        ],
+    ),
+    (
+        "r1-setup-refuses-after-its-first-write-and-leaves-the-install-written",
+        Classification::RefusedAndChanged,
+        &[
+            "setup-a-file-where-the-hooks-directory-goes",
+            "setup-at-the-bootstrap-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-hook-a-directory",
+            "setup-at-the-hook-a-link-to-a-file-in-the-repository",
+            "setup-at-the-host-file-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-host-file-a-directory",
+            "setup-at-the-settings-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-settings-record-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-workbench-ignore-a-change-staged-and-not-in-the-tree",
+            "setup-at-the-workbench-ignore-a-directory",
+            "setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree",
+            "setup-head-unborn-at-the-root-ignore-a-directory",
+        ],
+    ),
+    (
+        "r1-uninstall-leaves-its-teardown-in-the-working-tree-and-commits-nothing",
+        Classification::WrittenOutside,
+        &[
+            "uninstall-a-change-staged-at-the-host-file-and-not-in-the-file",
+            "uninstall-a-change-staged-at-the-settings-file-and-not-in-the-file",
+            "uninstall-a-file-staged-elsewhere",
+            "uninstall-a-file-staged-under-a-name-git-quotes",
+            "uninstall-a-foreign-file-under-logs-by-consent",
+            "uninstall-a-hook-that-rejects",
+            "uninstall-a-line-of-the-users-in-the-host-file",
+            "uninstall-after-a-task-landed",
+            "uninstall-an-edit-to-the-host-file",
+            "uninstall-run-as-typed",
+            "uninstall-the-users-own-lines-in-the-hook",
+            "uninstall-the-users-own-worktree",
+            "uninstall-the-users-own-worktree-moved-away",
+        ],
+    ),
+    (
+        "r1-uninstall-refuses-over-a-settings-file-it-cannot-parse-after-removing-the-workbench",
+        Classification::RefusedAndChanged,
+        &[
+            "uninstall-a-line-of-the-users-in-the-settings-file",
+            "uninstall-an-edit-to-the-settings-file",
+        ],
+    ),
     (
         "r1-task-finalize-a-change-staged-at-an-updated-doc-and-not-in-the-file-is-replaced",
         Classification::Lost,
@@ -5494,9 +5637,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (61, 49, 12),
-        "the pilot's acceptance is twelve cells (the plan's §5), and the task family's are \
-         forty-nine: thirty-seven in the gate, twelve on demand"
+        (174, 138, 36),
+        "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
+         forty-nine — thirty-seven in the gate, twelve on demand — and the install family's \
+         are a hundred and thirteen: eighty-nine in the gate, twenty-four on demand"
     );
 }
 

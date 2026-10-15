@@ -1554,6 +1554,13 @@ pub enum Plant {
     /// every commit: put in after the hook's first line where a hook stands — whatever
     /// else it holds stays — and as a hook of their own where none does.
     RejectingHook,
+    /// **M** — a line of the user's own in the file at this path of the repository, which
+    /// jigc merges into or takes lines out of: added as a line of its own to what stands
+    /// there, or the file made with it where nothing does.
+    UsersLine(&'static str),
+    /// **M**, in the hook — the user's own line in the `pre-commit` hook git resolves,
+    /// which lets every commit through: put in as [`Plant::RejectingHook`]'s lines are.
+    UsersHook,
 }
 
 /// The name of the file a [`Plant::Dir`] holds.
@@ -1698,6 +1705,7 @@ impl Plant {
                     || (kept && matches!(kind, Kind::StagedElsewhere | Kind::QuotedName))
             }
             Plant::RejectingHook => kind == Kind::RejectingHook,
+            Plant::UsersLine(_) | Plant::UsersHook => kind == Kind::UsersLine,
         }
     }
 }
@@ -1892,11 +1900,14 @@ impl Plant {
                 staged: !kept,
                 ..piece(format!("{REPO}/{path}"), "only")
             }],
-            Plant::RejectingHook => vec![piece(format!("{hooks}/pre-commit"), "only")],
+            Plant::RejectingHook | Plant::UsersHook => {
+                vec![piece(format!("{hooks}/pre-commit"), "only")]
+            }
             Plant::File(path)
             | Plant::Committed(path)
             | Plant::LinkToNothing(path)
-            | Plant::Edit(path) => vec![piece(format!("{REPO}/{path}"), "only")],
+            | Plant::Edit(path)
+            | Plant::UsersLine(path) => vec![piece(format!("{REPO}/{path}"), "only")],
             Plant::Worktree { moved_away } => {
                 let stands = if moved_away {
                     "moved/own"
@@ -2042,14 +2053,38 @@ impl Plant {
                     (false, None) => fs::remove_file(&file).map_err(written(path)),
                 }
             }
-            Plant::RejectingHook => {
+            Plant::UsersLine(path) => {
+                let file = repo.join(path);
+                let mut bytes = match fs::symlink_metadata(&file) {
+                    Ok(entry) if entry.is_file() => fs::read(&file).map_err(written(path))?,
+                    Ok(_) => {
+                        return Err(format!(
+                            "a line of the user's goes into `{path}`, and what stands there \
+                             is no regular file"
+                        ));
+                    }
+                    Err(_) => Vec::new(),
+                };
+                if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+                    bytes.push(b'\n');
+                }
+                bytes.extend(format!("{}\n", marker(at, "only")).bytes());
+                fs::create_dir_all(file.parent().expect("a plant has a parent"))
+                    .and_then(|()| fs::write(&file, bytes))
+                    .map_err(written(path))
+            }
+            Plant::RejectingHook | Plant::UsersHook => {
                 let hook = sandbox.root().join(hooks).join("pre-commit");
                 let stands = fs::read_to_string(&hook).unwrap_or_default();
                 let (first, rest) = match stands.split_once('\n') {
                     Some((first, rest)) if first.starts_with("#!") => (first, rest),
                     _ => ("#!/bin/sh", stands.as_str()),
                 };
-                let body = format!("{first}\necho '{}' >&2\nexit 1\n{rest}", marker(at, "only"));
+                let lines = match self {
+                    Plant::RejectingHook => format!("echo '{}' >&2\nexit 1", marker(at, "only")),
+                    _ => format!(": '{}'", marker(at, "only")),
+                };
+                let body = format!("{first}\n{lines}\n{rest}");
                 // Placed by a child process, as the Linux rule asks of a file that may be
                 // executed: no thread of this process ever holds its write handle.
                 let staged = sandbox.staging().join(format!("plant-{at}-hook"));

@@ -18,11 +18,13 @@
 //! tracks the settings file and the record* (`U3`): each lets the command do less, and the
 //! file it would spare is a plant, which no line excuses.
 
+use super::task::A_DECISION;
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, May, Plant, Prepared, Quote, Row,
-    When, Where,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
+    Quote, Row, When, Where,
 };
+use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
 /// A line that holds where the command acted, whenever it did.
@@ -515,6 +517,858 @@ const ACCEPTANCE: &[Cell] = &[
     ),
 ];
 
-/// The family's cells: the acceptance's. Its other cells are a later task's, if the human
-/// rules for it at the pilot's stop.
-pub const CELLS: &[&[Cell]] = &[ACCEPTANCE];
+// ---------------------------------------------------------------------------
+// The family's own cells — the plan's task `B5`
+// ---------------------------------------------------------------------------
+
+const BARE: Prepared = Prepared::Bare;
+const FRESH: Prepared = Prepared::Of(State::Fresh);
+const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
+
+/// What a planted cell's plant is aimed at.
+const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+    Some(Aim { line, kind })
+}
+
+/// One cell of `jigc setup`, run as typed, in the never-adopted repository.
+const fn setup(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["setup"],
+        state: BARE,
+        leads,
+        argv: &["setup"],
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// One cell of `jigc uninstall`, run as typed, in `fresh`.
+const fn uninstall(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["uninstall"],
+        state: FRESH,
+        leads,
+        argv: &["uninstall"],
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// A refusal of `setup` over what stands at a path of its install, uncommitted, on a born
+/// `HEAD`: *"its install pathspec is asked against `HEAD` before the install writes a
+/// byte"*, and a file at a path it replaces *"is refused before the first write while no
+/// commit holds its bytes"* (`S4`).
+const DIRTY: Listed = refuses(1, "setup.dirty-install-path");
+
+/// The hooks directory moved into the working tree — `core.hooksPath` — so that what a
+/// cell puts in the hook's place stands where the reader reads files: a hooks directory
+/// git resolves is the one `S10` names, wherever it is.
+const HOOKS_IN_THE_TREE: Lead = Lead::Step(Step::Git(&["config", "core.hooksPath", "the-hooks"]));
+const THE_HOOK_IN_THE_TREE: &str = "the-hooks/pre-commit";
+
+/// A file whose name git quotes: a quote, and a byte outside ASCII (the plan's plant **N**).
+const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
+
+/// A `HEAD` unborn: the root `.gitignore`'s line holds only there (`S9`).
+const UNBORN: Lead = Lead::Under(Condition::HeadUnborn);
+
+/// **The cells of `setup` at the paths it replaces and merges into** — a kind of plant
+/// each, a line each. Each is listed from the row's doc, the refusal's words read off a
+/// run where no doc gives them:
+///
+/// - **at a path it replaces** (`S1`, `S5`, `S6, written`): a link or a directory is no file
+///   it can replace, and is refused before the first write; **a file the user committed**
+///   there is replaced on the way to the install commit — no sentence refuses a path a
+///   commit holds — which the record's §6, entry 10, asks about; a change **staged** there
+///   and not in the tree is refused as dirty, but at the stamp, where no sentence says the
+///   state refuses;
+/// - **the guide** (`S8`) is left as it stands whatever stands there — *"a copy the user
+///   has edited is left"*, by `setup` as by `uninstall`;
+/// - **at a path it merges into, on a born `HEAD`** (`S2`, `S3`, `S7`): a link that leads
+///   nowhere or out of the checkout is refused, and one that leads into it is followed to
+///   a file that is dirty; the user's own file in no commit, and a change staged, are
+///   refused as dirty; a directory is refused;
+/// - **on an unborn `HEAD`, at the root `.gitignore`** (`S9`): the user's own file rides
+///   the first commit (`S15`), and so does a link that leads into the checkout; one that
+///   leads nowhere or out, and a directory, are refused.
+///
+/// **Every cell in which `setup` acts carries the mark of the record's §6, entry 1, its
+/// first point left open**: a `setup` that exits 0 makes `.jigc/state/`, and no sentence
+/// of its doc names a write there.
+const SETUP_PLANTED: [Cell; 48] = [
+    Cell {
+        marks: &[Mark::Silence(1), Mark::Silence(10)],
+        ..setup(
+        "setup-at-the-bootstrap-a-committed-file",
+        &[Lead::Plant(Plant::Committed(".jigc/AGENT.md"))],
+        Listed::Acts,
+        at("S1", Kind::Committed),
+    )
+    },
+    setup(
+        "setup-at-the-bootstrap-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".jigc/AGENT.md"))],
+        refuses(1, "setup.write-bootstrap"),
+        at("S1", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-bootstrap-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/AGENT.md", outside: false })],
+        refuses(1, "setup.write-bootstrap"),
+        at("S1", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-bootstrap-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/AGENT.md", outside: true })],
+        refuses(1, "setup.write-bootstrap"),
+        at("S1", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-bootstrap-a-directory",
+        &[Lead::Plant(Plant::Dir(".jigc/AGENT.md"))],
+        refuses(1, "setup.write-bootstrap"),
+        at("S1", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-at-the-bootstrap-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".jigc/AGENT.md", kept: false })],
+        DIRTY,
+        at("S1", Kind::StagedThere),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1), Mark::Silence(10)],
+        ..setup(
+        "setup-at-the-stamp-a-committed-file",
+        &[Lead::Plant(Plant::Committed(".jigc/version"))],
+        Listed::Acts,
+        at("S5", Kind::Committed),
+    )
+    },
+    setup(
+        "setup-at-the-stamp-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".jigc/version"))],
+        refuses(1, "setup.version-stamp"),
+        at("S5", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-stamp-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/version", outside: false })],
+        refuses(1, "setup.version-stamp"),
+        at("S5", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-stamp-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/version", outside: true })],
+        refuses(1, "setup.version-stamp"),
+        at("S5", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-stamp-a-directory",
+        &[Lead::Plant(Plant::Dir(".jigc/version"))],
+        refuses(1, "setup.version-stamp"),
+        at("S5", Kind::DirForAFile),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-stamp-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".jigc/version", kept: false })],
+        Listed::Acts,
+        at("S5", Kind::StagedThere),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1), Mark::Silence(10)],
+        ..setup(
+        "setup-at-the-settings-record-a-committed-file",
+        &[Lead::Plant(Plant::Committed(".jigc/settings-entries.json"))],
+        Listed::Acts,
+        at("S6, written", Kind::Committed),
+    )
+    },
+    setup(
+        "setup-at-the-settings-record-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".jigc/settings-entries.json"))],
+        refuses(1, "setup.inject-allowlist"),
+        at("S6, written", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-settings-record-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/settings-entries.json", outside: false })],
+        refuses(1, "setup.inject-allowlist"),
+        at("S6, written", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-settings-record-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/settings-entries.json", outside: true })],
+        refuses(1, "setup.inject-allowlist"),
+        at("S6, written", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-settings-record-a-directory",
+        &[Lead::Plant(Plant::Dir(".jigc/settings-entries.json"))],
+        refuses(1, "setup.inject-allowlist"),
+        at("S6, written", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-at-the-settings-record-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".jigc/settings-entries.json", kept: false })],
+        DIRTY,
+        at("S6, written", Kind::StagedThere),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-committed-file",
+        &[Lead::Plant(Plant::Committed(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::Committed),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::LinkToNothing),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".claude/skills/jigc/SKILL.md", outside: false })],
+        Listed::Acts,
+        at("S8", Kind::LinkInside),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".claude/skills/jigc/SKILL.md", outside: true })],
+        Listed::Acts,
+        at("S8", Kind::LinkOutside),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-directory",
+        &[Lead::Plant(Plant::Dir(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::DirForAFile),
+    )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-at-the-guide-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".claude/skills/jigc/SKILL.md", kept: false })],
+        Listed::Acts,
+        at("S8", Kind::StagedThere),
+    )
+    },
+    setup(
+        "setup-at-the-host-file-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing("CLAUDE.md"))],
+        refuses(1, "setup.inject-reference"),
+        at("S2", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-host-file-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: "CLAUDE.md", outside: false })],
+        DIRTY,
+        at("S2", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-host-file-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: "CLAUDE.md", outside: true })],
+        refuses(1, "setup.inject-reference"),
+        at("S2", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-host-file-a-directory",
+        &[Lead::Plant(Plant::Dir("CLAUDE.md"))],
+        refuses(1, "setup.inject-reference"),
+        at("S2", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-at-the-host-file-the-users-own-file",
+        &[Lead::Plant(Plant::UsersLine("CLAUDE.md"))],
+        DIRTY,
+        at("S2", Kind::UsersLine),
+    ),
+    setup(
+        "setup-at-the-host-file-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: "CLAUDE.md", kept: false })],
+        DIRTY,
+        at("S2", Kind::StagedThere),
+    ),
+    setup(
+        "setup-at-the-settings-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".claude/settings.json"))],
+        refuses(1, "setup.inject-allowlist"),
+        at("S3", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-settings-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".claude/settings.json", outside: false })],
+        DIRTY,
+        at("S3", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-settings-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".claude/settings.json", outside: true })],
+        refuses(1, "setup.inject-allowlist"),
+        at("S3", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-settings-a-directory",
+        &[Lead::Plant(Plant::Dir(".claude/settings.json"))],
+        refuses(1, "setup.inject-allowlist"),
+        at("S3", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-at-the-settings-the-users-own-file",
+        &[Lead::Plant(Plant::UsersLine(".claude/settings.json"))],
+        DIRTY,
+        at("S3", Kind::UsersLine),
+    ),
+    setup(
+        "setup-at-the-settings-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".claude/settings.json", kept: false })],
+        DIRTY,
+        at("S3", Kind::StagedThere),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-a-link-to-nothing",
+        &[Lead::Plant(Plant::LinkToNothing(".jigc/.gitignore"))],
+        refuses(1, "setup.init-project-layer"),
+        at("S7", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-a-link-to-a-file-in-the-repository",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/.gitignore", outside: false })],
+        refuses(1, "setup.init-project-layer"),
+        at("S7", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-a-link-to-a-file-outside-it",
+        &[Lead::Plant(Plant::LinkToAFile { at: ".jigc/.gitignore", outside: true })],
+        refuses(1, "setup.init-project-layer"),
+        at("S7", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-a-directory",
+        &[Lead::Plant(Plant::Dir(".jigc/.gitignore"))],
+        refuses(1, "setup.init-project-layer"),
+        at("S7", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-the-users-own-file",
+        &[Lead::Plant(Plant::UsersLine(".jigc/.gitignore"))],
+        DIRTY,
+        at("S7", Kind::UsersLine),
+    ),
+    setup(
+        "setup-at-the-workbench-ignore-a-change-staged-and-not-in-the-tree",
+        &[Lead::Plant(Plant::Staged { at: ".jigc/.gitignore", kept: false })],
+        DIRTY,
+        at("S7", Kind::StagedThere),
+    ),
+    setup(
+        "setup-head-unborn-at-the-root-ignore-a-link-to-nothing",
+        &[UNBORN, Lead::Plant(Plant::LinkToNothing(".gitignore"))],
+        refuses(1, "setup.secrets-gitignore"),
+        at("S9", Kind::LinkToNothing),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository",
+        &[UNBORN, Lead::Plant(Plant::LinkToAFile { at: ".gitignore", outside: false })],
+        Listed::Acts,
+        at("S9", Kind::LinkInside),
+    )
+    },
+    setup(
+        "setup-head-unborn-at-the-root-ignore-a-link-to-a-file-outside-it",
+        &[UNBORN, Lead::Plant(Plant::LinkToAFile { at: ".gitignore", outside: true })],
+        refuses(1, "setup.secrets-gitignore"),
+        at("S9", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-head-unborn-at-the-root-ignore-a-directory",
+        &[UNBORN, Lead::Plant(Plant::Dir(".gitignore"))],
+        refuses(1, "setup.secrets-gitignore"),
+        at("S9", Kind::DirForAFile),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+        "setup-head-unborn-at-the-root-ignore-the-users-own-file",
+        &[UNBORN, Lead::Plant(Plant::UsersLine(".gitignore"))],
+        Listed::Acts,
+        at("S9", Kind::UsersLine),
+    )
+    },
+    setup(
+        "setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree",
+        &[UNBORN, Lead::Plant(Plant::Staged { at: ".gitignore", kept: false })],
+        DIRTY,
+        at("S9", Kind::StagedThere),
+    ),
+];
+
+/// **The other cells of `jigc setup`** — its refusing cell, its base cell, and the plants
+/// no macro above makes. Each is listed from the row's doc:
+///
+/// - **run again where it is installed** — *"`jigc setup` re-run is a byte-identical
+///   no-op"*; and **in the never-adopted repository**, it installs (`S1` to `S11`);
+/// - **a file in no commit at a path it replaces or merges into, on a born `HEAD`**, is
+///   refused before the first write (`S4`'s second sentence; the carryover gate,
+///   `design/surface-contract.md`); **one the user committed** at a path it replaces is
+///   replaced on the way to the install commit — no refusal, since a commit holds its
+///   bytes — which is the record's §6, entry 10; **the guide the user committed** is left
+///   *byte-identical*, as a copy that is not jigc's own (`S8`);
+/// - **on an unborn `HEAD`, a file at a path it merges into rides the first commit** —
+///   *"an *untracked* file at a path the install **merges into** rides the repository's
+///   first commit instead of refusing"* (`S15`) — the root `.gitignore`'s cells;
+/// - **the hook**: a line of the user's is kept — *"preserves/wraps any existing
+///   `pre-commit` hook"* (`S10`); a link or a directory in its place, or a file in its
+///   directory's, is no hook to wrap, and the install cannot write its own: **a failure
+///   after the first write, which leaves the repository as it was** by the human's ruling
+///   of 2026-10-14 on the record's §6, entry 2 — the refusal's words are read off a run, as
+///   no doc gives them;
+/// - **what is staged elsewhere stays out of the install commit** (`S11`: *"enumerated,
+///   never a blanket `git add -A`"*), a name git quotes included; and **a hook that
+///   rejects** does not stop the install commit, which runs no hook — no doc says so, and
+///   no doc says otherwise: the record's §6, entry 11.
+const SETUP_CELLS: [Cell; 18] = [
+    Cell {
+        state: FRESH,
+        ..setup("setup-run-again-where-it-is-installed", &[], Listed::Acts, None)
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup("setup-in-a-repository-jigc-was-never-set-up-in", &[], Listed::Acts, None)
+    },
+    setup(
+        "setup-at-the-stamp-an-untracked-file",
+        &[Lead::Plant(Plant::File(".jigc/version"))],
+        DIRTY,
+        at("S5", Kind::Untracked),
+    ),
+    setup(
+        "setup-at-the-settings-record-an-untracked-file",
+        &[Lead::Plant(Plant::File(".jigc/settings-entries.json"))],
+        DIRTY,
+        at("S6, written", Kind::Untracked),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-at-the-guide-an-untracked-file",
+            &[Lead::Plant(Plant::File(".claude/skills/jigc/SKILL.md"))],
+            Listed::Acts,
+            at("S8", Kind::Untracked),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-under-the-project-layer-an-untracked-file",
+            &[Lead::Plant(Plant::File(".jigc/config/notes.md"))],
+            Listed::Acts,
+            at("S4", Kind::Untracked),
+        )
+    },
+    setup(
+        "setup-a-file-where-the-workbench-goes",
+        &[Lead::Plant(Plant::File(".jigc"))],
+        refuses(1, "setup.write-bootstrap"),
+        at("S1", Kind::FileForADir),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-a-file-where-the-guides-directory-goes",
+            &[Lead::Plant(Plant::File(".claude/skills/jigc"))],
+            Listed::Acts,
+            at("S8", Kind::FileForADir),
+        )
+    },
+    setup(
+        "setup-a-file-where-the-settings-directory-goes",
+        &[Lead::Plant(Plant::File(".claude"))],
+        refuses(1, "setup.inject-allowlist"),
+        at("S3", Kind::FileForADir),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-the-users-own-hook",
+            &[Lead::Plant(Plant::UsersHook)],
+            Listed::Acts,
+            at("S10", Kind::UsersLine),
+        )
+    },
+    setup(
+        "setup-at-the-hook-a-link-to-nothing",
+        &[HOOKS_IN_THE_TREE, Lead::Plant(Plant::LinkToNothing(THE_HOOK_IN_THE_TREE))],
+        refuses(1, "setup.install-hook"),
+        at("S10", Kind::LinkToNothing),
+    ),
+    setup(
+        "setup-at-the-hook-a-link-to-a-file-in-the-repository",
+        &[
+            HOOKS_IN_THE_TREE,
+            Lead::Plant(Plant::LinkToAFile { at: THE_HOOK_IN_THE_TREE, outside: false }),
+        ],
+        DIRTY,
+        at("S10", Kind::LinkInside),
+    ),
+    setup(
+        "setup-at-the-hook-a-link-to-a-file-outside-it",
+        &[
+            HOOKS_IN_THE_TREE,
+            Lead::Plant(Plant::LinkToAFile { at: THE_HOOK_IN_THE_TREE, outside: true }),
+        ],
+        refuses(1, "setup.install-hook"),
+        at("S10", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-at-the-hook-a-directory",
+        &[HOOKS_IN_THE_TREE, Lead::Plant(Plant::Dir(THE_HOOK_IN_THE_TREE))],
+        refuses(1, "setup.install-hook"),
+        at("S10", Kind::DirForAFile),
+    ),
+    setup(
+        "setup-a-file-where-the-hooks-directory-goes",
+        &[HOOKS_IN_THE_TREE, Lead::Plant(Plant::File("the-hooks"))],
+        refuses(1, "setup.install-hook"),
+        at("S10", Kind::FileForADir),
+    ),
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-a-file-staged-elsewhere",
+            &[Lead::Plant(Plant::Staged { at: "notes/staged.txt", kept: true })],
+            Listed::Acts,
+            at("S11", Kind::StagedElsewhere),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-a-file-staged-under-a-name-git-quotes",
+            &[Lead::Plant(Plant::Staged { at: A_NAME_GIT_QUOTES, kept: true })],
+            Listed::Acts,
+            at("S11", Kind::QuotedName),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(1)],
+        ..setup(
+            "setup-a-hook-that-rejects",
+            &[Lead::Plant(Plant::RejectingHook)],
+            Listed::Acts,
+            at("S11", Kind::RejectingHook),
+        )
+    },
+];
+
+/// **A task that landed** — `record-a-decision`, created and finalized: the repository a
+/// teardown or a second install meets after somebody worked in it.
+const A_LANDED_TASK: [Lead; 12] = [
+    A_DECISION[0],
+    A_DECISION[1],
+    A_DECISION[2],
+    A_DECISION[3],
+    A_DECISION[4],
+    A_DECISION[5],
+    A_DECISION[6],
+    A_DECISION[7],
+    A_DECISION[8],
+    A_DECISION[9],
+    A_DECISION[10],
+    Lead::Step(Step::Jigc(&["task", "finalize", "record-a-decision"])),
+];
+
+/// **The cells of `jigc uninstall`**, beside the acceptance's four. **Every one that acts is
+/// held to `U9`** — the human's ruling of 2026-10-14: the teardown lands as one path-scoped
+/// commit of what it removed, and never carries the user's own uncommitted edits. Each is
+/// listed from the row's doc:
+///
+/// - **run as typed in `fresh`, and after a task landed there**, it removes the enumerated
+///   set (`U1` to `U5`);
+/// - **a line of the user's, or an edit, or a change staged, at the host file and the
+///   settings file** (`U2`, `U3`): no sentence says the state refuses — the ruling leaves to
+///   the fixer whether it refuses or commits only jigc's part — so the cells are listed as
+///   acting, and held to the ruling's *never carries*;
+/// - **the user's own lines in the hook** stay — *"what is left is restored byte for byte"*
+///   (`U4`); so do **a hook that rejects**'s, and a change staged elsewhere, a name git
+///   quotes included, stays out of the teardown's commit;
+/// - **the user's own linked worktree**, its directory there or moved away, is no
+///   registration under `.jigc/worktrees/`, which is the only kind the teardown removes
+///   (`U6`);
+/// - **a file jigc did not write, under `.jigc/logs/`**, goes under the consent — *"the one
+///   way past it is **`--force`**"* (`U8`) — named.
+const UNINSTALL_CELLS: [Cell; 15] = [
+    uninstall("uninstall-run-as-typed", &[], Listed::Acts, None),
+    uninstall("uninstall-after-a-task-landed", &A_LANDED_TASK, Listed::Acts, None),
+    uninstall(
+        "uninstall-an-edit-to-the-host-file",
+        &[Lead::Plant(Plant::Edit("CLAUDE.md"))],
+        Listed::Acts,
+        at("U2", Kind::EditAfter),
+    ),
+    uninstall(
+        "uninstall-a-line-of-the-users-in-the-host-file",
+        &[Lead::Plant(Plant::UsersLine("CLAUDE.md"))],
+        Listed::Acts,
+        at("U2", Kind::UsersLine),
+    ),
+    uninstall(
+        "uninstall-a-change-staged-at-the-host-file-and-not-in-the-file",
+        &[Lead::Plant(Plant::Staged { at: "CLAUDE.md", kept: false })],
+        Listed::Acts,
+        at("U2", Kind::StagedThere),
+    ),
+    uninstall(
+        "uninstall-an-edit-to-the-settings-file",
+        &[Lead::Plant(Plant::Edit(".claude/settings.json"))],
+        refuses(1, "uninstall.remove-allowlist"),
+        at("U3", Kind::EditAfter),
+    ),
+    uninstall(
+        "uninstall-a-line-of-the-users-in-the-settings-file",
+        &[Lead::Plant(Plant::UsersLine(".claude/settings.json"))],
+        refuses(1, "uninstall.remove-allowlist"),
+        at("U3", Kind::UsersLine),
+    ),
+    uninstall(
+        "uninstall-a-change-staged-at-the-settings-file-and-not-in-the-file",
+        &[Lead::Plant(Plant::Staged { at: ".claude/settings.json", kept: false })],
+        Listed::Acts,
+        at("U3", Kind::StagedThere),
+    ),
+    uninstall(
+        "uninstall-the-users-own-lines-in-the-hook",
+        &[Lead::Plant(Plant::UsersHook)],
+        Listed::Acts,
+        at("U4", Kind::UsersLine),
+    ),
+    uninstall(
+        "uninstall-the-users-own-worktree",
+        &[Lead::Plant(Plant::Worktree { moved_away: false })],
+        Listed::Acts,
+        at("U6", Kind::WorktreeThere),
+    ),
+    uninstall(
+        "uninstall-the-users-own-worktree-moved-away",
+        &[Lead::Plant(Plant::Worktree { moved_away: true })],
+        Listed::Acts,
+        at("U6", Kind::WorktreeMovedAway),
+    ),
+    uninstall(
+        "uninstall-a-file-staged-elsewhere",
+        &[Lead::Plant(Plant::Staged { at: "notes/staged.txt", kept: true })],
+        Listed::Acts,
+        at("U9", Kind::StagedElsewhere),
+    ),
+    uninstall(
+        "uninstall-a-file-staged-under-a-name-git-quotes",
+        &[Lead::Plant(Plant::Staged { at: A_NAME_GIT_QUOTES, kept: true })],
+        Listed::Acts,
+        at("U9", Kind::QuotedName),
+    ),
+    uninstall(
+        "uninstall-a-hook-that-rejects",
+        &[Lead::Plant(Plant::RejectingHook)],
+        Listed::Acts,
+        at("U9", Kind::RejectingHook),
+    ),
+    Cell {
+        argv: &["uninstall", "--force"],
+        ..uninstall(
+            "uninstall-a-foreign-file-under-logs-by-consent",
+            &[Lead::Plant(Plant::File(".jigc/logs/notes.md"))],
+            Listed::Acts,
+            at("U1", Kind::Foreign),
+        )
+    },
+];
+
+/// **A foreign doc that conforms**, at a decision's home: what `ingest` adopts — an ADR as
+/// the dev pack's schema has it, which no command of jigc wrote.
+const A_FOREIGN_DECISION: Lead = Lead::Step(Step::File(
+    Place::Repo("docs/decisions/a-foreign-way.md"),
+    "---\nstatus: proposed\ndate: 2026-10-01\nschema-version: 2\n---\n\n# A foreign way\n\n\
+     ## Context\n\nWhy, in a line.\n\n## Options\n\n\n\n## Decision\n\nWhat, in a line.\n\n\
+     ## Consequences\n\nThen, in a line.\n",
+));
+
+/// One cell of `jigc ingest`, in `fresh`.
+const fn ingest(
+    name: &'static str,
+    leads: &'static [Lead],
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["ingest"],
+        state: FRESH,
+        leads,
+        argv: &["ingest"],
+        listed: Listed::Acts,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// One cell of `jigc unmanage`, over the committed vision, in `committed-singletons`.
+const fn unmanage(name: &'static str, leads: &'static [Lead], aim: Option<Aim>) -> Cell {
+    Cell {
+        name,
+        leaf: &["unmanage"],
+        state: SINGLETONS,
+        leads,
+        argv: &["unmanage", "VISION.md"],
+        listed: Listed::Acts,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// **The cells of `jigc ingest` and `jigc unmanage`**, each listed as acting: neither doc
+/// names a refusal inside a repository jigc is set up in, and *"A miss is **exit 0**"*
+/// (`design/command-output-contract.md`) for `unmanage` over a path never managed — its
+/// refusing spelling. `ingest` adopts the foreign decision *"register-only"* (`I3`), and
+/// `unmanage` drops the vision's baseline and edges, the file left as it is (`X1`); a
+/// file of the user's under each cache stays.
+const REGISTER_CELLS: [Cell; 8] = [
+    ingest("ingest-with-nothing-to-adopt", &[], None),
+    ingest("ingest-a-foreign-decision-that-conforms", &[A_FOREIGN_DECISION], None),
+    ingest(
+        "ingest-a-file-of-the-users-under-the-file-state-hashes",
+        &[A_FOREIGN_DECISION, Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        at("I1", Kind::Untracked),
+    ),
+    ingest(
+        "ingest-a-file-of-the-users-under-the-edge-index",
+        &[A_FOREIGN_DECISION, Lead::Plant(Plant::File(".jigc/index/notes.md"))],
+        at("I2", Kind::Untracked),
+    ),
+    Cell {
+        state: FRESH,
+        argv: &["unmanage", "FOREIGN.md"],
+        ..unmanage("unmanage-a-path-never-managed", &[], None)
+    },
+    unmanage("unmanage-the-committed-vision", &[], None),
+    unmanage(
+        "unmanage-a-file-of-the-users-under-the-file-state-hashes",
+        &[Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        at("X1", Kind::Untracked),
+    ),
+    unmanage(
+        "unmanage-a-file-of-the-users-under-the-edge-index",
+        &[Lead::Plant(Plant::File(".jigc/index/notes.md"))],
+        at("X2", Kind::Untracked),
+    ),
+];
+
+/// One base cell of a leaf in a prepared state that is not its home: it runs on demand.
+const fn elsewhere(
+    name: &'static str,
+    leaf: &'static [&'static str],
+    argv: &'static [&'static str],
+    state: Prepared,
+    leads: &'static [Lead],
+) -> Cell {
+    Cell {
+        name,
+        leaf,
+        state,
+        leads,
+        argv,
+        listed: Listed::Acts,
+        beside: None,
+        aim: None,
+        marks: &[],
+    }
+}
+
+/// **The base cell of each of the four leaves in the prepared states that are not its
+/// home** — run on demand, in no gate. Each is listed as acting — a second install is a
+/// no-op, a teardown removes the set, an ingest adopts what conforms, and `unmanage` over
+/// a path never managed is a miss at exit 0 — but three: in the never-adopted repository
+/// `ingest` and `unmanage` refuse, *this project isn't set up* (the words read off a run:
+/// `design/bootstrap.md` routes an unset project to `jigc setup`), and in `refs-post-hoc`,
+/// whose open task stages a doc, the teardown refuses over it (`U7`). In `fresh` a cell
+/// that would be the leaf's refusing spelling runs after a task landed.
+const ELSEWHERE: [Cell; 24] = [
+    elsewhere("setup-after-a-task-landed", &["setup"], &["setup"], FRESH, &A_LANDED_TASK),
+    elsewhere("setup-in-committed-singletons", &["setup"], &["setup"], SINGLETONS, &[]),
+    elsewhere("setup-in-migrated", &["setup"], &["setup"], Prepared::Of(State::Migrated), &[]),
+    elsewhere("setup-in-refs-post-hoc", &["setup"], &["setup"], Prepared::Of(State::RefsPostHoc), &[]),
+    elsewhere("setup-in-chatty-hooks", &["setup"], &["setup"], Prepared::Of(State::ChattyHooks), &[]),
+    elsewhere("setup-in-vendored", &["setup"], &["setup"], Prepared::Of(State::Vendored), &[]),
+    elsewhere("uninstall-in-a-repository-jigc-was-never-set-up-in", &["uninstall"], &["uninstall"], BARE, &[]),
+    elsewhere("uninstall-in-committed-singletons", &["uninstall"], &["uninstall"], SINGLETONS, &[]),
+    elsewhere("uninstall-in-migrated", &["uninstall"], &["uninstall"], Prepared::Of(State::Migrated), &[]),
+    Cell {
+        listed: refuses(1, "uninstall.staged-prose"),
+        ..elsewhere("uninstall-in-refs-post-hoc", &["uninstall"], &["uninstall"], Prepared::Of(State::RefsPostHoc), &[])
+    },
+    elsewhere("uninstall-in-chatty-hooks", &["uninstall"], &["uninstall"], Prepared::Of(State::ChattyHooks), &[]),
+    elsewhere("uninstall-in-vendored", &["uninstall"], &["uninstall"], Prepared::Of(State::Vendored), &[]),
+    Cell {
+        listed: refuses(1, "this project isn't set up"),
+        ..elsewhere("ingest-in-a-repository-jigc-was-never-set-up-in", &["ingest"], &["ingest"], BARE, &[])
+    },
+    elsewhere("ingest-in-committed-singletons", &["ingest"], &["ingest"], SINGLETONS, &[]),
+    elsewhere("ingest-in-migrated", &["ingest"], &["ingest"], Prepared::Of(State::Migrated), &[]),
+    elsewhere("ingest-in-refs-post-hoc", &["ingest"], &["ingest"], Prepared::Of(State::RefsPostHoc), &[]),
+    elsewhere("ingest-in-chatty-hooks", &["ingest"], &["ingest"], Prepared::Of(State::ChattyHooks), &[]),
+    elsewhere("ingest-in-vendored", &["ingest"], &["ingest"], Prepared::Of(State::Vendored), &[]),
+    Cell {
+        listed: refuses(1, "this project isn't set up"),
+        ..elsewhere("unmanage-in-a-repository-jigc-was-never-set-up-in", &["unmanage"], &["unmanage", "VISION.md"], BARE, &[])
+    },
+    elsewhere("unmanage-in-fresh", &["unmanage"], &["unmanage", "VISION.md"], FRESH, &[]),
+    elsewhere("unmanage-in-migrated", &["unmanage"], &["unmanage", "VISION.md"], Prepared::Of(State::Migrated), &[]),
+    elsewhere("unmanage-in-refs-post-hoc", &["unmanage"], &["unmanage", "VISION.md"], Prepared::Of(State::RefsPostHoc), &[]),
+    elsewhere("unmanage-in-chatty-hooks", &["unmanage"], &["unmanage", "VISION.md"], Prepared::Of(State::ChattyHooks), &[]),
+    elsewhere("unmanage-in-vendored", &["unmanage"], &["unmanage", "VISION.md"], Prepared::Of(State::Vendored), &[]),
+];
+
+/// The family's cells: the acceptance's, then the four leaves' own (the plan's task `B5`).
+pub const CELLS: &[&[Cell]] = &[
+    ACCEPTANCE,
+    &SETUP_CELLS,
+    &SETUP_PLANTED,
+    &UNINSTALL_CELLS,
+    &REGISTER_CELLS,
+    &ELSEWHERE,
+];

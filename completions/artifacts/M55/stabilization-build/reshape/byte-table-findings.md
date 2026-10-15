@@ -155,3 +155,60 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - **`jigc task discard <id>` over a task that is not there answers `finalize.no-task`** — a code of another command. Exit 1, *no task `a-task`*, nothing changed. The cell names the refusal by its sentence.
 - **`jigc task finalize` over a file where the created doc's directory goes exits 1 with no finding**: *could not create "<sandbox>/repo/docs/decisions" to promote into: File exists (os error 17)* — an operating-system error, an absolute path, and no code — where a link or a directory at the doc's own home is `store.home-not-regular-file` at exit 3. Nothing is changed but the edge index, rebuilt.
 - **A `doc create` over a file the user committed at the minted id takes the file up as the doc's base, and a write of the task to it is then refused** (`write.non-reparseable`, seen at `doc set-slot`) when the file is no doc of that type. The finalize refuses on the file's conformance (`conformance.section-missing`), and the file stands.
+
+## 6. The install family's cells — 47 are red on this tree's binary, under seven keys
+
+*2026-10-15, this tree's debug build, macOS arm64; the third commit of the task `B5`. The family is `jigc setup`, `jigc uninstall`, `jigc ingest` and `jigc unmanage`: 113 cells beside the acceptance's six — 89 that the gate runs, in the arms of `bare`, `fresh` and `committed-singletons`, and 24 base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)). The suite's expected-red list names the 47 below, and is exact. **Every one of the 47 is red on the previous release too** (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked before the run; the arm on a named binary, 2026-10-15) — 40 in the same class, seven in another, said under each key — so none is a cell the fix pass made red. Nothing here is a grade.*
+
+### `r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names`
+
+- *The cells.* Fourteen in the gate in which `setup` acts and nothing else is red: the never-adopted repository as typed; a file staged elsewhere, under a name git quotes, a hook that rejects, the user's own hook; the guide, whatever stands at it — a file, a committed one, three links, a directory, a file at its directory's place; a file under the project layer; and on an unborn `HEAD`, the user's own root `.gitignore`. Six more red cells show it beside their own class.
+- *What they came to.* **Written outside its allowance**: exit 0, the install landed, and `.jigc/state/` was made — an empty directory no line of the row covers.
+- *Held against.* The row, which has no line for it: the record's §6, entry 1, *what the ruling leaves open*, (i) — whether a command that exits 0 may write a cache its own doc names no write to. Each cell carries that entry's mark; the record says what the product should do. **No byte is lost.**
+- *The previous release.* The same, in all fourteen — one of them, the user's committed guide, as *git's state moved outside its allowance* there.
+
+### `r1-setup-replaces-a-file-the-user-committed-at-a-path-it-writes-whole`
+
+- *The cells.* `setup-at-the-bootstrap-a-committed-file`, `setup-at-the-stamp-a-committed-file`, `setup-at-the-settings-record-a-committed-file`: a file of the user's, committed, at `.jigc/AGENT.md`, `.jigc/version` or `.jigc/settings-entries.json`.
+- *What they came to.* **Git's state moved outside its allowance**: exit 0, the install commit replaces the user's file; history holds its bytes, so it is no loss.
+- *Held against.* The plan's rule that a planted entry is the user's; `S4`'s second sentence refuses such a file only *"while no commit holds its bytes"*. The record's §6, entry 10, has what the product should do — refuse, as its siblings do — and the other reading. Each cell carries entry 10's mark.
+- *The previous release.* Red in all three: two the same, one *written outside its allowance*.
+
+### `r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head`
+
+- *The cell.* `setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository`.
+- *What it came to.* **Git's state moved outside its allowance**: exit 0; `setup` merged into the file the link leads to — *"note: `.gitignore` is a link, so `jigc setup` merged into the file it leads to … that is the file the install commit carries"* — and the install commit holds the link and that file, a file of the user's in no commit before.
+- *Held against.* `S9` and `S11`: the row declares the root `.gitignore` merged into, and no line the file a link there leads to. The record's §6, entry 12.
+- *The previous release.* Red, as *written outside its allowance*.
+
+### `r1-setup-replaces-a-change-staged-at-a-path-it-writes-whole`
+
+- *The cells.* `setup-at-the-stamp-a-change-staged-and-not-in-the-tree`, `setup-at-the-guide-a-change-staged-and-not-in-the-tree`.
+- *What they came to.* **Lost**: exit 0, and what the user staged at `.jigc/version` or at the guide is in the index no longer and in no object within reach.
+- *Held against.* The exit rule's first clause; and the human's ruling of 2026-10-14 on the record's §6, entry 8 — the declared bound is one case, a doc a task is updating, so a staged change replaced at a path jigc stages is a finding. At the bootstrap and the settings record the same change is refused (the next key).
+- *The previous release.* The same: *lost*, both.
+
+### `r1-setup-refuses-after-its-first-write-and-leaves-the-install-written`
+
+- *The cells.* Twelve: a change staged and not in the tree at `.jigc/AGENT.md`, `.jigc/settings-entries.json`, `CLAUDE.md`, `.claude/settings.json`, `.jigc/.gitignore`, and on an unborn `HEAD` the root `.gitignore`; a directory at `CLAUDE.md`, at `.jigc/.gitignore` and on an unborn `HEAD` at the root `.gitignore`; at the hook, a directory in its place, a file in its directory's place, and a link to a file in the repository.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, with `setup.dirty-install-path`, `setup.install-hook`, `setup.inject-reference`, `setup.init-project-layer` or `setup.secrets-gitignore` — *"the install files are written and staged, and no install commit was made"* — and the files of the install written, in most staged, and the install-footprint record under `.jigc/state/`.
+- *Held against.* **The human's ruling of 2026-10-14 on the record's §6, entry 2: every refusal of `setup` leaves the repository as it was**, caches aside — a failure after the first write rolls back. These are the late failures it decides, and the `S12` behaviour it overrules (§1 of this file, `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`). **No byte of the user's is lost** in any of the twelve: the plant stands in each.
+- *The previous release.* Red in all twelve: eleven the same, one *written outside its allowance*.
+
+### `r1-uninstall-leaves-its-teardown-in-the-working-tree-and-commits-nothing`
+
+- *The cells.* Thirteen in the gate — every cell in which `uninstall` acts: as typed, after a task landed, over an edit, a line of the user's or a staged change at the host file, a staged change at the settings file, the user's lines in the hook, a hook that rejects, the user's worktree there and moved away, a file staged elsewhere and under a name git quotes, and a foreign file under `.jigc/logs/` under the consent — and the four acting cells on demand.
+- *What they came to.* **Written outside its allowance**: exit 0; the tracked files of the install are gone from the working tree, the host file and the settings file taken out of, and no commit carries any of it — `HEAD` and the index are as they were.
+- *Held against.* `U9` — the human's ruling of 2026-10-14 on the record's §6, entry 5: *"the teardown lands as one dedicated, path-scoped commit of what it removed"*. **No loss**: what left the tree, `HEAD` still holds. In the three cells with an edit of the user's at the host file or the settings file, the edit stands; whether the fixed teardown refuses over it or commits only jigc's part is the fixer's, and either holds the ruling's *never carries*.
+- *The previous release.* Red in all thirteen: eleven the same, one *lost*, one *git's state moved outside its allowance*.
+
+### `r1-uninstall-refuses-over-a-settings-file-it-cannot-parse-after-removing-the-workbench`
+
+- *The cells.* `uninstall-an-edit-to-the-settings-file`, `uninstall-a-line-of-the-users-in-the-settings-file` — the user's line makes `.claude/settings.json` no JSON.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, `uninstall.remove-allowlist`, and `.jigc/` — its tracked files and its caches — already removed.
+- *Held against.* `U7`: *"All four remove nothing, name what they found, and route at the honest exits"* — a refusal of the teardown removes nothing; and the project's rule that a refusal changes nothing. No byte is lost: `HEAD` holds the tracked files, and the caches are rebuildable.
+- *The previous release.* The same, in both.
+
+### What the same cells show the other way
+
+Twenty-seven cells of the family are red on the previous release and not on this tree: eight refused there with another refusal than the one the cell names, or acted where it refuses here; six wrote outside the allowance; five refused after writing; four lost a plant — an untracked file or a link at a path the install replaces, written over at exit 0; four moved git's state. The arm counts; it does not say which of these is a regression.

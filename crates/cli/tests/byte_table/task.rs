@@ -489,7 +489,7 @@ const ACCEPTANCE: &[Cell] = &[
 /// **An open task that created a decision and is ready to finalize** — its id,
 /// `record-a-decision`; the ADR it created promotes to `docs/decisions/one-way.md`.
 /// `single-task` is the leaf's plain spelling: its commit is the index, whole (`T4`).
-const A_DECISION: [Lead; 11] = [
+pub(super) const A_DECISION: [Lead; 11] = [
     jigc(&["start", "--workflow", "single-task", "record a decision"]),
     jigc(&[
         "doc",

@@ -2,7 +2,7 @@
 
 *Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
 
-Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction.
+Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) bring twenty more marked cells**: twenty in which `setup` acts carry the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. The table has 25 lines over 22 cells.
 
 ## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — ruled on 2026-10-14: reading (b)
 
@@ -31,7 +31,7 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *The ruling* — option A (*"Agree on A"*): the teardown lands as one dedicated, path-scoped commit of what it removed, and never carries the user's own uncommitted edits at a path it touches. The row's line `U9` quotes it.
 - All four cells of `uninstall` of the first cut refuse on this tree, and remove nothing. On the previous release three of them act, and are *lost* by the plant's rule before any line is asked. The cells it decides are the install family's base cell and every planted cell in which `uninstall` acts: a teardown that leaves its removals in the working tree is red in each.
 
-## 5. Where `setup` keeps the record of a failed run (the record's entry 3) — read under the ruling on entry 2 · the spawn launch-template (entry 4) — open, and met by no cell
+## 5. Where `setup` keeps the record of a failed run (the record's entry 3) — read under the ruling on entry 2 · the spawn launch-template (entry 4) — open; entry 3 is seen, §10
 
 - *Entry 3, as it reads now*: no refusal leaves the record; it keeps only the job of a run killed mid-write, which is no cell. A record left by a refusal under `.jigc/state/` or `.jigc/index/` would be excused by `C1` or `C2` all the same — the table cannot tell it from a cache without a path no doc gives (the record's §6, entry 3).
 
@@ -57,7 +57,16 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 
 - Nothing of the 61 bears on the three the plan leaves open (`migrate-corpus` at a path it touches, `relocate`, and what was then unread of `milestone finalize`, which the record's §4 has since read). **What the family's cells show of the answered ones**: at `task finalize` a file staged elsewhere rides the commit, a name git quotes included, as `T4` declares; at a sub-task's `task discard` the same two stay staged and out of the record's commit, as `A6` declares.
 
-## 10. The declared bounds the cells stand on
+## 10. The install family's questions (the record's entries 1 (i), 3, 10, 11 and 12) — open
+
+- **Entry 1, the first open point — a command that exits 0 writes a cache its doc names no write to.** Met by twenty cells: every `setup` that acts makes `.jigc/state/`, an empty directory. Under the reading in force each is *written outside its allowance*; under the other — such a directory is jigc's own and no loss — seventeen would hold. The record says what the product should do.
+- **Entry 3 — the install-footprint record.** Seen in each of the twelve late failures, at `.jigc/state/setup-install-footprint`, excused there by `C2`; the twelve are red on other grounds.
+- **Entry 10 — a file the user committed at a path `setup` replaces.** Three cells, *git's state moved outside its allowance* under the plant rule; red only by entry 1 under the other reading.
+- **Entry 11 — `setup`'s install commit runs no hook.** Met by `setup-a-hook-that-rejects`, which acts with the hook's lines standing; no cell turns on it, none is marked.
+- **Entry 12 — a link at the root `.gitignore`, followed on an unborn `HEAD`.** One cell, red under its own key; it turns on the doc's sibling rules, not on a reading, and carries no mark.
+- **Entry 9 — whether `unmanage` commits.** Met by no cell: `unmanage` committed nothing in any of its ten.
+
+## 11. The declared bounds the cells stand on
 
 - **Bound (1)** — *content staged for a doc a task is updating, while the working file does not carry it, is replaced at finalize*: one cell, §8's first. The same on the previous release.
 - **Bound (2)** — *an uncommitted edit made before a task first writes a doc is carried into the task, and a write by that task to the same part replaces it*: `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` — exit 0, and the line added by hand stands at no path and in no object. **The previous release does not show it**: there the finalize refuses (`reconciliation.conflict-block`, exit 3) and the line stands. The cell beside it, in which the task writes another part, carries the line into the commit on this tree, and is refused the same way on the previous release.
@@ -69,5 +78,28 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 
 | mark | cell |
 |---|---|
+| silence 1 | `setup-a-file-staged-elsewhere` |
+| silence 1 | `setup-a-file-staged-under-a-name-git-quotes` |
+| silence 1 | `setup-a-file-where-the-guides-directory-goes` |
+| silence 1 | `setup-a-hook-that-rejects` |
+| silence 1 | `setup-at-the-bootstrap-a-committed-file` |
+| silence 1 | `setup-at-the-guide-a-change-staged-and-not-in-the-tree` |
+| silence 1 | `setup-at-the-guide-a-committed-file` |
+| silence 1 | `setup-at-the-guide-a-directory` |
+| silence 1 | `setup-at-the-guide-a-link-to-a-file-in-the-repository` |
+| silence 1 | `setup-at-the-guide-a-link-to-a-file-outside-it` |
+| silence 1 | `setup-at-the-guide-a-link-to-nothing` |
+| silence 1 | `setup-at-the-guide-an-untracked-file` |
+| silence 1 | `setup-at-the-settings-record-a-committed-file` |
+| silence 1 | `setup-at-the-stamp-a-change-staged-and-not-in-the-tree` |
+| silence 1 | `setup-at-the-stamp-a-committed-file` |
+| silence 1 | `setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository` |
+| silence 1 | `setup-head-unborn-at-the-root-ignore-the-users-own-file` |
+| silence 1 | `setup-in-a-repository-jigc-was-never-set-up-in` |
+| silence 1 | `setup-the-users-own-hook` |
+| silence 1 | `setup-under-the-project-layer-an-untracked-file` |
+| silence 10 | `setup-at-the-bootstrap-a-committed-file` |
+| silence 10 | `setup-at-the-settings-record-a-committed-file` |
+| silence 10 | `setup-at-the-stamp-a-committed-file` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |

@@ -1,6 +1,30 @@
 # The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate, beyond a line a cell.
-# Printed on 2026-10-13 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 42 at its start and 36 at its end: twelve cells, none red. The block below is the arm's `== cells on demand ==`, byte for byte.
+# Printed on 2026-10-15 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 11 at its start and 9 at its end: thirty-six cells — the task family's twelve and the install family's twenty-four — four red, each `jigc uninstall` that acts, by its line `U9`. The block below is the arm's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
+setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
+setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
+setup-in-migrated	jigc setup	migrated	acts	holds	exit 0
+setup-in-refs-post-hoc	jigc setup	refs-post-hoc	acts	holds	exit 0
+setup-in-chatty-hooks	jigc setup	chatty-hooks	acts	holds	exit 0
+setup-in-vendored	jigc setup	vendored	acts	holds	exit 0
+uninstall-in-a-repository-jigc-was-never-set-up-in	jigc uninstall	bare	acts	holds	exit 0
+uninstall-in-committed-singletons	jigc uninstall	committed-singletons	acts	written outside its allowance	exit 0
+uninstall-in-migrated	jigc uninstall	migrated	acts	written outside its allowance	exit 0
+uninstall-in-refs-post-hoc	jigc uninstall	refs-post-hoc	refuses: exit 1, `uninstall.staged-prose`	refuses, nothing changed	exit 1
+uninstall-in-chatty-hooks	jigc uninstall	chatty-hooks	acts	written outside its allowance	exit 0
+uninstall-in-vendored	jigc uninstall	vendored	acts	written outside its allowance	exit 0
+ingest-in-a-repository-jigc-was-never-set-up-in	jigc ingest	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+ingest-in-committed-singletons	jigc ingest	committed-singletons	acts	holds	exit 0
+ingest-in-migrated	jigc ingest	migrated	acts	holds	exit 0
+ingest-in-refs-post-hoc	jigc ingest	refs-post-hoc	acts	holds	exit 0
+ingest-in-chatty-hooks	jigc ingest	chatty-hooks	acts	holds	exit 0
+ingest-in-vendored	jigc ingest	vendored	acts	holds	exit 0
+unmanage-in-a-repository-jigc-was-never-set-up-in	jigc unmanage VISION.md	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+unmanage-in-fresh	jigc unmanage VISION.md	fresh	acts	holds	exit 0
+unmanage-in-migrated	jigc unmanage VISION.md	migrated	acts	holds	exit 0
+unmanage-in-refs-post-hoc	jigc unmanage VISION.md	refs-post-hoc	acts	holds	exit 0
+unmanage-in-chatty-hooks	jigc unmanage VISION.md	chatty-hooks	acts	holds	exit 0
+unmanage-in-vendored	jigc unmanage VISION.md	vendored	acts	holds	exit 0
 task-finalize-a-created-decision-in-bare	jigc task finalize record-a-decision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
 task-finalize-a-created-decision-in-committed-singletons	jigc task finalize record-a-decision	committed-singletons	acts	holds	exit 0
 task-finalize-a-created-decision-in-migrated	jigc task finalize record-a-decision	migrated	acts	holds	exit 0
