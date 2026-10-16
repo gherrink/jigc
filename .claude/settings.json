@@ -37,5 +37,21 @@
       "Bash(gh api *pending_deployments*)",
       "Bash(cargo *yank *)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/dev/stabilize-guard",
+            "args": [],
+            "timeout": 30,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
   }
 }
