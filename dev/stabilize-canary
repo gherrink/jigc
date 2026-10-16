@@ -185,8 +185,8 @@
 #       call that sets it aside (`set_aside`), run from the clone.
 #
 #         held      THE HELD COMMANDS under the scratch root, [{name, kind, state, why,
-#                   verdict, kept [, supervised]}] — EACH AS THE STEP TOOL WOULD ANSWER IT,
-#                   read and not asked: that tool has no call that only reads a job (a
+#                   verdict, kept, exit [, supervised]}] — EACH AS THE STEP TOOL WOULD
+#                   ANSWER IT, read and not asked: that tool has no call that only reads a job (a
 #                   wait, and a start asked again, judge a command that has ended and
 #                   keep its verdict). `state`: running — its supervisor holds the job's
 #                   lock · done — the command has ended, and its supervisor wrote how ·
@@ -198,8 +198,11 @@
 #                   `verdict`: what the step tool answers now — null while none is kept,
 #                   and `void` (why: hash-differs) for a build whose binary is no longer
 #                   the file it hashed. `kept`: THE KEPT WORD, as the verdict's file holds
-#                   it. WHAT IT CANNOT TELL: whether the command of a job that is `dead`
-#                   still runs — a killed supervisor leaves its command running.
+#                   it. `exit`: how the command ended, as its supervisor wrote it in
+#                   `exit.json` — where it is `done`, and null otherwise: `done`, an exit
+#                   and `verdict` null is a command that ENDED, WITH THAT EXIT, AND NO
+#                   VERDICT YET. WHAT IT CANNOT TELL: whether the command of a job that is
+#                   `dead` still runs — a killed supervisor leaves its command running.
 #         ruling    null, or THE RULING OFF THE MAIN LINE THAT IS THE NEXT STEP, as the
 #                   state says it: {ruling, prompt, withheld, only} — the prompt file to
 #                   paste. NEVER NAMED WHILE AN ACT MAY BE RUNNING, as far as `check` can
@@ -1026,7 +1029,7 @@ ACTS = (
     ("part-4-act-2", {"own": (), "human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the fourth verifier returns. In it the session is ended at its terminal. No return is written, and that is right"}),
     ("part-4-act-3", {"stopAfter": "state", "own": ("stopped",), "human": "Before it: list the verdicts directory twice, a minute apart - no file may appear between the two - and see that no process that names the root still runs. Then check, whose filed is the snapshot: every filed file with its hash. Then this act, in a new session: it only looks, and launches nobody"}),
     ("part-4-act-4", {"own": ("verified",)}),
-    ("part-4-act-5", {"own": ("recorded",), "human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job done - or dead. While it says running the gate still runs, and this act waits, so that two gates do not run on one machine at once. done: the command has ended. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. dead: the job's supervisor is gone, no other word will ever come and the wait is over - whether the gate's own command still runs check cannot tell, NOTHING THAT NAMES THE ROOT IS ENDED HERE (after act 4 a process that names the root is the supervisor of a record's gate), and the act is made all the same. Then this act - the same arguments once more"}),
+    ("part-4-act-5", {"own": ("recorded",), "human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job done - or dead. While it says running the gate still runs, and this act waits, so that two gates do not run on one machine at once. done: the command has ended - its supervisor wrote exit.json, and held prints its exit. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. dead: the job's supervisor is gone, no other word will ever come and the wait is over - whether the gate's own command still runs check cannot tell, NOTHING THAT NAMES THE ROOT IS ENDED HERE (after act 4 a process that names the root is the supervisor of a record's gate), and the act is made all the same. Then this act - the same arguments once more"}),
 )
 # THE RULINGS OFF THE MAIN LINE — the human's exits the plan's section 5 names, each ONE
 # invocation that only rules and starts nothing, with a prompt file of its own under a name
@@ -2039,6 +2042,9 @@ def held_jobs(scratch):
       kept     THE KEPT WORD, as `verdict.json` holds it — what was so when the command
                ended; null while none is kept
       why      the step tool's reason, beside `dead` and beside a verdict that has one
+      exit     how the command ended, as its supervisor wrote it in `exit.json` —
+               where the state is `done`; null otherwise. `done`, an exit and no
+               verdict: the command ENDED, WITH THAT EXIT, AND NOBODY HAS ASKED YET
     WHAT IT CANNOT TELL: whether the command of a job that is `dead` still runs — a
     supervisor that was killed leaves its command running, and nothing on disk says so."""
     holds = os.path.join(scratch, "hold")
@@ -2055,7 +2061,7 @@ def held_jobs(scratch):
         home = os.path.join(holds, name)
         if job is not None and not all(field in job for field in ("kind", "asked", "pid")):
             job = None
-        said = {"name": name, "kind": job["kind"] if job else None, "state": None, "why": None, "verdict": None, "kept": None}
+        said = {"name": name, "kind": job["kind"] if job else None, "state": None, "why": None, "verdict": None, "kept": None, "exit": None}
         try:
             lock = os.open(os.path.join(home, "lock"), os.O_RDONLY)
         except OSError:
@@ -2081,13 +2087,15 @@ def held_jobs(scratch):
         elif ended["signal"] is not None:
             said.update(state="dead", why="killed")
         elif not os.path.lexists(kept):
-            said.update(state="done")
+            # ENDED, AND NOBODY HAS ASKED AFTER IT: how it ended is the supervisor's word,
+            # and no verdict is kept yet.
+            said.update(state="done", exit=ended["exit"])
         else:
             verdict = whole(kept)
             if verdict is None or not all(field in verdict for field in ("exit", "seconds", "verdict", "why", "detail", "facts")):
                 said.update(why="verdict-unread")
             else:
-                said.update(state="done", why=verdict["why"], verdict=verdict["verdict"], kept=verdict["verdict"])
+                said.update(state="done", why=verdict["why"], verdict=verdict["verdict"], kept=verdict["verdict"], exit=ended["exit"])
                 # A BUILD'S GREEN IS THE DISK'S, AT EVERY ANSWER: the kept word is printed
                 # as kept, and the answer is the step tool's live one.
                 facts = verdict["facts"] if isinstance(verdict["facts"], dict) else {}

@@ -3793,6 +3793,7 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
         waits.contains("OPTIONAL")
             && waits.contains("check, until held says of that record's job done - or dead")
             && waits.contains("While it says running the gate still runs, and this act waits")
+            && waits.contains("its supervisor wrote exit.json, and held prints its exit")
             && waits.contains("No verdict.json appears while nobody asks after a job")
             && waits.contains("none is waited for")
             && waits.contains("gates the batch again under a name of its own")
@@ -4801,7 +4802,9 @@ fn check_says_of_each_act_what_was_returned_and_what_the_run_shows() {
     let previous = &canary.previous[..12];
     let gate = format!("gate-{candidate}");
     let build = format!("build-candidate-{candidate}");
-    let job = |name: &str, kind: &str, state: &str, why: Value, verdict: Value, kept: Value| json!({"name": name, "kind": kind, "state": state, "why": why, "verdict": verdict, "kept": kept});
+    // `exit`: how the command ended, as its supervisor wrote it — where it is `done`, and
+    // only there (the stand-ins for the long commands exit 0).
+    let job = |name: &str, kind: &str, state: &str, why: Value, verdict: Value, kept: Value| json!({"name": name, "kind": kind, "state": state, "why": why, "verdict": verdict, "kept": kept, "exit": if state == "done" { json!(0) } else { Value::Null }});
     let green = |name: &str, kind: &str| {
         job(
             name,
@@ -4848,7 +4851,8 @@ fn check_says_of_each_act_what_was_returned_and_what_the_run_shows() {
     // A COMMAND THAT ENDED WHILE NOBODY ASKED AFTER IT has no verdict's file — the step
     // tool's supervisor writes how it ended, and a verdict is written by the step that asks:
     // `check` says `done` with no verdict, kept or answered — which is what the human waits
-    // for before act 5. (No control here: asked, the step tool would judge it and keep it.)
+    // for before act 5 — and HOW IT ENDED, from the supervisor's `exit.json`: ended, exit 0,
+    // no verdict yet. (No control here: asked, the step tool would judge it and keep it.)
     let home = root.join("scratch/hold").join(&gate);
     let verdict = fs::read(home.join("verdict.json")).expect("the kept verdict");
     fs::remove_file(home.join("verdict.json")).expect("the verdict nobody had asked for yet");
@@ -4857,6 +4861,18 @@ fn check_says_of_each_act_what_was_returned_and_what_the_run_shows() {
         canary.checked(&root)["held"],
         held(green(&build, "build"), unjudged)
     );
+    // … and of one that ended red, exit 1: the exit is the supervisor's word, read as it is.
+    let ended = fs::read(home.join("exit.json")).expect("how the command ended");
+    let mut red: Value = serde_json::from_slice(&ended).expect("the exit file is JSON");
+    red["exit"] = json!(1);
+    fs::write(home.join("exit.json"), red.to_string()).expect("a command that ended red");
+    let mut unjudged_red = job(&gate, "gate", "done", Value::Null, Value::Null, Value::Null);
+    unjudged_red["exit"] = json!(1);
+    assert_eq!(
+        canary.checked(&root)["held"],
+        held(green(&build, "build"), unjudged_red)
+    );
+    fs::write(home.join("exit.json"), &ended).expect("put back how the command ended");
     // ONE WHOSE SUPERVISOR LIVES RUNS: the job's lock is held — here by the suite, as the
     // supervisor holds it — and both say `running`. Whatever else the directory holds.
     let lock = lock_held(&home.join("lock"));
@@ -4977,7 +4993,7 @@ fn check_says_of_each_act_what_was_returned_and_what_the_run_shows() {
     fs::write(orphan.join("lock"), "").expect("its lock");
     let no_record = |supervised: bool| {
         json!({"name": "gate-no-record", "kind": null, "state": "dead", "why": "no-record",
-               "verdict": null, "kept": null, "supervised": supervised})
+               "verdict": null, "kept": null, "exit": null, "supervised": supervised})
     };
     let read = canary.checked(&root);
     assert_eq!(read["held"][0], no_record(false), "{read}");
@@ -5002,7 +5018,7 @@ fn check_says_of_each_act_what_was_returned_and_what_the_run_shows() {
     assert_eq!(
         canary.checked(&root)["held"][3],
         json!({"name": gate, "kind": "gate", "state": null, "why": "verdict-unread",
-               "verdict": null, "kept": null})
+               "verdict": null, "kept": null, "exit": null})
     );
     fs::write(home.join("verdict.json"), was).expect("put the kept verdict back");
 
