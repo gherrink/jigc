@@ -2365,14 +2365,22 @@ fn a_fresh_setup_is_ready_with_the_budget_the_order_and_the_hand_on_it_was_given
     );
 
     // (3) THE CANARY IS MADE AS EVERY CANARY IS: one commit on the commit named, pushed to
-    // the bare repository beside the clone, a clean tree — and `check` holds it.
+    // the bare repository beside the clone, a clean tree — and `check` holds it. Under the
+    // switch the commit named is first given ONE COMMIT that withholds the answer key in the
+    // clone (`the_clones_tree_names_no_planted_row_beside_how_it_falls`): the opening is on
+    // that one.
     let head = canary.git(&clone, &["rev-parse", "HEAD"]);
     assert_eq!(
         json!([line["head"], line["remote_head"], line["candidate"]]),
         json!([head, head, canary.commit]),
         "{line}"
     );
-    assert_eq!(canary.git(&clone, &["rev-parse", "HEAD^"]), canary.commit);
+    assert_eq!(canary.git(&clone, &["rev-parse", "HEAD^^"]), canary.commit);
+    assert_eq!(
+        canary.git(&clone, &["diff", "--name-only", "HEAD^^", "HEAD^"]),
+        TOOL,
+        "the rig's commit names a planted row in the tool alone"
+    );
     assert_eq!(
         canary.git(&clone, &["status", "--porcelain", "--untracked-files=all"]),
         ""
@@ -4082,41 +4090,32 @@ fn the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes() {
         "{read}"
     );
 
-    // (2) THE QUESTIONS FOR THE READING, named in the output. FIVE FILES OF THE CANDIDATE'S
-    // OWN COMMIT HOLD AN ANSWER, and the first question names each BY ITS PATH: the plan,
-    // this tool, the log, THIS SUITE — which types the keys, the plan's names and what each
-    // should return a second time — and THE REPORT THE FIRST PLANTED ROW'S REPRO CITES,
-    // which states that row's verdict; and it says that each lies a second time where a held
-    // build unpacked the commit. The second question is about that report alone: its path
-    // is handed to the row's verifier. (The review before part 1: the question named three.)
+    // (2) THE QUESTION FOR THE READING, named in the output. The clone holds the answer key
+    // WITHHELD — every file of the commit named that names a planted row, here the tool alone
+    // (`the_clones_tree_names_no_planted_row_beside_how_it_falls` holds the rest) — and its
+    // history holds it whole: the question names each withheld file by its path, and asks
+    // whether a verifier read one there. A second question, about the report a row cites, is
+    // asked only where the clone holds that report withheld, which this rig's commit does not
+    // hold. (The review before part 1: the question named three files; the third root: five,
+    // in the tree every verifier works in.)
     let asked: Vec<&str> = read["to_answer"]
         .as_array()
         .unwrap_or_else(|| panic!("`check` names what a part's reading has to answer: {read}"))
         .iter()
         .map(|question| question.as_str().expect("a question"))
         .collect();
-    assert_eq!(asked.len(), 2, "{read}");
+    assert_eq!(asked.len(), 1, "{read}");
+    assert_eq!(line["withheld"], json!([TOOL]), "{line}");
     assert!(
-        asked.iter().all(|question| question.ends_with('?')),
+        asked[0].ends_with('?')
+            && asked[0].contains(&format!("withheld - {TOOL} -"))
+            && asked[0].contains("its history holds them whole")
+            && asked[0].contains("did any verifier read one of them there"),
         "{read}"
     );
-    let cited = "completions/artifacts/M55/stabilization-build/canary-one/run/r1/reports/test/verify-p2-r1-setup-install-hook-route-other-causes-unexamined.a1.md";
-    let places = [PLAN, TOOL, "DECISIONS.md", SUITE, cited];
-    assert!(
-        asked[0].contains("did any verifier read")
-            && asked[0].contains("five files")
-            && asked[0].contains(&places.join(", "))
-            && asked[0].contains("a held build unpacked under the scratch root"),
-        "{read}"
-    );
-    for place in places {
-        assert!(
-            repo_root().join(place).is_file(),
-            "`{place}` is a file of the repository's tree"
-        );
-    }
-    // … THE CITED REPORT IS THE ONE THE ROW HANDS ITS VERIFIER, word for word, and the
-    // suite and the report do hold an answer — or the question would name them for nothing.
+    // … THE CITED REPORT IS THE ONE THE ROW HANDS ITS VERIFIER, word for word, and it does
+    // hold an answer — or the clone would withhold it for nothing.
+    let cited = CITED;
     let state = canary.state(&root.join("clone"));
     let first = state["ledger"]
         .as_array()
@@ -4134,12 +4133,6 @@ fn the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes() {
     assert!(
         report.contains("`confirmed`") && report.contains("regression: true"),
         "the cited report states a verdict"
-    );
-    assert!(
-        asked[1].contains("the first planted row")
-            && asked[1].contains("a report that states that row's verdict")
-            && asked[1].contains("before it opened the report, or after"),
-        "{read}"
     );
 
     // (3) AND NOTHING THE SETUP WROTE HOLDS THE SHEET: its line, the file it keeps, the
@@ -4170,6 +4163,261 @@ fn the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes() {
         }
     }
     assert_eq!(line["sheet"], Value::Null, "{line}");
+}
+
+/// The report the first planted row's repro cites, which states that row's verdict.
+const CITED: &str = "completions/artifacts/M55/stabilization-build/canary-one/run/r1/reports/test/verify-p2-r1-setup-install-hook-route-other-causes-unexamined.a1.md";
+
+/// How many lines apart a row's name and a phrase of how it falls may stand and still be
+/// read together: a table row holds both on one line, a paragraph within a few.
+const NEAR: usize = 6;
+
+/// Every place in `texts` where a NAME of a planted row stands within [`NEAR`] lines of a
+/// phrase that says how a row falls: `(the file, the line, the name, the phrase)`. Both are
+/// matched without regard to case.
+fn beside(
+    texts: &[(String, String)],
+    names: &[String],
+    falls: &[String],
+) -> Vec<(String, usize, String, String)> {
+    let mut found = Vec::new();
+    for (file, text) in texts {
+        let lines: Vec<String> = text.lines().map(str::to_lowercase).collect();
+        for (at, line) in lines.iter().enumerate() {
+            for name in names {
+                if !line.contains(&name.to_lowercase()) {
+                    continue;
+                }
+                let window = &lines[at.saturating_sub(NEAR)..(at + NEAR + 1).min(lines.len())];
+                if let Some(fall) = falls.iter().find(|fall| {
+                    window
+                        .iter()
+                        .any(|near| near.contains(&fall.to_lowercase()))
+                }) {
+                    found.push((file.clone(), at + 1, name.clone(), fall.clone()));
+                }
+            }
+        }
+    }
+    found
+}
+
+/// **The clone's tree names no planted row beside how it falls** (the staged canary's third
+/// root: two verifiers saw the answer key's lines of the log through a broad grep — the
+/// candidate is a commit of this repository, and the files that say which planted row is
+/// which and how each must fall were in the tree every verifier works in). THE SETUP
+/// WITHHOLDS THEM IN THE CLONE, by a commit of its own on the commit named, before the loop
+/// branch is pushed: every file of that commit that names a planted row — by its key or by
+/// the plan's name for it — and every file a planted row cites as its evidence. The log
+/// keeps every heading, and the entry that states the exit rule whole; only the body of an
+/// entry that names a row is withheld. Everything here is DERIVED: a row's names from the
+/// sheet `check` prints and its claim from the row the clone's ledger holds; how a row falls
+/// from every phrase of what the sheet says it should return; the files a row cites from
+/// its repro. And the scan is shown to find what it looks for in the commit the setup was
+/// handed, which holds the answer key as this repository does.
+#[test]
+fn the_clones_tree_names_no_planted_row_beside_how_it_falls() {
+    let mut canary = Canary::new("parts-withheld");
+    canary.guarded();
+    // THE COMMIT NAMED HOLDS THE ANSWER KEY AS THIS REPOSITORY DOES: the log, the plan, this
+    // suite and the report the first row cites — beside the tool, which the rig holds.
+    for place in ["DECISIONS.md", PLAN, SUITE, CITED] {
+        let text = fs::read_to_string(repo_root().join(place))
+            .unwrap_or_else(|e| panic!("read `{place}`: {e}"));
+        canary.rig.write(place, &text);
+    }
+    canary.commit = canary
+        .rig
+        .commit("docs: the answer key, as the repository holds it");
+    let root = canary.root("canary");
+    let line = canary.setup(&root, &[PARTS]).done("setup", "ready").clone();
+    let read = canary.checked(&root);
+    let clone = root.join("clone");
+    let state = canary.state(&clone);
+
+    // THE TERMS, derived. A row's names: its key and the plan's name, as the sheet prints
+    // them, and its claim, as its row opens. How a row falls: every phrase of what the sheet
+    // says a row should return, cut at its commas and colons.
+    let sheet = read["sheet"].as_array().expect("`check` prints the sheet");
+    let mut names: Vec<String> = Vec::new();
+    let mut falls: Vec<String> = Vec::new();
+    for row in sheet {
+        for field in ["key", "plan"] {
+            names.push(row[field].as_str().expect("a name").to_owned());
+        }
+        for phrase in row["returns"]
+            .as_str()
+            .expect("what a row should return")
+            .split([',', ':'])
+        {
+            let phrase = phrase.trim();
+            let phrase = phrase.strip_prefix("a ").unwrap_or(phrase);
+            if !phrase.is_empty() && !falls.iter().any(|known| known == phrase) {
+                falls.push(phrase.to_owned());
+            }
+        }
+    }
+    let rows: Vec<&Value> = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .filter(|row| sheet.iter().any(|planted| planted["key"] == row["key"]))
+        .collect();
+    assert_eq!(rows.len(), sheet.len(), "{state}");
+    let mut cited: Vec<String> = Vec::new();
+    for row in &rows {
+        let repro = row["repro"].as_str().expect("a row's repro");
+        let claim = repro
+            .strip_prefix("The claim: ")
+            .and_then(|rest| rest.split(". The state:").next())
+            .map(|claim| claim.trim_end_matches('.'))
+            .unwrap_or_else(|| panic!("a planted row opens with its claim: {repro}"));
+        names.push(claim.to_owned());
+        // THE FILES A ROW CITES: every path its repro names that the commit named holds.
+        for word in repro.split([' ', '`', '(', ')']) {
+            let path = word.trim_end_matches(['.', ',', ';']);
+            if path.contains('/')
+                && canary.rig.root.join(path).is_file()
+                && !cited.iter().any(|known| known == path)
+            {
+                cited.push(path.to_owned());
+            }
+        }
+    }
+    assert!(falls.len() >= 4, "{falls:?}");
+    assert_eq!(cited, [CITED], "the files a planted row cites");
+
+    // (1) THE CONTROL: the commit the setup was handed names a row beside how it falls — in
+    // the tool, the log, the plan and this suite.
+    let tracked = |at: &Path, skip: &[&str]| -> Vec<(String, String)> {
+        texts_below(at)
+            .into_iter()
+            .filter(|(file, _)| !skip.iter().any(|prefix| file.starts_with(prefix)))
+            .collect()
+    };
+    let source = beside(&tracked(&canary.rig.root, &[".git/"]), &names, &falls);
+    for place in [TOOL, "DECISIONS.md", PLAN, SUITE] {
+        assert!(
+            source.iter().any(|(file, ..)| file == place),
+            "the commit named pairs a row with how it falls in `{place}`"
+        );
+    }
+
+    // (2) THE CLONE'S TREE, AS THE SETUP LEAVES IT — every file but its git directory and
+    // the run's directory, which holds the rows themselves, as a verifier is handed its own
+    // — names no row beside how it falls.
+    let skip = [".git/".to_owned(), format!("{RUN_DIR}/")];
+    let skip: Vec<&str> = skip.iter().map(String::as_str).collect();
+    let texts = tracked(&clone, &skip);
+    assert!(texts.len() > 10, "{}", texts.len());
+    assert_eq!(
+        beside(&texts, &names, &falls),
+        Vec::<(String, usize, String, String)>::new(),
+        "the clone's tree names a planted row beside how it falls"
+    );
+
+    // (3) A FILE A ROW CITES SAYS NOTHING OF HOW ANYTHING FALLS in the clone, and the row
+    // still cites it.
+    for path in &cited {
+        let text = fs::read_to_string(clone.join(path)).expect("read the cited file");
+        for fall in &falls {
+            assert!(
+                !text.to_lowercase().contains(&fall.to_lowercase()),
+                "the clone's `{path}` says `{fall}`: {text}"
+            );
+        }
+    }
+
+    // (4) WHAT WAS WITHHELD IS ONE COMMIT ON THE COMMIT NAMED, the opening on it: it changes
+    // exactly the files the line names under `withheld`, keeps each where it was, and keeps
+    // every heading of the log and the entry that states the exit rule whole. `check` asks
+    // the reading about each of those files by its path.
+    let withheld: Vec<String> = line["withheld"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the line names what it withheld: {line}"))
+        .iter()
+        .map(|path| path.as_str().expect("a path").to_owned())
+        .collect();
+    let mut expected: Vec<String> = [CITED, "DECISIONS.md", PLAN, SUITE, TOOL]
+        .iter()
+        .map(|path| (*path).to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(withheld, expected, "{line}");
+    assert_eq!(canary.git(&clone, &["rev-parse", "HEAD^^"]), canary.commit);
+    assert_eq!(
+        canary.git(
+            &clone,
+            &["diff", "--name-only", "--diff-filter=M", "HEAD^^", "HEAD^"]
+        ),
+        canary.git(&clone, &["diff", "--name-only", "HEAD^^", "HEAD^"]),
+        "every withheld file is still where it was"
+    );
+    assert_eq!(
+        canary.git(&clone, &["diff", "--name-only", "HEAD^^", "HEAD^"]),
+        expected.join("\n")
+    );
+    let headings = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|line| line.starts_with("## "))
+            .map(str::to_owned)
+            .collect()
+    };
+    let log = fs::read_to_string(clone.join("DECISIONS.md")).expect("the clone's log");
+    let whole = fs::read_to_string(repo_root().join("DECISIONS.md")).expect("the log");
+    assert_eq!(
+        headings(&log),
+        headings(&whole),
+        "the log keeps every heading"
+    );
+    let rule = |text: &str| -> String {
+        let at = text
+            .find(&format!("## {EXIT_RULE}\n"))
+            .expect("the entry that states the exit rule");
+        let rest = &text[at..];
+        rest[..rest[1..].find("\n## ").map_or(rest.len(), |end| end + 1)].to_owned()
+    };
+    assert_eq!(rule(&log), rule(&whole), "the exit rule's entry is whole");
+    let asked = read["to_answer"]
+        .as_array()
+        .expect("`check` asks the reading");
+    for path in &withheld {
+        assert!(
+            asked[0]
+                .as_str()
+                .is_some_and(|question| question.contains(path.as_str())),
+            "the first question names `{path}`: {read}"
+        );
+    }
+    // … and, the report a row cites being among them, a second asks about that row's
+    // verifier.
+    assert!(
+        asked.len() == 2
+            && asked[1]
+                .as_str()
+                .is_some_and(|question| question.contains(CITED)
+                    && question.contains("go looking for the file in the history")),
+        "{read}"
+    );
+
+    // (5) A FILE OF A KIND THE SETUP WITHHOLDS NOTHING OF, THAT NAMES A ROW, IS REFUSED
+    // before anything is made: the clone would hold that row's answer.
+    canary.rig.write(
+        "notes/rows.json",
+        &format!("{{\"{}\": \"refuted\"}}\n", PLANTS[4].0),
+    );
+    canary.commit = canary
+        .rig
+        .commit("docs: a row's answer in a file of another kind");
+    let refused = canary.root("unfit");
+    let said = canary.setup(&refused, &[PARTS]);
+    said.refused("unfit");
+    assert!(
+        said.stderr.contains("`notes/rows.json`"),
+        "the refusal names the file: {}",
+        said.stderr
+    );
+    assert!(!refused.exists(), "nothing was made");
 }
 
 /// **`check` says of each act what was returned, and what the run shows** (the plan's §8; the
