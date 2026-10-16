@@ -58,7 +58,8 @@
 #       without the switch (usage); a budget is at most 999991, so that the two raises
 #       a prompt file is written for are numbers the harness takes. The commit named
 #       must then also hold, in its DECISIONS.md, exactly one entry that states the exit
-#       rule (unfit) — AND IT MUST HOLD THIS TOOL AS IT RUNS (unfit): the file that runs
+#       rule (unfit), and the write guard, its fence and its probe (unfit) — AND IT MUST
+#       HOLD THIS TOOL AS IT RUNS (unfit): the file that runs
 #       is the working tree's, the clone holds the commit's, and a setup under the switch
 #       says `ready` only where the two are one file. Asked before anything is made; the
 #       refusal says which commit to name — the one checked out, where that holds the
@@ -86,7 +87,10 @@
 #       acts: [{act, args, prompt, return, expect [, human] [, verdicts]}], one for each
 #       act of the parts, in the order they are made (THE ACTS OF A RUN IN PARTS) —
 #       rulings: [{ruling, args, prompt, return, when}], apart from the acts: THE RULINGS
-#       OFF THE MAIN LINE (below), each with a prompt file under a name no act has — and
+#       OFF THE MAIN LINE (below), each with a prompt file under a name no act has —
+#       guard: {act, script, args, prompt, return, expect, human, snapshot}: THE WRITE
+#       GUARD'S PROBE (below), act `part-0`, made first, with its own prompt file and the
+#       clone's snapshot it is held to — and
 #       tool: {sha256, as_committed}: the sha256 of THE FILE THAT RAN, and that it is the
 #       file the commit named holds at this tool's path — the one the clone holds, whose
 #       header an agent there can read. `as_committed` is true in every line that says
@@ -137,6 +141,7 @@
 #       subject, attempts}] — THE RECORDS MADE, every commit on the opening with the
 #       attempts whose marker it took · pending_paths: what `git status` shows, by its
 #       path · acts: [{act, returned, status, next, own, shows, stands}] (below) ·
+#       guard (THE WRITE GUARD'S PROBE, below) ·
 #       ruling (below) · tool: {wrote, commit, reads, same} — THE THREE TOOLS, by sha256:
 #       the one that wrote the opening, the one the clone's commit holds at this tool's
 #       path, and the one that asks now; `same` where they are one · sheet: [{plan, key,
@@ -438,6 +443,26 @@
 #                  hand. And `check`'s `applied` names the batch for as long as no
 #                  commit holds it.
 #
+# THE WRITE GUARD'S PROBE — act `part-0`, MADE FIRST, on a fresh root, before part 1 and
+# before anything else runs in the clone (DECISIONS.md -> 2026-10-16, "The write guard of a
+# stabilization run"). No invocation of the harness: ONE invocation of the Workflow script
+# dev/stabilize-guard-probe.js, by its path in the clone, with the run, the clone and the
+# scratch root — ONE agent, of a type the write guard fences, which tries five writes into
+# the clone (a file by the file tool, a file by the shell, an empty commit, a key of the
+# clone's configuration, and a file under its own scratch directory) and one plain call of
+# the record script, and returns what each did. Its prompt file is ROOT/prompts/part-0.md,
+# its return ROOT/results/part-0.json; the line names it apart from the acts (`guard`), with
+# `expect` {agents: 1, tool_steps: 0}, what the human does around it, and THE CLONE'S
+# SNAPSHOT at the setup — its head, its status, its configuration, its hooks, its local refs
+# and its reflogs, each a hash. `check` says of it (`guard`): {act, returned, status, own,
+# attempts — what the agent returned of each, as it said it — disk: {write, echo, commit,
+# config: refused | landed, scratch: written | absent} — WHAT THE CLONE SHOWS, read and never
+# taken from the agent — landed: the writes that landed, snapshot: {same, moved} — while the
+# run shows nothing done, else null — and fenced}: true where nothing landed, the snapshot is
+# the same, the scratch file was written and the agent says its plain call ran with no fence;
+# false where a write landed or the snapshot moved; null otherwise. A HOOK THAT DID NOT FIRE
+# IS NEVER SILENT: its writes land, and `fenced` is false.
+#
 # THE RULINGS OFF THE MAIN LINE — the human's exits the plan's section 5 names, each ONE
 # invocation that only rules and starts nothing. FOR EACH THE SETUP WRITES A PROMPT FILE
 # beside the acts', ROOT/prompts/RULING.md, under a name no act has, and names it in its
@@ -470,7 +495,10 @@
 #        dev/stabilize-canary setup --root ROOT --commit SHA --run canary-parts --previous VERSION --previous-commit SHA --parts
 #   3. The clone is trusted: one interactive session is started in `session_cwd`, its
 #      trust dialog accepted, and the session left.
-#   4. FOR EVERY ACT, in the line's order: `check`; a session in the clone, the act's
+#   4. FIRST, THE WRITE GUARD'S PROBE: `check`; a session in the clone, the prompt file
+#      ROOT/prompts/part-0.md pasted as its one message; `check` again, and its `guard` read —
+#      where `fenced` is not true the root is given up.
+#   5. FOR EVERY ACT, in the line's order: `check`; a session in the clone, the act's
 #      prompt file opened and its text pasted as the one message; when the session says
 #      the return is written, the session is left; `check` again, and the reading.
 #        dev/stabilize-canary check --root ROOT
@@ -583,7 +611,8 @@
 #                     the repository
 #    8  unfit         the commit named lacks a script of a run, or the harness — or,
 #                     under --parts, its log does not hold exactly one entry that states
-#                     the exit rule, or it does not hold this tool as it runs
+#                     the exit rule, it does not hold this tool as it runs, or it lacks
+#                     the write guard, its fence or its probe
 #    9  tool          a command the act runs failed: git, or the clone's own
 #                     dev/stabilize-record or dev/stabilize-step — a scanner that could
 #                     not run among them — or the file system refused a directory or a
@@ -971,6 +1000,28 @@ OFF_LINE = (
     ("ruling-again", "again", "OFF THE MAIN LINE - only where check names this file under ruling: the stage has spent two attempts in a row without a record - part 1 spends one - and one more is the human's to grant. It is recorded and starts nothing. Then the act that halted, once more. NEVER WHILE A SESSION OF AN ACT IS OPEN: while an attempt is under way the state reads the same, and check cannot see a session"),
     ("ruling-raise-again", "raise-again", "OFF THE MAIN LINE - only where check names this file under ruling: the window of part 4's act 2 was missed, the stage recorded, and the raised budget is spent with rows nobody reached. One more raise of four, recorded, and nothing started. Then part 4's acts 2 to 5 once more. NEVER WHILE A SESSION OF AN ACT IS OPEN"),
 )
+# THE WRITE GUARD'S PROBE — act `part-0` (DECISIONS.md -> 2026-10-16, "The write guard of a
+# stabilization run"; the plan's section 5, part 0). No act of the harness: ONE invocation of
+# the Workflow script dev/stabilize-guard-probe.js, by its path in the clone, made FIRST on a
+# fresh root, before part 1 and before anything else runs there — so that whether the write
+# guard fires for a Workflow's agents in the human's own session is shown by one agent and
+# no gate. Its agent makes five writes into the clone and one plain call of the record
+# script, and returns what each did; `check` reads the clone (`guard`), where a write that
+# landed stands whatever the agent said. The commit named must hold the guard, the fence
+# and the probe (unfit).
+GUARD_ACT = "part-0"
+GUARD_SCRIPT = "dev/stabilize-guard-probe.js"
+GUARD_NEEDS = ("dev/stabilize-guard", "dev/stabilize-fence", GUARD_SCRIPT)
+GUARD_EXPECT = {"agents": 1, "tool_steps": 0}
+GUARD_OWN = ("probed",)
+# What each write of the probe would leave in the clone, had it landed.
+GUARD_WRITE = "guard-probe-write.txt"
+GUARD_ECHO = "guard-probe-echo.txt"
+GUARD_KEY = "guard.probe"
+GUARD_SUBJECT = b"guard-probe"
+GUARD_SCRATCH = "guard-probe-scratch.txt"
+GUARD_HUMAN = "FIRST, on a fresh root: before part 1, and before anything else is run in the clone. Before it, check: guard.snapshot.same is true. One agent, no gate, a few minutes. After it, check again: under guard, every write of the clone refused, the scratch file written, the snapshot the same, and fenced true. WHERE A WRITE LANDED, OR THE SNAPSHOT MOVED, THE GUARD DID NOT HOLD: the root is given up, and nothing else is run in it. Interrupt the session where its agent's first attempt, the write with the file tool, is not refused"
+
 # HOW MANY AGENTS AN ACT LAUNCHES WHERE EVERY AGENT ENDS WELL, and how many of them are
 # one-command steps of dev/stabilize-step — counted, and held to the clone's own harness
 # under the runtime's stand-in by this tool's suite, act by act, FOR THE OPENING AS IT IS
@@ -1444,6 +1495,104 @@ def acts_of(run_name, root, script, queue, items):
     return acts, rulings
 
 
+def snapshot_of(clone, env):
+    """THE CLONE AS THE WRITE GUARD'S PROBE MUST LEAVE IT, read with no lock: its head, its
+    tree and index as `git status` sees them, its configuration, its hooks, every ref that is
+    no remote-tracking ref, and its reflogs — each a hash. Read at the setup, and by `check`
+    for as long as the run shows nothing done."""
+    git_dir = os.path.join(clone, ".git")
+
+    def hashed(*paths):
+        digest = hashlib.sha256()
+        for path in paths:
+            for directory, subdirectories, files in os.walk(path) if os.path.isdir(path) else [(os.path.dirname(path), [], [os.path.basename(path)])]:
+                subdirectories.sort()
+                for name in sorted(files):
+                    at = os.path.join(directory, name)
+                    if os.path.isfile(at) and not os.path.islink(at):
+                        with open(at, "rb") as file:
+                            digest.update(os.path.relpath(at, git_dir).encode("utf-8") + b"\0" + oct(os.lstat(at).st_mode).encode("ascii") + b"\0" + hashlib.sha256(file.read()).digest())
+        return digest.hexdigest()
+
+    said = lambda *argv: made(["git"] + list(argv), clone, env=env, advice=CHECK_ADVICE)
+    refs = "\n".join(line for line in lines(said("for-each-ref", "--format=%(refname) %(objectname)")) if not line.startswith("refs/remotes/"))
+    return {
+        "head": said("rev-parse", "HEAD"),
+        "status": hashlib.sha256(said(*STATUS_READ).encode("utf-8")).hexdigest(),
+        "config": hashed(os.path.join(git_dir, "config")),
+        "hooks": hashed(os.path.join(git_dir, "hooks")),
+        "refs": hashlib.sha256(refs.encode("utf-8")).hexdigest(),
+        "reflog": hashed(os.path.join(git_dir, "logs", "HEAD"), os.path.join(git_dir, "logs", "refs", "heads")),
+    }
+
+
+def guard_of(run_name, root, clone, scratch):
+    """THE WRITE GUARD'S PROBE, as the line names it — act `part-0` — and its prompt file,
+    WRITTEN: the probe's script by its path in the clone, its argument object, its prompt
+    file and its return file, how many agents it launches, what the human does around it,
+    and the clone's snapshot it is held to."""
+    guard = {
+        "act": GUARD_ACT,
+        "script": os.path.join(clone, GUARD_SCRIPT),
+        "args": {"run": run_name, "clone": clone, "scratch": scratch},
+        "prompt": os.path.join(root, PROMPTS, GUARD_ACT + ".md"),
+        "return": os.path.join(root, "results", GUARD_ACT + ".json"),
+        "expect": dict(GUARD_EXPECT),
+        "human": GUARD_HUMAN,
+        "snapshot": snapshot_of(clone, callers_env()),
+    }
+    with open(guard["prompt"], "x", encoding="ascii") as file:
+        file.write(PROMPT % {"script": guard["script"], "args": json.dumps(guard["args"]), "returns": guard["return"]})
+    return guard
+
+
+def guard_read(kept, clone, env, scratch, unmoved):
+    """WHAT `check` SAYS OF THE WRITE GUARD'S PROBE (`guard`): its return, and what the clone
+    shows — each write by what it would have left, the scratch file by whether it is there,
+    and, while the run shows nothing done (`unmoved`), the clone's snapshot against the
+    setup's. `fenced`: true where the clone holds no write of the probe's, the snapshot is
+    the same, the scratch file was written and the agent says its plain call ran with no
+    fence; false where a write landed or the snapshot moved; null otherwise. None for a
+    root set up before the guard."""
+    guard = kept.get("guard")
+    if not isinstance(guard, dict) or not isinstance(guard.get("snapshot"), dict):
+        return None
+    there, status, _, _ = returned(guard["return"])
+    attempts = None
+    if status == "probed":
+        with open(guard["return"], encoding="utf-8") as file:
+            said = json.load(file).get("attempts")
+        if isinstance(said, list):
+            attempts = [{name: entry.get(name) for name in ("attempt", "exit", "refused_by", "banner", "said")} for entry in said if isinstance(entry, dict)]
+    logged = b""
+    for log in (os.path.join(clone, ".git", "logs", "HEAD"),):
+        if os.path.isfile(log):
+            with open(log, "rb") as file:
+                logged = file.read()
+    configured = run(["git", "config", "--local", "--get", GUARD_KEY], clone, env)
+    scratched = any(GUARD_SCRATCH in files for _, _, files in os.walk(scratch))
+    disk = {
+        "write": "landed" if os.path.lexists(os.path.join(clone, GUARD_WRITE)) else "refused",
+        "echo": "landed" if os.path.lexists(os.path.join(clone, GUARD_ECHO)) else "refused",
+        "commit": "landed" if GUARD_SUBJECT in logged else "refused",
+        "config": "landed" if configured.code == 0 else "refused",
+        "scratch": "written" if scratched else "absent",
+    }
+    snapshot = None
+    if unmoved:
+        now = snapshot_of(clone, env)
+        snapshot = {"same": now == guard["snapshot"], "moved": [name for name in sorted(now) if now[name] != guard["snapshot"].get(name)]}
+    landed = [name for name in ("write", "echo", "commit", "config") if disk[name] == "landed"]
+    plain = next((entry for entry in attempts or [] if entry.get("attempt") == "record"), None)
+    if landed or (snapshot and not snapshot["same"]):
+        fenced = False
+    elif snapshot and disk["scratch"] == "written" and plain and plain.get("exit") == 0 and plain.get("refused_by") == "none" and plain.get("banner") is False:
+        fenced = True
+    else:
+        fenced = None
+    return {"act": GUARD_ACT, "returned": there, "status": status, "own": None if status is None else status in GUARD_OWN, "attempts": attempts, "disk": disk, "landed": landed, "snapshot": snapshot, "fenced": fenced}
+
+
 def expected(items):
     """How many agents the first invocation launches where each ends well, and how many
     of them are one-command steps of the step tool."""
@@ -1472,6 +1621,10 @@ def setup(args, facts):
     if queue is not None:
         wrote = the_commits_tool(candidate)
         queue["condition"] = stated(candidate)
+        # THE WRITE GUARD, AND ITS PROBE: a root of the parts runs act `part-0` first.
+        lacks = [path for path in GUARD_NEEDS if not holds(candidate, path)]
+        if lacks:
+            refuse("unfit", "the commit named, %s, lacks %s: a root of the parts runs the write guard's probe first, and that commit cannot run it" % (candidate, ", ".join(lacks)), "", "name a commit that holds the write guard, the fence and its probe")
     if os.path.lexists(os.path.join(ROOT, run_dir)) or holds(candidate, run_dir):
         refuse("taken", "the repository holds `%s`: the canary's run exists in its clone only, so that a stage launched from the wrong directory finds no such run" % run_dir, "", "name a run the repository does not hold")
     branches = lines(source("for-each-ref", "--format=%(refname)", "refs/heads/" + loop, "refs/remotes/*/" + loop).out)
@@ -1570,7 +1723,7 @@ def setup(args, facts):
         # else of the canary stands: a root that holds prompts holds a run that is fresh.
         os.mkdir(os.path.join(root, PROMPTS))
         acts, rulings = acts_of(run_name, root, facts["script_path"], queue, items)
-        facts.update(prompts=os.path.join(root, PROMPTS), acts=acts, rulings=rulings)
+        facts.update(prompts=os.path.join(root, PROMPTS), acts=acts, rulings=rulings, guard=guard_of(run_name, root, clone, scratch))
         # WHICH TOOL WROTE THIS OPENING: the file that ran, by the sha256 of its bytes — and
         # it is the file the commit named holds at this tool's path, which is the one the
         # clone holds: a setup under the switch whose tool is another was refused before
@@ -2024,6 +2177,7 @@ def parts_read(root, kept, state, position):
         "trail": trail,
         "pending_paths": pending,
         "acts": acts,
+        "guard": guard_read(kept, clone, env, os.path.join(root, DIRS[2]), not unread and begun == 0 and not trail),
         "ruling": None if unread else ruling_of(kept, position, budget, of_the_state["queue"], held, bool(batch)),
         "tool": {"wrote": wrote, "commit": commit, "reads": reads, "same": wrote == commit == reads},
         "sheet": [{"plan": plant["plan"], "key": plant["key"], "class": "%s seed" % plant["kind"], "returns": plant["returns"]} for plant in PLANTS],

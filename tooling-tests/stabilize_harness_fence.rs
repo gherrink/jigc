@@ -1494,8 +1494,8 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         .find("const gate = await hold({ name: rec.hold, sequence: true, kind: 'gate', flags: '--run ' + v.run,")
         .expect("a record step's gate is held by the tool, under the record's own name, in sequence");
     let commit = step
-        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead))")
-        .expect("a record step's commit is the tool's `record` act, handed the gate's file, what was composed and the commit the stage began on");
+        .find("await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead, stageFence))")
+        .expect("a record step's commit is the tool's `record` act, handed the gate's file, what was composed, the commit the stage began on and the guarded state it began with");
     assert!(
         executor < gate && gate < commit && step.contains("recordFault(r, rec.expect)"),
         "the executor, then the gate, then the commit, then the line held to what was composed"

@@ -100,6 +100,9 @@
 //   probe:required:*  milestone-code-reviewer  the return the scenario scripts, with the
 //                                  hash of the file on its binary line, measured; no
 //                                  report — a probe that hands its reviewer one fails the run
+//   guard-probe  milestone-e2e-tester  the write guard's probe (dev/stabilize-guard-probe.js):
+//                                  the attempts the scenario scripts, returned — no attempt
+//                                  is driven, and no report is written
 //   probe:payload:*   build-executor  the payload written as the prompt says, then the
 //                                  prompt's `dev/stabilize-probe hash`, its line relayed;
 //                                  a prompt that names the record script or a gate fails
@@ -630,6 +633,16 @@ function reporter(label, prompt, opts) {
   return back
 }
 
+// ---- the write guard's probe (dev/stabilize-guard-probe.js): its one agent ----
+// What its six attempts did is the scenario's to say: the stand-in has no hook and no fence,
+// and drives none of the attempts. It returns the scripted attempts, and the suite holds the
+// script to launching this one agent, of a type the guard fences.
+function guardProbe(label) {
+  if (!(label in scripted)) fail('no agent is scripted for the label `' + label + '`')
+  used.add(label)
+  return Object.assign({}, scripted[label])
+}
+
 // ---- a verifier, in a run with a queue: it files its verdict ----
 // Under a prompt that spells no `dev/stabilize-record verdict` call it is the other path's: a
 // scripted reporter, whose verdict goes back in its return.
@@ -693,6 +706,7 @@ const KINDS = [
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
   { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
   { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },
+  { labels: /^guard-probe$/, agentType: 'milestone-e2e-tester', play: guardProbe },
 ]
 
 // ---- what a schema asks of a return ----

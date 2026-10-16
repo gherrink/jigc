@@ -189,6 +189,7 @@ const REFUSALS: &[(&str, i32)] = &[
     ("taken", 28),
     ("missing", 29),
     ("build", 30),
+    ("fence-moved", 31),
 ];
 
 fn repo_root() -> PathBuf {
@@ -843,7 +844,7 @@ fn git_state_reads_the_state_a_stage_starts_from() {
             "act": "git-state", "status": "ready", "found": [], "finished": [], "owed": [],
             "branch": LOOP, "head": opening, "loop_head": opening, "remote_head": opening,
             "opening": opening, "untracked": [report, scope],
-            "pending": null, "sha256": line["sha256"],
+            "pending": null, "fence": line["fence"], "sha256": line["sha256"],
         })
     );
     assert_eq!(
@@ -864,8 +865,11 @@ fn git_state_reads_the_state_a_stage_starts_from() {
             &format!("rev-parse {LOOP}"),
             "rev-parse HEAD",
             &format!("rev-parse {LOOP}"),
+            "rev-parse --path-format=absolute --git-common-dir --git-dir --git-path hooks",
+            "for-each-ref --format=%(refname) %(objectname)",
+            "rev-parse --symbolic-full-name HEAD",
         ]),
-        "the commands of the read, in its order: the branch, git's lock, the tree, the remote, the path-class assert, and what the remote lacks — nothing, here"
+        "the commands of the read, in its order: the branch, git's lock, the tree, the remote, the path-class assert, what the remote lacks — nothing, here — and the guarded state's two reads of git"
     );
 }
 
@@ -5134,6 +5138,119 @@ fn a_branch_that_moved_under_the_stage_is_refused() {
     assert_eq!(rig.rev("HEAD~1"), tuning);
 }
 
+/// **A write past the guard while the stage ran is refused at its record** (DECISIONS.md →
+/// *2026-10-16 — The write guard of a stabilization run*: the guarded state is the write
+/// guard's backstop). The first read prints the guarded state (`fence`), and the commit step
+/// handed it (`--fence`) reads it again before it stages anything: what no step of a stage
+/// writes before its record — the configuration, a hook, a local ref, a reflog's newest
+/// entry — moved, so something wrote the repository past the guard, and the record is
+/// refused `fence-moved`, the human's, nothing committed or undone. The canary's driver did
+/// exactly the third mover: a commit, and a reset back to where the head stood — which
+/// `head-moved` cannot see. And it MUST NOT REFUSE a fence that did not move: the record is
+/// made, and its line prints the guarded state after its commit, which is what the stage's
+/// next first read prints too.
+#[test]
+fn a_write_past_the_guard_while_the_stage_ran_is_refused_at_its_record() {
+    let movers: &[(&str, &[&[&str]])] = &[
+        (
+            "the configuration",
+            &[&["config", "--local", "guard.probe", "1"]],
+        ),
+        // A tag: a ref git keeps no reflog of, so that only `refs` sees it.
+        ("a tag", &[&["tag", "stray"]]),
+        ("a local branch", &[&["branch", "stray"]]),
+        (
+            "a commit, and a reset back to where the head stood",
+            &[
+                &["commit", "--allow-empty", "-q", "-m", "a stray"],
+                &["reset", "-q", "--soft", "HEAD~1"],
+            ],
+        ),
+    ];
+    for (what, commands) in movers {
+        let stage = Stage::new("fence-moved");
+        let rig = &stage.rig;
+        let began = rig.rev("HEAD");
+        let read = stage.git_state();
+        let fence = read.done("git-state", "ready")["fence"]
+            .as_str()
+            .expect("the first read prints the guarded state")
+            .to_string();
+        assert!(
+            fence.len() == 64 && fence.chars().all(|c| c.is_ascii_hexdigit()),
+            "{what}: a sha256: {}",
+            read.raw
+        );
+        stage.apply(SUBJECT);
+        let pending = rig.status();
+        for command in *commands {
+            rig.git(command);
+        }
+        assert_eq!(
+            (rig.rev("HEAD"), rig.status()),
+            (began.clone(), pending.clone()),
+            "{what}: the head and the tree are as they were — only the guarded state saw it"
+        );
+        let seen = stage.record_with(&["--head", &began, "--fence", &fence]);
+        let said = seen.refused("fence-moved");
+        assert!(
+            said["halt"]["root_cause"]
+                .as_str()
+                .is_some_and(|cause| cause.contains(&fence)),
+            "{what}: the fence the stage began with is named: {}",
+            seen.raw
+        );
+        assert_ne!(said["fence"], json!(fence), "{what}: and the one it is now");
+        assert_eq!(
+            (rig.rev("HEAD"), rig.status()),
+            (began.clone(), pending),
+            "{what}: nothing was committed or undone"
+        );
+    }
+    // A hook written into the hooks directory moves it too.
+    let stage = Stage::new("fence-moved");
+    let rig = &stage.rig;
+    let began = rig.rev("HEAD");
+    let fence = stage.git_state().done("git-state", "ready")["fence"]
+        .as_str()
+        .expect("a fence")
+        .to_string();
+    stage.apply(SUBJECT);
+    let hooks = format!(
+        "{}/hooks",
+        rig.git(&["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    );
+    fs::create_dir_all(&hooks).expect("the hooks directory");
+    fs::write(
+        Path::new(&hooks).join("post-commit"),
+        "#!/bin/sh
+",
+    )
+    .expect("a hook");
+    stage
+        .record_with(&["--head", &began, "--fence", &fence])
+        .refused("fence-moved");
+    fs::remove_file(Path::new(&hooks).join("post-commit")).expect("the hook taken back");
+    // MUST NOT REFUSE: the guarded state as it was — the record is made, and prints the
+    // guarded state after its commit, which the next first read prints too.
+    let seen = stage.record_with(&["--head", &began, "--fence", &fence]);
+    let line = seen.done("record", "recorded");
+    let after = line["fence"]
+        .as_str()
+        .expect("the record prints the guarded state after its commit")
+        .to_string();
+    assert_ne!(
+        after, fence,
+        "its own commit moved the reflog's newest entry"
+    );
+    rig.git(&["push", "-q", "origin", LOOP]);
+    assert_eq!(
+        stage.git_state().done("git-state", "ready")["fence"],
+        json!(after),
+        "the next first read prints what the record printed"
+    );
+}
+
 /// **An applied batch a hand changed is the human's — and the refusal names the command**
 /// (the plan's cell *a file of the batch changed since*): the one arrival state of the
 /// record act the tool neither finishes nor undoes. Driven as the refusal spells it: the
@@ -5406,6 +5523,10 @@ const DRIVEN: &[(&str, &str)] = &[
     (
         "head-moved",
         "a_branch_that_moved_under_the_stage_is_refused",
+    ),
+    (
+        "fence-moved",
+        "a_write_past_the_guard_while_the_stage_ran_is_refused_at_its_record",
     ),
     ("committed", "discard_refuses_a_batch_that_is_in_a_commit"),
     ("recorded", "a_second_identical_call_finds_what_is_done"),
@@ -6136,8 +6257,21 @@ const ALLOWED: &[(&str, &[&str])] = &[
     (
         "rev-parse",
         // `--symbolic-full-name`: the push holds a branch's name to the branch's own ref.
-        &["--verify", "--quiet", "--git-path", "--symbolic-full-name"],
+        // `--path-format=absolute --git-common-dir --git-dir`: where the guarded state is
+        // read from (the tool's header: THE GUARDED STATE).
+        &[
+            "--verify",
+            "--quiet",
+            "--git-path",
+            "--symbolic-full-name",
+            "--path-format=absolute",
+            "--git-common-dir",
+            "--git-dir",
+        ],
     ),
+    // Every ref that is no remote-tracking ref, with what it names: the guarded state's
+    // `refs`, read.
+    ("for-each-ref", &["--format=%(refname) %(objectname)"]),
     (
         "rev-list",
         &[
@@ -6183,6 +6317,9 @@ const OPENS: &[(&str, usize)] = &[
         1,
     ),
     ("with open(path, \"rb\") as file:", 1),
+    // The guarded state's files — the configuration, the hooks, the info files, the
+    // reflogs — read, and never written.
+    ("with open(guarded_file, \"rb\") as file:", 1),
     ("with open(found, \"rb\") as file:", 1),
     (
         "with open(own, \"xb\", opener=lambda path, flags: os.open(path, flags | os.O_NOFOLLOW, mode)) as file:",

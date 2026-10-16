@@ -911,6 +911,7 @@ const STEP_REFUSALS = {
   'unvetted': { whose: 'the human\'s at a push; at a record\'s commit, the next attempt\'s', leaves: 'a file, a subject or a commit is not what `dev/stabilize-record` would have written. At a record\'s commit nothing is committed and the batch is taken back; at a push nothing is pushed, and the commit is local and the human\'s to take back or rewrite — `dev/stabilize-record vet --range -- <branch> --not --remotes=origin` names every commit and place again' },
   'did-not-run': { whose: 'the orchestrator\'s', leaves: 'a scanner could not run — gitleaks, or the denylist: that is a refusal and never a pass, and everything is as it was. The scanner is provided, and the stage invoked again' },
   'locked': { whose: 'the orchestrator\'s', leaves: 'git\'s own lock stands in the repository, and the tool never removes one. With no git process running there, the orchestrator removes the file the step\'s own line names and invokes the stage again; while one runs, once it is done' },
+  'fence-moved': { whose: 'the human\'s', leaves: 'THE REPOSITORY WAS WRITTEN PAST THE WRITE GUARD while the stage ran — its configuration, a hook, an info file, a local ref or a reflog\'s newest entry is not what the stage\'s first read saw, and no step of a stage writes any of them before its record: nothing was committed or undone, and the batch stays applied. The human finds what moved — `git reflog -5`, `git config --local --list`, the hooks directory, `git for-each-ref` — puts back what must be put back, and invokes the stage again: its first read takes the guarded state as it then stands' },
   'head-moved': { whose: 'the orchestrator\'s', leaves: 'the branch is not at the commit the stage began on — somebody committed while it ran: nothing was committed or undone, and the batch stays applied. The stage is invoked again: its first read meets that commit, then gates the batch on the tree as it now stands and commits it there' },
   'foreign-commit': { whose: 'its author\'s', leaves: 'the loop branch is ahead of its remote by a commit that changes a path outside the run\'s directory, or by a merge: some task\'s commit and no record\'s. It is NEITHER THE HUMAN\'S NOR A STAGE\'S: its author — or the orchestrator, for that task — pushes it by name, `git push origin <branch>`, behind that task\'s own gate, and the stage is invoked again. Nothing was pushed, not the records beside it either' },
   'committed': { whose: 'the orchestrator\'s', leaves: 'the applied batch is in a commit already and is not taken back: the next first read settles it' },
@@ -1008,6 +1009,17 @@ function heldSaid(job) {
 // release_pipeline_fence.rs holds it there) — for the two roles that have no definition and
 // so no paragraph of their own. The fence holds this copy to the definitions' bytes.
 const NEVER = "**Never push to or merge into `main`, force-push any branch, merge a pull request, push a tag, approve or reject a deployment, or yank a crate.** Those acts are the human's ([release.md](../../implementation/release.md) → *What agents may not do*). You may merge an increment branch into its milestone branch locally, and push `milestone/*`, `fix/*` and `work/*` branches — always by name (`git push origin <branch>`), never a bare `git push`, and never forced (no `--force`, `--force-with-lease`, `-f` or `+` refspec). `.claude/settings.json` denies the commands that perform the human's acts; a denial is the answer, never something to route around."
+
+// THE WRITE GUARD, AS A PROMPT SAYS IT (DECISIONS.md -> 2026-10-16, "The write guard of a
+// stabilization run"; dev/stabilize-guard). Every agent of a run but its git steps and its
+// fixers is fenced by a hook: a file-tool write into the repository is refused, a call of
+// the three tools is taken only as one plain invocation typed alone from the repository's
+// root, and every other command runs under the write fence. The hook says so where it
+// refuses; this sentence says it before, in every role's prompt (`opening`, and the two
+// prompts without a definition), so that the call is typed in the shape that is taken the
+// first time — the staged canary's verifiers typed a tool's call after a change of
+// directory and before an echo of its status, every time.
+const GUARD = 'THIS RUN\'S WRITE GUARD: no agent of it but its git steps and its fixers writes this repository or its git directory. A file you write goes under your scratch root, and what reaches the run\'s record reaches it through the record script\'s one plain call. A call of ' + STEP_TOOL + ', ' + RECORD_TOOL + ' or ' + PROBE_TOOL + ' is taken only as ONE plain invocation, typed by itself, from the repository\'s root, exactly as this prompt spells it — nothing before it and nothing after it on the line, its exit status its own; any other command of yours runs under the write fence, where every write under this repository is refused.'
 
 // ---- the roles: who is launched, and which labelled lines its definition binds on ----
 // `drives` is a role that is handed the binary and returns the hash it asserted — every
@@ -2188,6 +2200,7 @@ function recordThen(run, branch, word, discarded) {
   const takeBack = ' To take the batch back instead — the orchestrator\'s decision, a subagent\'s act — ' + discardCommand(run, branch) + ' asks git first, puts every table back as it was before the record step, and keeps the reports and the round\'s scope.'
   if (word === 'gate-red') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree. Invoke the stage again: that invocation runs the full gate on the batch once more, commits and pushes it, and does nothing else.' + takeBack
   if (word === 'unvetted') return stands + (discarded === true ? ' THE BATCH IS TAKEN BACK ALREADY, and a report or a scope that was no such file has left the tree: nothing is pending, and no discard is asked for. Invoke the stage again: it reads the state as it stands and works the next attempt.' : ' The batch was NOT taken back — a file of it is in a commit already — and it is the human\'s: the step\'s own line says which file.')
+  if (word === 'fence-moved') return stands + ' Nothing was committed or undone: THE BATCH IS STILL APPLIED — AND SOMETHING WROTE THE REPOSITORY PAST THE WRITE GUARD while the stage ran: its configuration, a hook, an info file, a local ref or a reflog\'s newest entry moved. It is the human\'s: what moved is found and put back first. Then invoke the stage again: its first read takes the repository as it then stands, gates the batch and commits it.' + takeBack
   if (word === 'head-moved') return stands + ' Nothing was committed or undone: THE BATCH IS STILL APPLIED. Invoke the stage again: its first read meets the commit somebody made while the stage ran — one the remote lacks is its author\'s to push — then gates the batch on the tree as it now stands, and commits it there.' + takeBack
   if (word === 'no-gate') return stands + ' THE BATCH IS STILL APPLIED AND NOT COMMITTED — the tables written, held by the record script as pending, and no dirty tree: its gate left no verdict, and no commit step ran. Invoke the stage again: that invocation holds the full gate on the batch once more, under the next name, commits and pushes it, and does nothing else.' + takeBack
   // NO NAME IS LEFT FOR THE GATE OF A PENDING BATCH (`hold`: `exhausted`). Such a gate is held
@@ -2560,10 +2573,14 @@ function pushPrompt(v, branch, record) {
 // ran on the tree with the records shows nothing red that the candidate's own gate did not.
 // The act is handed how many calls and checks the batch was composed of, and refuses a
 // batch that is another's; the scratch root, under which a file that is no report is set
-// aside; and `head`, THE COMMIT THE STAGE BEGAN ON — the record is committed on it or not at
-// all, and it is what lets the step, asked again, answer what it answered.
-function recordCommitPrompt(v, branch, gate, expect, head) {
-  return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks + ' --scratch ' + v.scratch + (head ? ' --head ' + head : '') + ' ' + digestFlag(v.scratch))
+// aside; `head`, THE COMMIT THE STAGE BEGAN ON — the record is committed on it or not at
+// all, and it is what lets the step, asked again, answer what it answered; and `fence`, THE
+// GUARDED STATE as the stage's first read printed it (dev/stabilize-step: THE GUARDED STATE) —
+// the write guard's backstop: what no step of a stage writes before this commit, and what a
+// write past the guard moves, so that the record is refused (`fence-moved`) and halts the
+// stage instead of committing beside it.
+function recordCommitPrompt(v, branch, gate, expect, head, fence) {
+  return stepPrompt('the ONE commit of a record step of `' + v.run + '` on `' + branch + '`: the applied batch, held to the gate that ran on it', 'record', '--branch ' + branch + ' --run-dir ' + runDir(v.run) + ' --gate ' + gate + ' --calls ' + expect.calls + ' --checks ' + expect.checks + ' --scratch ' + v.scratch + (head ? ' --head ' + head : '') + (fence ? ' --fence ' + fence : '') + ' ' + digestFlag(v.scratch))
 }
 // wordsText — THE CANONICAL FORM OF A COMPOSED RECORD'S PLAIN WORDS, as the record script
 // defines it (dev/stabilize-record compose: THE CANONICAL FORM — its ONE definition; this is
@@ -2645,7 +2662,7 @@ function syncMainPrompt(run, scratch) {
 
 // ---- the agents' prompts — thin: the role and its contract live in the definition ----
 function opening(v) {
-  return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is ' + typed(RECORD_TOOL, 'state --run ' + v.run) + '.'
+  return 'The run\'s opening record is `' + runDir(v.run) + '/opening.md`; its state is ' + typed(RECORD_TOOL, 'state --run ' + v.run) + '. ' + GUARD
 }
 // THE PREFLIGHT BUILDS NOTHING AND HOLDS NO GATE (the second repair plan's task K11): the
 // two binaries, the candidate's gate and every held check are commands `dev/stabilize-step`
@@ -2861,7 +2878,7 @@ function proposalPrompt(ctx, name, fork, advocate, built) {
     'HOW. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`: clone commit ' + built.candidate.sha + ' (`git clone` this repository there and check that commit out, detached — never the working tree, never a branch of this repository), apply the proposal as written, build it there (`cargo build --release --locked`, a target directory of its own), and run every next step the proposal names, each as printed, each exit status read bare. Where the proposal names a step you cannot run, say so in `undriven`, with why.',
     'THE BEFORE of each step is the candidate itself, and its hash is ASKED OF THE TOOL, by ONE plain call typed as it stands, and never computed by a command of your own: ' + typed(STEP_TOOL, 'hash --scratch ' + ctx.scratch + ' --file ' + below(ctx.scratch, built.candidate.binary)) + ' prints ONE line of JSON whose `content_sha256` must be ' + built.candidate.sha256 + ', and you return that hash as `asserted_sha256`.',
     'WHAT YOU RETURN. One entry of `steps` per next step: the command, what it printed and exited, and `agrees` — whether that is what the advocate reported. `holds` is true only when every step ran as the proposal says. What you hit that is not this proposal goes in `left_open`.',
-    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report. ' + reportHandOver(ctx, name),
+    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report. ' + reportHandOver(ctx, name) + ' ' + GUARD,
     NEVER,
   ].join('\n')
 }
@@ -2881,7 +2898,7 @@ function crossModelPrompt(ctx, name, unit) {
     'HOW. `command -v ' + tool + '` must answer — if it does not, halt and say so: nothing is installed. In a directory of your own, minted with `mktemp -d` under `' + ctx.scratch + '`, write the pass\'s prompt to a file: the row\'s brief (the `brief` of the item\'s row, which ' + typed(RECORD_TOOL, itemRead(ctx.run, unit.item)) + ' prints — read it, and hand over what it says to review), the door list below, and the instruction to return each claim with its `file:line` and the door it stands at. Then run `' + tool + ' review - < <the prompt file> > <an output file> 2>&1`, its exit status read bare, and read the output file.',
     'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead` set to true, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
     doorLines(ctx, unit),
-    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads. ' + reportHandOver(ctx, name),
+    'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads. ' + reportHandOver(ctx, name) + ' ' + GUARD,
     NEVER,
   ].join('\n')
 }
@@ -3591,7 +3608,7 @@ function selfTest() {
   check('a digest of any act with one value slipped is read as the tool printed it', asDigest(waited.replace('"step":"fmt","exit":0', '"step":"fmt","exit":1'), 'hold-wait').status === 'done' && asDigest(waited.replace('"step":"fmt","exit":0', '"step":"fmt","exit":1'), 'hold-wait').facts.steps[2].exit === 0 && !!asDigest(waited.replace('"step":"test","exit":1', '"step":"test","exit":0'), 'hold-wait').relay)
 
   // HOW A STEP CAN END: every word has its row, and says whose the state is.
-  check('every refusal of the tool has a row that says whose it is and what leaves it', Object.keys(STEP_REFUSALS).length === 29 && Object.keys(STEP_REFUSALS).every((word) => /^[a-z][a-z-]*$/.test(word) && isText(STEP_REFUSALS[word].whose) && isText(STEP_REFUSALS[word].leaves) && stepRefusal(word).startsWith('`' + word + '` — ' + STEP_REFUSALS[word].whose + ': ')))
+  check('every refusal of the tool has a row that says whose it is and what leaves it', Object.keys(STEP_REFUSALS).length === 30 && Object.keys(STEP_REFUSALS).every((word) => /^[a-z][a-z-]*$/.test(word) && isText(STEP_REFUSALS[word].whose) && isText(STEP_REFUSALS[word].leaves) && stepRefusal(word).startsWith('`' + word + '` — ' + STEP_REFUSALS[word].whose + ': ')))
   check('a word the table lacks is said to be one', stepRefusal('no-such-word').includes('has no row') && !stepRefusal('locked').includes('has no row'))
   check('a commit that is no record\'s is its author\'s, a lock the orchestrator\'s, and what would not have been written the human\'s', STEP_REFUSALS['foreign-commit'].whose === 'its author\'s' && stepRefusal('foreign-commit', 'fix/rc24-tier1').includes('`git push origin fix/rc24-tier1`') && STEP_REFUSALS.locked.whose === 'the orchestrator\'s' && STEP_REFUSALS.locked.leaves.includes('never removes') && STEP_REFUSALS['head-moved'].whose === 'the orchestrator\'s' && STEP_REFUSALS.unvetted.whose.startsWith('the human\'s at a push') && stepRefusal('unvetted', 'fix/rc24-tier1').includes('`dev/stabilize-record vet --range -- fix/rc24-tier1 --not --remotes=origin`'))
   const discards = '`dev/stabilize-step discard --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1`'
@@ -3600,7 +3617,7 @@ function selfTest() {
   check('a push that failed is owed to the next first read — but never one refused as unvetted, and not beside a commit that is no record\'s', pushThen('fix/rc24-tier1', null).includes('THE PUSH IS OWED') && pushThen('fix/rc24-tier1', 'push-rejected').includes('its first read finds the record the remote lacks') && pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS NOT OWED TO ANY LATER INVOCATION') && !pushThen('fix/rc24-tier1', 'unvetted').includes('THE PUSH IS OWED:') && pushThen('fix/rc24-tier1', 'foreign-commit').includes('`git push origin fix/rc24-tier1`') && !pushThen('fix/rc24-tier1', 'foreign-commit').includes('THE PUSH IS OWED:'))
   check('a step that returned nothing is asked for again as its one command, and no agent of a step is told to look around', RUN_AGAIN.includes('Run the ONE command above again') && !RUN_AGAIN.includes('git status') && !RUN_AGAIN.includes('git log') && LOOK_AGAIN.includes('the tree\'s status') && !LOOK_AGAIN.includes('`git ') && RUN_AGAIN !== LOOK_AGAIN)
   check('an invocation that only looks says so to its first read, and to no other step', gitStatePrompt(base, true).includes(' --product crates --look --digest /tmp/scratch-1`') && !steps['git-state'].includes('--look') && Object.keys(steps).every((act) => !steps[act].includes('--look')))
-  check('a record\'s push on the loop branch publishes records only, and its commit is held to the commit the stage began on', pushPrompt(base, 'fix/rc24-tier1', true).includes(' push --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --digest /tmp/scratch-1`') && !steps.push.includes('--run-dir') && recordCommitPrompt(base, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }, 'c'.repeat(40)).includes(' --calls 3 --checks 2 --scratch /tmp/scratch-1 --head ' + 'c'.repeat(40) + ' --digest /tmp/scratch-1`') && !steps.record.includes('--head'))
+  check('a record\'s push on the loop branch publishes records only, and its commit is held to the commit the stage began on', pushPrompt(base, 'fix/rc24-tier1', true).includes(' push --branch fix/rc24-tier1 --run-dir completions/artifacts/rc24-tier1 --digest /tmp/scratch-1`') && !steps.push.includes('--run-dir') && recordCommitPrompt(base, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }, 'c'.repeat(40)).includes(' --calls 3 --checks 2 --scratch /tmp/scratch-1 --head ' + 'c'.repeat(40) + ' --digest /tmp/scratch-1`') && !steps.record.includes('--head') && recordCommitPrompt(base, 'fix/rc24-tier1', '/tmp/scratch-1/record/x/gate.txt', { calls: 3, checks: 2 }, 'c'.repeat(40), 'd'.repeat(64)).includes(' --head ' + 'c'.repeat(40) + ' --fence ' + 'd'.repeat(64) + ' --digest /tmp/scratch-1`') && !steps.record.includes('--fence') && STEP_REFUSALS['fence-moved'].whose === 'the human\'s' && recordThen('rc24-tier1', 'fix/rc24-tier1', 'fence-moved').includes('PAST THE WRITE GUARD'))
 
   // What every return names of the state: what nothing can hold, and the file.
   const namedState = { round: 2, never_selected: ['row-b'], uncovered: [{ round: 1, doors: 3 }, { round: 2, doors: 1 }], document: { file: '/tmp/scratch-1/state/test-2.json', sha256: 'f'.repeat(64) }, ledger: 60, blockers: 2, human_list: 5, untriaged: { count: 1, why: [{ why: 'ungraded', count: 1 }] } }
@@ -3970,6 +3987,11 @@ function pushHalt(pushed, branch, what) {
 // (`--head`). Null in the `fix` stage's own records, which follow its fixers' commits: which
 // head those are held to is that half's repair.
 let stageHead = null
+// THE GUARDED STATE the stage began with, as its first read printed it, and after a record of
+// this invocation as that record's commit step printed it: what the next record's commit
+// step is held to (`--fence`; dev/stabilize-step: THE GUARDED STATE). Null where a read
+// printed none, and in the `fix` stage's own records, as `stageHead` is.
+let stageFence = null
 // recordStep — a record step, whole, in three acts: (1) the executor applies the batch — or
 // none runs, where an earlier invocation applied it (`rec.text` is null); (2) THE FULL GATE
 // on the tree with the records, a command the tool holds (`hold`, under a name of its own);
@@ -3993,9 +4015,12 @@ async function recordStep(label, branch, rec) {
   const gate = await hold({ name: rec.hold, sequence: true, kind: 'gate', flags: '--run ' + v.run, what: 'the full gate on the tree with the records', phase: 'Record' })
   if (gate.exhausted) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: false, at: 'gate', silent: false, held: heldSaid(gate), then: recordThen(v.run, branch, rec.pending ? 'no-name' : 'no-gate') }
   if (!HELD_TAKES.record.includes(gate.ends)) return { fault: heldFault('the record\'s gate', gate) + ' Nothing was committed.', result: null, transient: gate.ends === 'unread' || gate.ends === 'running', at: 'gate', silent: gate.silent === true, held: heldSaid(gate), then: recordThen(v.run, branch, 'no-gate') + (heldThen(v.scratch, gate) || '') }
-  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead))
+  const r = await toolStep('record:' + label, 'Record', 'record', recordCommitPrompt(v, branch, gate.output, rec.expect, stageHead, stageFence))
   const found = recordFault(r, rec.expect)
-  if (!found) return { result: r }
+  if (!found) {
+    if (stageFence) stageFence = SHA256_RE.test(String(r.fence)) ? String(r.fence) : null
+    return { result: r }
+  }
   const fault = found.replace('<branch>', branch)
   const word = r && typeof r.refused === 'string' ? r.refused : null
   return { fault, result: r, transient: !r, at: 'commit', silent: !r, refused: word, step: stepFile(r), gate: r && plain(r.gate) ? r.gate : null, then: recordThen(v.run, branch, word, r ? r.discarded : null) }
@@ -4791,6 +4816,7 @@ async function runTest() {
   arrived = { found: gs.found || [], finished: gs.finished || [], owed: gs.owed || [] }
   if (arrived.finished.length) log('the first read finished what an earlier invocation left: ' + arrived.finished.join(', '))
   stageHead = String(gs.head)
+  stageFence = SHA256_RE.test(String(gs.fence)) ? String(gs.fence) : null
   // … BUT A FILED VERDICT NO COMMIT HOLDS IS NOTHING THE FIRST READ FINISHES: it is owed to
   // the stage, the state is read across it, and the look goes on to say what the stage is
   // continued for (`continues`, with `filed` among it where a record is owed).
@@ -5172,6 +5198,7 @@ async function runFix() {
   if (!gs || gs.status !== 'ready') return gitHalt('git', gs, 'the tree or the branches are not in the state the `fix` stage starts from')
   arrived = { found: gs.found || [], finished: gs.finished || [], owed: gs.owed || [] }
   stageHead = String(gs.head)
+  stageFence = SHA256_RE.test(String(gs.fence)) ? String(gs.fence) : null
   if (gs.pending) return await finishRecord(gs)
   let read = await readState()
   if (!read.state) return halt('state', 'the run\'s state could not be read: ' + read.error, { transient: !!read.transient, halt: read.halt || null, step: read.step || null })
@@ -5181,6 +5208,7 @@ async function runFix() {
   // The `fix` stage's own records follow its fixers' commits: which head each is held to is
   // its repair's, and none is named here.
   stageHead = null
+  stageFence = null
   if (state.position.fix.refused) return { status: 'refused', stage: 'fix', run: v.run, refused: state.position.fix, message: 'the `fix` stage is refused (' + state.position.fix.refused + ', round ' + state.position.fix.round + '): ' + refusalOf(state.position.fix) + '. Nothing was run beyond the two reads.', next: state.next, not_ready: state.not_ready }
   const round = state.position.fix.round
 

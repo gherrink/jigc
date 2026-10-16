@@ -14,6 +14,8 @@
 
 **[Noted 2026-10-16, after part 1 in the fresh root: it halted at its second state read, and that root is ended.** The state's digest came back from its `build-git` agent with one value slipped — one clause row's `"retry":"never-selected"` relayed as the `"no-instrument"` of the rows below it, the line otherwise whole — on three tries of three, the same slip; the harness held the line to the sha256 it ends with, caught it, recorded nothing false, and halted at `state`. The first state read of the same part had slipped alike and been taken on its retry. The harness now puts such a value back: a line that does not hash is read where ONE of its values, replaced by another value the line holds under the same name, makes it hash — the line that hashes is the tool's — and the log says which value came back as what ([DECISIONS.md](../../../../../DECISIONS.md) → *A relayed line with one value slipped is put back by its own hash*). (1) **The canary starts again from a fresh root of the repaired commit** (§9): the clone's harness is the commit's, and nothing of the halted root is carried over. (2) **A log line *the relayed line of `git:…` came back with ONE value altered* is no finding**: it is the repair at work, and says what the agent slipped; a run of them at one step is worth a note in the canary's record. (3) A slip the line cannot put back — two values, or one whose value stands nowhere else under its name — still halts as part 1 did.]
 
+**[Noted 2026-10-16, after the third root: its four parts passed, and the canary starts again from a fresh root, with a new act first.** Part 1 stopped where it was to; part 2 hunted and made its first record; part 3 ruled the order and verified nine plants as planted; part 4 raised the budget, was ended mid-wave, looked, continued with one verifier for what had no verdict, and its fifth act gated and committed a batch left applied. One deviation stood: in part 2 a review row's driver ran a probe of its own whose repository variable a shell's glob error had left empty, so its commands ran in the clone — the run's repository — where it committed and reset the tree before it put things back itself; nothing in the tools prevented it, and in the real run that repository is the human's main working tree. The human then ruled two things, and the after-canary batch begins with them ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-16 — The write guard of a stabilization run*). (1) **The runs stay in `bypassPermissions`**, the human's own default, and this plan's check that no step asks for a permission is dropped (§5, §6 below). (2) **A write guard prevents what a prompt was to stop**: every agent of a run but its writers is fenced by a hook — a file-tool write into the run's repository refused, a call of the three tools taken only as one plain invocation, every other command run under the operating system's write fence, and nothing run open where no fence can be built — with the step tool's guarded state as its backstop at every record. (3) **Whether the hook fires for a Workflow's agents in the human's own session is not established** — a headless session showed it — so a cheap act is run FIRST on every fresh root, before part 1: **part 0, the write guard's probe** (§5). (4) The rest of the after-canary batch is the orchestrator's to land before the fresh root; the canary then restarts from part 0, on a root of the commit that holds all of it.]
+
 **Words this plan uses.** *The harness* is `.claude/workflows/stabilize.js`; *the record script* `dev/stabilize-record`; *the step tool* `dev/stabilize-step`; *the setup tool* `dev/stabilize-canary`. *A root* is the one directory a setup makes outside the repository: a bare remote, a clone, a scratch root and a results directory. *A part* is one or more invocations of the harness, made by the human in a session of the human's own, that end at a named mechanism and are read before the next is made; *an act* is one such invocation, or one thing the human does between two. *A plant* is a ledger row the setup seeds whose right outcome is known beforehand. *A reserve plant* is a small false claim planted to fill the queue cheaply — a term of this plan. *A run with a queue* is the reshape plan's: a run whose opening holds an order of classes. *The spike* is the review's drive of the committed record script through the planned opening, in a throwaway repository.
 
 ---
@@ -22,6 +24,7 @@
 
 | Part | Starts from | What the human invokes | How it ends | What it shows |
 |---|---|---|---|---|
+| **0 — the write guard's probe** *(added 2026-10-16)* | a fresh root | `dev/stabilize-guard-probe.js`, by its path in the clone | its own return | one fenced agent's five writes into the clone refused, and its plain call of the record script run unfenced — the clone as the setup left it |
 | **1 — the prelude** | a fresh root | the stage, with the tuning stop `preflight` | a stop that exists; no record is made | no permission prompt at a tool step; the two builds, the gate and the regression set held by commit; a baseline kept — and used, by a second regression item |
 | **2 — the hunt and the first record** | the root part 1 left | the stage, with no stop | **the stage's own return:** the opening's order names no class a row can have yet, so the queue is empty and no verifier is launched | one triage that types its entries once; a record composed by the tool, no executor; the stage's passage from its first record to its return |
 | **3 — verification** | the root part 2 left | a ruling of the order; then the stage, which continues | the budget of 9, spent — eight verdicts, then one — and the second record | an order ruled at a stop; verifiers file their own verdicts; at most two follow-ups enter the queue; a handed-on item verified ahead of an older row |
@@ -176,6 +179,29 @@ dev/stabilize-canary check --root <root>
 
 A terminal in the clone, `<root>/clone`. One interactive session is started there and its trust dialog accepted, as the first canary's own output says a clone is trusted (A13). **Right:** the session's first lines do not say that it ignores allow entries. Then that session is left.
 
+### Part 0 — the write guard's probe *(added 2026-10-16)*
+
+- **Starts from:** a fresh root, after the trust step and before anything else is run in the clone — before part 1, and on every root opened afresh after a repair.
+- **Invocation:** the prompt file `<root>/prompts/part-0.md`, pasted as a session's one message in the clone: it invokes **the Workflow script `dev/stabilize-guard-probe.js`**, by its path in the clone — no act of the harness — with `{ run, clone, scratch }`. The setup's line names it apart from the acts (`guard`), with `expect` one agent and no tool step.
+- **What it runs:** ONE agent, `milestone-e2e-tester` — a type the write guard fences, and the type of the driver whose probe committed in the third root — which tries, each once: a file at the clone's root with its file tool; the same with the shell; an empty commit in the clone; a key of the clone's configuration; a file under its own `mktemp -d` directory below the scratch root; and one plain call, `dev/stabilize-record state --run <run>`. It returns what each did.
+- **Ends by:** its own return, `status: 'probed'`. No gate, no build, no record; a few minutes.
+
+| Checked | Read from | Right |
+|---|---|---|
+| the hook fired for the file tool | the return; `check`: `guard.disk.write` | `refused_by: hook`; `refused` — no file at the clone's root |
+| the shell's three writes ran under the fence | the return; `check`: `guard.disk` echo, commit, config | each `refused_by: fence`, its banner `stabilize-fence: under the write fence of …` printed; each `refused` on the disk — no file, no commit in the clone's reflog, no key |
+| a write outside the clone is written | `check`: `guard.disk.scratch` | `written` |
+| the plain call ran, unfenced | the return | `exit: 0`, `refused_by: none`, no banner |
+| the clone as the setup left it | `check`: `guard.snapshot` | `same: true` — head, status, configuration, hooks, local refs and reflogs |
+| the verdict | `check`: `guard.fenced` | `true` |
+
+**What `check` reads is the clone, never the agent's word:** a hook that did not fire lets the writes land, and `check` names each under `guard.landed`, whatever the return says.
+
+**Watch, and when to interrupt.**
+- *The agent's first attempt, the write with its file tool, is not refused:* interrupt — the hook does not fire for this session's Workflow agents. The root is given up, and nothing else is run in it.
+- *A command of the shell that prints no banner, other than the plain call:* note it; `check` says what reached the disk.
+- *`guard.fenced` is not `true` after the act:* the root is given up; the finding is the human's before part 1 is run anywhere.
+
 ### For every act that invokes the stage
 
 1. `dev/stabilize-canary check --root <root>` from the repository — it asserts once more that the clone reaches nothing but its bare remote, and prints the attempt the next invocation will begin.
@@ -195,7 +221,7 @@ A terminal in the clone, `<root>/clone`. One interactive session is started ther
 
 | Checked | Read from | Right |
 |---|---|---|
-| no prompt at a tool step | the human's note at the session; the transcripts | none |
+| ~~no prompt at a tool step~~ **[dropped 2026-10-16: the parts run in `bypassPermissions` — the human's ruling — and what a prompt was to stop is the write guard's, shown by part 0]** | the human's note at the session; the transcripts | none |
 | every command of a tool-step agent | the transcripts | each one `dev/stabilize-step …` line, or the structured return |
 | the two builds, by commit | the return; `<scratch>/hold/build-candidate-<12>/verdict.json`, `build-previous-<12>` | both green; the hashes the return names |
 | the gate, by commit | the return; `<scratch>/hold/gate-<12>/verdict.json` | green — or red with its steps and tests named, which is a fact about the candidate and ends nothing (see part 2) |
@@ -205,7 +231,7 @@ A terminal in the clone, `<root>/clone`. One interactive session is started ther
 | nothing on record, nothing pushed | `check` | 0 records; pushed; 4 pending lines, every one under the run's `r1/` |
 
 **Watch, and when to interrupt.**
-- *A prompt at the first tool step (`git:state`), within the first minute:* stop. It is the finding; the part has cost one agent.
+- ~~*A prompt at the first tool step (`git:state`), within the first minute:* stop. It is the finding; the part has cost one agent.~~ **[Dropped 2026-10-16 with the check above: no session of the parts asks.]**
 - *A prompt at a command of the preflight or of the scope step, at a file the scope step writes under the scratch root, or at the session's write of the return file:* note the agent and what it asked for, answer it, go on (§6).
 - *The gate past forty minutes, or a regression set past forty* (23.3 and 22.3 on the first canary): note it; a held command is ended by nothing but a signal by hand (the row `wf-hold-no-stop`).
 - *A red gate whose red tests pass alone:* the machine was loaded. The root is given up and the part run again under a fresh one.
@@ -310,6 +336,8 @@ A terminal in the clone, `<root>/clone`. One interactive session is started ther
 ---
 
 ## 6. Permission, part by part
+
+**[Superseded 2026-10-16 — the human's ruling: the real run and every act of the canary run in `bypassPermissions`, the human's own default, where nothing is asked and an allow rule has no effect; the check that no step asks for a permission is dropped, and this section is kept as it was written. What replaces it is the write guard — every agent of a run but its writers kept by a hook from writing the run's repository, its commands run under the operating system's write fence ([stabilization-workflow.md](../../../../../implementation/stabilization-workflow.md) → The write guard) — and what is shown in its place is part 0 (§5): that the hook fires for a Workflow's agents in the human's own session.]**
 
 A fresh clone is an untrusted workspace, and the first canary's output says how one is trusted (A13); §5 makes that a step before part 1. **Whether trusting a clone applies its committed allow rules to the agents a workflow launches is not established** — the first canary ran untrusted and bypassed, and what the probes showed of the rules they showed in the repository, a trusted workspace. Part 1's first minute establishes it.
 

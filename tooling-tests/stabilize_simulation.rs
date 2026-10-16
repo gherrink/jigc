@@ -2459,9 +2459,13 @@ fn the_records_commit_step_commits_exactly_the_applied_batch_or_nothing() {
             &format!("diff --name-only -- {facts}"),
             "commit -q -m docs(record): a record",
             "rev-parse HEAD",
+            // The guarded state after the commit, which the stage's next record is held to.
+            "rev-parse --path-format=absolute --git-common-dir --git-dir --git-path hooks",
+            "for-each-ref --format=%(refname) %(objectname)",
+            "rev-parse --symbolic-full-name HEAD",
             "status --porcelain --untracked-files=all",
         ]),
-        "the commands of the act, in order: the branch and git's lock before anything else, what is staged held to the tree once it is vetted, nothing pushed, and no path added by a directory"
+        "the commands of the act, in order: the branch and git's lock before anything else, what is staged held to the tree once it is vetted, nothing pushed, no path added by a directory, and the guarded state read after the commit"
     );
     // Asked again as the harness asks today — with no word of the commit the stage began
     // on — nothing says that the last commit is this record's: there is nothing to record.

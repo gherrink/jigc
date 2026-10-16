@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-fence — THE WRITE FENCE OF A STABILIZATION RUN: ONE shell command, run
+# unchanged, where nothing under the run's repository can be written (DECISIONS.md ->
+# 2026-10-16, "The write guard of a stabilization run"; implementation/stabilization-
+# workflow.md -> The write guard).
+#
+# No agent types this. dev/stabilize-guard, the PreToolUse hook every tool call of a
+# run's agents passes, rewrites a fenced agent's Bash command into ONE invocation of this
+# tool before it runs; the agent's command is what runs, and what it prints is what the
+# agent reads.
+#
+# WHAT IS FENCED. The repository's work tree and its git directories — the common one,
+# and the work tree's own where it is a linked worktree — each by its REAL path, since the
+# operating system's fence judges the path a file really has (`/var` is `/private/var` on
+# macOS): no file under them can be created, written, removed, renamed, linked or have
+# its mode changed — by the command, or by anything it starts. Everything else is as it
+# was: reads, the network, the scratch roots, the temporary directory, the rig's
+# repositories. So `git commit`, `git config`, `git reset`, a hook written into
+# `.git/hooks` and a file written into the tree fail with `Operation not permitted`,
+# while `git status`, `git log` and `git diff` read as they do — run with
+# GIT_OPTIONAL_LOCKS=0, so that a read takes no lock it would be refused.
+#
+# HOW. macOS's sandbox (`sandbox-exec`), with a profile that allows everything and denies
+# `file-write*` under those paths; the command runs in the shell named by SHELL (else
+# /bin/sh) with `-c`, in the directory it was called from, with the environment it was
+# called with and two more names: GIT_OPTIONAL_LOCKS=0, and STABILIZE_FENCE — the work
+# tree's real path, so that a command can tell it is fenced. ONE LINE ON STDERR SAYS SO
+# before the command runs: `stabilize-fence: under the write fence of <tree>`. Its exit
+# status is the command's own.
+#
+# FAIL CLOSED. Where the fence cannot be built — a host that is no macOS, a sandbox
+# program that is not there, a --repo that is no git work tree, a path the profile cannot
+# quote — the command is NOT RUN: one line on stderr, `stabilize-fence: refused <word>:
+# …`, and the exit status below. Nothing is ever run open.
+#
+# WHAT IT DOES NOT FENCE: a process that is not the command's — a daemon it asks, a
+# container's engine whose mount it names — writes as that process may. The fence holds
+# an agent's own commands; it is no sandbox against an agent that sets out to escape it.
+#
+# Usage:
+#
+#   dev/stabilize-fence --repo DIR -- COMMAND
+#       COMMAND is ONE argument: the shell command, as the agent wrote it.
+#   dev/stabilize-fence --help
+#
+# Exit status: the command's own — or, where it was not run:
+#   2  usage      an argument is missing or more than one command is named
+#   3  no-fence   the fence cannot be built on this host
+#   4  no-repo    DIR is no git work tree, or git does not name its git directories
+#   5  unquotable a path of the fence holds a character the profile cannot quote
+#
+# STABILIZE_FENCE_SANDBOX names the sandbox program instead of /usr/bin/sandbox-exec —
+# for the suite, which asks what happens where there is none.
+#
+# Needs python3 and git, and macOS. It writes nothing.
+
+import os
+import subprocess
+import sys
+
+PROG = "stabilize-fence"
+SANDBOX = os.environ.get("STABILIZE_FENCE_SANDBOX") or "/usr/bin/sandbox-exec"
+CODES = {"usage": 2, "no-fence": 3, "no-repo": 4, "unquotable": 5}
+
+
+def refuse(word, detail):
+    sys.stderr.write("%s: refused %s: %s — the command was not run\n" % (PROG, word, detail))
+    sys.exit(CODES[word])
+
+
+def git(at, *args):
+    env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    try:
+        done = subprocess.run(["git", "-C", at] + list(args), env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def main():
+    argv = sys.argv[1:]
+    if argv in (["--help"], ["-h"]):
+        with open(os.path.realpath(__file__), encoding="utf-8") as source:
+            for line in source.read().splitlines()[1:]:
+                if not line.startswith("#"):
+                    break
+                sys.stdout.write(line[2:] + "\n")
+        return
+    if len(argv) != 4 or argv[0] != "--repo" or argv[2] != "--" or not argv[1] or not argv[3]:
+        refuse("usage", "dev/stabilize-fence --repo DIR -- COMMAND, the command as ONE argument")
+    repo, command = argv[1], argv[3]
+    if sys.platform != "darwin":
+        refuse("no-fence", "this host is no macOS (%s), and the write fence is macOS's sandbox" % sys.platform)
+    if not os.access(SANDBOX, os.X_OK):
+        refuse("no-fence", "the sandbox program %s is not there" % SANDBOX)
+    top = git(repo, "rev-parse", "--show-toplevel")
+    dirs = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir") if top else None
+    if not top or not dirs:
+        refuse("no-repo", "%s is no git work tree whose git directories git names" % repo)
+    places = []
+    for place in [top] + dirs.splitlines():
+        real = os.path.realpath(place)
+        if real not in places:
+            places.append(real)
+    if any(char in place for place in places for char in '"\\\n'):
+        refuse("unquotable", "a path of the fence holds a quote, a backslash or a line break: %s" % ", ".join(places))
+    profile = "(version 1)(allow default)(deny file-write* %s)" % " ".join('(subpath "%s")' % place for place in places)
+    shell = os.environ.get("SHELL") or ""
+    if not (os.path.isabs(shell) and os.access(shell, os.X_OK)):
+        shell = "/bin/sh"
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0", STABILIZE_FENCE=places[0])
+    sys.stderr.write("%s: under the write fence of %s\n" % (PROG, places[0]))
+    sys.stderr.flush()
+    os.execve(SANDBOX, [SANDBOX, "-p", profile, shell, "-c", command], env)
+
+
+if __name__ == "__main__":
+    main()

@@ -82,8 +82,10 @@
 #       --look: AN INVOCATION THAT ONLY LOOKS FINISHES NOTHING — no recover, no settle, no
 #       push — and says what is owed. (It fetches the loop branch, as this read always has.)
 #       Prints {status: ready, branch, head, loop_head, remote_head, opening, untracked,
-#       pending, found, finished, owed [, vetted]} — `remote_head` is what origin's L
-#       stands at (null: not pushed); `pending` is null, or the applied batch a record
+#       pending, found, finished, owed, fence [, vetted]} — `remote_head` is what origin's L
+#       stands at (null: not pushed); `fence` is THE GUARDED STATE (below) as it stands at
+#       the end of the read, which a record's commit step is held to; `pending` is null, or
+#       the applied batch a record
 #       step left uncommitted: {round, subject, calls, checks, files}; `found` names
 #       every arrival state it met, in the table's order, `finished` those it finished
 #       and `owed` those it left — to the stage (`filed`: its report check, then its
@@ -195,7 +197,7 @@
 #       remote_head, picked: [{from, to}]}.
 #
 #   dev/stabilize-step record --branch B --run-dir D --gate FILE --calls N --checks M
-#                      [--head SHA] [--scratch DIR]
+#                      [--head SHA] [--fence SHA256] [--scratch DIR]
 #       A RECORD STEP'S ONE COMMIT (DECISIONS.md -> 2026-10-06, "A stabilization run's
 #       record commit under a red candidate") — AND A STEP THAT IS REPEATABLE: asked
 #       again with the same arguments it goes on from where the step before it stopped,
@@ -211,7 +213,12 @@
 #       refusal names the act that takes the batch back. --head is THE COMMIT THE STAGE
 #       BEGAN ON: the record is committed on it or not at all — head-moved, nothing
 #       committed or undone — so that no commit somebody made while the stage ran is
-#       published beside it; and it is what lets a step that is done answer again
+#       published beside it. --fence is THE GUARDED STATE (below) as the stage's first
+#       read printed it: before anything is staged, it is read again, and where it moved
+#       the record is refused — fence-moved, the human's, nothing committed or undone —
+#       because something wrote the repository's configuration, a hook, an info file, a
+#       local ref or a reflog while the stage ran, which no step of a stage does before its
+#       record's commit; and it is what lets a step that is done answer again
 #       (`recorded`: HEAD is the one commit since, the tree is clean, and the answer this
 #       step kept beside FILE — FILE.recorded.json, written once the commit is made and
 #       before the batch is settled — names that commit and N and M; the table's `kept`
@@ -231,7 +238,8 @@
 #       from, and the stage invoked again works the next attempt. Else ONE commit is made
 #       with the subject the batch carries, and the batch is settled. Prints {status:
 #       recorded, branch, commit, head, round, paths, applied: {calls, checks}, gate: <the
-#       check's result>, found, finished}; a refusal carries what of these the act had
+#       check's result>, found, finished, fence} — `fence` the guarded state after the
+#       commit, which the stage's next record is held to; a refusal carries what of these the act had
 #       established — and an unvetted one {vet: <the vet's result>, discarded, aside:
 #       what left the tree}.
 #
@@ -466,6 +474,7 @@
 #                                while no commit holds the batch; after its commit the
 #                                batch is settled, and the file is `dirty`
 #                head-moved      the orchestrator's: the stage is invoked again
+#                fence-moved     the human's: the repository was written past the guard
 #                unvetted        the human's: a local commit is his to take back
 #                foreign-commit  its author's: `git push origin <branch>`, by name
 #                remote-ahead    the human's
@@ -529,6 +538,30 @@
 # So a stage killed while its batch is composed ends, within two reads, in ONE OF TWO STATES
 # and no third: the state before the batch, or the state of the record that was never
 # interrupted, pushed.
+# THE GUARDED STATE (DECISIONS.md -> 2026-10-16, "The write guard of a stabilization run";
+# implementation/stabilization-workflow.md -> The write guard). The write guard keeps every
+# agent of a run but a writer from writing the run's repository (dev/stabilize-guard), and
+# this is its BACKSTOP: what of the repository no step of a `test` stage changes before its
+# record's commit, read by `git-state` at the start and held by `record` before anything is
+# staged. The tree, the index and an untracked file are the `dirty` check's already, and a
+# commit on the branch is `head-moved`'s; what neither sees is hashed here, in five parts,
+# each read from the git directories and by no command that could change one:
+#   config   the configuration: the common directory's `config`, and a linked work tree's
+#            own `config.worktree`
+#   hooks    every file under the directory git runs its hooks from (`--git-path hooks`),
+#            and under the common directory's `hooks/` where that is another: its name, its
+#            kind and mode, and its bytes — or where a link points
+#   info     the same, of the common directory's `info/` (exclude, attributes)
+#   refs     every ref that is no remote-tracking ref, with what it names, and what HEAD is
+#   reflog   THE NEWEST ENTRY of every reflog that is no remote-tracking ref's, HEAD's
+#            included: a commit and a reset back leave the head where it was and add two
+#            entries; an expiry of old entries changes no newest one, and a fetch or a push
+#            moves only a remote-tracking ref
+# One sha256 of the five, `fence`. What it does not see: the index's stat cache, which any
+# `git status` refreshes, and what a write changed and put back before the record read it.
+# Where a commit was made and its answer lost (`committed`, `recorded`), nothing is held
+# to the fence: the commit moved it, and the head is held instead.
+#
 # WHAT THE TOOL PUSHES FOR ITSELF is a record's commit and nothing else: a commit on
 # the loop branch that changes a path outside the run's directory is its author's to
 # push, and until it is pushed no `test` stage starts.
@@ -786,6 +819,9 @@
 #                      started under that root, or no such file
 #   30  build          the commit did not build, or its binary is not the one asked for;
 #                      no binary was written
+#   31  fence-moved    the guarded state is not what it was when the stage began: the
+#                      repository was written past the write guard; nothing was
+#                      committed or undone
 #
 # Needs python3 and git, which the gate needs already — and, for a held command, what
 # that command needs. It finds its repository from where it lies, never from where it
@@ -835,6 +871,7 @@ STATUS = {
     "taken": 28,
     "missing": 29,
     "build": 30,
+    "fence-moved": 31,
 }
 # What `git ls-remote --exit-code` exits with when no ref matches.
 NO_SUCH_REF = 2
@@ -978,6 +1015,7 @@ ARRIVALS = (
     {"state": "staged", "act": "record", "phase": "committed", "found": "as `applied`, with paths of the record in the index: a commit step killed after its `git add`, or one whose `git commit` failed", "answer": "owed", "word": None, "whose": "the stage's", "leaves": "as `applied`: the commit step admits its own staged lines, stages the paths again, vets them and commits"},
     {"state": "altered", "act": "record", "phase": "committed", "found": "a file of the applied batch is no longer what the batch wrote, and no commit holds the batch: HEAD does not hold every file of it as the batch wrote it", "answer": "refused", "word": "dirty", "whose": "the human's", "leaves": "it is the human's, because a hand wrote in a table of the record: `dev/stabilize-step discard --branch <branch> --run-dir <run-dir>` takes the batch back — every file of it as it was before the batch, whatever was written since — and the stage invoked again works the next attempt; or the file is put back as the batch wrote it, and the step asked for again"},
     {"state": "head-moved", "act": "record", "phase": "committed", "found": "the branch is not at the commit the stage began on (--head): somebody committed while the stage ran", "answer": "refused", "word": "head-moved", "whose": "the orchestrator's", "leaves": "nothing was committed or undone: the batch stays applied. The stage is invoked again: its first read meets the commit — one the remote lacks is its author's to push — and then gates the batch on the tree as it now stands, and commits it there"},
+    {"state": "fence-moved", "act": "record", "phase": "committed", "found": "the guarded state — the configuration, a hook, an info file, a local ref or a reflog's newest entry — is not what it was when the stage began (--fence): something wrote the run's repository past the write guard while the stage ran", "answer": "refused", "word": "fence-moved", "whose": "the human's", "leaves": "nothing was committed or undone: the batch stays applied. It is the human's: an agent wrote the repository past the guard, or a hand did. `git reflog -5`, `git config --local --list`, the hooks directory and `git for-each-ref` say what moved; the human puts back what must be put back, and invokes the stage again — its first read takes the guarded state as it then stands"},
     {"state": "committed", "act": "record", "phase": "settled", "found": "the journal holds a batch, and every file of it is in HEAD as the batch wrote it — asked of HEAD, whatever a hand wrote in the tree since: the commit was made, and the batch was not forgotten", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "`dev/stabilize-record settle`, which `git-state` and `record` run; `discard` refuses such a batch, altered or not. A file of it that a hand changed AFTER the commit is then no file of an open record: the act that settled the batch reads the tree again, and refuses it as a tracked file changed by hand (`dirty`, the human's — `git restore -- <file>` puts back what the commit holds)"},
     {"state": "recorded", "act": "record", "phase": "pushed", "found": "the commit step is asked for again after it was done: no batch, and HEAD is the one commit since the commit the stage began on (--head), which is the commit this step answered with", "answer": "answered", "word": None, "whose": "the tool's", "leaves": "nothing to leave: the step answers again what it answered then, and the push is the next step"},
     {"state": "unpushed", "act": "record", "phase": "pushed", "found": "the loop branch is ahead of its remote by commits that touch only the run's directory: a record that was committed and not pushed", "answer": "finished", "word": None, "whose": "the tool's", "leaves": "the push that is owed, which `git-state` makes for the `test` stage before it answers — every commit of it vetted first; while a batch is applied it is that record's own push"},
@@ -1420,6 +1458,57 @@ def same(ran, what):
 # --- the acts -----------------------------------------------------------------
 
 
+def guarded_bytes(guarded_file):
+    """The bytes of one file of the guarded state: read, and never written."""
+    with open(guarded_file, "rb") as file:
+        return file.read()
+
+
+def listed_files(top):
+    """Every file under `top`, in order: its path below it, its mode, and its bytes'
+    sha256 — or, for a link, where it points. A directory that is not there lists nothing."""
+    found = []
+    for directory, subdirectories, files in os.walk(top):
+        subdirectories.sort()
+        links = [name for name in subdirectories if os.path.islink(os.path.join(directory, name))]
+        for name in sorted(files) + links:
+            path = os.path.join(directory, name)
+            body = "link:" + os.readlink(path) if os.path.islink(path) else hashlib.sha256(guarded_bytes(path)).hexdigest()
+            found.append([os.path.relpath(path, top), os.lstat(path).st_mode, body])
+    return found
+
+
+def newest_entries(top, skip):
+    """The newest entry of every reflog under `top` but those below `skip`: its path below
+    `top`, and its last line."""
+    found = []
+    for path in [row[0] for row in listed_files(top)]:
+        if path.startswith(skip):
+            continue
+        entries = [entry for entry in guarded_bytes(os.path.join(top, path)).split(b"\n") if entry.strip()]
+        found.append([path, hashlib.sha256(entries[-1] if entries else b"").hexdigest()])
+    return found
+
+
+def guarded():
+    """THE GUARDED STATE (the header's section of that name): one sha256 of its five parts."""
+    common, own, hooks = lines(said("rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir", "--git-path", "hooks"))
+    config = []
+    for path in (os.path.join(common, "config"), os.path.join(own, "config.worktree")):
+        if os.path.isfile(path):
+            config.append([os.path.basename(path), hashlib.sha256(guarded_bytes(path)).hexdigest()])
+    refs = [line for line in lines(said("for-each-ref", "--format=%(refname) %(objectname)")) if not line.startswith("refs/remotes/")]
+    refs.append("HEAD " + said("rev-parse", "--symbolic-full-name", "HEAD"))
+    reflog = newest_entries(os.path.join(common, "logs"), os.path.join("refs", "remotes") + os.sep)
+    if own != common:
+        reflog += [["worktree/" + path, entry] for path, entry in newest_entries(os.path.join(own, "logs"), os.path.join("refs", "remotes") + os.sep)]
+    # The hooks git runs, and the common directory's own hooks directory where those are
+    # elsewhere (core.hooksPath): a hook written there runs once that setting is put back.
+    hooked = [listed_files(hooks)] + ([listed_files(os.path.join(common, "hooks"))] if os.path.realpath(hooks) != os.path.realpath(os.path.join(common, "hooks")) else [])
+    parts = {"config": config, "hooks": hooked, "info": listed_files(os.path.join(common, "info")), "refs": refs, "reflog": reflog}
+    return hashlib.sha256(json.dumps(parts, sort_keys=True).encode("utf-8")).hexdigest()
+
+
 def git_state(args, facts):
     run_name = os.path.basename(args.run_dir)
     facts.update(found=[], finished=[], owed=[])
@@ -1479,6 +1568,8 @@ def git_state(args, facts):
     # 9. The report.
     facts.update(status="ready", branch=current, head=said("rev-parse", "HEAD"), loop_head=said("rev-parse", args.loop), remote_head=remote, opening=opening, untracked=untracked)
     facts.update(pending={"round": batch["round"], "subject": batch["subject"], "calls": batch["calls"], "checks": batch["checks"], "files": held} if state in ("applied", "staged") else None)
+    # 10. The guarded state, as a record's commit step is held to it (THE GUARDED STATE).
+    facts.update(fence=guarded())
 
 
 def state(args, facts):
@@ -1702,7 +1793,7 @@ def record(args, facts):
             refuse("no-batch", "run %s has no applied batch: there is nothing this step records" % run_name, "`dev/stabilize-record pending` printed no batch", "a record step applies its batch first (`dev/stabilize-record apply`)")
         clean(said("status", "--porcelain", "--untracked-files=all"), "git status --porcelain --untracked-files=all")
         note(facts, "recorded")
-        facts.update(kept, status="recorded")
+        facts.update(kept, status="recorded", fence=guarded())
         return
     facts.update(round=batch["round"], applied={"calls": batch["calls"], "checks": batch["checks"]})
     failed = [check for check in batch["checks"] if not (isinstance(check, dict) and check.get("ok") is True)]
@@ -1719,6 +1810,14 @@ def record(args, facts):
     began = said("rev-list", "--parents", "-n", "1", commit).split()[1:] if commit else [head]
     if args.head is not None and (began != [args.head] or commit not in (None, head)):
         refuse_as(facts, "head-moved", "`%s` is not at the commit the stage began on: the stage began on %s, and the branch stands at %s%s" % (args.branch, args.head, head, " — the commit that holds the batch is %s, on %s" % (commit, " and ".join(began) or "no parent") if commit else ""), "`git rev-parse HEAD` printed %s" % head)
+    # 5b. The guarded state, as it was when the stage began: no step of a stage writes it
+    #     before this commit, so a change is a write past the guard (THE GUARDED STATE). A
+    #     batch in HEAD already moved it by its own commit, and is held to the head instead.
+    if args.fence is not None and state != "committed":
+        now = guarded()
+        if now != args.fence:
+            facts.update(fence=now)
+            refuse_as(facts, "fence-moved", "the guarded state of the repository is not what it was when the stage began: the configuration, a hook, an info file, a local ref or the newest entry of a reflog changed while the stage ran — the stage began with %s, and it is %s now" % (args.fence, now), "the guarded state, read again before anything was staged")
     # 6. The gate that ran on this tree, held to the candidate's.
     flags = [] if batch["round"] is None else ["--round", str(batch["round"])]
     checking = run([RECORD, "gate-check", "--run", run_name, "--summary", args.gate] + flags)
@@ -1762,7 +1861,7 @@ def record(args, facts):
         # 8. The one commit, with that subject.
         said("commit", "-q", "-m", subject)
         commit = said("rev-parse", "HEAD")
-    facts.update(paths=paths, commit=commit, head=commit, branch=current)
+    facts.update(paths=paths, commit=commit, head=commit, branch=current, fence=guarded())
     # 9. The answer, kept for this step asked again — BEFORE the batch is settled, so that
     #    from the commit on there is no moment at which neither the journal nor this file
     #    says what was recorded: killed before this write the step finds its batch in HEAD
@@ -2460,7 +2559,7 @@ MET = {"found": STATES, "finished": STATES}
 HELD_FACTS = {"passed": "count", "failed": "count", "binaries": "count", "steps": ["word", 20], "tests": "count", "status": "word", "reason": "word?", "previous": "sha", "candidate": "sha", "list_sha256": "sha256?", "differences": "count", "not_on_list": "count", "excluded": "count", "excluded_by_no_row": "count", "commit": "sha", "binary": "path", "bytes": "count", "content_sha256": "sha256", "version": "version", "resolves": "flag", "seconds": "count"}
 HELD = {"name": "id", "kind": "word", "pid": "count", "output": "path", "slice": "count", "waited": "count", "exit": "count?", "signal": "count", "seconds": "count", "verdict": "word?", "why": "word?", "facts": HELD_FACTS, "verdict_file": "path", "verdict_sha256": "sha256"}
 DIGEST = {
-    "git-state": {**ON, "loop_head": "sha", **PUSHED, "opening": "sha?", "untracked": "count?", "pending": (NULL, {"round": "count?", "calls": "count", "checks": "count", "files": "count"}), **MET, "owed": STATES},
+    "git-state": {**ON, "loop_head": "sha", **PUSHED, "opening": "sha?", "untracked": "count?", "pending": (NULL, {"round": "count?", "calls": "count", "checks": "count", "files": "count"}), **MET, "owed": STATES, "fence": "sha256"},
     "state": {"branch": "path?", "state": STATE},
     "begin": {"round": "count", "attempt": "count", "report": "path"},
     "check-reports": {"check": {"ok": "flag", "attempt": "count", "missing": ["id", 200], "extra": "count", "other_attempts": "count", "reports": "count"}, "aside": ASIDE, "vetted": "count", **MET},
@@ -2470,7 +2569,7 @@ DIGEST = {
     "land": {"head": "sha", "merge_commit": "sha", **PUSHED, "tip_moved": "flag", "resolved_logs": ["path", 10], "moved_outside": "count", **MET},
     "round-commits": {"all": ["sha", 200], "inside": ["sha", 200], "outside": ["sha", 200]},
     "carry": {**ON, **PUSHED, "picked": [{"from": "sha", "to": "sha"}, 200], **MET},
-    "record": {**ON, "commit": "sha", "round": "count?", "paths": "count", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "gate": {"ok": "flag", "verdict": "word", "red": "count", "known": "count", "new": "count", "candidate": "sha?"}, "vet": VET, "discarded": "flag", "aside": ASIDE, **MET},
+    "record": {**ON, "commit": "sha", "round": "count?", "paths": "count", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "gate": {"ok": "flag", "verdict": "word", "red": "count", "known": "count", "new": "count", "candidate": "sha?"}, "vet": VET, "discarded": "flag", "aside": ASIDE, **MET, "fence": "sha256"},
     "compose": {**ON, "round": "count?", "attempt": "count", "record": "word", "applied": {"calls": "count", "checks": "count", "failed": "count"}, "files": "count", "filed": "count", "refusal": "word", "hits": [{"path": "path?", "rule": "id", "line": "count?"}, HYGIENE_HITS], **MET},
     "discard": {**ON, "unstaged": "count", "discarded": "count", **MET},
     "table": {"acts": ["word", 50], "arrivals": ["word", 50], "kept": "count", "holds": ["word", 20], "slice": "count"},
@@ -2785,6 +2884,7 @@ FLAGS = {
     "reporter": slug,
     "commit": full_sha,
     "head": full_sha,
+    "fence": grammar(re.compile(r"[0-9a-f]{64}"), "a sha256 of 64 hex digits"),
     "digest": directory_outside,
     "subject": str,
     "sha256": grammar(re.compile(r"[0-9a-f]{64}"), "a sha256 of 64 hex digits"),
@@ -2834,7 +2934,7 @@ def arguments(argv):
     act("land", land, ["loop", "branch", "run-dir"], lists=["product", "log"])
     act("round-commits", round_commits, ["loop", "branch", "run-dir"])
     act("carry", carry, ["loop", "run-dir"], lists=["product"], names=("shas", argparse.ONE_OR_MORE, full_sha))
-    act("record", record, ["branch", "run-dir", "gate", "calls", "checks"], optional=["scratch", "head"])
+    act("record", record, ["branch", "run-dir", "gate", "calls", "checks"], optional=["scratch", "head", "fence"])
     act("compose", compose, ["branch", "run-dir", "round", "attempt", "subject", "sha256", "scratch"], names=("names", argparse.ZERO_OR_MORE, str))
     act("discard", discard, ["branch", "run-dir"])
     act("table", table, [])

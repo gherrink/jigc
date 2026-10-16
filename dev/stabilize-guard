@@ -1,0 +1,336 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-guard — THE WRITE GUARD OF A STABILIZATION RUN: a PreToolUse hook that
+# keeps every agent of a run that is not one of its writers from writing the run's
+# repository (DECISIONS.md -> 2026-10-16, "The write guard of a stabilization run";
+# implementation/stabilization-workflow.md -> The write guard).
+#
+# WHY. In the staged canary's third root, part 2 (2026-10-16), a driver of a review row
+# ran an ad-hoc probe whose `R` a shell glob error had left empty, so its commands ran in
+# the canary's clone — the run's repository — and it committed there and ran `git reset
+# --hard`. Nothing in the tools prevented it, and nothing but a stray commit is seen
+# afterwards: not a write to the working tree, the index, `.git/config` or `.git/hooks`.
+# In the real run that repository is the human's main working tree. The human ruled that
+# the guard PREVENTS, and that the runs stay in bypassPermissions: a hook's `deny` holds
+# in that mode, and an allow rule does not (implementation/stabilization-workflow.md ->
+# The write guard, where the documentation it rests on is cited).
+#
+# WHERE IT BINDS — INSIDE A RUN, AND NOWHERE ELSE. The repository is the git work tree of
+# the session's project (CLAUDE_PROJECT_DIR, which Claude Code sets for every hook). The
+# guard binds where that tree has checked out a run's loop branch or one of its round
+# branches — `fix/<run>`, `fix/<run>-r<N>`, `fix/<run>-r<N>-part<M>`, the harness's
+# `branchName` — AND completions/artifacts/<run>/opening.md is a file there: a stage runs
+# only with the loop branch checked out, and a run is opened when that file is there
+# (dev/stabilize-record: A RUN IS OPENED). On any other branch, a detached HEAD, or a
+# project that is no git repository, it says nothing at all: a milestone build, a fix
+# branch with no run and an ad-hoc session are as they were.
+#
+# WHO IS FENCED — EVERY SUBAGENT BUT THE RUN'S WRITERS. The hook input's `agent_type`
+# names the subagent a tool call is made in. Absent or empty, the call is the session's
+# own — the human's, or the orchestrator's — and is never fenced. `build-git` (the git
+# steps: their acts write the run's record, commit and push it) and `build-fixer` (a
+# fixer commits its fix on the round branch) are the WRITERS, and are never fenced. EVERY
+# OTHER TYPE IS, known or not: the hook cannot tell who launched an agent, so a type
+# nobody classified is fenced and never let through. tooling-tests/dev_stabilize_guard.rs
+# holds the writers to the types the harness launches, and the fenced types the harness
+# launches to a list a change has to name.
+#
+# WHAT A FENCED AGENT IS REFUSED, OR HOW ITS COMMAND RUNS:
+#
+#   Write · Edit ·  a target that resolves under the repository's work tree or its git
+#   NotebookEdit    directories is REFUSED (`repository`). Resolved on the file system:
+#                   through links, `..`, a `/var` that is `/private/var`, another case
+#                   of a name on a volume that ignores case — every existing ancestor is
+#                   compared by its device and inode, never by its spelling. A new file
+#                   whose parent is not there yet is judged by the nearest ancestor that
+#                   is. Anywhere else, the guard says nothing.
+#   Bash            ONE PLAIN INVOCATION of `dev/stabilize-step`, `dev/stabilize-record`
+#                   or `dev/stabilize-probe` — the grammar of the allow rules and of the
+#                   harness's prompts: the tool's path as its first word, then plain
+#                   words, bare (A-Z a-z 0-9 and _ . / : = @ % + , -) or in single quotes
+#                   (those and the space and parentheses), and nothing else on the line —
+#                   from the repository's root, is let through UNFENCED: those tools are
+#                   how a run's record is written. The same call from another directory
+#                   is refused (`directory`). A command that calls one of the three in
+#                   any other shape — after a `cd` and `&&`, before a `;` or an `echo`,
+#                   by an absolute or a `./` path, through an interpreter, with a pipe
+#                   or a redirect — is REFUSED (`shape`), with the shape it is taken in.
+#                   EVERY OTHER COMMAND RUNS UNDER THE WRITE FENCE: it is rewritten,
+#                   before it runs, into ONE invocation of dev/stabilize-fence, which runs
+#                   it unchanged under the operating system's write fence — nothing under
+#                   the repository's work tree or its git directories can be written by
+#                   it or by anything it starts — and says so on stderr. Where the fence
+#                   cannot be built (no macOS sandbox, no fence tool beside this one) the
+#                   command is REFUSED (`no-fence`), never run open. The rewrite is
+#                   allowed in bypassPermissions, where nothing is asked anyway; in any
+#                   other mode it is ASKED, with the fenced command shown — an `allow`
+#                   would approve a command the mode would have asked about.
+#   Monitor ·       a shell this guard cannot fence: REFUSED (`shell`).
+#   PowerShell
+#   Agent           a fenced agent may not launch a writer: REFUSED (`writer`).
+#
+# FAIL CLOSED. For a fenced type, what the guard cannot read — no CLAUDE_PROJECT_DIR, a
+# git that does not answer, a tool input without its path or its command — is a refusal
+# (`unknown`), never a pass. An input that is no JSON object exits 2 with the reason on
+# stderr, which Claude Code takes as a block. And the settings run this hook with
+# `onFailure: block`, so a hook that cannot start blocks too.
+#
+# Usage:
+#
+#   dev/stabilize-guard            a PreToolUse hook: the event's JSON on stdin. Prints
+#                                  nothing where it has no decision, and otherwise ONE
+#                                  JSON object, {hookSpecificOutput: {hookEventName:
+#                                  PreToolUse, permissionDecision: deny | allow | ask,
+#                                  permissionDecisionReason [, updatedInput]}}, and exits 0.
+#                                  A refusal's reason is one line that opens with
+#                                  `stabilize-guard: refused <word>: `.
+#   dev/stabilize-guard --help     this header.
+#
+# The settings that run it — `.claude/settings.json`, one entry under hooks.PreToolUse:
+#
+#   {"matcher": "Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent",
+#    "hooks": [{"type": "command", "command": "${CLAUDE_PROJECT_DIR}/dev/stabilize-guard",
+#               "args": [], "timeout": 30, "onFailure": "block"}]}
+#
+# — exec form (`args`), so that a project path with a space in it is one word.
+#
+# STABILIZE_FENCE_SANDBOX names the sandbox program instead of /usr/bin/sandbox-exec —
+# for this tool's suite, which asks what happens where there is none; dev/stabilize-fence
+# reads the same name.
+#
+# Needs python3 and git. It writes nothing.
+
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+PROG = "stabilize-guard"
+HERE = os.path.dirname(os.path.realpath(__file__))
+FENCE = os.path.join(HERE, "stabilize-fence")
+SANDBOX = os.environ.get("STABILIZE_FENCE_SANDBOX") or "/usr/bin/sandbox-exec"
+
+# The run's writers: the agent types whose job is to write the run's repository.
+WRITERS = ("build-git", "build-fixer")
+# The three tools a run's record is written through, by their path from the repository's
+# root — the allow rules' and the harness's prompts' (PROMPT_TOOLS of the fence suite).
+TOOLS = ("dev/stabilize-step", "dev/stabilize-record", "dev/stabilize-probe")
+# Where a run lies, and how its branches are named (the harness's RUNS_ROOT, branchName).
+RUNS = "completions/artifacts"
+LOOP = re.compile(r"fix/([a-z0-9]+(?:-[a-z0-9]+)*)")
+ROUND = re.compile(r"(.+)-r[1-9][0-9]*(?:-part[1-9][0-9]*)?")
+# One word of a plain invocation: bare, or in single quotes with nothing a shell reads.
+BARE = re.compile(r"[A-Za-z0-9_./:=@%+,-]+")
+QUOTED = re.compile(r"'[A-Za-z0-9_./:=@%+, ()-]*'")
+# A call of one of the three tools at the place of a command: the line's start, after an
+# operator, a parenthesis, a brace or a backquote, or after a word that runs the next one —
+# with any path before the tool's own and any assignments before that.
+CALLED = re.compile(r"(?:^|[;&|(){}`\n]|\$\(|(?:^|(?<=[\s;&|(){}`]))(?:then|do|else|exec|command|env|nohup|time|xargs|sudo|python3?|sh|bash|zsh)(?=\s))\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*\S*?(dev/stabilize-(?:step|record|probe))(?![A-Za-z0-9_.-])")
+# The tools whose input names a file to write, and the field that names it.
+FILE_TOOLS = {"Write": "file_path", "Edit": "file_path", "NotebookEdit": "notebook_path"}
+SHELLS = ("Monitor", "PowerShell")
+
+
+def decide(decision, reason=None, updated=None):
+    out = {"hookEventName": "PreToolUse", "permissionDecision": decision}
+    if reason is not None:
+        out["permissionDecisionReason"] = reason
+    if updated is not None:
+        out["updatedInput"] = updated
+    sys.stdout.write(json.dumps({"hookSpecificOutput": out}) + "\n")
+    sys.exit(0)
+
+
+def refused(word, detail):
+    decide("deny", "%s: refused %s: %s" % (PROG, word, detail))
+
+
+def git_env():
+    env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    return env
+
+
+def git(at, *args):
+    """What git prints, stripped — or None where it does not answer."""
+    try:
+        done = subprocess.run(["git", "-C", at] + list(args), env=git_env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        raise LookupError("git did not answer in %s" % at)
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def resolved(at, path):
+    """A path, made absolute against `at` and resolved through every link it has."""
+    return os.path.realpath(os.path.join(at, path))
+
+
+def nearest(path):
+    """The nearest ancestor of `path`, itself included, that is there."""
+    while not os.path.lexists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            break
+        path = parent
+    return path
+
+
+def identity(path):
+    try:
+        found = os.stat(path)
+    except OSError:
+        return None
+    return (found.st_dev, found.st_ino)
+
+
+def under(path, places):
+    """Whether `path` — resolved, with what is not there yet judged by its nearest
+    ancestor that is — lies at or below one of `places`, compared by device and inode."""
+    marks = {identity(place) for place in places} - {None}
+    at = nearest(os.path.realpath(path))
+    while True:
+        if identity(at) in marks:
+            return True
+        parent = os.path.dirname(at)
+        if parent == at:
+            return False
+        at = parent
+
+
+def the_run(project):
+    """(the work tree, its git directories, the run) where the guard binds — or None."""
+    top = git(project, "rev-parse", "--show-toplevel")
+    if top is None:
+        return None
+    top = os.path.realpath(top)
+    branch = git(top, "symbolic-ref", "--quiet", "--short", "HEAD")
+    named = LOOP.fullmatch(branch or "")
+    if not named:
+        return None
+    slug = named.group(1)
+    candidates = [slug]
+    stripped = ROUND.fullmatch(slug)
+    if stripped:
+        candidates.append(stripped.group(1))
+    run = next((name for name in candidates if os.path.isfile(os.path.join(top, RUNS, name, "opening.md"))), None)
+    if run is None:
+        return None
+    dirs = git(top, "rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir")
+    if dirs is None:
+        raise LookupError("git does not name the git directories of %s" % top)
+    places = [top] + [os.path.realpath(line) for line in dirs.splitlines() if line]
+    return top, places, run
+
+
+def words(command):
+    """The words of a command line, split at spaces outside single quotes — or None where
+    a quote is left open."""
+    found, word, quoted = [], "", False
+    for char in command:
+        if char == "'":
+            quoted = not quoted
+        if char == " " and not quoted:
+            if word:
+                found.append(word)
+            word = ""
+        else:
+            word += char
+    if quoted:
+        return None
+    if word:
+        found.append(word)
+    return found
+
+
+def plain_call(command):
+    """Whether a command is ONE plain invocation of one of the three tools."""
+    said = words(command.strip(" \n"))
+    return bool(said) and said[0] in TOOLS and all(BARE.fullmatch(word) or QUOTED.fullmatch(word) for word in said[1:])
+
+
+def fence_missing():
+    """Why the write fence cannot be built here, or None where it can."""
+    if sys.platform != "darwin":
+        return "this host is no macOS (%s), and the write fence is macOS's sandbox: no fence is built for another" % sys.platform
+    if not os.access(SANDBOX, os.X_OK):
+        return "the sandbox program %s is not there" % SANDBOX
+    if not os.access(FENCE, os.X_OK):
+        return "the fence tool %s is not there" % FENCE
+    return None
+
+
+def main():
+    if sys.argv[1:] in (["--help"], ["-h"]):
+        with open(os.path.realpath(__file__), encoding="utf-8") as source:
+            for line in source.read().splitlines()[1:]:
+                if not line.startswith("#"):
+                    break
+                sys.stdout.write(line[2:] + "\n")
+        return
+    if sys.argv[1:]:
+        sys.stderr.write("%s: refused usage: it takes no argument but --help; a PreToolUse event is read on stdin\n" % PROG)
+        sys.exit(2)
+    try:
+        event = json.loads(sys.stdin.read())
+    except ValueError:
+        event = None
+    if not isinstance(event, dict):
+        sys.stderr.write("%s: refused unknown: the hook's input is no JSON object, so nothing says whose call this is — it is blocked\n" % PROG)
+        sys.exit(2)
+    agent = event.get("agent_type")
+    if not agent or agent in WRITERS:
+        return
+    tool = event.get("tool_name")
+    given = event.get("tool_input")
+    given = given if isinstance(given, dict) else {}
+    project = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not project:
+        refused("unknown", "CLAUDE_PROJECT_DIR is not set, so the guard cannot tell whether %s works inside a stabilization run: a call of a fenced agent is refused where that cannot be told" % agent)
+    try:
+        bound = the_run(project)
+    except LookupError as why:
+        refused("unknown", "%s: a call of a fenced agent is refused where the guard cannot tell what it would write" % why)
+    if bound is None:
+        return
+    top, places, run = bound
+    if tool in FILE_TOOLS:
+        path = given.get(FILE_TOOLS[tool])
+        if not isinstance(path, str) or not path:
+            refused("unknown", "the %s call names no file (%s), so the guard cannot tell where it writes" % (tool, FILE_TOOLS[tool]))
+        if under(resolved(event.get("cwd") or top, path), places):
+            refused("repository", "%s may not write %s: inside the stabilization run `%s` no agent but a writer (%s) writes the run's repository %s or its git directory. Write under your scratch root, and hand a report or a filing to dev/stabilize-record by the one plain call your prompt spells" % (agent, path, run, ", ".join(WRITERS), top))
+        return
+    if tool in SHELLS:
+        refused("shell", "%s may not use %s inside the stabilization run `%s`: it runs a shell the write guard cannot fence. Use Bash, whose commands run under the write fence" % (agent, tool, run))
+    if tool == "Agent":
+        if given.get("subagent_type") in WRITERS:
+            refused("writer", "%s may not launch a %s inside the stabilization run `%s`: a writer is launched by the harness alone" % (agent, given.get("subagent_type"), run))
+        return
+    if tool != "Bash":
+        return
+    command = given.get("command")
+    if not isinstance(command, str) or not command.strip():
+        refused("unknown", "the Bash call names no command, so the guard cannot tell what it runs")
+    if plain_call(command):
+        here = event.get("cwd")
+        if isinstance(here, str) and here and identity(resolved(top, here)) == identity(top):
+            return
+        refused("directory", "a call of %s runs from the repository's root, %s, and this one was made from %s: run the same line again from there" % (words(command.strip(" \n"))[0], top, here))
+    called = CALLED.search(command)
+    if called:
+        tool_path = called.group(1)
+        refused("shape", "a call of %s is taken only as ONE plain invocation, typed alone: `%s <its words>`, the tool's path first and its words after it, exactly as your prompt spells the call — no `cd`, no `&&` or `;` and no second command, no `echo`, no pipe and no redirect, no `$`, and no path before `dev/`. Its exit status is the call's own. Type the call again in that shape" % (tool_path, tool_path))
+    missing = fence_missing()
+    if missing:
+        refused("no-fence", "%s — inside the stabilization run `%s` every command of %s runs under the write fence, and none is run open" % (missing, run, agent))
+    updated = dict(given)
+    updated["command"] = "%s --repo %s -- %s" % (shlex.quote(FENCE), shlex.quote(top), shlex.quote(command))
+    if event.get("permission_mode") == "bypassPermissions":
+        decide("allow", "%s: the command runs under the write fence of the stabilization run `%s`" % (PROG, run), updated)
+    decide("ask", "%s: inside the stabilization run `%s` this command of %s runs only under the write fence — the command shown is that fenced command" % (PROG, run, agent), updated)
+
+
+if __name__ == "__main__":
+    main()

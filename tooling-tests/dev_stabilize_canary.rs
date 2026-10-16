@@ -155,6 +155,10 @@ const TOOL: &str = "dev/stabilize-canary";
 const RECORD: &str = "dev/stabilize-record";
 const HARNESS: &str = ".claude/workflows/stabilize.js";
 const RUNTIME: &str = "tooling-tests/fixtures/stabilize-runtime.mjs";
+/// The write guard, its fence and its probe: what a commit a root of the parts is set up
+/// from must hold, and the probe's script, which act `part-0` invokes by its path.
+const GUARD_NEEDS: [&str; 3] = ["dev/stabilize-guard", "dev/stabilize-fence", GUARD_SCRIPT];
+const GUARD_SCRIPT: &str = "dev/stabilize-guard-probe.js";
 
 /// The canary's run in every test, the release it measures against, the one door of its
 /// round, and the key of the finding its opening seeds.
@@ -410,8 +414,20 @@ impl Canary {
     /// the switch names as the run's closing condition.
     fn parts(label: &str) -> Self {
         let mut canary = Canary::new(label);
+        canary.guarded();
         canary.log(&[EXIT_RULE]);
         canary
+    }
+
+    /// THE WRITE GUARD, ITS FENCE AND ITS PROBE, committed: a root of the parts runs the
+    /// probe first, and a commit that cannot is refused (unfit).
+    fn guarded(&mut self) {
+        for tool in GUARD_NEEDS {
+            placed_executable::copy(&repo_root().join(tool), &self.rig.root.join(tool));
+        }
+        self.commit = self
+            .rig
+            .commit("chore: the write guard, its fence and its probe");
     }
 
     /// The source's log with one entry more under each of `headings`, committed: the commit
@@ -2878,6 +2894,18 @@ fn under_the_switch_a_flag_outside_its_grammar_a_log_without_the_one_entry_and_a
 
     // From here on the log holds the one entry.
     canary.log(&[EXIT_RULE]);
+    // … AND A COMMIT WITHOUT THE WRITE GUARD, ITS FENCE AND ITS PROBE IS UNFIT TOO: a root of
+    // the parts runs the probe first.
+    let told = canary.setup(&canary.root("g0"), &[PARTS]);
+    let refused = told.refused("unfit");
+    assert!(
+        GUARD_NEEDS.iter().all(|tool| refused["halt"]["root_cause"]
+            .as_str()
+            .is_some_and(|cause| cause.contains(tool))),
+        "it names what the commit lacks: {refused}"
+    );
+    unmade(&canary, "g0");
+    canary.guarded();
     let setup = |at: &str, more: &[&str]| canary.setup(&canary.root(at), more);
 
     // A BUDGET IS A POSITIVE WHOLE NUMBER, AND AN ORDER A LIST OF CLASSES, each one plain
@@ -3247,6 +3275,212 @@ fn route_and_reserve() -> (Vec<&'static str>, Vec<&'static str>) {
     (plants_of("route seed"), plants_of("behaviour seed"))
 }
 
+/// The six attempts of the write guard's probe, as its agent returns them where the guard
+/// held: the file tool's write refused by the hook; the three writes of the shell refused by
+/// the fence, each with its banner; the scratch file written, fenced; and the plain call of
+/// the record script run with no fence.
+fn guard_held() -> Value {
+    let fenced = |attempt: &str| json!({"attempt": attempt, "exit": 1, "refused_by": "fence", "banner": true, "said": "stabilize-fence: under the write fence of the clone"});
+    json!([
+        {"attempt": "write", "exit": -1, "refused_by": "hook", "banner": false, "said": "PreToolUse:Write hook error: stabilize-guard: refused repository: ..."},
+        fenced("echo"),
+        fenced("commit"),
+        fenced("config"),
+        {"attempt": "scratch", "exit": 0, "refused_by": "none", "banner": true, "said": "stabilize-fence: under the write fence of the clone"},
+        {"attempt": "record", "exit": 0, "refused_by": "none", "banner": false, "said": "{\"run\": \"canary-parts\"}"},
+    ])
+}
+
+/// **The write guard's probe is made first, and `check` reads the clone, not the agent**
+/// (DECISIONS.md → *2026-10-16 — The write guard of a stabilization run*; the plan's §5,
+/// part 0). Under the switch the setup names act `part-0` apart from the acts (`guard`): the
+/// probe's script by its path in the clone, its argument object, its prompt file, its
+/// return file, ONE agent and no tool step, what the human does around it, and the clone's
+/// snapshot at the setup. Its script, run under the runtime's stand-in, launches that one
+/// agent — of a type the guard fences — and returns what it said. And `check` says what the
+/// clone shows: where the guard held, nothing landed, the snapshot is the same and `fenced`
+/// is true; WHERE THE HOOK DID NOT FIRE, the probe's writes land — and `check` names each,
+/// whatever the agent returned, and `fenced` is false.
+#[test]
+fn the_write_guards_probe_is_made_first_and_check_reads_the_clone_not_the_agent() {
+    let canary = Canary::parts("parts-guard");
+    let line = canary.ready("canary", &[PARTS]);
+    let root = canary.root("canary");
+    let clone = root.join("clone");
+    let scratch = root.join("scratch");
+
+    // (1) THE LINE NAMES THE PROBE, apart from the acts.
+    let guard = &line["guard"];
+    let script = clone.join(GUARD_SCRIPT);
+    assert!(script.is_file(), "the clone holds the probe's script");
+    let args = json!({"run": RUN, "clone": clone, "scratch": scratch});
+    assert_eq!(
+        json!([
+            guard["act"],
+            guard["script"],
+            guard["args"],
+            guard["prompt"],
+            guard["return"],
+            guard["expect"]
+        ]),
+        json!(["part-0", script, args, root.join("prompts/part-0.md"), root.join("results/part-0.json"), {"agents": 1, "tool_steps": 0}]),
+        "{guard}"
+    );
+    assert!(
+        guard["human"]
+            .as_str()
+            .is_some_and(|said| said.starts_with("FIRST, on a fresh root")),
+        "{guard}"
+    );
+    let snapshot: Vec<&str> = guard["snapshot"]
+        .as_object()
+        .expect("the clone's snapshot")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        snapshot,
+        ["config", "head", "hooks", "reflog", "refs", "status"]
+    );
+    assert!(
+        line["acts"]
+            .as_array()
+            .expect("the acts")
+            .iter()
+            .all(|act| act["act"] != "part-0"),
+        "the probe is no act of the harness"
+    );
+    // Its prompt file: the script's path, the argument object and the return file, each on
+    // a line of its own — as every act's.
+    let text = fs::read_to_string(root.join("prompts/part-0.md")).expect("the probe's prompt file");
+    let own_line = |wanted: String| text.lines().filter(|line| *line == wanted).count() == 1;
+    let objects: Vec<Value> = text
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .map(|line| serde_json::from_str(line).expect("the argument object is JSON"))
+        .collect();
+    assert!(
+        own_line(script.display().to_string())
+            && objects == [args.clone()]
+            && own_line(root.join("results/part-0.json").display().to_string()),
+        "{text}"
+    );
+
+    // (2) RIGHT AFTER THE SETUP: nothing returned, nothing landed, the snapshot the same.
+    let read = canary.checked(&root);
+    let refused = json!({"write": "refused", "echo": "refused", "commit": "refused", "config": "refused", "scratch": "absent"});
+    assert_eq!(
+        read["guard"],
+        json!({"act": "part-0", "returned": false, "status": null, "own": null, "attempts": null,
+               "disk": refused, "landed": [], "snapshot": {"same": true, "moved": []}, "fenced": null}),
+        "{}",
+        read["guard"]
+    );
+
+    // (3) THE PROBE'S SCRIPT, run as its prompt file says, under the runtime's stand-in:
+    // ONE agent, of a type the guard fences, and its return passed on.
+    let returned = if node_or_skip(&format!("the probe {GUARD_SCRIPT} was not run")) {
+        let ran = canary.invoke_by(
+            &script.display().to_string(),
+            &clone.display().to_string(),
+            &args,
+            json!({"agents": {"guard-probe": {"attempts": guard_held()}}}),
+            1,
+        );
+        assert_eq!(ran.agents, ["guard-probe"], "one agent: {:?}", ran.agents);
+        assert_eq!(
+            json!([
+                ran.result["status"],
+                ran.result["agent_type"],
+                ran.result["attempts"]
+            ]),
+            json!(["probed", "milestone-e2e-tester", guard_held()])
+        );
+        let (_, prompt) = &ran.prompts[0];
+        assert!(
+            prompt.contains(&clone.display().to_string())
+                && prompt.contains(&format!("`dev/stabilize-record state --run {RUN}`")),
+            "the prompt aims at the clone, and spells the plain call: {prompt}"
+        );
+        // An argument object that is not the three is refused, and launches nobody.
+        let bad = canary.invoke_by(
+            &script.display().to_string(),
+            &clone.display().to_string(),
+            &json!({"run": RUN, "clone": "relative/path", "scratch": scratch}),
+            json!({}),
+            2,
+        );
+        assert_eq!(
+            (bad.result["status"].clone(), bad.agents.len()),
+            (json!("refused"), 0)
+        );
+        ran.result
+    } else {
+        json!({"status": "probed", "agent_type": "milestone-e2e-tester", "attempts": guard_held()})
+    };
+    // The session writes the return; the agent's scratch file is where it wrote it.
+    fs::write(root.join("results/part-0.json"), returned.to_string()).expect("the probe's return");
+    let mine = scratch.join("guard.probe1");
+    fs::create_dir_all(&mine).expect("the agent's own directory");
+    fs::write(mine.join("guard-probe-scratch.txt"), "probe\n").expect("the scratch file");
+    let read = canary.checked(&root);
+    let mut written = refused.clone();
+    written["scratch"] = json!("written");
+    assert_eq!(
+        json!([
+            read["guard"]["returned"],
+            read["guard"]["status"],
+            read["guard"]["own"],
+            read["guard"]["attempts"],
+            read["guard"]["disk"],
+            read["guard"]["landed"],
+            read["guard"]["snapshot"],
+            read["guard"]["fenced"]
+        ]),
+        json!([true, "probed", true, guard_held(), written, [], {"same": true, "moved": []}, true]),
+        "where the guard held: {}",
+        read["guard"]
+    );
+
+    // (4) A HOOK THAT DID NOT FIRE: the probe's writes land in the clone — and `check` names
+    // each from the clone, though the return on file says every one was refused.
+    fs::write(clone.join("guard-probe-echo.txt"), "probe\n").expect("a write that landed");
+    let git = |argv: &[&str]| {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&clone)
+            .args(["-c", "user.name=probe", "-c", "user.email=probe"])
+            .args(argv)
+            .output()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {argv:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["config", "--local", "guard.probe", "1"]);
+    git(&["commit", "--allow-empty", "-q", "-m", "guard-probe"]);
+    git(&["reset", "-q", "--soft", "HEAD~1"]);
+    let read = canary.checked(&root);
+    let guard = &read["guard"];
+    assert_eq!(
+        json!([guard["disk"], guard["landed"], guard["fenced"]]),
+        json!([{"write": "refused", "echo": "landed", "commit": "landed", "config": "landed", "scratch": "written"}, ["echo", "commit", "config"], false]),
+        "{guard}"
+    );
+    assert_eq!(guard["snapshot"]["same"], false, "{guard}");
+    for moved in ["config", "reflog", "status"] {
+        assert!(
+            guard["snapshot"]["moved"]
+                .as_array()
+                .expect("what moved")
+                .contains(&json!(moved)),
+            "`{moved}` moved: {guard}"
+        );
+    }
+}
+
 /// **A prompt file holds the arguments its line names, and nothing a shell reads** (the
 /// plan's §5 and §10, `SC3`; its §12: *a prompt lifted from the setup's line of JSON — a text
 /// with escapes, pasted by hand* — rejected). Under the switch the setup writes ONE PROMPT
@@ -3414,7 +3648,7 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
     made.sort();
     let mut named: Vec<String> = ACTS
         .iter()
-        .chain(&["ruling-again", "ruling-raise-again"])
+        .chain(&["ruling-again", "ruling-raise-again", "part-0"])
         .map(|act| format!("{act}.md"))
         .collect();
     named.sort();
@@ -3424,6 +3658,7 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
             .expect("the kept line is JSON");
     assert_eq!(kept["acts"], line["acts"]);
     assert_eq!(kept["rulings"], line["rulings"]);
+    assert_eq!(kept["guard"], line["guard"]);
 
     // (5) THE TWO ACTS THAT ONLY RULE NAME WHAT THE HUMAN RULES, as plain text the harness
     // takes: the order of part 3 — the classes as the record script holds them — and the
@@ -6028,7 +6263,9 @@ fn check_says_what_is_applied_and_in_no_commit_and_takes_no_lock_a_stage_could_m
                 "log",
                 "diff-tree",
                 "cat-file",
-                "worktree"
+                "worktree",
+                // The write guard's probe: the clone's local refs, for its snapshot.
+                "for-each-ref"
             ]
             .contains(&verb),
             "`git {command}` is no read `check` is known to make"
