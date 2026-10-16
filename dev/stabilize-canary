@@ -141,8 +141,11 @@
 #       bytes, whether it counts and whether a record took it: the same file is printed
 #       with the same hash before and after that record · view: {file, sha256, on_disk},
 #       the stop's view · attempts: {begun, unrecorded} · held (below) · trail: [{commit,
-#       subject, attempts}] — THE RECORDS MADE, every commit on the opening with the
-#       attempts whose marker it took · pending_paths: what `git status` shows, by its
+#       subject, attempts, author, committer, canary}] — THE RECORDS MADE, every commit on
+#       the opening with the attempts whose marker it took, who made it, and whether author
+#       and committer are both the canary's (THE CANARY'S IDENTITY) · identity: {canary,
+#       others} — that identity, and every commit of the trail that does not carry it ·
+#       pending_paths: what `git status` shows, by its
 #       path · acts: [{act, returned, status, next, own, shows, stands}] (below) ·
 #       guard (THE WRITE GUARD'S PROBE, below) ·
 #       ruling (below) · tool: {wrote, commit, reads, same} — THE THREE TOOLS, by sha256:
@@ -486,6 +489,17 @@
 # the same, the scratch file was written and the agent says its plain call ran with no fence;
 # false where a write landed or the snapshot moved; null otherwise. A HOOK THAT DID NOT FIRE
 # IS NEVER SILENT: its writes land, and `fenced` is false.
+#
+# THE CANARY'S IDENTITY (DECISIONS.md -> 2026-10-16, "The canary's clone holds its answer key
+# withheld", its second part). Everything a setup commits carries `The Canary
+# <canary@example.invalid>`, the tool's own — a synthetic identity, as every tool of this
+# repository that commits has one of its own — and the setup writes it into the clone's own
+# configuration (`user.name`, `user.email`), which outranks a global one: a stage's record
+# commits carry it too, and none the machine's, whoever runs the canary where. Nothing
+# commits in the bare remote, which takes pushes only. An identity THE ENVIRONMENT names
+# (GIT_AUTHOR_NAME and the rest) outranks every configuration: `check` prints, of each
+# commit on the opening, its author and committer, and lists every one that is not the
+# canary's (`identity.others`) — a record of the run made under another identity.
 #
 # THE RULINGS OFF THE MAIN LINE — the human's exits the plan's section 5 names, each ONE
 # invocation that only rules and starts nothing. FOR EACH THE SETUP WRITES A PROMPT FILE
@@ -1228,6 +1242,13 @@ def callers_env():
     return env
 
 
+# THE CANARY'S IDENTITY: what everything a setup makes is committed under, and what the
+# clone's own configuration names, so that a stage's record commits carry it too — and no
+# machine's own (THE CANARY'S IDENTITY, in the header).
+NAME, EMAIL = "The Canary", "canary@example.invalid"
+IDENTITY = "%s <%s>" % (NAME, EMAIL)
+
+
 def makers_env():
     """The environment everything a setup MAKES is made in: no git configuration of the
     machine's — no signing, no hook, no rewrite — and an identity of the tool's own."""
@@ -1235,10 +1256,10 @@ def makers_env():
     env.update(
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_GLOBAL=os.devnull,
-        GIT_AUTHOR_NAME="The Canary",
-        GIT_AUTHOR_EMAIL="canary@example.invalid",
-        GIT_COMMITTER_NAME="The Canary",
-        GIT_COMMITTER_EMAIL="canary@example.invalid",
+        GIT_AUTHOR_NAME=NAME,
+        GIT_AUTHOR_EMAIL=EMAIL,
+        GIT_COMMITTER_NAME=NAME,
+        GIT_COMMITTER_EMAIL=EMAIL,
     )
     return env
 
@@ -1724,6 +1745,10 @@ def setup(args, facts):
     # commits from this one BY PATH: no remote of it names this repository.
     made(["git", "init", "-q", "--bare", origin], root)
     made(["git", "init", "-q", clone], root)
+    # THE CANARY'S IDENTITY, in the clone's own configuration: it outranks the machine's, so
+    # a commit a stage's step makes there carries it. Nothing commits in the bare remote.
+    made(["git", "config", "user.name", NAME], clone)
+    made(["git", "config", "user.email", EMAIL], clone)
     made(["git", "fetch", "-q", "--no-tags", ROOT, candidate, previous], clone)
     made(["git", "switch", "-q", "-c", loop, candidate], clone)
     if queue is not None and withheld:
@@ -2167,9 +2192,10 @@ def parts_read(root, kept, state, position):
         return sorted(int(held.group(1)) for held in map(marker.fullmatch, paths) if held)
 
     trail = []
-    for entry in lines(said("log", "--reverse", "--format=%H %s", "%s..HEAD" % kept["head"])):
-        commit, _, subject = entry.partition(" ")
-        trail.append({"commit": commit, "subject": subject, "attempts": attempts(lines(said("diff-tree", "--no-commit-id", "--name-only", "--diff-filter=A", "-r", commit)))})
+    for entry in lines(said("log", "--reverse", "--format=%H%x1f%an <%ae>%x1f%cn <%ce>%x1f%s", "%s..HEAD" % kept["head"])):
+        commit, author, committer, subject = entry.split("\x1f", 3)
+        # WHO MADE IT: a record carries the canary's identity, author and committer both.
+        trail.append({"commit": commit, "subject": subject, "attempts": attempts(lines(said("diff-tree", "--no-commit-id", "--name-only", "--diff-filter=A", "-r", commit))), "author": author, "committer": committer, "canary": author == committer == IDENTITY})
     pending = [line[3:] for line in lines(said(*STATUS_READ))]
     # WHERE THE STATE WAS NOT READ — a write of the run was killed between its files —
     # nothing below that is the state's is said: each such field is null, and of no act
@@ -2266,6 +2292,7 @@ def parts_read(root, kept, state, position):
         **({name: None for name in of_the_state} if unread else of_the_state),
         "held": held,
         "trail": trail,
+        "identity": {"canary": IDENTITY, "others": [record["commit"] for record in trail if not record["canary"]]},
         "pending_paths": pending,
         "acts": acts,
         "guard": guard_read(kept, clone, env, os.path.join(root, DIRS[2]), not unread and begun == 0 and not trail),

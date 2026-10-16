@@ -4420,6 +4420,122 @@ fn the_clones_tree_names_no_planted_row_beside_how_it_falls() {
     assert!(!refused.exists(), "nothing was made");
 }
 
+/// The identity the canary's clone commits under: the setup's own, which its commits carry.
+const CANARY_NAME: &str = "The Canary";
+const CANARY_EMAIL: &str = "canary@example.invalid";
+
+/// **A record commit in the clone carries the canary's own identity, and `check` names one
+/// that does not** (the staged canary's third root: its record commits carried the machine's
+/// global `user.name` and `user.email` — a canary that leans on the machine's ambient git
+/// configuration is not the same run on another machine, and its records carry an identity
+/// they did not choose). The setup writes the canary's identity into the clone's own
+/// configuration, which outranks a global one; `check` prints, of every commit on the
+/// opening, its author and its committer and whether both are the canary's, and lists the
+/// commits that are not — an identity the environment names outranks every configuration.
+#[test]
+fn a_record_commit_in_the_clone_carries_the_canarys_identity_and_check_names_one_that_does_not() {
+    let canary = Canary::parts("parts-identity");
+    canary.ready("canary", &[PARTS]);
+    let root = canary.root("canary");
+    let clone = root.join("clone");
+    let canarys = format!("{CANARY_NAME} <{CANARY_EMAIL}>");
+
+    // (1) THE CLONE'S OWN CONFIGURATION NAMES THE CANARY.
+    assert_eq!(
+        [
+            canary.git(&clone, &["config", "--local", "user.name"]),
+            canary.git(&clone, &["config", "--local", "user.email"]),
+        ],
+        [CANARY_NAME, CANARY_EMAIL]
+    );
+
+    // (2) A COMMIT MADE THERE AS A STAGE'S STEP MAKES IT — a machine's global configuration
+    // naming somebody, no identity in the environment — carries the canary's identity.
+    let global = canary.rig.dir().join("machine.gitconfig");
+    fs::write(
+        &global,
+        "[user]\n\tname = Somebody Else\n\temail = somebody@example.invalid\n",
+    )
+    .expect("write a machine's own configuration");
+    let mut command = canary.command(Path::new("git"));
+    for name in [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        command.env_remove(name);
+    }
+    let out = command
+        .env("GIT_CONFIG_GLOBAL", &global)
+        .args(["commit", "--allow-empty", "-q", "-m", "a record"])
+        .current_dir(&clone)
+        .output()
+        .expect("run git commit");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let first = canary.git(&clone, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        canary.git(&clone, &["log", "-1", "--format=%an <%ae>|%cn <%ce>"]),
+        format!("{canarys}|{canarys}")
+    );
+
+    // (3) ONE WHOSE IDENTITY THE ENVIRONMENT NAMES — the rig's, here — is not the canary's,
+    // and `check` says so, by its commit.
+    canary.git(
+        &clone,
+        &["commit", "--allow-empty", "-q", "-m", "another record"],
+    );
+    let second = canary.git(&clone, &["rev-parse", "HEAD"]);
+    // … and one whose author is the canary's and whose committer the environment names.
+    let out = canary
+        .command(Path::new("git"))
+        .env_remove("GIT_AUTHOR_NAME")
+        .env_remove("GIT_AUTHOR_EMAIL")
+        .args(["commit", "--allow-empty", "-q", "-m", "a third record"])
+        .current_dir(&clone)
+        .output()
+        .expect("run git commit");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let third = canary.git(&clone, &["rev-parse", "HEAD"]);
+    let read = canary.checked(&root);
+    let trail: Vec<Value> = read["trail"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`check` prints the trail: {read}"))
+        .iter()
+        .map(|record| {
+            json!([
+                record["commit"],
+                record["author"],
+                record["committer"],
+                record["canary"]
+            ])
+        })
+        .collect();
+    let rigs = "The Rig <rig@example.invalid>";
+    assert_eq!(
+        trail,
+        [
+            json!([first, canarys, canarys, true]),
+            json!([second, rigs, rigs, false]),
+            json!([third, canarys, rigs, false]),
+        ],
+        "{read}"
+    );
+    assert_eq!(
+        read["identity"],
+        json!({"canary": canarys, "others": [second, third]}),
+        "{read}"
+    );
+}
+
 /// **`check` says of each act what was returned, and what the run shows** (the plan's §8; the
 /// third fault of the row `wf-canary-setup`: *its `check` says `returned.then: false` both of
 /// an invocation that never ran and of one that returned and was not written down*). For a
