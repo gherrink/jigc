@@ -94,7 +94,12 @@
 //! - and the planted rows: no key and no cell says how a claim falls or that it was planted
 //!   ([`no_planted_row_says_which_way_its_claim_falls_or_that_it_was_planted`]), and the
 //!   answer sheet is `check`'s to print and in no file the setup writes
-//!   ([`the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes`]).
+//!   ([`the_answer_sheet_is_checks_to_print_and_is_in_no_file_the_setup_writes`]);
+//! - and the one item part 3 hands on for certain (the human's ruling of 2026-10-16): the
+//!   first planted row quotes it with its kind's evidence, filed as a verifier hands it on it
+//!   enters the queue ahead of the reserve, `check` says how it fell beside what the sheet
+//!   says it should return, and the clone's tree does not hold that answer
+//!   ([`the_first_rows_drive_meets_an_item_its_verifier_hands_on_and_check_says_how_it_fell`]).
 //!
 //! **And what the second review before the first part found in the tool** (the staged plan's
 //! `R1`; [DECISIONS.md](../DECISIONS.md) → *2026-10-13 — The canary's setup refuses a commit
@@ -3079,14 +3084,14 @@ const ACTS: [&str; 9] = [
 /// **The argument object of each act, typed here a second time from the plan's §5** — so
 /// that an act whose arguments moved in the tool is red: the stage with the tuning stop
 /// `preflight`; the stage; the order part 3 rules; the stage, which continues; the budget
-/// raised by four; the stage, which the human ends; a look; the stage; and the same once more.
+/// raised by five; the stage, which the human ends; a look; the stage; and the same once more.
 fn act_args(act: &str, scratch: &str) -> Value {
     let mut args = json!({"stage": "test", "run": RUN, "scratch": scratch});
     let more = match act {
         "part-1" => json!({"scope": {"doors": [PARTS_DOOR]}, "stopAfter": "preflight"}),
         "part-2" => json!({"scope": {"doors": [PARTS_DOOR]}}),
         "part-3-act-1" => json!({"rulings": [{"order": ORDER_THREE}]}),
-        "part-4-act-1" => json!({"rulings": [{"budget": BUDGET + 4}]}),
+        "part-4-act-1" => json!({"rulings": [{"budget": BUDGET + 5}]}),
         "part-4-act-3" => json!({"stopAfter": "state"}),
         "part-3-act-2" | "part-4-act-2" | "part-4-act-4" | "part-4-act-5" => json!({}),
         other => panic!("`{other}` is no act of the parts"),
@@ -3537,7 +3542,7 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
             .collect::<Vec<_>>(),
         [
             json!(["ruling-again", [{"again": "test"}], null]),
-            json!(["ruling-raise-again", [{"budget": BUDGET + 8}], null])
+            json!(["ruling-raise-again", [{"budget": BUDGET + 10}], null])
         ],
         "{line}"
     );
@@ -3670,13 +3675,15 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
 
     // (5) THE TWO ACTS THAT ONLY RULE NAME WHAT THE HUMAN RULES, as plain text the harness
     // takes: the order of part 3 — the classes as the record script holds them — and the
-    // budget raised by four, so that four verdicts are left.
+    // budget raised by five, so that five verdicts are left (four until 2026-10-17: part 3's
+    // wave 2 is now the item the first row's verifier hands on, and the reserve row it took
+    // moves to part 4).
     assert_eq!(
         json!([
             act_of(&line, "part-3-act-1")["args"]["rulings"],
             act_of(&line, "part-4-act-1")["args"]["rulings"]
         ]),
-        json!([[{"order": ORDER_THREE}], [{"budget": 13}]]),
+        json!([[{"order": ORDER_THREE}], [{"budget": 14}]]),
         "{line}"
     );
     // AS IT WAS GIVEN: a root opened with another budget is raised from that one.
@@ -3686,24 +3693,24 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
             act_of(&other, "part-4-act-1")["args"]["rulings"],
             other["rulings"][1]["args"]["rulings"]
         ]),
-        json!([[{"budget": 8}], [{"budget": 12}]]),
+        json!([[{"budget": 9}], [{"budget": 14}]]),
         "{other}"
     );
     // AND A BUDGET SO LARGE THAT A RAISE WOULD BE A NUMBER THE HARNESS TAKES NONE OF is
     // refused at the setup, before anything is made (the review before part 1, a row): the
-    // harness takes no number above 999999 in a ruling, part 4 raises by four and a missed
-    // window by four more.
-    let large = canary.setup(&canary.root("too-large"), &[PARTS, "--budget", "999992"]);
+    // harness takes no number above 999999 in a ruling, part 4 raises by five and a missed
+    // window by five more.
+    let large = canary.setup(&canary.root("too-large"), &[PARTS, "--budget", "999990"]);
     assert!(
         large.refused("usage")["halt"]["root_cause"]
             .as_str()
-            .is_some_and(|cause| cause.contains("--budget 999992 is too large")
-                && cause.contains("at most 999991")),
+            .is_some_and(|cause| cause.contains("--budget 999990 is too large")
+                && cause.contains("at most 999989")),
         "{}",
         large.raw
     );
     assert!(!canary.root("too-large").exists());
-    let largest = canary.ready("largest", &[PARTS, "--budget", "999991"]);
+    let largest = canary.ready("largest", &[PARTS, "--budget", "999989"]);
     assert_eq!(
         largest["rulings"][1]["args"]["rulings"],
         json!([{"budget": 999_999}]),
@@ -3723,7 +3730,7 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
         ("part-4-act-1", json!([10, 9, null, null])),
         (
             "part-4-act-2",
-            json!([13, 13, "budget.left", {"agents": 9, "tool_steps": 5}]),
+            json!([13, 13, "budget.left", {"agents": 10, "tool_steps": 5}]),
         ),
         ("part-4-act-3", json!([2, 2, null, null])),
         ("part-4-act-4", json!([13, 13, "budget.left", null])),
@@ -5614,7 +5621,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     let result = &raised.result;
     assert_eq!(
         json!([result["status"], result["next"], result["budget"]]),
-        json!(["ruled", "verify", {"limit": 13, "spent": 9, "left": 4}]),
+        json!(["ruled", "verify", {"limit": 14, "spent": 9, "left": 5}]),
         "{result}"
     );
     assert_eq!(
@@ -5629,7 +5636,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
         .expect("the attempt the next invocation begins");
     assert_eq!(
         json!([read["records"], read["state"], read["budget"]]),
-        json!([4, {"next": "verify", "round": 1, "attempt": 4}, {"limit": 13, "spent": 9, "left": 4}]),
+        json!([4, {"next": "verify", "round": 1, "attempt": 4}, {"limit": 14, "spent": 9, "left": 5}]),
         "{read}"
     );
     assert_eq!(
@@ -5639,9 +5646,9 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     );
 
     // ---- PART 4, ACT 2 — the wave, and the kill: IT DIES AFTER TWO FILINGS ----------------
-    // The wave is the first four of the queue. Two verifiers file; the session is ended
-    // while the other two drive: they leave nothing, and the invocation never returns.
-    let wave = [second, reserve[5], reserve[6], reserve[7]];
+    // The wave is the first five of the queue. Two verifiers file; the session is ended
+    // while the other three drive: they leave nothing, and the invocation never returns.
+    let wave = [second, reserve[5], reserve[6], reserve[7], reserve[8]];
     let mut agents = json!({});
     for key in &wave[..2] {
         agents[format!("verify:{key}")] = refutes();
@@ -5660,7 +5667,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     assert_eq!(killed.result["status"], "halted", "{}", killed.result);
     assert_eq!(verified(&killed), wave, "{:?}", killed.agents);
     // UNTIL IT IS ENDED the act launched what its line says is launched by then: the steps
-    // an invocation that continues opens with, and the wave's four verifiers.
+    // an invocation that continues opens with, and the wave's five verifiers.
     let until: Vec<&String> = killed
         .agents
         .iter()
@@ -5717,7 +5724,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
             snapshot["budget"],
             said_of(&snapshot, "part-4-act-2")
         ]),
-        json!([4, {"next": "verify", "round": 1, "attempt": 5}, {"limit": 13, "spent": 11, "left": 2},
+        json!([4, {"next": "verify", "round": 1, "attempt": 5}, {"limit": 14, "spent": 11, "left": 3},
                {"act": "part-4-act-2", "returned": false, "status": null, "next": null,
                 "own": null, "shows": true, "stands": "not-written"}]),
         "{snapshot}"
@@ -5820,7 +5827,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     // the batch). The human ended the act, so no return is written: THE RUN SHOWS THE ACT —
     // the batch that is applied is the record it will be, with the markers that are pending
     // — and it stands as one that ran and was not written down. The batch is named, with
-    // the four filings it takes: the two of the ended act and the two of this one, each
+    // the five filings it takes: the two of the ended act and the three of this one, each
     // printed as one NO RECORD TOOK. What is committed is said as it is: four records.
     let read = canary.checked(&root);
     assert_eq!(
@@ -5835,7 +5842,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
         "{read}"
     );
     let window = filed(&read);
-    assert_eq!(window.len(), 13, "{read}");
+    assert_eq!(window.len(), 14, "{read}");
     for entry in &before {
         assert!(
             window.contains(&(entry.0.clone(), entry.1.clone(), true, entry.3)),
@@ -5875,7 +5882,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
         json!([
             format!("docs(record): {RUN} r1 - the verdicts of the test stage"),
             false,
-            4,
+            5,
             "applied",
             4,
             "ruling-raise-again"
@@ -5924,7 +5931,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     // and the record took it — and with it the two of the continuation's own attempt.
     let read = canary.checked(&root);
     let after = filed(&read);
-    assert_eq!(after.len(), 13, "{read}");
+    assert_eq!(after.len(), 14, "{read}");
     for entry in &before {
         assert!(
             after.contains(&(entry.0.clone(), entry.1.clone(), true, true)),
@@ -5943,7 +5950,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
             read["applied"],
             read["state"]["across"]
         ]),
-        json!([5, true, 0, {"limit": 13, "spent": 13, "left": 0}, reserve[8..], null, null]),
+        json!([5, true, 0, {"limit": 14, "spent": 14, "left": 0}, reserve[9..], null, null]),
         "{read}"
     );
     assert_eq!(
@@ -6016,7 +6023,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     let result = &raised_again.result;
     assert_eq!(
         json!([result["status"], result["next"], result["budget"]]),
-        json!(["ruled", "verify", {"limit": 17, "spent": 13, "left": 4}]),
+        json!(["ruled", "verify", {"limit": 19, "spent": 14, "left": 5}]),
         "{result}"
     );
     assert!(
@@ -6027,7 +6034,7 @@ fn the_acts_run_in_order_through_the_clones_own_harness() {
     let read = canary.checked(&root);
     assert_eq!(
         json!([read["ruling"], read["budget"], read["records"]]),
-        json!([null, {"limit": 17, "spent": 13, "left": 4}, 6]),
+        json!([null, {"limit": 19, "spent": 14, "left": 5}, 6]),
         "{read}"
     );
 
@@ -6951,5 +6958,273 @@ fn check_reads_a_killed_write_as_a_state_and_never_says_of_a_canary_that_the_roo
             .is_some_and(|advice| advice.contains("The root holds no canary")),
         "{}",
         told.raw
+    );
+}
+
+/// The route line the first planted row quotes of the second refusal its drive meets — typed
+/// here a second time, from that drive on the candidate (2026-10-17): the hook is then a link
+/// that leads to nothing, and the line names the repository's own hook as the link.
+const FOLLOW_UP_ROUTE: &str = "route: remove the link at `<rig>/repo/.git/hooks/pre-commit`, or point it at a script inside this repository, then re-run `jigc setup`. `--force` does not change this: it consents to replacing a file, not to following a link";
+/// The plan's name for the item that route is, and what its own verifier should return.
+const FOLLOW_UP_PLAN: &str = "plant-install-hook-follow-up";
+const FOLLOW_UP_RETURNS: &str = "refuted: does-not-reproduce";
+
+/// **Part 3 hands one item on for certain: the first planted row's drive meets it, its verifier
+/// may hand it on under the rules it already has, and `check` says how it fell** (the human's
+/// ruling of 2026-10-16; DECISIONS.md → *2026-10-17 — Part 3 of the staged canary hands one
+/// item on for certain*). No act of the canary had run the live chain of a hand-on. THE ROW
+/// QUOTES THE ITEM WITH ITS KIND'S EVIDENCE — the route line of the second refusal its drive
+/// meets, and that refusal's code — and says that nobody drove it, and nothing of how it falls.
+/// FILED AS A VERIFIER HANDS AN ITEM ON, by the clone's own record script under the clone's own
+/// harness, THE ITEM ENTERS THE QUEUE AHEAD OF EVERY RESERVE ROW; and once its own verifier
+/// has filed, `check` says how it fell beside what the sheet says it should return. A verifier
+/// that hands on another item beside it, within the number, is allowed: `check` names the one
+/// the row quotes wherever it stands. THE SHEET CARRIES ITS ANSWER, AND THE CLONE'S TREE DOES
+/// NOT: a file of the commit named that names it and no planted row is withheld there.
+///
+/// HERE THE ROOT IS THE ONE THE PLAN OPENS FOR ITS FOURTH PART AFTER A REPAIR — the gate as the
+/// one item, the order part 3 rules, a budget of four — so that the stage goes from its first
+/// record into its first wave: the three route rows and the first reserve row.
+#[test]
+fn the_first_rows_drive_meets_an_item_its_verifier_hands_on_and_check_says_how_it_fell() {
+    if !node_or_skip(&format!("no stage of {HARNESS} was run on a canary")) {
+        return;
+    }
+    let mut canary = Canary::parts("parts-follow-up");
+    // A FILE OF THE COMMIT NAMED THAT NAMES THE ITEM BESIDE ITS ANSWER, AND NO PLANTED ROW.
+    canary.rig.write(
+        "notes/follow-up.md",
+        &format!("{FOLLOW_UP_PLAN}: {FOLLOW_UP_RETURNS}\n"),
+    );
+    canary.commit = canary
+        .rig
+        .commit("docs: an item a row's verifier may hand on, and its answer");
+    let line = canary.ready(
+        "canary",
+        &[
+            PARTS,
+            "--items",
+            "gate",
+            "--budget",
+            "4",
+            "--order",
+            ORDER_THREE_FLAG,
+        ],
+    );
+    let root = canary.root("canary");
+    let clone = root.join("clone");
+    let (route, reserve) = route_and_reserve();
+
+    // (1) THE FIRST ROW QUOTES THE ITEM, WITH ITS KIND'S EVIDENCE: the second refusal at the
+    // same code, its route line whole — and that nobody drove it. Its claim still opens the
+    // row, and the report it cites still closes it.
+    let state = canary.state(&clone);
+    let first = state["ledger"]
+        .as_array()
+        .expect("the ledger")
+        .iter()
+        .find(|row| row["key"] == route[0])
+        .unwrap_or_else(|| panic!("the first planted row: {state}"));
+    let repro = first["repro"].as_str().expect("a repro");
+    for said in [
+        format!("refuses once more at `{CODE}`"),
+        "a link that leads to nothing".to_owned(),
+        format!("{FOLLOW_UP_ROUTE}. Nobody drove that route."),
+    ] {
+        assert!(repro.contains(&said), "`{said}`: {repro}");
+    }
+    assert!(
+        repro.starts_with(&format!("The claim: {}. The state:", PLANTS[0].2))
+            && repro.ends_with(&format!("of {CITED}.")),
+        "{repro}"
+    );
+    // The row's own class is its own route, and no other.
+    assert_eq!(first["class"]["evidence"], ROUTE_LINK, "{first}");
+
+    // (2) FILED AS A VERIFIER HANDS AN ITEM ON — in the shape the record script takes, built
+    // from what the row quotes — beside ANOTHER item, put first: within the number, allowed.
+    let quoted = json!({"key": "setup hook link to nothing route", "doctype": "jigc-feedback",
+                        "door": PARTS_DOOR, "clause": "working-product",
+                        "repro": "the verifier's report, its own heading",
+                        "kind": "route", "route": FOLLOW_UP_ROUTE, "code": CODE});
+    let other = handed("setup hook link route other", "route: do as the line says");
+    let mut agents = json!({});
+    agents[format!("verify:{}", route[0])] = files(json!({
+        "verdict": "confirmed", "regression": true, "hands_on": [other, quoted],
+    }));
+    agents[format!("verify:{}", route[1])] = refutes();
+    agents[format!("verify:{}", route[2])] =
+        files(json!({"verdict": "undrivable", "reason": "needs-a-linux-host"}));
+    agents[format!("verify:{}", reserve[0])] = refutes();
+    let wave_1 = canary.act(
+        &line,
+        "part-2",
+        json!({"scope": parts_scope(), "agents": agents}),
+        1,
+    );
+    assert_eq!(
+        verified(&wave_1),
+        [route.clone(), vec![reserve[0]]].concat(),
+        "{:?}",
+        wave_1.agents
+    );
+    let (minted, beside_it) = (
+        "setup-hook-link-to-nothing-route",
+        "setup-hook-link-route-other",
+    );
+
+    // THE TWO ITEMS ENTER THE QUEUE AHEAD OF EVERY RESERVE ROW, in the verifier's order — the
+    // budget is spent, so each is routed to the human as unreached, as part 3 leaves a row
+    // nobody reached — and `check` says what was handed on, and which item the row quotes.
+    let read = canary.checked(&root);
+    assert_eq!(
+        read["queue"],
+        json!([vec![beside_it, minted], reserve[1..].to_vec()].concat()),
+        "{read}"
+    );
+    let hand_on = &read["hand_on"];
+    assert_eq!(
+        json!([hand_on["under"], hand_on["beside"]]),
+        json!([route[0], 1]),
+        "{read}"
+    );
+    let items: Vec<Value> = hand_on["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("`check` says what the first row's verifier handed on: {read}"))
+        .iter()
+        .map(|item| {
+            json!([
+                item["key"],
+                item["kind"],
+                item["origin"],
+                item["beyond"],
+                item["route"],
+                item["rank"],
+                item["follows"],
+                item["verdict"]
+            ])
+        })
+        .collect();
+    assert_eq!(
+        items,
+        [
+            json!([
+                beside_it,
+                "route",
+                "under-confirmed",
+                false,
+                "human",
+                0,
+                false,
+                null
+            ]),
+            json!([
+                minted,
+                "route",
+                "under-confirmed",
+                false,
+                "human",
+                1,
+                true,
+                null
+            ])
+        ],
+        "{read}"
+    );
+    assert_eq!(
+        json!([
+            hand_on["follows"]["key"],
+            hand_on["follows"]["returns"],
+            hand_on["follows"]["as_planted"]
+        ]),
+        json!([minted, FOLLOW_UP_RETURNS, null]),
+        "{read}"
+    );
+    // THE SHEET CARRIES ITS ANSWER, beside the first row's — and the key its verifier minted.
+    let sheet = read["sheet"].as_array().expect("the sheet");
+    assert_eq!(
+        sheet[0]["hands_on"],
+        json!({"plan": FOLLOW_UP_PLAN, "key": minted, "class": "route under-confirmed",
+               "returns": FOLLOW_UP_RETURNS}),
+        "{read}"
+    );
+    assert!(
+        sheet[1..].iter().all(|row| row["hands_on"].is_null()),
+        "{read}"
+    );
+
+    // (3) THE BUDGET RAISED AS PART 4'S PROMPT FILE SAYS, AND THE STAGE CONTINUED: the wave is
+    // the first five of the queue — the two items, then the reserve. The item the row quotes
+    // is refuted as one that does not reproduce: AS PLANTED.
+    let raised = canary.act(&line, "part-4-act-1", json!({}), 2);
+    assert_eq!(
+        raised.result["budget"],
+        json!({"limit": 9, "spent": 4, "left": 5}),
+        "{}",
+        raised.result
+    );
+    let mut agents = json!({});
+    for key in [beside_it, minted, reserve[1], reserve[2], reserve[3]] {
+        agents[format!("verify:{key}")] = refutes();
+    }
+    let wave_2 = canary.act(&line, "part-4-act-4", json!({"agents": agents}), 3);
+    assert_eq!(
+        verified(&wave_2),
+        [beside_it, minted, reserve[1], reserve[2], reserve[3]],
+        "{:?}",
+        wave_2.agents
+    );
+    let read = canary.checked(&root);
+    let follows = &read["hand_on"]["follows"];
+    assert_eq!(
+        json!([
+            follows["key"],
+            follows["rank"],
+            follows["verdict"],
+            follows["as_planted"]
+        ]),
+        json!([minted, null, FOLLOW_UP_RETURNS, true]),
+        "{read}"
+    );
+    assert!(follows["attempt"].is_u64(), "{read}");
+    assert_eq!(read["queue"], json!(reserve[4..]), "{read}");
+
+    // (4) THE CLONE'S TREE DOES NOT CARRY ITS ANSWER: the file of the commit named that names
+    // the item beside it is withheld there — while the commit itself pairs the two, in that
+    // file and in the tool — and `check` asks the reading about it by its path.
+    let names = [FOLLOW_UP_PLAN.to_owned(), FOLLOW_UP_ROUTE.to_owned()];
+    let falls = ["refuted".to_owned(), "does-not-reproduce".to_owned()];
+    let source: Vec<(String, String)> = texts_below(&canary.rig.root)
+        .into_iter()
+        .filter(|(file, _)| !file.starts_with(".git/"))
+        .collect();
+    let paired = beside(&source, &names, &falls);
+    for place in ["notes/follow-up.md", TOOL] {
+        assert!(
+            paired.iter().any(|(file, ..)| file == place),
+            "the commit named pairs the item with its answer in `{place}`"
+        );
+    }
+    assert!(
+        line["withheld"]
+            .as_array()
+            .is_some_and(|withheld| withheld.contains(&json!("notes/follow-up.md"))),
+        "{line}"
+    );
+    let skip = [".git/".to_owned(), format!("{RUN_DIR}/")];
+    let tree: Vec<(String, String)> = texts_below(&clone)
+        .into_iter()
+        .filter(|(file, _)| !skip.iter().any(|prefix| file.starts_with(prefix.as_str())))
+        .collect();
+    assert_eq!(
+        beside(&tree, &names, &falls),
+        Vec::<(String, usize, String, String)>::new(),
+        "the clone's tree names the item beside its answer"
+    );
+    assert!(
+        read["to_answer"][0]
+            .as_str()
+            .is_some_and(|question| question.contains("notes/follow-up.md")),
+        "{read}"
     );
 }

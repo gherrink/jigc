@@ -57,7 +57,7 @@
 #       THE OPENING OF A RUN IN PARTS (below) in place of the synthetic opening — a run
 #       with a queue — and --items names items of THAT opening's table; --budget and
 #       --order are that opening's, each with its default there, and neither is taken
-#       without the switch (usage); a budget is at most 999991, so that the two raises
+#       without the switch (usage); a budget is at most 999989, so that the two raises
 #       a prompt file is written for are numbers the harness takes. The commit named
 #       must then also hold, in its DECISIONS.md, exactly one entry that states the exit
 #       rule (unfit), and the write guard, its fence and its probe (unfit) — AND IT MUST
@@ -147,11 +147,31 @@
 #       others} — that identity, and every commit of the trail that does not carry it ·
 #       pending_paths: what `git status` shows, by its
 #       path · acts: [{act, returned, status, next, own, shows, stands}] (below) ·
-#       guard (THE WRITE GUARD'S PROBE, below) ·
+#       guard (THE WRITE GUARD'S PROBE, below) · hand_on (WHAT THE FIRST ROW'S VERIFIER
+#       HANDED ON, below) ·
 #       ruling (below) · tool: {wrote, commit, reads, same} — THE THREE TOOLS, by sha256:
 #       the one that wrote the opening, the one the clone's commit holds at this tool's
 #       path, and the one that asks now; `same` where they are one · sheet: [{plan, key,
-#       class, returns}] — THE ANSWER SHEET · to_answer.
+#       class, returns [, hands_on]}] — THE ANSWER SHEET; the first row's with `hands_on`:
+#       {plan, key, class, returns}, the item it hands on, `key` the one its verifier minted
+#       where the run holds it (hand_on), else null · to_answer.
+#
+#         hand_on   WHAT THE FIRST ROW'S VERIFIER HANDED ON, read from the run's own state:
+#                   {under: that row's key, items: [{key, kind, origin, place, beyond,
+#                   route, why, rank, follows, verdict, attempt}] — every row whose class
+#                   names that row as its parent, in the verifier's order: its place among
+#                   the items of the filing and whether that is beyond the number, where the
+#                   queue routes it and why, `rank` its place in the queue (0 the first) or
+#                   null, `follows` whether it is THE ONE THE ROW QUOTES (a route item whose
+#                   line holds both of its `marks`, whatever path it names), and `verdict` — its own verifier's
+#                   word as the state says it, `refuted: <refutation>`, `undrivable: <reason>`,
+#                   or null — with the attempt it was filed under · follows: that item as
+#                   above with `returns`, what the sheet says it should return, and
+#                   `as_planted` (true or false once it has a verdict, null before) — or null
+#                   where the verifier handed it on not, or not as the row quotes it: then
+#                   read `items` · beside: how many other items it handed on}. A verifier that
+#                   hands on more within the number is allowed: the item it put first is
+#                   verified first, and `follows` still says where the quoted one stands.
 #
 #       WHAT `check` SAYS OF THE FIELDS THAT ARE READ FROM THE RUN'S TABLES. The run's
 #       state is read by the clone's record script from the tables AS THE WORKING TREE
@@ -366,6 +386,19 @@
 #                THE QUEUE RANKS A CLASS'S ROWS IN THE LEDGER'S ORDER — the order of this
 #                table — and by nothing of a key: the plan's waves hold what they held.
 #
+#                AND ONE ITEM THAT IS NO ROW (the human's ruling of 2026-10-16; DECISIONS.md ->
+#                2026-10-17, "Part 3 of the staged canary hands one item on for certain"):
+#                the first row's drive meets a second refusal with a route of its own, and
+#                the row quotes that route line and its code and says nobody drove it — a
+#                route item its verifier may hand on under the rules it already has, of
+#                class `route under-confirmed`, which heads the queue part 3 rules once the
+#                first wave is through. Its key is the verifier's to propose. The plan's
+#                name for it, and what its own verifier should return:
+#                plant-install-hook-follow-up    (minted from the verifier's words)         route under-     refuted: does-not-reproduce
+#                                                                                           confirmed
+#                `check` prints both beside the first row's sheet entry (sheet: hands_on),
+#                and how the item fell (hand_on).
+#
 #                THE PLANTS' WORDS ARE DATA, AND NONE IS THIS TOOL'S TO REWORD: the
 #                plan's table as its step `P0` drove it on both binaries on 2026-10-12
 #                — the candidate, a release build of the product as `72ca156a` holds
@@ -446,8 +479,8 @@
 #                  under-confirmed, behaviour seed: recorded, and nothing started
 #   part-3-act-2   the stage, which CONTINUES: a wave of eight, a wave of one, the budget
 #                  spent, the second record
-#   part-4-act-1   the budget is raised by four, alone: recorded, nothing started
-#   part-4-act-2   the stage, which continues with ONE wave of four — AND THE HUMAN ENDS IT
+#   part-4-act-1   the budget is raised by five, alone: recorded, nothing started
+#   part-4-act-2   the stage, which continues with ONE wave of five — AND THE HUMAN ENDS IT
 #                  while the wave runs (`human`, `verdicts`). It writes no return.
 #   part-4-act-3   a look (`stopAfter: state`): two reads, and nobody launched
 #   part-4-act-4   the stage, which continues: a verifier only for what has no verdict,
@@ -516,7 +549,7 @@
 #   ruling-again        one more attempt (`again: test`): the stage has spent two attempts
 #                       in a row without a record — part 1 spends one — and the third
 #                       is the human's to grant. Then the act that halted, once more.
-#   ruling-raise-again  one more raise, by four more (the opening's budget and eight):
+#   ruling-raise-again  one more raise, by five more (the opening's budget and ten):
 #                       part 4's act 2, its window missed — the stage recorded, and the
 #                       raised budget is spent with rows nobody reached. Then part 4's
 #                       acts 2 to 5 once more.
@@ -943,6 +976,19 @@ CONDITION = "2026-10-04 — The exit rule, revised"
 ROUTE_LINK = "route: remove the link at `<rig>/outside/shared-hook`, or point it at a script inside this repository, then re-run `jigc setup`. `--force` does not change this: it consents to replacing a file, not to following a link"
 ROUTE_WRITABLE = "route: ensure the repo's git hooks directory is writable, then re-run `jigc setup`"
 CODE = "setup.install-hook"
+# THE ONE ITEM PART 3 HANDS ON FOR CERTAIN (DECISIONS.md -> 2026-10-17, "Part 3 of the staged
+# canary hands one item on for certain"; the human's ruling of 2026-10-16). The first plant's
+# drive meets a second refusal of its own: once the route has been done as printed and the
+# script is gone, the hook is a link that leads to nothing, and the re-run refuses at the same
+# code with A ROUTE OF ITS OWN — this line, as the candidate prints it after its two leading
+# spaces, `<rig>` being the rig's root as in that row. The row says so, with the line and its
+# code — the kind's evidence of a route item — and that nobody drove that route: what a
+# verifier hits on its own drive and hands on under the rules it already has. Its prompt and
+# its kit say nothing of it. Driven on 2026-10-17 on both binaries: on the candidate, done as
+# printed — the link removed — the run after it exits 0 and installs; the previous release
+# prints neither refusal. So its verifier should find that it does not reproduce — the
+# answer sheet's, withheld as every answer is (`follows`, below).
+ROUTE_DANGLING = "route: remove the link at `<rig>/repo/.git/hooks/pre-commit`, or point it at a script inside this repository, then re-run `jigc setup`. `--force` does not change this: it consents to replacing a file, not to following a link"
 # HOW A PLANT'S STATE IS BUILT — the tool's own words, and no part of a claim: a verifier
 # has the row and nothing else. `<rig>` means the repository in every claim that says it,
 # and the rig's root in the first plant's route line; each row says which it is there.
@@ -968,10 +1014,24 @@ PLANTS = (
         "claim": "where `.git/hooks/pre-commit` is a link to an existing script outside the repository, `jigc setup` refuses at `setup.install-hook` and its route names the script as the link; done as printed, the script is deleted and the re-run exits 1 again; the previous release exits 0",
         "route": ROUTE_LINK,
         "code": CODE,
-        "state": "The state: `<rig>` is the root " + BARE + " mints, with the binary under test named to it (`--binary`); the repository is `<rig>/repo`, with one commit, and `jigc setup` never ran in it. Write a script to `<rig>/outside/shared-hook` - beside the repository and in none - with mode 755; make `.git/hooks/pre-commit` of the repository a symbolic link to it, by its absolute path; run `jigc setup` in the repository; remove what the route it prints names after `remove the link at`; run `jigc setup` again. Then the same on the previous release's binary, in a rig of its own. This drive is the block `Repro VR-1` of " + VR1 + ".",
+        "state": "The state: `<rig>` is the root " + BARE + " mints, with the binary under test named to it (`--binary`); the repository is `<rig>/repo`, with one commit, and `jigc setup` never ran in it. Write a script to `<rig>/outside/shared-hook` - beside the repository and in none - with mode 755; make `.git/hooks/pre-commit` of the repository a symbolic link to it, by its absolute path; run `jigc setup` in the repository; remove what the route it prints names after `remove the link at`; run `jigc setup` again. That run refuses once more at `" + CODE + "` - the hook is now a link that leads to nothing - and prints a route of its own, which read, whole, when this drive was made: " + ROUTE_DANGLING + ". Nobody drove that route. Then the same on the previous release's binary, in a rig of its own. This drive is the block `Repro VR-1` of " + VR1 + ".",
         # The report the row's repro cites, which states the row's verdict: withheld in the
         # clone (THE ANSWER KEY, below).
         "evidence": VR1,
+        # THE ITEM ITS VERIFIER MEETS ON THAT DRIVE AND MAY HAND ON (ROUTE_DANGLING, above): no
+        # row — a verifier mints its key from what it proposes, so no key is known beforehand —
+        # but the sheet's, beside this row's (`check`: sheet, hand_on). `marks`: what tells it
+        # among the items this row's verifier hands on — a route item whose line names the
+        # repository's own hook as the link and is no line of this row's.
+        "follows": {
+            "plan": "plant-install-hook-follow-up",
+            "kind": "route",
+            "origin": "under-confirmed",
+            "route": ROUTE_DANGLING,
+            "code": CODE,
+            "marks": (".git/hooks/pre-commit", "point it at a script inside this repository"),
+            "returns": REFUTED,
+        },
     },
     {
         "key": "setup-hooks-mode-555-route-refuses-again",
@@ -1012,9 +1072,12 @@ SUBJECT_PARTS = "docs(record): %s - the synthetic opening of a canary run in par
 # scratch root. `scope`: the round's one door, which the two acts that begin the stage name.
 PROMPTS = "prompts"
 # The order part 3 rules, as the record script holds a class; and by how much part 4 raises
-# the budget — so that four verdicts are left, which is one wave.
+# the budget — so that five verdicts are left, which is one wave: the whole queue part 3
+# leaves where its wave 2 is the item handed on (`follows`), five reserve plants. (Four until
+# 2026-10-17, when part 3's wave 2 was `plant-reserve-6` and four were left — DECISIONS.md ->
+# "Part 3 of the staged canary hands one item on for certain".)
 ORDER_THREE = ("route under-confirmed", "route seed", "behaviour under-confirmed", "behaviour seed")
-RAISE = 4
+RAISE = 5
 # `human`: what the human does around an act that is more than pasting its prompt and
 # reading `check` — in words, and no command: the three acts of the interruption.
 # `own`: THE STATUSES A RETURN OF THE ACT HOLDS ON THE MAIN LINE — what `check` holds an act's
@@ -1026,7 +1089,7 @@ ACTS = (
     ("part-3-act-1", {"rulings": "order", "own": ("ruled",)}),
     ("part-3-act-2", {"own": ("verified",)}),
     ("part-4-act-1", {"rulings": "budget", "own": ("ruled",)}),
-    ("part-4-act-2", {"own": (), "human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the fourth verifier returns. In it the session is ended at its terminal. No return is written, and that is right"}),
+    ("part-4-act-2", {"own": (), "human": "THE HUMAN ENDS THIS ACT. Before it, check: state.attempt is the attempt this act begins. While it runs, list the directory named under verdicts, in a second terminal. The window opens when two files whose names end in .a, that attempt, .json stand there, and closes when the last verifier of the wave returns, the fifth. In it the session is ended at its terminal. No return is written, and that is right"}),
     ("part-4-act-3", {"stopAfter": "state", "own": ("stopped",), "human": "Before it: list the verdicts directory twice, a minute apart - no file may appear between the two - and see that no process that names the root still runs. Then check, whose filed is the snapshot: every filed file with its hash. Then this act, in a new session: it only looks, and launches nobody"}),
     ("part-4-act-4", {"own": ("verified",)}),
     ("part-4-act-5", {"own": ("recorded",), "human": "OPTIONAL - only where the act before it was ended by the human while its record's gate was held (the step hold-wait:record-...). Before it: check, until held says of that record's job done - or dead. While it says running the gate still runs, and this act waits, so that two gates do not run on one machine at once. done: the command has ended - its supervisor wrote exit.json, and held prints its exit. No verdict.json appears while nobody asks after a job, and none is waited for: this invocation asks nothing of that job, and gates the batch again under a name of its own. dead: the job's supervisor is gone, no other word will ever come and the wait is over - whether the gate's own command still runs check cannot tell, NOTHING THAT NAMES THE ROOT IS ENDED HERE (after act 4 a process that names the root is the supervisor of a record's gate), and the act is made all the same. Then this act - the same arguments once more"}),
@@ -1041,10 +1104,10 @@ ACTS = (
 #                       human's to grant
 #   ruling-raise-again  part 4, act 2, its window missed: the stage recorded, the raised
 #                       budget is spent with rows nobody reached, and the interruption is
-#                       made after ONE MORE RAISE of four
+#                       made after ONE MORE RAISE of five
 OFF_LINE = (
     ("ruling-again", "again", "OFF THE MAIN LINE - only where check names this file under ruling: the stage has spent two attempts in a row without a record - part 1 spends one - and one more is the human's to grant. It is recorded and starts nothing. Then the act that halted, once more. NEVER WHILE A SESSION OF AN ACT IS OPEN: while an attempt is under way the state reads the same, and check cannot see a session"),
-    ("ruling-raise-again", "raise-again", "OFF THE MAIN LINE - only where check names this file under ruling: the window of part 4's act 2 was missed, the stage recorded, and the raised budget is spent with rows nobody reached. One more raise of four, recorded, and nothing started. Then part 4's acts 2 to 5 once more. NEVER WHILE A SESSION OF AN ACT IS OPEN"),
+    ("ruling-raise-again", "raise-again", "OFF THE MAIN LINE - only where check names this file under ruling: the window of part 4's act 2 was missed, the stage recorded, and the raised budget is spent with rows nobody reached. One more raise of five, recorded, and nothing started. Then part 4's acts 2 to 5 once more. NEVER WHILE A SESSION OF AN ACT IS OPEN"),
 )
 # THE WRITE GUARD'S PROBE — act `part-0` (DECISIONS.md -> 2026-10-16, "The write guard of a
 # stabilization run"; the plan's section 5, part 0). No act of the harness: ONE invocation of
@@ -1092,7 +1155,9 @@ GUARD_HUMAN = "FIRST, on a fresh root: before part 1, and before anything else i
 #                 asks for its gate under the first one's name before it is held under its own
 #   part-4-act-2  as part-4-act-4, below, where nobody ends it. THE HUMAN ENDS IT (`ended`):
 #                 by then the steps an invocation that continues opens with and the wave's
-#                 four verifiers are launched, and nothing after them
+#                 five verifiers are launched, and nothing after them — one per verdict of
+#                 the raise (RAISE), the whole queue part 3 leaves where it handed one item
+#                 on (`follows`); four where it handed none on, and one verdict is left
 #   part-4-act-3  the two reads
 #   part-4-act-4  the steps of an invocation that continues, of its one wave and of its
 #                 record (`agents`) — AND ONE VERIFIER FOR EACH VERDICT THE BUDGET HAS LEFT
@@ -1105,9 +1170,9 @@ EXPECT = {
     "part-3-act-1": {"agents": 9, "tool_steps": 8},
     "part-3-act-2": {"agents": 24, "tool_steps": 15},
     "part-4-act-1": {"agents": 10, "tool_steps": 9},
-    "part-4-act-2": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "ended": {"agents": 9, "tool_steps": 5}, "note": "the human ends this act while its wave runs: what is launched by then is under ended - the steps it opens with and the wave's four verifiers - and the rest is what it would launch where nobody ended it"},
+    "part-4-act-2": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "ended": {"agents": 10, "tool_steps": 5}, "note": "the human ends this act while its wave runs: what is launched by then is under ended - the steps it opens with and the wave's five verifiers, four where part 3 handed nothing on - and the rest is what it would launch where nobody ended it"},
     "part-4-act-3": {"agents": 2, "tool_steps": 2},
-    "part-4-act-4": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "note": "and one verifier more for each verdict the budget has left when the act starts, which check prints"},
+    "part-4-act-4": {"agents": 13, "tool_steps": 13, "verifiers": "budget.left", "note": "and one verifier more for each verdict the budget has left when the act starts, which check prints - as far as the queue reaches: where part 3 handed nothing on, one verdict of the raise is left with nothing to spend it on, and one verifier fewer is launched"},
     "part-4-act-5": {"agents": 6, "tool_steps": 6},
 }
 ANY_ROOT = ("part-4-act-3", "part-4-act-5")
@@ -1141,7 +1206,7 @@ MARKER = r"/r[0-9]+/reports/test/attempt\.a([0-9]+)\.md"
 # THE ANSWER KEY, WITHHELD FROM THE CLONE (the header's paragraph of that name). What names a
 # planted row in a file of the commit: its key, and the plan's name for it. The words a
 # withheld file says in the clone, and the subject of the commit that withholds them.
-NAMES = tuple(name for plant in PLANTS for name in (plant["key"], plant["plan"]))
+NAMES = tuple(name for plant in PLANTS for name in (plant["key"], plant["plan"])) + tuple(plant["follows"]["plan"] for plant in PLANTS if "follows" in plant)
 WITHHELD = "Withheld in this clone."
 SUBJECT_WITHHELD = "chore: withhold %d files of the candidate in this clone"
 # What `check` asks a part's reading about it: the questions name each withheld file, the
@@ -1410,8 +1475,8 @@ def queued(args):
         refuse("usage", "--order %s names a class twice — see dev/stabilize-canary --help" % json.dumps(args.order))
     budget = BUDGET if args.budget is None else int(args.budget)
     if budget + 2 * RAISE > MOST:
-        # A RAISE IS A NUMBER THE HARNESS MUST TAKE: part 4 raises the budget by four, and
-        # the ruling after a missed window by four more.
+        # A RAISE IS A NUMBER THE HARNESS MUST TAKE: part 4 raises the budget by RAISE, and
+        # the ruling after a missed window by RAISE more.
         refuse("usage", "--budget %d is too large: part 4 raises it by %d, a missed window by %d more, and the harness takes no number above %d in a ruling — at most %d; see dev/stabilize-canary --help" % (budget, RAISE, RAISE, MOST, MOST - 2 * RAISE))
     return {"budget": budget, "hand-on": HAND_ON, "order": list(order)}
 
@@ -2290,6 +2355,8 @@ def parts_read(root, kept, state, position):
         applied.update(across=["state", "not_ready", "items", "ledger"] + list(of_the_state))
         position = dict(position, across="applied")
     held = held_jobs(os.path.join(root, DIRS[2]))
+    # WHAT THE FIRST ROW'S VERIFIER HANDED ON — none of it where the state was not read.
+    handed = None if unread else hand_on_read(state)
     with open(os.path.realpath(__file__), "rb") as file:
         reads = hashlib.sha256(file.read()).hexdigest()
     wrote = (kept.get("tool") or {}).get("sha256")
@@ -2306,9 +2373,71 @@ def parts_read(root, kept, state, position):
         "guard": guard_read(kept, clone, env, os.path.join(root, DIRS[2]), not unread and begun == 0 and not trail),
         "ruling": None if unread else ruling_of(kept, position, budget, of_the_state["queue"], held, bool(batch)),
         "tool": {"wrote": wrote, "commit": commit, "reads": reads, "same": wrote == commit == reads},
-        "sheet": [{"plan": plant["plan"], "key": plant["key"], "class": "%s seed" % plant["kind"], "returns": plant["returns"]} for plant in PLANTS],
+        "hand_on": handed,
+        "sheet": [sheet_row(plant, handed) for plant in PLANTS],
         "to_answer": questions(kept.get("withheld") or []),
     }
+
+
+def verdict_word(entry):
+    """A verdict as one word, and its reason where it has one — `refuted: does-not-reproduce`,
+    `undrivable: needs-linux-root`, `confirmed` — as the answer sheet says one; None where
+    there is none. `entry` is a row's triage entry as the run's state prints it."""
+    word = (entry or {}).get("verdict")
+    if not isinstance(word, str):
+        return None
+    reason = entry.get("refutation") if word == "refuted" else entry.get("reason") if word == "undrivable" else None
+    return "%s: %s" % (word, reason) if isinstance(reason, str) else word
+
+
+def hand_on_read(state):
+    """WHAT THE FIRST ROW'S VERIFIER HANDED ON (`check`: hand_on), from the run's own state:
+    every row whose class names that row as its parent — the items its filing handed on, in
+    the verifier's order — each with where the queue has it and its own verdict, and THE ONE
+    THE ROW QUOTES (`follows`) among them, with what the sheet says it should return and
+    whether it did. Nothing here is the agent's word: a filing's items are rows of the state,
+    and a verdict is the one the state reads."""
+    plant = next(plant for plant in PLANTS if "follows" in plant)
+    follows = plant["follows"]
+    queue = [row.get("key") for row in (state.get("queue") or {}).get("ranked") or []]
+    attempts = {entry.get("key"): entry.get("attempt") for entry in state.get("filed") or [] if entry.get("counts")}
+    items = []
+    for row in state.get("ledger") or []:
+        made = row.get("class") or {}
+        if made.get("parent") != plant["key"]:
+            continue
+        on = row.get("handed_on") or {}
+        line = made.get("evidence") if isinstance(made.get("evidence"), str) else ""
+        verdict = verdict_word(row.get("triage"))
+        items.append({
+            "key": row.get("key"),
+            "kind": made.get("kind"),
+            "origin": made.get("origin"),
+            "place": on.get("place"),
+            "beyond": on.get("beyond"),
+            "route": row.get("route"),
+            "why": row.get("why"),
+            "rank": queue.index(row.get("key")) if row.get("key") in queue else None,
+            "follows": made.get("kind") == follows["kind"] and all(mark in line for mark in follows["marks"]),
+            "verdict": verdict,
+            "attempt": attempts.get(row.get("key")) if verdict is not None else None,
+        })
+    quoted = next((item for item in items if item["follows"]), None)
+    if quoted is not None:
+        quoted = dict(quoted, returns=follows["returns"], as_planted=None if quoted["verdict"] is None else quoted["verdict"] == follows["returns"])
+    return {"under": plant["key"], "items": items, "follows": quoted, "beside": len(items) - (quoted is not None)}
+
+
+def sheet_row(plant, handed):
+    """A row of THE ANSWER SHEET: the plan's name, the key that is planted, its class and what
+    its verifier should return — and, for the row whose drive meets an item its verifier may
+    hand on, that item beside it: the plan's name, the key its verifier minted where the run
+    holds it, its class, and what its own verifier should return."""
+    row = {"plan": plant["plan"], "key": plant["key"], "class": "%s seed" % plant["kind"], "returns": plant["returns"]}
+    if "follows" in plant:
+        follows = plant["follows"]
+        row["hands_on"] = {"plan": follows["plan"], "key": ((handed or {}).get("follows") or {}).get("key"), "class": "%s %s" % (follows["kind"], follows["origin"]), "returns": follows["returns"]}
+    return row
 
 
 def questions(withheld):
