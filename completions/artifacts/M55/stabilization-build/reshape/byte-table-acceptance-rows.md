@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, by the second of the fixes after the review of the milestone family's task (`B7`), part A (its fifth, sixth and seventh findings): how a line names its unit. `M5` and `A5` read `docs/milestone-records/*` — any milestone's record — and read `<docs-root>/milestone-records/<unit>.md` and `<docs-root>/milestone-records/<its-milestone>.md` now: the milestone's own record, and the one record that names the discarded sub-task, each under the docs root the cascade resolves, each on a sentence it now quotes; §7 gains the fixed suffix, `<its-milestone>` and `<docs-root>`, and says what *a task that stands* (an area carrying its base pin) and *a committed record* (the bytes `HEAD` holds at the record's resolved home) are. No sentence of a line moved; two lines gained quotes.*
+
 *Changed 2026-10-18, by the first of the fixes after the review of the milestone family's task (`B7`), part A (its second finding): three sets a line is read through beside its place were blind to the unit the command acts on, and are not now. §7's *a copy of a staged doc* is a doc staged **in the unit** — its own task area, its sub-tasks' areas, its own merged set — so a sibling's doc promoted, or another milestone's merged doc, is no copy `T1` or `M2` lets land; `M3`'s and `M4`'s commit holds what the checkouts at `.jigc/worktrees/<sub-task>` staged, and no other checkout's, on a third sentence `M3` quotes; and `T8`'s rule reads every unit's staged docs and every merged set together, where a joined milestone in the repository had left a task's own docs unread. No sentence of a line moved.*
 
 *Changed 2026-10-18, with the third commit of the milestone family's task (`B7`), which builds the spelling switch: §3's doc-only arm is the line `T9`, which takes `T2`, `T3` and `T4` out of force — `T2` too, read whole, where the paragraph had said `T3` and `T4` — and `M4` takes `M3` out of force, with a second sentence; §6 gains entries 16 and 17; §7 the word a spelling is carried by.*
@@ -433,7 +435,7 @@ Owner docs: `design/write-commands.md` → *The verbs* (the paragraph *Abandonin
 
 — `design/team-ready-state.md` → *The working area's two populations — jigc's writer set, and its complement (M52)*
 
-**A5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — one item's status flipped, and nothing else of it.** When: the task is a sub-task a committed record names. On a refusal: no (A8). The line as data says *written whole*: the vocabulary has no word for *one leaf of one item, and every other byte as it was*, so the line lets more than its sentence does — a stated shortfall of the row, not a reading of the doc. The place is `M5`'s, from the same sentence of `design/storage.md`.
+**A5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — one item's status flipped, and nothing else of it.** When: the task is a sub-task a committed record names. On a refusal: no (A8). The line as data says *written whole*: the vocabulary has no word for *one leaf of one item, and every other byte as it was*, so the line lets more than its sentence does — a stated shortfall of the row, not a reading of the doc. The place is `M5`'s, from the same sentence of `design/storage.md`. **[Narrowed 2026-10-18, after the review of `B7`'s part A (its fifth finding): the line read `docs/milestone-records/*` — any milestone's record — where the first sentence names one, the record that holds the sub-task's item. It reads `<docs-root>/milestone-records/<its-milestone>.md`: the record of the one milestone whose committed record names the task, on the fourth sentence — a task no record names, or two do, reaches no record — under the docs root the cascade resolves, on the third (§7).]**
 
 > The item's `status` flips to `discarded` through the byte-stable item-leaf splice; **the header stays `active` and every sibling item is byte-untouched**
 
@@ -442,6 +444,14 @@ Owner docs: `design/write-commands.md` → *The verbs* (the paragraph *Abandonin
 > M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)
 
 — `design/storage.md` → *Source of truth*
+
+> The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load
+
+— `design/storage.md` → *Config layout*
+
+> The owning milestone is resolved from **what the committed record names**, never from the gitignored `.jigc/` cache
+
+— `design/team-ready-state.md` → *`jigc task discard <sub-id>` — the per-sub-task terminal (M49)*
 
 **A6 — one commit on the checked-out branch, holding the record of A5 and nothing else: not the index as it stood.** When: the task is a sub-task a committed record names. On a refusal: no (A8).
 
@@ -632,7 +642,7 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 
 — `design/finalize.md` → *`fan-out` finalize*
 
-**M5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — its status flipped, inside M3's commit.** When: always. On a refusal: no (M8). The second sentence is where the place comes from — added on 2026-10-13, when the line became data and had to name one; the home is under the docs root as the prepared states have it.
+**M5 — the milestone's committed record, `docs/milestone-records/<slug>.md`: written — its status flipped, inside M3's commit.** When: always. On a refusal: no (M8). The second sentence is where the place comes from — added on 2026-10-13, when the line became data and had to name one; the home is under the docs root as the prepared states have it. **[Narrowed 2026-10-18, after the review of `B7`'s part A (its fifth finding): the line read `docs/milestone-records/*` — any milestone's record — where the first sentence names the milestone's own. It reads `<docs-root>/milestone-records/<unit>.md`: the record of the milestone the command finalizes, under the docs root the cascade resolves — the third sentence — and no longer the docs root the prepared states happen to have (§7).]**
 
 > the record's `status`-flip write **folds into the existing join commit** (path-added alongside the promoted docs), not a second commit
 
@@ -641,6 +651,10 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 > M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)
 
 — `design/storage.md` → *Source of truth*
+
+> The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load
+
+— `design/storage.md` → *Config layout*
 
 **M6 — `.jigc/worktrees/<sub-task-id>/`, each sub-task's working area under `.jigc/tasks/`, and `.jigc/milestones/<id>/`: removed — and what jigc did not write in an area is moved aside to `.jigc/displaced/<unit-id>/`.** When: the boundary landed. On a refusal: no (M8).
 
@@ -1005,8 +1019,8 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 
 | a line says | which lines needed it |
 |---|---|
-| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5, A5 and C3, with one component left open for a milestone's id or its record's name; W4, with two left open for a task's id and a staged doc's name |
-| a place one component of which is **the work unit the command acts on** — `<unit>`, the id the row reads off its command: `--task <id>` or else the single task that stands, for a `doc` write; the first word after the leaf, for `task finalize`, `task discard` and `milestone finalize` — or **any sub-task of that unit** — `<sub-task>`, an id the unit's committed record names among its tasks (added 2026-10-18, by the task `B7`'s second commit: a line read `.jigc/tasks/*` and reached a sibling's area, where *"a sub-agent physically cannot stage into a sibling's area"*) | W1, W4; T6; A1; M1, M6 — `<unit>`; M6's worktrees, sub-tasks' areas and what is moved aside from them — `<sub-task>` |
+| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; C3, with one component left open for a milestone's id; M5 and A5, a milestone's record, named by the words of the next line (until 2026-10-18 left open for any record's name); W4, with one left open for a staged doc's name |
+| a place one component of which is **the work unit the command acts on** — `<unit>`, the id the row reads off its command: `--task <id>` or else the single task that stands, for a `doc` write; the first word after the leaf, for `task finalize`, `task discard` and `milestone finalize` — or **any sub-task of that unit** — `<sub-task>`, an id the unit's committed record names among its tasks (added 2026-10-18, by the task `B7`'s second commit: a line read `.jigc/tasks/*` and reached a sibling's area, where *"a sub-agent physically cannot stage into a sibling's area"*) — or **the milestone of that unit** — `<its-milestone>`, the one milestone whose committed record names the unit among its tasks; each word a whole component or one with a fixed suffix (`<unit>.md`). A place may open with **the docs root** — `<docs-root>`, the directory the cascade resolves `docs-root` to: the project layer's value, else the team layer's, else the dev pack's default, `.` the repository's root. *A task that stands* is an area that carries its base pin (`design/storage.md` → *The per-task working area (staging)*), and a leftover directory is none; *a committed record* is `<docs-root>/milestone-records/<id>.md` with the bytes `HEAD` holds there — a record with a change nobody committed names no task, the stricter direction, since the product reads the file and conflict-blocks one edited out of band (`design/team-ready-state.md` → *Engine capability 1 (write)*, its *No-silent-overwrite discipline*: *"conflict-blocks on drift"*). (The suffix, `<its-milestone>`, the docs root and the base pin added 2026-10-18, after the review of `B7`'s part A, its fifth, sixth and seventh findings.) | W1, W4; T6; A1; M1, M6 — `<unit>`; M6's worktrees, sub-tasks' areas and what is moved aside from them — `<sub-task>`; M5 — `<docs-root>/milestone-records/<unit>.md`; A5 — `<docs-root>/milestone-records/<its-milestone>.md` |
 | a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2; W1, W2 |
 | a place that is **the `pre-commit` hook in the hooks directory git resolves** — not a fixed path | S10; U4 |
 | a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2; and W3, the same home before the task holds the doc |

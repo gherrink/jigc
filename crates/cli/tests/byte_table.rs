@@ -2582,6 +2582,42 @@ fn commit(manifest: &mut Manifest, id: &str, changed: &[(&str, Option<(u32, &str
     );
 }
 
+/// Milestone records, committed in one commit over the `HEAD` that stands: under `root`, a
+/// directory from the repository's root (`""` for the root itself), one record a milestone,
+/// each naming its sub-tasks as items `### <id>  {#<id>}`.
+fn records(manifest: &mut Manifest, root: &str, milestones: &[(&str, &[&str])]) {
+    let home = match root {
+        "" => "milestone-records".to_string(),
+        root => format!("{root}/milestone-records"),
+    };
+    let mut at = REPO.to_string();
+    for component in home.split('/') {
+        at = format!("{at}/{component}");
+        dir(manifest, &at);
+    }
+    let written: Vec<(String, String)> = milestones
+        .iter()
+        .map(|(id, tasks)| {
+            let mut bytes = format!("# {id}\n\n## Tasks\n");
+            for task in *tasks {
+                bytes.push_str(&format!(
+                    "\n### {task}  {{#{task}}}\n\n<!-- fields -->\n- intent: an intent\n"
+                ));
+            }
+            (format!("{home}/{id}.md"), bytes)
+        })
+        .collect();
+    for (path, bytes) in &written {
+        put(manifest, &format!("{REPO}/{path}"), bytes);
+    }
+    let changed: Vec<(&str, Option<(u32, &str)>)> = written
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), Some((0o100_644, bytes.as_str()))))
+        .collect();
+    let id = format!("records-{}", manifest.commits.len());
+    commit(manifest, &id, &changed);
+}
+
 /// `manifest` with where each marker stands read off it, as the frame's reader would: the
 /// files whose bytes hold it, an object within reach, an object of the store — a
 /// hand-built id carries its bytes.
@@ -3868,6 +3904,45 @@ fn a_line_reaches_its_own_units_area_and_no_siblings() {
         Classification::WrittenOutside,
         "two tasks and no flag name no unit: {why:#?}"
     );
+    // A task stands where its area carries its base pin — *"A task is an area that carries
+    // its base pin"* (`design/storage.md` → *The per-task working area (staging)*) — so a
+    // leftover directory beside one task leaves that task the one that stands, and a
+    // leftover alone is no unit.
+    const LEFTOVER: &str = "repo/.jigc/tasks/t2/docs/use-colours.md";
+    let one_and_a_leftover = then(&one, |m| {
+        for path in ["repo/.jigc/tasks/t2", "repo/.jigc/tasks/t2/docs"] {
+            dir(m, path);
+        }
+        put(
+            m,
+            LEFTOVER,
+            "# use-colours\n\nbytes a faulted teardown left\n",
+        );
+    });
+    let (class, why) = came_to(
+        &one_and_a_leftover,
+        &rewritten(&one_and_a_leftover, T1),
+        plain,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the one task that stands beside a leftover: {why:#?}"
+    );
+    let a_leftover_alone = then(&one_and_a_leftover, |m| {
+        m.files
+            .retain(|path, _| !path.starts_with("repo/.jigc/tasks/t1"));
+    });
+    let (class, why) = came_to(
+        &a_leftover_alone,
+        &rewritten(&a_leftover_alone, LEFTOVER),
+        plain,
+    );
+    assert!(
+        class == Classification::WrittenOutside
+            && why.iter().any(|why| why.contains("use-colours.md")),
+        "a leftover alone is no task that stands: {class}, {why:#?}"
+    );
 
     const ITS_OWN: Row = Row {
         leaf: &["milestone", "finalize"],
@@ -3883,13 +3958,7 @@ fn a_line_reaches_its_own_units_area_and_no_siblings() {
             dir(m, &format!("repo/.jigc/tasks/{id}"));
             put(m, &format!("repo/.jigc/tasks/{id}/intent"), "an intent\n");
         }
-        dir(m, "repo/docs");
-        dir(m, "repo/docs/milestone-records");
-        put(
-            m,
-            "repo/docs/milestone-records/m.md",
-            "# m\n\n## Tasks\n\n### s1  {#s1}\n\n<!-- fields -->\n- intent: an intent\n",
-        );
+        records(m, "docs", &[("m", &["s1"])]);
     });
     let gone = |id: &str| {
         then(&a_milestone, |m| {
@@ -4128,6 +4197,225 @@ fn a_line_reaches_its_own_units_area_and_no_siblings() {
             "what the checkout at `{at}` staged: {why:#?}"
         );
     }
+}
+
+/// **A line reaches its own unit's record, at the home the docs root gives it, and reads the
+/// record as committed** — the review of the task `B7`'s first part, its fifth, sixth and
+/// seventh findings. `M5` and `A5` read `docs/milestone-records/*` and let a command write
+/// any milestone's record, where each sentence names one: `M5`'s the record of the milestone
+/// the command finalizes, `A5`'s the record whose item names the sub-task it discards. A
+/// place's component may be [`byte_cell::OWN`] or [`byte_cell::ITS_MILESTONE`] with a fixed
+/// suffix, and [`byte_cell::DOCS_ROOT`] leads it to the directory the cascade resolves
+/// `docs-root` to — *"The resolved `docs-root` is prepended to every persisted doctype's
+/// `location:` at schema load"* (`design/storage.md` → *Config layout*) — the project layer
+/// over the team layer over the pack's default. The sub-tasks [`byte_cell::ITS_SUB_TASKS`]
+/// stands for are read off the same home, and off the bytes `HEAD` holds there: a record
+/// with a change nobody committed names no sub-task.
+#[test]
+fn a_line_reaches_its_units_record_where_the_docs_root_has_it() {
+    let base = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let came = |row: Row, before: &Manifest, after: &Manifest, argv: &[&str]| {
+        Cell {
+            base: Some(&base),
+            argv,
+            ..Cell::of(row, before, after)
+        }
+        .came_to()
+    };
+    let flipped = |before: &Manifest, path: &str| {
+        then(before, |m| {
+            let Some(Entry::File { bytes, .. }) = m.files.get(path) else {
+                panic!("no record at {path}");
+            };
+            let bytes = format!("{}- status: joined\n", String::from_utf8_lossy(bytes));
+            put(m, path, &bytes);
+        })
+    };
+    const M: &str = "repo/docs/milestone-records/m.md";
+    const M2: &str = "repo/docs/milestone-records/m2.md";
+    let two = then(&base, |m| {
+        records(m, "docs", &[("m", &["s1"]), ("m2", &["t9"])]);
+    });
+
+    // `M5`: the record of the milestone the command finalizes, and no other.
+    let finalize_m: &[&str] = &["milestone", "finalize", "m"];
+    let (class, why) = came(milestone::FINALIZE, &two, &flipped(&two, M), finalize_m);
+    assert_eq!(class, Classification::Holds, "its own record: {why:#?}");
+    let (class, why) = came(milestone::FINALIZE, &two, &flipped(&two, M2), finalize_m);
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m2.md")),
+        "another milestone's record is no line's: {class}, {why:#?}"
+    );
+
+    // `A5`: the record whose item names the sub-task the command discards — none where no
+    // record names it, and none where two do.
+    let discard = |id: &'static str| -> Vec<&'static str> { vec!["task", "discard", id] };
+    let (class, why) = came(task::DISCARD, &two, &flipped(&two, M), &discard("s1"));
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the record that names the sub-task: {why:#?}"
+    );
+    let (class, why) = came(task::DISCARD, &two, &flipped(&two, M2), &discard("s1"));
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m2.md")),
+        "a record that does not name the sub-task is no line's: {class}, {why:#?}"
+    );
+    let (class, why) = came(task::DISCARD, &two, &flipped(&two, M), &discard("t5"));
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.md")),
+        "a task no record names reaches no record: {class}, {why:#?}"
+    );
+    let named_twice = then(&base, |m| {
+        records(m, "docs", &[("m", &["s1"]), ("m2", &["s1"])]);
+    });
+    let (class, why) = came(
+        task::DISCARD,
+        &named_twice,
+        &flipped(&named_twice, M),
+        &discard("s1"),
+    );
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.md")),
+        "a task two records name has no one record: {class}, {why:#?}"
+    );
+
+    // The docs root, as the cascade resolves it: the record at `notes/` under a project
+    // layer that says `notes`, and the one at `docs/` no record of the unit's.
+    const AREAS: Row = Row {
+        leaf: &["milestone", "finalize"],
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[line(
+            "O9",
+            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Removed),
+        )])
+    };
+    let layer = |m: &mut Manifest, at: &str, value: &str| {
+        let mut path = String::new();
+        let dirs: Vec<&str> = at.split('/').collect();
+        for component in &dirs[..dirs.len() - 1] {
+            path = if path.is_empty() {
+                component.to_string()
+            } else {
+                format!("{path}/{component}")
+            };
+            dir(m, &path);
+        }
+        put(m, at, &format!("scalar:\n  docs-root: {value}\n"));
+    };
+    const PROJECT: &str = "repo/.jigc/config/manifest.yaml";
+    const TEAM: &str = "home/.config/jigc/manifest.yaml";
+    let with_areas = |m: &mut Manifest| {
+        dir(m, "repo/.jigc/tasks");
+        for id in ["s1", "t9"] {
+            dir(m, &format!("repo/.jigc/tasks/{id}"));
+            put(m, &format!("repo/.jigc/tasks/{id}/intent"), "an intent\n");
+        }
+    };
+    let area_gone = |before: &Manifest, id: &str| {
+        then(before, |m| {
+            let area = format!("repo/.jigc/tasks/{id}");
+            m.files.retain(|path, _| !path.starts_with(&area));
+        })
+    };
+    const NOTES: &str = "repo/notes/milestone-records/m.md";
+    for (layers, root, (holds, outside)) in [
+        (&[(PROJECT, "notes")][..], "notes", ("s1", "t9")),
+        (&[(TEAM, "notes")][..], "notes", ("s1", "t9")),
+        (
+            &[(TEAM, "notes"), (PROJECT, "docs/")][..],
+            "docs",
+            ("t9", "s1"),
+        ),
+    ] {
+        let before = then(&base, |m| {
+            for (at, value) in layers {
+                layer(m, at, value);
+            }
+            with_areas(m);
+            records(m, "notes", &[("m", &["s1"])]);
+            records(m, "docs", &[("m", &["t9"])]);
+        });
+        let (record, other) = if root == "notes" {
+            (NOTES, M)
+        } else {
+            (M, NOTES)
+        };
+        let (class, why) = came(
+            milestone::FINALIZE,
+            &before,
+            &flipped(&before, record),
+            finalize_m,
+        );
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "the record at `{root}`, under {layers:?}: {why:#?}"
+        );
+        let (class, why) = came(
+            milestone::FINALIZE,
+            &before,
+            &flipped(&before, other),
+            finalize_m,
+        );
+        assert_eq!(
+            class,
+            Classification::WrittenOutside,
+            "the record at the other root, under {layers:?}: {why:#?}"
+        );
+        let (class, why) = came(AREAS, &before, &area_gone(&before, holds), finalize_m);
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "`{holds}`, which the record at `{root}` names, under {layers:?}: {why:#?}"
+        );
+        let (class, why) = came(AREAS, &before, &area_gone(&before, outside), finalize_m);
+        assert_eq!(
+            class,
+            Classification::WrittenOutside,
+            "`{outside}`, which only the record at the other root names, under {layers:?}: \
+             {why:#?}"
+        );
+    }
+    // `.` is the repository's root: the record at `milestone-records/`.
+    let flat = then(&base, |m| {
+        layer(m, PROJECT, ".");
+        records(m, "", &[("m", &["s1"])]);
+    });
+    let (class, why) = came(
+        milestone::FINALIZE,
+        &flat,
+        &flipped(&flat, "repo/milestone-records/m.md"),
+        finalize_m,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the record at the root, under `docs-root: .`: {why:#?}"
+    );
+
+    // The record as committed: an item added and never committed names no sub-task.
+    let hand_edited = then(&two, |m| {
+        with_areas(m);
+        let Some(Entry::File { bytes, .. }) = m.files.get(M) else {
+            panic!("no record at {M}");
+        };
+        let bytes = format!(
+            "{}\n### t9  {{#t9}}\n\n<!-- fields -->\n- intent: an intent\n",
+            String::from_utf8_lossy(bytes)
+        );
+        put(m, M, &bytes);
+    });
+    let (class, why) = came(
+        AREAS,
+        &hand_edited,
+        &area_gone(&hand_edited, "t9"),
+        finalize_m,
+    );
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("t9")),
+        "an item nobody committed names no sub-task: {class}, {why:#?}"
+    );
 }
 
 /// **Every way a row's spellings do not stand on its lines**: a line in force under a

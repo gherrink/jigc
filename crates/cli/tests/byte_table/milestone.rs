@@ -121,11 +121,15 @@ pub const FINALIZE: Row = Row {
                 ],
             )
         },
-        // The record's home is the second sentence's: one file a milestone, under the
-        // docs root as the prepared states have it.
+        // The record's home is the second sentence's — one file a milestone — under the
+        // docs root the cascade resolves, the third's; and the record is the milestone's
+        // own, the first's.
         line(
             "M5",
-            Allows::Files(Where::Path("docs/milestone-records/*"), May::WriteWhole),
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                May::WriteWhole,
+            ),
             &[
                 Quote {
                     doc: "design/team-ready-state.md",
@@ -136,6 +140,11 @@ pub const FINALIZE: Row = Row {
                     doc: "design/storage.md",
                     heading: "Source of truth",
                     words: "M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)",
+                },
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "Config layout",
+                    words: "The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load",
                 },
             ],
         ),

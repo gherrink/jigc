@@ -221,7 +221,10 @@ pub const DISCARD: Row = Row {
         ),
         line(
             "A5",
-            Allows::Files(Where::Path("docs/milestone-records/*"), May::WriteWhole),
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<its-milestone>.md"),
+                May::WriteWhole,
+            ),
             &[
                 Quote {
                     doc: "design/team-ready-state.md",
@@ -232,6 +235,16 @@ pub const DISCARD: Row = Row {
                     doc: "design/storage.md",
                     heading: "Source of truth",
                     words: "M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)",
+                },
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "Config layout",
+                    words: "The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load",
+                },
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_SUB_TASK_TERMINAL,
+                    words: "The owning milestone is resolved from **what the committed record names**, never from the gitignored `.jigc/` cache",
                 },
             ],
         ),

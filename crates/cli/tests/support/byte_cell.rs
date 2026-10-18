@@ -230,12 +230,14 @@ pub struct Quote {
 }
 
 /// The place a line of the file layer speaks of. A path is from the repository's root,
-/// and a `*` in it stands for one component — any work unit's id. **Two components stand
-/// for the work unit the command acts on, and no other** ([`Unit`]): [`OWN`], the unit the
-/// command names — a task's area is `.jigc/tasks/<unit>`, never a sibling's; and
-/// [`ITS_SUB_TASKS`], any sub-task the committed record of that unit names, which is a
-/// milestone's — so a line of a milestone's row reaches its own sub-tasks' areas and no
-/// other task's.
+/// and a `*` in it stands for one component — any work unit's id. **Three words of a
+/// component stand for a unit the command acts on, and no other** ([`Unit`]), each alone or
+/// with a fixed suffix (`<unit>.md`): [`OWN`], the unit the command names — a task's area is
+/// `.jigc/tasks/<unit>`, never a sibling's; [`ITS_SUB_TASKS`], any sub-task the committed
+/// record of that unit names, which is a milestone's — so a line of a milestone's row
+/// reaches its own sub-tasks' areas and no other task's; and [`ITS_MILESTONE`], the
+/// milestone whose committed record names the unit as one of its tasks. **A place may open
+/// with [`DOCS_ROOT`]**, the directory the cascade resolves `docs-root` to.
 #[derive(Clone, Copy, Debug)]
 pub enum Where {
     /// One path.
@@ -258,10 +260,38 @@ pub const OWN: &str = "<unit>";
 
 /// **The component of a place that stands for any sub-task of the unit the command acts
 /// on**: an id the unit's committed record names as one of its tasks — a `### <id>  {#<id>}`
-/// item of `docs/milestone-records/<unit>.md`, the record `design/storage.md` → *Source of
-/// truth* makes the milestone's source of truth (*"its ordered sub-task list"*). A unit no
-/// record names has no sub-task.
+/// item of `<docs-root>/milestone-records/<unit>.md`, the record `design/storage.md` →
+/// *Source of truth* makes the milestone's source of truth (*"its ordered sub-task list"*),
+/// read as `HEAD` holds it: *"The committed `.md` record is the **source of truth**"*
+/// (`design/team-ready-state.md` → *Engine capability 2 (read-back)*). A unit no record
+/// names has no sub-task, and neither has a record whose bytes in the working tree are not
+/// the ones `HEAD` holds — the stricter direction, since the product reads the file and
+/// refuses one edited out of band.
 pub const ITS_SUB_TASKS: &str = "<sub-task>";
+
+/// **The component of a place that stands for the milestone of the unit the command acts
+/// on**: the one milestone whose committed record names the unit as one of its tasks — *"The
+/// owning milestone is resolved from **what the committed record names**, never from the
+/// gitignored `.jigc/` cache"* (`design/team-ready-state.md` → *`jigc task discard
+/// <sub-id>` — the per-sub-task terminal (M49)*). A unit no record names, or two records
+/// name, has none.
+pub const ITS_MILESTONE: &str = "<its-milestone>";
+
+/// **The leading component of a place that stands for the directory the cascade resolves
+/// `docs-root` to** — *"The resolved `docs-root` is prepended to every persisted doctype's
+/// `location:` at schema load"* (`design/storage.md` → *Config layout*): the project
+/// layer's value (`.jigc/config/manifest.yaml`), else the team layer's
+/// (`~/.config/jigc/manifest.yaml`), else the dev pack's default; `.` is the repository's
+/// root. Where a layer that stands does not read, the place is nowhere.
+pub const DOCS_ROOT: &str = "<docs-root>";
+
+/// Where a milestone's committed record stands under the docs root: `milestone-records/`,
+/// the `location:` the `milestone-record` doctype declares.
+const RECORD_HOME: &str = "milestone-records";
+
+/// The dev pack's knob declarations, whose `docs-root` default stands where no layer sets
+/// the knob.
+const DEV_KNOBS: &str = include_str!("../../packs/dev/config/knobs.yaml");
 
 /// **How a row's command names the work unit it acts on** — read off its argv, as the
 /// command's own grammar has it, so that a line written with [`OWN`] or [`ITS_SUB_TASKS`]
@@ -274,7 +304,9 @@ pub enum Unit {
     Nothing,
     /// **`--task <id>`, and with no flag the single task that stands** — the same section:
     /// *"explicit `--task <id>` wins; else the single active task"*. A task stands where
-    /// `.jigc/tasks/<id>/` is a directory before the command.
+    /// its area carries its base pin before the command — *"A task is an area that carries
+    /// its base pin"*, `.jigc/tasks/<id>/base.json` a file (`design/storage.md` → *The
+    /// per-task working area (staging)*); a leftover directory is no task.
     TheTaskFlag,
     /// **The first word after the leaf** — `jigc task finalize <id>`, `jigc milestone
     /// finalize <id>`.
@@ -763,17 +795,24 @@ impl Verdict {
 }
 
 /// **The work unit a command acts on** — the id its row's [`Unit`] reads off the command,
-/// and the sub-tasks the unit's committed record names: what [`OWN`] and [`ITS_SUB_TASKS`]
-/// stand for in a place. Neither where the command names no unit.
+/// the sub-tasks the unit's committed record names, the milestone whose committed record
+/// names the unit, and the directory the cascade resolves `docs-root` to: what [`OWN`],
+/// [`ITS_SUB_TASKS`], [`ITS_MILESTONE`] and [`DOCS_ROOT`] stand for in a place. None of the
+/// first three where the command names no unit.
 #[derive(Clone, Debug, Default)]
 struct Acting {
     unit: Option<String>,
     sub_tasks: BTreeSet<String>,
+    milestone: Option<String>,
+    /// From the repository's root, `""` for the root itself; `None` where a layer that
+    /// stands does not read.
+    docs_root: Option<String>,
 }
 
 impl Acting {
     /// What the row's [`Unit`] reads off `argv`, against the manifest taken before the
-    /// command — where the task areas stand, and the unit's committed record.
+    /// command — where the task areas stand, the cascade's layers, and the committed
+    /// records.
     fn of(row: &Row, argv: &[&str], before: &Manifest) -> Acting {
         let flag = argv.iter().enumerate().find_map(|(at, word)| match *word {
             "--task" => argv.get(at + 1).map(|id| id.to_string()),
@@ -782,13 +821,19 @@ impl Acting {
         let unit = match row.unit {
             Unit::Nothing => None,
             Unit::TheTaskFlag => flag.or_else(|| {
+                // A task is an area that carries its base pin.
                 let standing: Vec<&str> = before
                     .files
                     .iter()
                     .filter(|(_, entry)| matches!(entry, Entry::Dir(_)))
                     .filter_map(|(path, _)| {
                         let id = in_repo(path)?.strip_prefix(".jigc/tasks/")?;
-                        (!id.contains('/')).then_some(id)
+                        (!id.contains('/')
+                            && matches!(
+                                before.files.get(&format!("{path}/base.json")),
+                                Some(Entry::File { .. })
+                            ))
+                        .then_some(id)
                     })
                     .collect();
                 match standing.as_slice() {
@@ -801,45 +846,177 @@ impl Acting {
                 .filter(|word| !word.starts_with('-'))
                 .map(|word| word.to_string()),
         };
-        // The record's items: `### <id>  {#<id>}`, the sub-task's id its anchor.
-        let sub_tasks = unit
-            .as_ref()
-            .and_then(|unit| {
+        let docs_root = docs_root(before);
+        // Every committed record at the home, by its milestone: the sub-task ids its items
+        // name, `### <id>  {#<id>}`, the sub-task's id its anchor.
+        let records: BTreeMap<String, BTreeSet<String>> = docs_root
+            .as_deref()
+            .map(|root| {
+                let home = match root {
+                    "" => RECORD_HOME.to_string(),
+                    root => format!("{root}/{RECORD_HOME}"),
+                };
                 before
                     .files
-                    .get(&format!("{REPO}/docs/milestone-records/{unit}.md"))
-            })
-            .and_then(Entry::lines)
-            .map(|lines| {
-                lines
-                    .into_iter()
-                    .filter_map(|line| {
-                        let line = std::str::from_utf8(line).ok()?.trim_end();
-                        let anchor = line.strip_prefix("### ")?.rsplit_once("{#")?.1;
-                        Some(anchor.strip_suffix('}')?.to_string())
+                    .keys()
+                    .filter_map(|path| {
+                        let rel = in_repo(path)?;
+                        let id = rel
+                            .strip_prefix(home.as_str())?
+                            .strip_prefix('/')?
+                            .strip_suffix(".md")?;
+                        (!id.contains('/')).then_some((id.to_string(), committed(before, rel)?))
+                    })
+                    .map(|(id, entry)| {
+                        let items = entry
+                            .lines()
+                            .unwrap_or_default()
+                            .into_iter()
+                            .filter_map(|line| {
+                                let line = std::str::from_utf8(line).ok()?.trim_end();
+                                let anchor = line.strip_prefix("### ")?.rsplit_once("{#")?.1;
+                                Some(anchor.strip_suffix('}')?.to_string())
+                            })
+                            .collect();
+                        (id, items)
                     })
                     .collect()
             })
             .unwrap_or_default();
-        Acting { unit, sub_tasks }
+        let sub_tasks = unit
+            .as_ref()
+            .and_then(|unit| records.get(unit))
+            .cloned()
+            .unwrap_or_default();
+        let milestone = unit.as_ref().and_then(|unit| {
+            let naming: Vec<&String> = records
+                .iter()
+                .filter(|(_, items)| items.contains(unit))
+                .map(|(id, _)| id)
+                .collect();
+            match naming.as_slice() {
+                [one] => Some(one.to_string()),
+                _ => None,
+            }
+        });
+        Acting {
+            unit,
+            sub_tasks,
+            milestone,
+            docs_root,
+        }
     }
 
-    /// Whether the component `want` of a place stands for `got`: `*` for any, [`OWN`] for
-    /// the unit, [`ITS_SUB_TASKS`] for a sub-task of it, and else the word itself.
+    /// Whether the component `want` of a place stands for `got`: `*` for any; [`OWN`] for
+    /// the unit, [`ITS_SUB_TASKS`] for a sub-task of it and [`ITS_MILESTONE`] for its
+    /// milestone, each alone or with the fixed suffix that follows it; and else the word
+    /// itself.
     fn stands_for(&self, want: &str, got: &str) -> bool {
-        match want {
-            "*" => true,
-            OWN => self.unit.as_deref() == Some(got),
-            ITS_SUB_TASKS => self.sub_tasks.contains(got),
-            _ => want == got,
+        if want == "*" {
+            return true;
+        }
+        for word in [OWN, ITS_SUB_TASKS, ITS_MILESTONE] {
+            if let Some(suffix) = want.strip_prefix(word) {
+                let Some(id) = got.strip_suffix(suffix) else {
+                    return false;
+                };
+                return match word {
+                    OWN => self.unit.as_deref() == Some(id),
+                    ITS_SUB_TASKS => self.sub_tasks.contains(id),
+                    _ => self.milestone.as_deref() == Some(id),
+                };
+            }
+        }
+        want == got
+    }
+
+    /// `pattern` with a leading [`DOCS_ROOT`] read as the directory it stands for — `None`
+    /// where the docs root does not resolve.
+    fn rooted<'p>(&self, pattern: &'p str) -> Option<std::borrow::Cow<'p, str>> {
+        let Some(rest) = pattern.strip_prefix(DOCS_ROOT) else {
+            return Some(pattern.into());
+        };
+        let rest = rest.strip_prefix('/')?;
+        match self.docs_root.as_deref()? {
+            "" => Some(rest.into()),
+            root => Some(format!("{root}/{rest}").into()),
         }
     }
 }
 
+/// **The directory the cascade resolves `docs-root` to**, from the repository's root — the
+/// project layer's value, else the team layer's, else the dev pack's default; `.` and `""`
+/// the root itself. `None` where a layer that stands is no YAML map, or the knob there is
+/// no string. *Not read*: a listed pack's own `knobs.yaml`, which the shipped topology has
+/// none of.
+fn docs_root(before: &Manifest) -> Option<String> {
+    fn says(bytes: &[u8], at: &[&str]) -> Result<Option<String>, ()> {
+        let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).map_err(|_| ())?;
+        if !yaml.is_mapping() {
+            return Err(());
+        }
+        match at.iter().try_fold(&yaml, |value, key| value.get(key)) {
+            None => Ok(None),
+            Some(value) => value
+                .as_str()
+                .map(|value| Some(value.to_string()))
+                .ok_or(()),
+        }
+    }
+    let mut value = None;
+    for layer in [
+        format!("{REPO}/.jigc/config/manifest.yaml"),
+        "home/.config/jigc/manifest.yaml".to_string(),
+    ] {
+        match before.files.get(&layer) {
+            None => continue,
+            Some(Entry::File { bytes, .. }) => match says(bytes, &["scalar", "docs-root"]) {
+                Ok(None) => continue,
+                Ok(Some(set)) => {
+                    value = Some(set);
+                    break;
+                }
+                Err(()) => return None,
+            },
+            Some(_) => return None,
+        }
+    }
+    let value = match value {
+        Some(value) => value,
+        None => says(DEV_KNOBS.as_bytes(), &["docs-root", "default"]).ok()??,
+    };
+    let root = value.trim_matches('/');
+    Some(if root == "." {
+        String::new()
+    } else {
+        root.to_string()
+    })
+}
+
+/// The entry at `rel` — from the repository's root — where its bytes are the ones the main
+/// checkout's `HEAD` holds there: the blob of the commit that last changed the path, down
+/// its first parents.
+fn committed<'m>(manifest: &'m Manifest, rel: &str) -> Option<&'m Entry> {
+    let entry = manifest.files.get(&format!("{REPO}/{rel}"))?;
+    let mut at = manifest.checkouts.get(REPO)?.head.as_str();
+    while !at.is_empty() {
+        let commit = manifest.commits.get(at)?;
+        if let Some(held) = commit.changed.get(rel) {
+            let (_, blob) = held.as_ref()?;
+            return (entry.blob() == Some(blob.as_str())).then_some(entry);
+        }
+        at = commit.parent.as_deref().unwrap_or_default();
+    }
+    None
+}
+
 /// Whether `path` is `pattern`, component for component, a `*` standing for any one — and,
-/// for a command that acts on a unit, [`OWN`] for it and [`ITS_SUB_TASKS`] for its
-/// sub-tasks ([`Acting`]).
+/// for a command that acts on a unit, [`OWN`], [`ITS_SUB_TASKS`] and [`ITS_MILESTONE`] for
+/// what [`Acting`] reads, and a leading [`DOCS_ROOT`] for the docs root.
 fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
+    let Some(pattern) = acting.rooted(pattern) else {
+        return false;
+    };
     let (want, got): (Vec<&str>, Vec<&str>) =
         (pattern.split('/').collect(), path.split('/').collect());
     want.len() == got.len()
@@ -851,9 +1028,12 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
 
 /// Whether `path` is the directory `pattern` names or lies under it.
 fn under_for(pattern: &str, path: &str, acting: &Acting) -> bool {
+    let Some(pattern) = acting.rooted(pattern) else {
+        return false;
+    };
     let depth = pattern.split('/').count();
     let head: Vec<&str> = path.split('/').take(depth).collect();
-    head.len() == depth && is_at_for(pattern, &head.join("/"), acting)
+    head.len() == depth && is_at_for(&pattern, &head.join("/"), acting)
 }
 
 /// [`under_for`] with no unit: a place that names one is nowhere.
