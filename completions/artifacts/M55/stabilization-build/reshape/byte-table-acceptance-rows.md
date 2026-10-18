@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, by the third of the fixes after the doc family's review: §6, entry 14 called a place silent where the docs say two things, and held two questions. It is rewritten as two docs saying two things, quoting both sides, and split — (a), whether a write's copy-in takes a file that is no doc of its type, stays entry 14; (b), whether a write that copied in and then refuses keeps the copy, is entry 15, answered at `doc author` by its own doc and open at the five edit leaves. `W5` says that each of its sentences is a refusal before the copy-in, and §3b that the docs are not silent there. No line moved.*
+
 *Changed 2026-10-18, with the third commit of the doc family's task (`B6`), which brought the cells of its two minting doors: §6, entry 14 says what they met. No line moved.*
 
 *Changed 2026-10-18, with the second commit of the doc family's task (`B6`), which brought the cells of its six edit leaves: one more place where the docs are silent is listed (§6, entry 14). No line moved.*
@@ -520,7 +522,7 @@ The rows are one row eight times: W1 to W3 with `C1` to `C3` (§4a), and `doc re
 
 — `design/write-commands.md` → *`jigc doc rename` — the in-task title change, split on committed-store identity (M48)*
 
-**W5 — a refusal stages nothing and records nothing.** Not a line: it is where W1 to W4 take their *on a refusal: no* from, read off sentences that each say it for one way a `doc` write refuses — an address it cannot resolve, a lock it cannot take, a title or a payload it refuses, a create-only entry over an occupied home.
+**W5 — a refusal stages nothing and records nothing.** Not a line: it is where W1 to W4 take their *on a refusal: no* from, read off sentences that each say it for one way a `doc` write refuses — an address it cannot resolve, a lock it cannot take, a title or a payload it refuses, a create-only entry over an occupied home. Every one of them speaks of a refusal that comes **before** anything is copied in; what a refusal that comes after the copy-in leaves is §6, entry 15, and the first sentence below is about an **address**, not about what the home holds (2026-10-18, after the family's review).
 
 > **A write verb resolves its addressed leaf against the declaring schema *before touching bytes*** — an undeclared address is **rejected, never written**.
 
@@ -548,7 +550,7 @@ The rows are one row eight times: W1 to W3 with `C1` to `C3` (§4a), and `doc re
 
 — `design/storage.md` → *The per-task working area (staging)*
 
-**What the docs do not say of the family:** whether a `doc` write may rebuild the edge index — `design/storage.md` → *Edge index lifecycle* rebuilds it at the *first read after a stamp mismatch* and names its five sites, none a `doc` write, and no sentence read says whether a write reads it; no line is written for it, and a cell that finds one is red and an entry of §6, as `task discard`'s is (§6, entry 7). What a `doc` write does where the home it copies in from holds no doc of its type — a file of the user's, a link to one, a link to nothing, a directory, nothing at all — is said for the minting doors over a link to nothing and a directory (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4): such a create *"still mints fresh and is refused at the committing door, not at the create"*), and for no other leaf or shape; the cells say where they meet it.
+**What the docs do not say of the family:** whether a `doc` write may rebuild the edge index — `design/storage.md` → *Edge index lifecycle* rebuilds it at the *first read after a stamp mismatch* and names its five sites, none a `doc` write, and no sentence read says whether a write reads it; no line is written for it, and a cell that finds one is red and an entry of §6, as `task discard`'s is (§6, entry 7). What a `doc` write does where the home it copies in from holds no doc of its type — a file of the user's, a link to one, a link to nothing, a directory, nothing at all — is said for the minting doors over a link to nothing and a directory (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4): such a create *"still mints fresh and is refused at the committing door, not at the create"*), and for no other leaf or shape; the cells say where they meet it. *Corrected 2026-10-18, after the family's review:* where the home holds a file that is no doc of its type, the docs do say — two things — and §6, entries 14 and 15, quote both sides.
 
 ---
 
@@ -689,7 +691,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11 and 12 are ruled** (2026-10-12, 2026-10-14 and 2026-10-15), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4, 7 and 14 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11 and 12 are ruled** (2026-10-12, 2026-10-14 and 2026-10-15), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4, 7 and 14 are open, and so is 15 at five of its six leaves — `doc author`'s half of it is answered by its own doc (2026-10-18, when entry 14 was split in two).
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -794,13 +796,113 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *How it is carried.* `setup-head-unborn-an-edit-to-the-root-ignore`, the one `S9 × E` cell, is listed as refused with `setup.dirty-install-path`, as its sibling `setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree` is, and loses this entry's mark; it holds — exit 1, nothing changed. The key it was red under, `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides`, retires ([byte-table-findings.md](byte-table-findings.md) → §7).
 - *The one sentence that says otherwise* is a guide's, not a design doc's: `crates/cli/guides/QUICKSTART.md`, *"Every file is untracked there"*, of a repository with no commit — a doc-only finding, [byte-table-findings.md](byte-table-findings.md) → §1, `r1-quickstart-guide-says-every-file-is-untracked-before-the-first-commit-where-a-staged-one-is-tracked-and-refused`.
 
-**14. A `doc` write whose home holds a file that is no doc of its type — the user's own file where the committed doc stood, or a file a live link there leads to.**
+**14. Does a `doc` write's copy-in take a file at the home that is no doc of its type — the user's own file where the committed doc stood, or a file a live link there leads to? Two docs say two things — open; the question (a) of the two this entry held.**
 
-- *The words.* `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*: the first write to a committed doc *"**copies the committed body into the sub-area** (`copy_in` → `edited-from-base`), then splices"*; `design/finalize.md` → *4. Promote managed docs*, *Declared bounds* (2): *"**Reads still follow a link at a home** — `jigc doc show` serves a linked doc and the copy-in reads one"*; `design/reconciliation.md` → *What a task copied in*: *"An untracked, hand-started draft that does not yet conform (an empty required slot) is copied in by the write that fills it"*. And the refusals of `W5`: *"**A write verb resolves its addressed leaf against the declaring schema *before touching bytes***"*, and the minting doors' pre-check *"running **before either persists**, so the whole payload is rejected with nothing staged"*. No sentence read says what a write does where the file it would copy in is no doc of its type at all — not a draft that does not yet conform, but bytes that do not parse as the doctype: a file of the user's at the home, or the file a live link there leads to.
-- *What the product does.* It copies the file in, and then each leaf goes its own way. `doc add-item` splices its item into it and exits 0, and `doc create` takes it as the doc it updates, exit 0. `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename` refuse — `write.non-reparseable`, `write.wrong-shape`, *"carries no `# H1` to retitle"* — and leave the copy staged in the task's area, its provenance written, under a route that says, at `remove-item` and `set-slot`, *"nothing was persisted"* — a claim the findings carry as a key of its own however this entry is ruled ([byte-table-findings.md](byte-table-findings.md) → §12); `doc author` refuses `write.non-reparseable` and rolls the copy back, but leaves the task's role bound and the provenance written.
-- *What the product should do — robust, and one rule at every leaf.* **Refuse before the copy-in, staging nothing**, and say what stands at the home — a file that is no doc of its type, which is the adoption case (`schema-conformance.unadopted-instance`'s route) or the user's to move — rather than copy it in as the doc the task edits. A draft that parses and does not yet conform stays the copy-in's, as the sentence above has it.
-- *The other reading.* The copy-in takes whatever stands at the home, as it takes a non-conformant draft, and a write acts on it where its splice can; a refusal then leaves what it copied in, and the route says so.
-- *Until ruled*, the reading under which more is red: **the write refuses and stages nothing** — `W5`'s rule. *The cells* — at each of the six edit leaves, the user's file in the doc's place, and a link in the doc's place to a file in the repository and to one outside it, eighteen, each marked with this entry: the three of `add-item` *not the listed outcome*, under `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`; the fifteen of the other five *refused, and changed what a refusal may not*, under `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged` ([byte-table-findings.md](byte-table-findings.md) → §10). Under the other reading the three of `add-item` hold and the fifteen stay red, *not the listed outcome* as well. **And at the two minting doors, six more** (the doc family's third commit), each marked: the three of `doc create` *not the listed outcome*, joining `add-item`'s key; the three of `doc author` *refused, and changed what a refusal may not*, under `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound` (the findings' §11). **No byte of the user's is lost** in any of the twenty-four: the file stands at the home, and its bytes in a staged copy too where one was made.
+- *Split on 2026-10-18, after the family's review (its first and fourth findings).* Until then this entry called the place a silence and asked one question of it, where read whole the docs say two things and the entry held two questions: **(a)**, this one — whether the copy-in takes such a file at all — and **(b)**, whether a write that copied in and then refuses keeps what it copied, now entry 15. The entry had also read `W5`'s first sentence as a write refusing *"before touching bytes"* over what the source holds; that sentence is about resolving an **address** against the schema, and says nothing of what a home holds.
+- *For taking what stands — the copy-in reads the home, and what it read is judged later, in the task or at the committing door.* The copy-in reads the file at the home and does not adopt a non-conformant one, which is left for the backstop:
+
+> **A non-conformant doc is not baselined** — the gate this arm has always run. It stays `UNKNOWN` and the backstop below decides.
+
+— `design/reconciliation.md` → *Baseline adoption*
+
+  and a file that does not parse is non-conformant there:
+
+> **Parse fails OR schema fails** → **conformance-block**:
+
+— `design/reconciliation.md` → *OOB edit — the parse classifier*
+
+  At the committing door, of the file a task copied in:
+
+> A file that does not conform is not recorded and draws no finding here: the staged copy that replaces it is validated in-task
+
+— `design/reconciliation.md` → *What a task copied in*
+
+  The write row of the probing table, whole — `W3` quotes its tail and the record had left out the clause before it:
+
+> It classifies nothing itself — the block the row promises is raised by the next sweep (`task validate`, a finalize preflight, `start --task`), never by the write verb: a second write to an already-staged doc reads the staged copy and does not look at the home again.
+
+— `design/reconciliation.md` → *Detection timing*
+
+  The create over a foreign file at its canonical home, in so many words — `design/auto-migration.md` → *Retire-the-foreign-original (the first destructive write)*, the path-collision guard, which seeds a migration blank and keeps the copy-in for every other caller:
+
+  > the **idempotent-create copy-in** (`crates/engine/src/state.rs` `create` step 4, the M16 clobber-fix) seeds the migration working area by copying the *committed* doc at the canonical path in as the edit base, so a non-conformant squatter is read as the base
+
+  > the discriminator is the migration source-path match, **never** singleton-ness, so the M16 clobber-fix stays intact for non-migration callers
+
+  Through a link, and the create over a home with no doc body:
+
+> and it is why the copy-in still reads through a live link: reading the doc is not the harm, and refusing the read would turn an edit into a blank mint
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+> (4) A *plain* create over an entry with no doc body (a dangling link, a directory) still mints fresh and is refused at the committing door, not at the create — there is no create-side code that says so honestly, and adding a refusal there is a decision, not a fix.
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+  A source that does not parse, at a write:
+
+> A source that no longer parses answers *"is the item present?"* with *"cannot tell"*, which is not a yes: it falls through too
+
+— `design/write-commands.md` → *Every write resolves its address before it moves bytes (M47)*
+
+  and `design/validation.md` → *The `write.*` route split*, of the two dead-end rejects:
+
+  > "re-run the same write" is the recovery only when the *payload* is what broke, never when the **staged source** is
+
+  **And the human's ruling** of 2026-10-06 on the fix pass's item 23 — the declared bound `design/reconciliation.md` → *What a task copied in*, 1. restates — that an uncommitted edit made before a task's first write is carried into it, ruled:
+
+> and over refusing the first write over an uncommitted edit, which blocks an ordinary way of working.
+
+— `DECISIONS.md` → *2026-10-06 — Ahead of the run's opening: round 1 hunts with the seven review rows and one cross-cutting reviewer and no per-area audit, two rows get a cross-model pass, the regression set has two parts, the blind trial has three arms and a written bar for passing — and the human's ruling on each of the twenty-three items the fix pass left him (the human's rulings, one question at a time, each relayed by the orchestrator; a record only — nothing built, and no run opened)*
+
+  A user's file put in the doc's place — its index entry dropped, or a link — is an uncommitted change at the home before the task's first write; refusing the write over it is the refusal that ruling declined, in a narrower form.
+- *For refusing it, or calling it a foreign file to adopt.* `design/doc-read-surface.md` → *What it reads — committed by default; the staged copy on `--task` (the M43 revision)*, and the same words again under *`jigc doc list` — the fourth read surface (M42)*:
+
+  > a staged working copy is jigc-written by construction, never a foreign squatter
+
+  and `design/surface-contract.md` → *The surface style guide (the judgment tier)*:
+
+  > the at-home squatter keeps the one-story adopt-it rule
+
+- *What disagrees.* The first set has the copy-in stage what stands at the home — for a create over a foreign file at its canonical path, in so many words — and leaves the verdict to the task's validation and the committing door; the second says a staged copy is never a foreign squatter, and the copy-in of the user's file makes that false (the review drove it: `task validate` calls the user's file *"this task's in-flight version of the doc"*). An inconsistency between design docs, recorded as one: [byte-table-findings.md](byte-table-findings.md) → §1, `r1-auto-migration-design-copies-a-squatter-in-as-the-edit-base-where-doc-read-surface-design-says-a-staged-copy-is-never-one`.
+- *What the product does.* It copies the file in. `doc add-item` splices its item into it and exits 0; `doc create` takes it as the doc it updates — *"already existed — copied in for update"*, exit 0. The other five edit leaves and `doc author` refuse after the copy: entry 15.
+- *What the product should do — robust.* **Refuse at the copy-in where the bytes at the home do not parse as the doctype, staging nothing and binding nothing, and say what stands there** — an at-home squatter, whose one story is adoption, or a file of the user's to put back; **a file that parses and does not yet conform is still copied in.** *Why:* the line falls between the two sets rather than through one of them. The hand-started draft, the uncommitted hand edit of item 23 and the live-link edit path each copy in a doc that parses, and keep their copy-in; what is refused is bytes no write can work on — five of the six edit leaves and `author` already refuse on them, after copying, so there the refusal moves ahead of the copy and leaves nothing behind, and entry 15 never arises for this shape; and the staged copy is then never a foreign squatter, as the read surface says. *Its price, the human's to weigh:* a refusal new at `add-item` and `create`, which `finalize.md`'s (4) calls *a decision, not a fix*; and it stands beside item 23 — a file that no longer parses as its doc is that ruling's uncommitted edit taken to its far end, and the human may read it as the case he ruled. *The other answer:* the copy-in takes what stands; the two read-surface sentences and the style guide's are corrected to say a staged copy may hold a foreign file, which the committing door blocks.
+- *Until ruled*, the reading under which more is red: **the copy-in refuses, and the write stages nothing.** *The cells* — at the user's file in the doc's place, and a link there to a file in the repository and to one outside it:
+  - the three of `doc add-item` and the three of `doc create`, *not the listed outcome*, under `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type` ([byte-table-findings.md](byte-table-findings.md) → §10, §11) — under the other reading they hold; each carries this entry's mark;
+  - the fifteen of the five edit leaves that refuse after the copy carry this mark **beside entry 15's**: under this reading they are red whatever entry 15 says, and under the other their fate is entry 15's;
+  - the three of `doc author` are red under every reading of either entry — entry 15 — and carry neither mark.
+
+  **No byte of the user's is lost** in any of the twenty-four: the file stands at the home, and its bytes in a staged copy too where one was made.
+
+**15. A `doc` write that copied a committed doc in and then refuses — does it keep what it copied? Answered at `doc author` by its own doc; open at the five edit leaves that refuse, where no sentence speaks of a refusal that comes after the copy-in — the question (b) entry 14 held until 2026-10-18.**
+
+- *At `doc author` — answered.* The door's own sentences:
+
+> persisting **once** at the end (rollback = discard the buffer; persist only on full success)
+
+— `design/write-commands.md` → *The verbs*
+
+> because the chain persists once at the end, the refusal rejects the **whole payload** and stages nothing (the `create_gated` pre-image is rolled back too)
+
+— `design/write-commands.md` → *The verbs*
+
+  and the create-gate's refusals, which come before the copy-in, say the same of the binding: *"so nothing is staged and no role is bound"* (`W5`). **What pulls the other way, and why it does not answer.** M48 met the binding a failed author leaves, and fixed the dead end it caused, not the binding:
+
+> Fixed by a **state-derived** probe that holds however the orphan arose
+
+— `DECISIONS.md` → *2026-08-15 — M48 complete: the audit's four findings all confirmed and fixed, and two lessons encoded*
+
+  — and its test, `write_title_divergence::a_binding_whose_doc_is_gone_is_not_an_incumbent_at_any_minting_verb`, makes the orphan with a failed author as its fixture. And the copy-in's own paragraph says what a later copy-in does over provenance left behind:
+
+> provenance is write-once, but a copy-in that stages the doc again after its earlier staging was undone records the bytes it read then
+
+— `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*
+
+  Each says what happens where a residue stands; neither says a failed author may leave one. So `author`'s three cells are red under every reading of this entry and of entry 14 — *refused, and changed what a refusal may not*, under `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound` ([byte-table-findings.md](byte-table-findings.md) → §11), held against the two sentences above — and carry no mark.
+- *At the five edit leaves — open.* `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename` copy the file in and refuse — `write.non-reparseable`, `write.wrong-shape`, *"carries no `# H1` to retitle"* — leaving the copy staged, its provenance and witness written, and at `rename` the role bound. What leans towards *nothing kept*: each of `W5`'s sentences, every one of them for a refusal that comes **before** the copy-in — a lock not taken, an unreadable record, a create-only entry occupied, the minting doors' pre-check; and the sweep of every miss shape (`design/write-commands.md` → *Every write resolves its address before it moves bytes (M47)*), which asserts *"that the staged bytes are unchanged"* — of a doc staged before the miss, not of a first touch. What leans towards *kept*: the route of `write.non-reparseable`, whose escape is for *"the staged source itself"* that *"no longer parses"*, and whose `design/validation.md` paragraph says *"the state that reaches either reject is one whose task stages a doc"*; and the copy-in's paragraph above, of a staging *undone*. None says what a refusal that comes after the copy-in leaves — a silence.
+- *What the product should do — robust, one rule with `author`'s.* **A write that refuses leaves the task's area as it found it**: its own copy-in rolled back, with the provenance and the witness written for it and any role it bound. *Why:* it is the rule the docs state for every refusal they name and for the batch, so one rule holds at all eight leaves; the route's *"nothing was persisted"* is then true ([byte-table-findings.md](byte-table-findings.md) → §12 closes with it); the next write reads the home again, so a repair the user makes there is what it copies, never a stale copy; and the task's witness never names bytes the task did not keep, against which its finalize would otherwise compare the home. *The other answer:* the copy survives the refusal, the route says so, and `W1` gains the copy-in on a refusal.
+- *Until ruled*, the reading under which more is red: **nothing kept** — `W5`'s rule. *The cells* — the fifteen, *refused, and changed what a refusal may not*, under `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged` ([byte-table-findings.md](byte-table-findings.md) → §10), each carrying this entry's mark and entry 14's: they hold only if both are ruled the other way — the copy-in takes what stands, and a refusal keeps it.
+- *Beyond the table's plants.* The question is not about a foreign file: every refusal that comes after a copy-in meets it — the fix pass's ledger row `(R3, F3)`, a conformant doc whose `set-slot` fails conformance, is one ([byte-table-findings.md](byte-table-findings.md) → §12).
 
 **Decided here, as a builder, and the human may overturn each:**
 

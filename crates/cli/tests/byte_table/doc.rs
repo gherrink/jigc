@@ -430,8 +430,10 @@ const RETITLE_ONE_WAY: &[&str] = &[
 /// body stands — a link to nothing, a directory, the file deleted — the write refuses,
 /// since *"A working instance must exist before you can `set-slot` into it"*
 /// (*Instance provisioning*), with the words a run gives; where a file that is no doc of
-/// its type stands — the user's, or one a live link leads to — no sentence decides, and
-/// the cell is listed refusing and marked (the record's §6, entry 14); and a deletion
+/// its type stands — the user's, or one a live link leads to — the docs say two things,
+/// and the cell is listed refusing and marked with the record's §6, entry 14 (does the
+/// copy-in take such a file?), and the five leaves that refuse after the copy with its
+/// entry 15 as well (does a refusal keep the copy?); and a deletion
 /// after the task's first write is not looked at, since *"a second write to an
 /// already-staged doc reads the staged copy and does not look at the home again"*.
 /// **What a refusal's route says is no cell's**: the six of `remove-item` and `set-slot`
@@ -599,7 +601,7 @@ const EDITS: [Cell; 66] = [
         REMOVE_A_MILESTONE,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-remove-a-milestone-a-link-to-nothing-in-the-docs-place",
@@ -619,7 +621,7 @@ const EDITS: [Cell; 66] = [
         REMOVE_A_MILESTONE,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-remove-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
@@ -629,7 +631,7 @@ const EDITS: [Cell; 66] = [
         REMOVE_A_MILESTONE,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-remove-a-milestone-a-directory-in-the-docs-place",
@@ -709,7 +711,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_A_MILESTONE,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-milestone-a-link-to-nothing-in-the-docs-place",
@@ -729,7 +731,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_A_MILESTONE,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
@@ -739,7 +741,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_A_MILESTONE,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-milestone-a-directory-in-the-docs-place",
@@ -819,7 +821,7 @@ const EDITS: [Cell; 66] = [
         SET_A_RELEASES_LINK,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-a-releases-link-a-link-to-nothing-in-the-docs-place",
@@ -839,7 +841,7 @@ const EDITS: [Cell; 66] = [
         SET_A_RELEASES_LINK,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-a-releases-link-a-link-to-a-file-outside-in-the-docs-place",
@@ -849,7 +851,7 @@ const EDITS: [Cell; 66] = [
         SET_A_RELEASES_LINK,
         refuses(1, "write.wrong-shape"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-a-releases-link-a-directory-in-the-docs-place",
@@ -929,7 +931,7 @@ const EDITS: [Cell; 66] = [
         SET_WHAT_IT_PROVES,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-what-a-milestone-proves-a-link-to-nothing-in-the-docs-place",
@@ -949,7 +951,7 @@ const EDITS: [Cell; 66] = [
         SET_WHAT_IT_PROVES,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-what-a-milestone-proves-a-link-to-a-file-outside-in-the-docs-place",
@@ -959,7 +961,7 @@ const EDITS: [Cell; 66] = [
         SET_WHAT_IT_PROVES,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-set-what-a-milestone-proves-a-directory-in-the-docs-place",
@@ -1039,7 +1041,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_ONE_WAY,
         refuses(1, "carries no `# H1` to retitle"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-committed-decision-a-link-to-nothing-in-the-docs-place",
@@ -1059,7 +1061,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_ONE_WAY,
         refuses(1, "carries no `# H1` to retitle"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-committed-decision-a-link-to-a-file-outside-in-the-docs-place",
@@ -1069,7 +1071,7 @@ const EDITS: [Cell; 66] = [
         RETITLE_ONE_WAY,
         refuses(1, "carries no `# H1` to retitle"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[Mark::Silence(14), Mark::Silence(15)],
     ),
     cell(
         "doc-retitle-a-committed-decision-a-directory-in-the-docs-place",
@@ -1526,8 +1528,10 @@ const AUTHOR_THE_VISION: &[&str] = &[
 /// (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4)), and so over
 /// the doc's file deleted, which is the same free home; `doc author` runs through the same
 /// `create_gated` path, so the same holds of it. A file that is no doc of its type at the
-/// home is the record's §6, entry 14, marked. The three of `author` that refuse
-/// `write.non-reparseable` print *"nothing was persisted"* over the role they leave bound
+/// home is the record's §6, entry 14, marked at `create`; the three of `author` are red
+/// under every reading — its own doc has a refusal persist nothing (entry 15) — and carry
+/// no mark. They refuse `write.non-reparseable` and print *"nothing was persisted"* over
+/// the role they leave bound
 /// — the findings' key of §12, which no cell holds, as at the edit leaves ([`EDITS`]).
 const MINTS: [Cell; 22] = [
     cell(
@@ -1688,7 +1692,7 @@ const MINTS: [Cell; 22] = [
         AUTHOR_THE_VISION,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::Untracked),
-        &[Mark::Silence(14)],
+        &[],
     ),
     cell(
         "doc-author-the-vision-a-link-to-nothing-in-the-docs-place",
@@ -1708,7 +1712,7 @@ const MINTS: [Cell; 22] = [
         AUTHOR_THE_VISION,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkInside),
-        &[Mark::Silence(14)],
+        &[],
     ),
     cell(
         "doc-author-the-vision-a-link-to-a-file-outside-in-the-docs-place",
@@ -1718,7 +1722,7 @@ const MINTS: [Cell; 22] = [
         AUTHOR_THE_VISION,
         refuses(1, "write.non-reparseable"),
         at("W3", Kind::LinkOutside),
-        &[Mark::Silence(14)],
+        &[],
     ),
     cell(
         "doc-author-the-vision-a-directory-in-the-docs-place",
