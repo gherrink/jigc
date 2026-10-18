@@ -2818,6 +2818,12 @@ function verifyPrompt(ctx, launch, name, entry, redrive, built) {
     'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
   ].filter(Boolean).join('\n')
 }
+// THE RULE OF A PRINTED ROUTE, beside both branches of the hand-on line (DECISIONS.md ->
+// 2026-10-18, "A verifier hands on every printed route it did not run"; the human's ruling,
+// option A): a route is confirmed only by being run as printed, so one a verifier saw printed
+// and did not run is an entry however right it looks — the fifth canary root's verifier kept
+// one back as "plausibly right".
+const PRINTED_ROUTE = 'A ROUTE YOU SAW PRINTED AND DID NOT RUN AS PRINTED IS AN ENTRY OF `hands_on`, whether or not it looks right to you: a route is confirmed only by being run as printed, and one you ran as printed belongs to your verdict.'
 // verdictPrompt — THE PROMPT OF A VERIFIER THAT FILES ITS VERDICT, IN A RUN WITH A QUEUE (the
 // reshape's plan, T6a). The definition's paragraph for it binds on THE CALL, SPELLED WHOLE
 // (finding-verifier.md: "Where your prompt spells a `dev/stabilize-record verdict` call"): the
@@ -2839,9 +2845,10 @@ function verdictPrompt(ctx, launch, name, key, built, handOn) {
     'YOUR FIRST READ, before anything else: ' + typed(RECORD_TOOL, kitRead(ctx.run, 'verify')) + ' — it prints what every verifier looks up: the rules of a report, the slug rule, the rig and how a binary is named to it, the format of a repro block, and the run\'s closing condition. Read them there, and look none of them up again.',
     'THE FINDING IS A ROW, AND YOU READ IT BY ITS KEY: ' + typed(RECORD_TOOL, rowRead(ctx.run, key)) + ' prints it whole — its door, the clause it is said to break, its repro, its grade where triage graded it, its class, and for an item a verifier handed on, who handed it on and under which finding. This prompt carries none of it.',
     'YOUR VERDICT IS ONE FILE, AND YOU FILE IT ONCE — after your report is handed over, and before you return. Write it — ONE JSON object, its members as your definition has them — to the file `' + filingFile(ctx, name) + '` WITH YOUR FILE TOOL, and file it by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'verdict --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + filingFile(ctx, name)) + ' (with one more `--scratch` for each scratch root of your own outside that one). THE TWO HASHES ARE MEMBERS OF THAT FILE, and no word of the call: `candidate` is the sha256 you asserted for the candidate\'s binary under the `' + LABELS.binary + '` line, and `previous` the one you asserted for the previous release\'s, wherever you drove it.',
-    handOn == null
+    (handOn == null
       ? 'WHAT YOU HAND ON ENTERS NO QUEUE: the run\'s opening names no number of items a verifier hands on, so every entry of `hands_on` is recorded as what it is, in no queue, and the human may put one in by its key.'
-      : 'WHAT YOU HAND ON — AT MOST ' + handOn + ' ENTER THE QUEUE: that is the number of the run\'s opening. `hands_on` is in the order you would have them verified: the first ' + handOn + ' that carry the evidence of their kind are handed on to the queue, and a later one is recorded as what it is, in no queue.',
+      : 'WHAT YOU HAND ON — AT MOST ' + handOn + ' ENTER THE QUEUE: that is the number of the run\'s opening. `hands_on` is in the order you would have them verified: the first ' + handOn + ' that carry the evidence of their kind are handed on to the queue, and a later one is recorded as what it is, in no queue.')
+      + ' ' + PRINTED_ROUTE,
     'WHAT YOUR RETURN IS HELD TO, and it holds no verdict. That call prints ONE line of JSON. Return status = filed with three things of it: `filing`, the path it printed as `verdict` — held to `' + verdictFile(ctx, name) + '`, the one path a verdict of your name and attempt is filed at; `word`, the verdict as it printed it — held to ' + FILED_WORDS.join(', ') + '; and `contested`, true or false as it printed it. Nothing else of your verdict is read from your return: no basis, no block and no item you hand on is typed a second time. WHAT COUNTS IS WHAT IS FILED: once your wave is over the harness reads the run\'s queue again, and a finding the queue prints again has no verdict, whatever its verifier returned. Where you halt, return status = halted with the halt report, a refusal\'s line verbatim in it — and file nothing.',
     'Scratch root: `' + ctx.scratch + '` — mint your own directory under it.',
   ].join('\n')

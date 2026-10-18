@@ -143,6 +143,12 @@
 //!   launched under another schema in a run with a queue ([`QUEUED_SCHEMAS`]) NEEDS NOTHING
 //!   of that return: every field of it is a row of [`NOT_NEEDED`].
 //!
+//! - **(u)** a verifier hands on every printed route it did not run as printed, whether or
+//!   not it looks right ([DECISIONS.md](../DECISIONS.md) → *2026-10-18 — A verifier hands on
+//!   every printed route it did not run*): the verifier's definition says so and links the
+//!   entry, and — under `node` — the prompt of a verifier that files says so in both of its
+//!   hand-on branches, read off the composed prompt.
+//!
 //! **Driven, where `node` is on `PATH`** (it is on this project's development machines and
 //! on GitHub's hosted runners; where it is not, the arm fails under CI and passes anywhere
 //! else — the gate gains no dependency — and the gate's own summary names it as a test
@@ -5342,4 +5348,67 @@ fn t_a_field_a_stage_needs_has_its_cell_and_what_halts_after_an_instrument_is_a_
         OWED.len(),
         "the verifier's faults — what halts the stage at `{OWED_HALT}` — are the owed cells, and no other"
     );
+}
+
+// ---------------------------------------------------------------------------
+// (u) a verifier hands on every printed route it did not run as printed
+// ---------------------------------------------------------------------------
+
+/// The entry of the human's ruling of 2026-10-18 (option A), which the verifier's
+/// definition links.
+const ROUTE_RULING: &str = "2026-10-18 — A verifier hands on every printed route it did not run";
+
+#[test]
+fn u_a_verifier_hands_on_every_printed_route_it_did_not_run_as_printed() {
+    // THE DEFINITION, read everywhere: the rule, its other half, and the entry it links —
+    // which the log holds as a heading.
+    let definition = &definitions()["finding-verifier"];
+    for said in [
+        "**A route you saw printed and did not run as printed is an entry, whether or not it looks right to you**",
+        "a route is confirmed only by being run as printed, never by being read",
+        "a second refusal of the finding's own door included",
+        "a route you did run as printed belongs to your own verdict and is no entry",
+        &format!("*{ROUTE_RULING}*"),
+    ] {
+        assert!(
+            definition.contains(said),
+            "the verifier's definition says: {said}"
+        );
+    }
+    let log = fs::read_to_string(repo_root().join("DECISIONS.md")).expect("read DECISIONS.md");
+    assert!(
+        log.lines()
+            .any(|line| line.starts_with(&format!("## {ROUTE_RULING}"))),
+        "the log holds the entry the definition links: `## {ROUTE_RULING}`"
+    );
+
+    // THE PROMPT, as composed — both branches of its hand-on line: the opening's number, and
+    // none. What an agent reads is the emitted text, so the text is what is held.
+    if !node_or_skip(&format!(
+        "the prompt of a verifier that files, in {HARNESS}, was not composed and read"
+    )) {
+        return;
+    }
+    let verdicts: Vec<(String, String)> = composed(None)
+        .into_iter()
+        .filter(|(name, _, _)| name == "verdictPrompt")
+        .map(|(_, what, text)| (what, text.expect("composed")))
+        .collect();
+    assert_eq!(
+        verdicts.len(),
+        2,
+        "the table composes the verifier's prompt under both hand-on branches"
+    );
+    for (what, text) in verdicts {
+        for said in [
+            "A ROUTE YOU SAW PRINTED AND DID NOT RUN AS PRINTED IS AN ENTRY OF `hands_on`, whether or not it looks right to you",
+            "a route is confirmed only by being run as printed",
+            "one you ran as printed belongs to your verdict",
+        ] {
+            assert!(
+                text.contains(said),
+                "the prompt of a verifier that files ({what}) says: {said}\n--- the prompt:\n{text}"
+            );
+        }
+    }
 }
