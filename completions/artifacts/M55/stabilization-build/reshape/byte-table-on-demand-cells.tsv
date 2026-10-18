@@ -1,5 +1,6 @@
 # The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate, beyond a line a cell.
 # Printed on 2026-10-15 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 11 at its start and 9 at its end: thirty-six cells — the task family's twelve and the install family's twenty-four — four red, each `jigc uninstall` that acts, by its line `U9`. The block below is the arm's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the fourth of the fixes after the review of the task `B6`, at a load average of 11 at its start and 9 at its end: the same block, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0

@@ -989,17 +989,19 @@ const FINALIZE_CELLS: [Cell; 24] = [
 /// **The cells of `jigc task finalize` at the stamp that stands** — `T2`'s needs a plant in
 /// the place of a file that stands answers (the human's ruling of 2026-10-18): a file of
 /// the user's, one the user committed before the task began, three links and a directory
-/// where jigc's own `.jigc/version` stood; and a file in the place of the directory it
-/// stands in, `.jigc/`, which takes the task with it. Each is listed from the row's doc:
-/// the stamp is refreshed *"where it is jigc's to write"* (`T2`), and a stamp that is not
-/// jigc's own one-line stamp is not jigc's to write — so the finalize acts and leaves it,
-/// where a link or a directory is no stamp to refresh either; with the workbench gone
-/// there is no task, and the finalize refuses as it does over a task that is not there.
-/// The file of the user's is untracked, as **U** says — the index's entry for the stamp
-/// goes with the stamp — so the commit carries the stamp's deletion the user staged:
-/// *"the git index … committed whole"* (`T4`).
-/// The refusal's words are read off a run where no doc gives them.
-const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
+/// where jigc's own `.jigc/version` stood. Each is listed from the row's doc: the stamp is
+/// refreshed *"where it is jigc's to write"* (`T2`), and a stamp that is not jigc's own
+/// one-line stamp is not jigc's to write — so the finalize acts and leaves it, where a link
+/// or a directory is no stamp to refresh either. The file of the user's is untracked, as
+/// **U** says — the index's entry for the stamp goes with the stamp — so the commit
+/// carries the stamp's deletion the user staged: *"the git index … committed whole"*
+/// (`T4`).
+///
+/// **A file in the place of the directory the stamp stands in has no cell, and a scheduled
+/// row says why**: `.jigc/` holds the task's working area too, so a file there takes the
+/// task with it and the finalize refuses `finalize.no-task` before it reaches the stamp — a
+/// cell of it would hold a refusal over a task that is not there, and never `T2`.
+const FINALIZE_AT_THE_STAMP: [Cell; 6] = [
     finalize(
         "task-finalize-a-file-of-the-users-in-the-stamps-place",
         FRESH,
@@ -1059,20 +1061,6 @@ const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
         FINALIZE_THE_DECISION,
         Listed::Acts,
         at("T2", Kind::DirForAFile),
-    ),
-    finalize(
-        "task-finalize-a-file-in-the-place-of-the-workbench",
-        FRESH,
-        a_decision!(
-            [],
-            [
-                Lead::MovedAway("repo/.jigc"),
-                Lead::Plant(Plant::File(".jigc")),
-            ]
-        ),
-        FINALIZE_THE_DECISION,
-        refuses(1, "finalize.no-task"),
-        at("T2", Kind::FileForADir),
     ),
 ];
 

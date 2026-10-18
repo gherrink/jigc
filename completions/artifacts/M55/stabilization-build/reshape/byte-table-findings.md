@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits: in §7 the cell of `T2` with a file in the workbench's place leaves the table for a scheduled row, since it never reached `T2`; §6's ruling on entry 10 reads in the human's words; and §9 records what `task finalize` prints at the stamp when the user's index holds a change there — a key of its own.*
+
 *Changed 2026-10-18, after the review of the task `B6`'s first two commits: in §7 the key `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides` retires — the design doc was not silent, its cell is listed as refused and holds — and §1 gains the one sentence that did say otherwise, a guide's: a doc-only finding.*
 
 *Changed 2026-10-18, with the first commit of the doc family's task (`B6`), for the human's rulings of 2026-10-15 on the install family's questions: §1 gains the three corrections of a design doc the rulings name and nothing else carries — a doc-only finding each; in §6 one key retires, its cells holding, one is minted, and four say how the ruling that names them is carried. What moved is said under each key.*
@@ -204,6 +206,8 @@ Seven cells of the family come out otherwise on the previous release, beside the
 
 ## 6. The install family's cells — 47 are red on this tree's binary, under seven keys
 
+*Read again on 2026-10-18, by the third of the fixes after the review of the task `B6`: three cells of a file simply deleted join two keys below (§8) — **37 of the family's cells are red** in the gate under the same seven keys.*
+
 *Read again on 2026-10-18, with the first commit of the task `B6`, for the human's rulings of 2026-10-15: one key retires — its thirteen cells hold under `S16` — and one is minted, so **34 of the family's cells are red** in the gate under seven keys, where 47 were; the counts below are the record of 2026-10-15, and each key says what moved.*
 
 *2026-10-15, this tree's debug build, macOS arm64; the third commit of the task `B5`. The family is `jigc setup`, `jigc uninstall`, `jigc ingest` and `jigc unmanage`: 113 cells beside the acceptance's six — 89 that the gate runs, in the arms of `bare`, `fresh` and `committed-singletons`, and 24 base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)). The suite's expected-red list names the 47 below, and is exact. **Every one of the 47 is red on the previous release too** (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked before the run; the arm on a named binary, 2026-10-15) — 40 in the same class, seven in another, said under each key — so none is a cell the fix pass made red. Nothing here is a grade.*
@@ -223,7 +227,7 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - *What they came to.* **Git's state moved outside its allowance**: exit 0, the install commit replaces the user's file; history holds its bytes, so it is no loss.
 - *Held against.* The plan's rule that a planted entry is the user's; `S4`'s second sentence refuses such a file only *"while no commit holds its bytes"*. The record's §6, entry 10, has what the product should do — refuse, as its siblings do — and the other reading. Each cell carries entry 10's mark.
 - *The previous release.* Red in all three: two the same, one *written outside its allowance*.
-- *Ruled on 2026-10-15*, option A: **`setup` refuses without `--force` where the bytes at a path it replaces are not jigc's own**, committed or not, and the sentence of `design/project-setup.md` becomes *"while its bytes are not jigc's own"* — a product change and its doc's correction, one finding. The cells lose entry 10's mark and are listed as refused with `setup.dirty-install-path`; on this tree each stays *git's state moved outside its allowance*, now with *not the listed outcome* beside it.
+- *Ruled on 2026-10-15*, option A, in the human's words: **`setup` refuses without `--force` when the bytes at a path are not jigc's own** — the cells are at paths it replaces, the question's own — and the sentence of `design/project-setup.md` becomes *"while its bytes are not jigc's own"* — a product change and its doc's correction, one finding. The cells lose entry 10's mark and are listed as refused with `setup.dirty-install-path`; on this tree each stays *git's state moved outside its allowance*, now with *not the listed outcome* beside it.
 
 ### `r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head`
 
@@ -273,7 +277,9 @@ Seven cells of the family come out otherwise on the previous release, beside the
 
 Twenty-seven cells of the family are red on the previous release and not on this tree: eight refused there with another refusal than the one the cell names, or acted where it refuses here; six wrote outside the allowance; five refused after writing; four lost a plant — an untracked file or a link at a path the install replaces, written over at exit 0; four moved git's state. The arm counts; it does not say which of these is a regression.
 
-## 7. The plant in the place of a file that stands — 22 cells, one red on this tree's binary under one key
+## 7. The plant in the place of a file that stands — 21 cells and one scheduled row, one red on this tree's binary under one key
+
+*Read again on 2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits: `task-finalize-a-file-in-the-place-of-the-workbench` never reached the line it was aimed at — `.jigc/` holds the task's working area as well as the stamp, so a file in its place takes the task with it, and the finalize refuses `finalize.no-task` before the stamp. It certified `T2` × K with a refusal over a task that is not there. It leaves the table for a line of the scheduled list that says so, as `S2` × K and `S9` × K have theirs; **21 cells** remain, each reaching its line, and the one red is as it was. What this section says of the previous release was read by the arm on a named binary in a run whose print is not committed: **no committed run verifies it**.*
 
 *Read again on 2026-10-18, after the review of the task `B6`'s first two commits: the second key below retires — the design docs answer what the rows' record's §6, entry 13 asked, and its cell, listed as refused, holds — so **one of the 22 is red**, under one key, where two were under two; the paragraph that follows is the record as the second commit had it.*
 
@@ -300,15 +306,15 @@ Twenty-seven cells of the family are red on the previous release and not on this
 - *Held against.* The rows' record's §6, **entry 13**, open: S15 lets an *untracked* file at a path the install merges into ride the first commit on an unborn `HEAD`, and no sentence says what becomes of a **staged** one. The cell follows the reading by which it is red, and carries the entry's mark. The record leads with what the product should do — refuse, as it does — so the ruling may retire this key.
 - *The previous release.* The same.
 
-### What the other twenty-one show
+### What the other twenty show
 
-- **At the stamp (`T2`)**, `task finalize` leaves what stands in jigc's stamp's place — a file of the user's, one the user committed, three links, a directory — and lands at exit 0; with the workbench itself replaced by a file, there is no task and it refuses (`finalize.no-task`). Seven hold or refuse with nothing changed.
+- **At the stamp (`T2`)**, `task finalize` leaves what stands in jigc's stamp's place — a file of the user's, one the user committed, three links, a directory — and lands at exit 0. Six hold. *Until the fourth of the fixes after the review, a seventh cell put a file in the workbench's place; there is no task then, and it refused (`finalize.no-task`) without reaching `T2` — a scheduled row now.* What the finalize prints in the first of them is §9's.
 - **At the record (`A5`)**, a sub-task's discard refuses over a file or a committed file in the record's place (`reconciliation.conflict-block`) and over a link or a directory there (`store.home-not-regular-file`), each with nothing changed.
 - **At `setup`'s own files**, an edit is refused as dirty at the bootstrap, the host file, the settings file, the stamp, the settings record and the workbench's ignore file — the edit's bytes in no commit — and the guide a user edited is left as it is, the install acting around it. *Since the second key's retirement:* on an unborn `HEAD`, the user's root `.gitignore`, staged, with a line added after it, is refused as dirty too, and nothing changed.
 
 ## 8. A file simply deleted — 13 cells, four red on this tree's binary under three keys it shares
 
-*2026-10-18, this tree's debug build, macOS arm64; the third of the fixes after the review of the task `B6`. The human's ruling of 2026-10-18 (`DECISIONS.md`, the entry of that fix) had the frame gain **a plant for a file simply deleted** — `byte_cell::Plant::Deleted`: the file removed from the working tree, outside jigc, nothing in its place, and **the index left as it stands**, the plain `rm`. Git lists such a path *deleted* among the changes not staged, beside an edit, so the plant is of the plan's kind **E** (*an edit in no commit, in a tracked file*), at either of its positions; a deletion staged with it would be **S**, and is no plant of this kind. It carries no bytes, so nothing of the user's can be lost by it and the comparison has no marker of it to find: the cell is for its listed outcome. The rows name no need of their own for it — a deletion answers **E**'s needs, as an edit does — so a cell stands at each line of the task and install families that **E** targets after the work unit's first write: thirteen, all in the gate. On the previous release (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 136 s): the arm prints each.*
+*2026-10-18, this tree's debug build, macOS arm64; the third of the fixes after the review of the task `B6`. The human's ruling of 2026-10-18 (`DECISIONS.md`, the entry of that fix) had the frame gain **a plant for a file simply deleted** — `byte_cell::Plant::Deleted`: the file removed from the working tree, outside jigc, nothing in its place, and **the index left as it stands**, the plain `rm`. Git lists such a path *deleted* among the changes not staged, beside an edit, so the plant is of the plan's kind **E** (*an edit in no commit, in a tracked file*), at either of its positions; a deletion staged with it would be **S**, and is no plant of this kind. It carries no bytes, so nothing of the user's can be lost by it and the comparison has no marker of it to find: the cell is for its listed outcome. The rows name no need of their own for it — a deletion answers **E**'s needs, as an edit does — so a cell stands at each line of the task and install families that **E** targets after the work unit's first write: thirteen, all in the gate. On the previous release (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 136 s): the arm prints each.* *Its print is not committed, so the column of the previous release below is verified by no committed run (noted 2026-10-18, by the fourth of the fixes).*
 
 | cell | line | listed | this tree | the previous release |
 |---|---|---|---|---|
@@ -331,3 +337,35 @@ Twenty-seven cells of the family are red on the previous release and not on this
 - **What the same cells show the other way.** Four `setup` cells are red on the previous release and not here — the state the ruling of 2026-10-06 on item 1 fixed: that release wrote the install over the deleted path and then refused at its backstop, leaving the install written. One cell does not build there.
 - **Not a need, and why.** **E** before the work unit's first write (`T1`): the task's first write copies the doc in from its home, which is gone, so the lead-in is refused — that write's question is the `doc` family's (`B6`). The lines that remove a file (`S6, removed`; `U5`, the guide; the hook's) are no **E** line — **E** targets *a tracked file the command rewrites* — so a deletion there answers nothing the rows name; the hook is no file git tracks besides. `ingest` and `unmanage` have no line of one file's place.
 
+## 9. What `task finalize` prints at the stamp when the user's index holds a change there — one key, no cell
+
+*2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits. The second of those fixes left one observation open: with the in-place plant corrected, `task-finalize-a-file-of-the-users-in-the-stamps-place` lands with *"deleted .jigc/version"* in its acknowledgement and a `setup.version-stamp` advisory saying jigc *"left it untouched and out of this commit"*. Driven on this tree's debug build and on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each in the rig's `fresh` with the cell's lead-ins typed as the repro below has them. A cell holds bytes and never words, so no cell of the table holds this: it is the route catalog's kind of finding, decided by the surface contract's law 1.*
+
+### `r1-task-finalize-says-it-left-the-stamp-out-of-the-commit-where-the-commit-carries-the-users-change-there`
+
+- *What it printed — two shapes.* **The cell's own**, the stamp's index entry taken and a file of the user's in its place: exit 0; the advisory *"`.jigc/version` does not hold jigc's stamp — a single `jigc-version: <version>` line — so what is there is not jigc's to replace; jigc left it untouched and out of this commit rather than write its binary-provenance stamp there"*; and the acknowledgement *"deleted .jigc/version"*, *"2 files committed"*, with `.jigc/version` under *left-out*. `HEAD` carries the stamp's deletion; the user's file stands, untracked. **A sharper one, no cell**: the user's own bytes at the stamp, `git add`ed and kept in the tree: exit 0, the same advisory word for word, and *"modified .jigc/version"* — `HEAD` holds the user's bytes at the path the advisory says jigc left out of the commit.
+- *Held against.* `design/surface-contract.md` → *The three laws*, law 1: *"Every claim a surface makes is generated from the thing it describes, or asserted against it."* The advisory's *"out of this commit"* is one fixed sentence (`crates/cli/src/setup.rs:569`, `stamp_left_finding`), raised whenever the stamp is not jigc's to write and asserted against nothing the commit carries — and under `T4`, *"the git index … committed whole"*, the commit carries whatever the user's index holds at `.jigc/version`. In the sharper shape that is the very bytes the advisory says were left out; in the cell's, one output names the path twice, once as deleted by the commit and once as left out of it. The design docs are not what is wrong: `design/finalize.md` → *5. Stage* has what stands there *"left unwritten and **unstaged**"*, and `design/storage.md` → *A refresh rewrites only a stamp that is jigc's to write* has the finalize write nothing there, and it *"does not stage the path, and still lands"* — each about what jigc stages, and true in both shapes. The advisory claims more than jigc's own act.
+- *The class.* Every state in which the stamp is not jigc's to write while the user's index holds a change at `.jigc/version` — staged bytes, a staged deletion — at the one sentence (`grep -n "out of this commit" crates/cli/src/*.rs`: one site, shared by both arms of `stamp_left_finding`; the arm for a link or a directory on the path, `StampLeft::Entry`, was not driven with a staged change beside it). Where the index holds no change at the path — an edit in the tree, a link or a directory in the stamp's place, a file the user committed — the sentence is true.
+- *The previous release.* Neither line, in either shape: it writes its stamp over what stands — the cell's shape *lost* (as the arm has it), and in the sharper one the user's staged bytes replaced by the stamp at exit 0 with `HEAD` keeping the old stamp. The advisory is the fix pass's; the defect is in the sentence it added, and no byte is lost by it.
+- *What the product should do* — the fixer's to settle, not this record's: ask the index before saying where the path stands, and say what the commit carries there when the user staged it; or keep the path out of the commit, which no doc asks.
+
+```zsh
+# on the binary under test (this tree's: target/debug/jigc; the previous release's: its rebuild)
+rig=$(dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"
+mkdir -p ../outside
+$JIGC start --workflow single-task "record a decision"
+$JIGC doc create adr --title "One way" --task record-a-decision
+for s in context decision consequences; do
+  printf 'The %s, in a line.\n' "$s" > ../outside/$s
+  $JIGC doc set-slot "adr:one-way#$s" --from-file ../outside/$s --task record-a-decision
+done
+$JIGC doc set-field commit:record-a-decision#type --value docs --task record-a-decision
+printf 'record a decision\n' > ../outside/summary
+$JIGC doc set-slot commit:record-a-decision#summary --from-file ../outside/summary --task record-a-decision
+# the cell's shape: the stamp's entry taken, a file of the user's in its place
+git rm --cached -q .jigc/version && command rm .jigc/version && printf 'the user'\''s own file\n' > .jigc/version
+# the sharper shape, in place of the line above:
+#   printf 'the user'\''s own bytes\n' > .jigc/version && git add .jigc/version
+$JIGC task finalize record-a-decision; echo "exit=$?"   # this tree: exit=0, the advisory and "deleted .jigc/version"
+git show --stat --format=%s HEAD                       # .jigc/version | 1 -
+```
