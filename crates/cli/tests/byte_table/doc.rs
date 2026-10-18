@@ -101,10 +101,12 @@ const W3: Line = line(
 );
 
 /// **`W4`** — `doc rename`'s alone: the staged body of a doc the task minted, under the
-/// name a re-slug leaves.
+/// name a re-slug leaves — re-slugged, and nothing else: the same lines under the new name
+/// in the same task, its `# H1` rewritten ([`May::ReSlugged`]). No other staged doc goes
+/// under it, and none of another task.
 const W4: Line = line(
     "W4",
-    Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::Removed),
+    Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::ReSlugged),
     &[Quote {
         doc: "design/write-commands.md",
         heading: "`jigc doc rename` — the in-task title change, split on committed-store identity (M48)",

@@ -3620,12 +3620,10 @@ fn a_staged_doc_is_accounted_for() {
         Classification::Lost,
     );
 
-    // **The rule is for a working area that is gone — a unit no longer**, its base pin
-    // taken away (`design/storage.md` → *A task is an area that carries its base pin*).
-    // A doc re-slugged inside a task that stands — `doc rename`, its body under a new name
-    // and a new `# H1` — is the lines' to judge, and holds under a row that lets the old
-    // name go; the same move in an area whose pin is gone, a file of another's keeping the
-    // directory, is a staged doc lost.
+    // **One move is the lines' to judge: a re-slug.** A doc re-slugged inside a task that
+    // stands — `doc rename`, its body under a new name and a new `# H1` — holds under a row
+    // that lets it (`May::ReSlugged`); the same move in an area whose pin is gone, a file
+    // of another's keeping the directory, is a staged doc lost.
     const RE_SLUGS: Row = row(&[
         line(
             "F4",
@@ -3633,7 +3631,7 @@ fn a_staged_doc_is_accounted_for() {
         ),
         line(
             "F5",
-            Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::Removed),
+            Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::ReSlugged),
         ),
     ]);
     const RE_SLUGGED: &str = "# Use spaces\n\nthe prose somebody handed to jigc\n";
@@ -3652,6 +3650,66 @@ fn a_staged_doc_is_accounted_for() {
     });
     comes_out(
         &Cell::of(RE_SLUGS, &a_task, &unpinned),
+        Classification::Lost,
+    );
+
+    // **And only the re-slug** (the review of the doc family, its second finding): a
+    // standing pin is no excuse for a staged doc gone. Another unit's doc taken by a
+    // finalize that removes its own area, under a line that lets an area go, its pin left
+    // standing, is lost.
+    let two_tasks = then(&a_task, |m| {
+        for path in ["repo/.jigc/tasks/t2", "repo/.jigc/tasks/t2/docs"] {
+            dir(m, path);
+        }
+        put(m, "repo/.jigc/tasks/t2/base.json", "{}\n");
+        put(
+            m,
+            "repo/.jigc/tasks/t2/docs/use-colours.md",
+            "# Use colours\n\nthe prose another task handed to jigc\n",
+        );
+    });
+    let t1_landed = |m: &mut Manifest| {
+        m.files
+            .retain(|path, _| !path.starts_with("repo/.jigc/tasks/t1"));
+        put(m, "repo/docs/use-tabs.md", PROSE);
+        commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
+    };
+    comes_out(
+        &Cell::of(FINALIZES, &two_tasks, &then(&two_tasks, t1_landed)),
+        Classification::Holds,
+    );
+    let and_t2s_doc = then(&two_tasks, |m| {
+        t1_landed(m);
+        m.files.remove("repo/.jigc/tasks/t2/docs/use-colours.md");
+    });
+    comes_out(
+        &Cell::of(FINALIZES, &two_tasks, &and_t2s_doc),
+        Classification::Lost,
+    );
+    // Under the line a re-slug is let go by: a doc gone with nothing gained in its unit, a
+    // doc gone where its unit gained another doc's prose, and a doc gone where another
+    // unit gained its prose under the new name are each a staged doc lost.
+    let gone = then(&a_task, |m| {
+        m.files.remove("repo/.jigc/tasks/t1/docs/use-tabs.md");
+    });
+    comes_out(&Cell::of(RE_SLUGS, &a_task, &gone), Classification::Lost);
+    let another_doc = then(&gone, |m| {
+        put(
+            m,
+            "repo/.jigc/tasks/t1/docs/use-spaces.md",
+            "# Use spaces\n\nother prose, minted in its place\n",
+        );
+    });
+    comes_out(
+        &Cell::of(RE_SLUGS, &a_task, &another_doc),
+        Classification::Lost,
+    );
+    let in_another_unit = then(&two_tasks, |m| {
+        m.files.remove("repo/.jigc/tasks/t1/docs/use-tabs.md");
+        put(m, "repo/.jigc/tasks/t2/docs/use-spaces.md", RE_SLUGGED);
+    });
+    comes_out(
+        &Cell::of(RE_SLUGS, &two_tasks, &in_another_unit),
         Classification::Lost,
     );
 }

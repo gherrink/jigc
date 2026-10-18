@@ -514,7 +514,7 @@ The rows are one row eight times: W1 to W3 with `C1` to `C3` (§4a), and `doc re
 
 — `design/reconciliation.md` → *Detection timing*
 
-**W4 — the staged body of a doc the task minted, under the name a re-slug leaves: removed — `doc rename`'s alone.** When: the doc was never committed, and `--to` mints another slug. On a refusal: no (W5). The body under its new name is W1's.
+**W4 — the staged body of a doc the task minted, under the name a re-slug leaves: re-slugged — `doc rename`'s alone.** When: the doc was never committed, and `--to` mints another slug. On a refusal: no (W5). The body under its new name is W1's. **Re-slugged, not removed** (2026-10-18, after the family's review, its second finding): the line lets a staged doc go only where the same task, its base pin standing, gained a doc with the gone one's lines but its `# H1` — the sentence below moves *"the staged body"*, and lets no other doc of the task, nor any doc of another task, go.
 
 > `--to` rewrites the `# H1` **and** moves the identity: the staged body, its `docs/provenance.json` entry (re-keyed, its recorded provenance intact — the by-task-id join classifies by it), every `roles.json` binding, every **staged doc's** `ref` fields, and a migration task's recorded `slug-override`.
 
@@ -823,7 +823,8 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **written whole** — made, or replaced by any bytes; over a directory, anything under it, a file gone included | S1, S5, S6, S8; T2; M1, M5; A5 |
 | **merged into** — every line that stood there stays, in order | S2, S3, S7, S9, S10 |
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
-| **removed** | S6; U1, U4, U5; T6; M6; A1; W4 |
+| **removed** | S6; U1, U4, U5; T6; M6; A1 |
+| **re-slugged** — gone from its name and standing under another in the same unit, whose base pin stands: a doc it did not hold, with the gone doc's lines but its `# ` title line; the one word under which a staged doc gone from a unit that stands is not *lost* (added 2026-10-18, after the doc family's review: `W4` was *removed*, which let any staged doc of any task go while its pin stood) | W4 |
 | **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table; W1, W2 |
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
 | **a copy of a staged doc**, as a regular file | T1; M2 |

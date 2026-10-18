@@ -279,6 +279,14 @@ pub enum May {
     /// Gone from its place and standing, the same entry, under this directory of the
     /// repository.
     MovedAsideTo(&'static str),
+    /// **Gone from its name, and standing under another in the same unit** — a staged doc
+    /// re-slugged: its unit's base pin stands, and the unit's `docs/` gained a doc it did
+    /// not hold whose lines are the gone doc's, its `# ` title line rewritten
+    /// ([`Tally::re_slugged`]). The doc family's `W4`, `doc rename`'s *"`--to` rewrites the
+    /// `# H1` **and** moves the identity: the staged body"* — and the one word under which
+    /// a staged doc gone from a unit that stands is not *lost*. A commit holds nothing
+    /// under it.
+    ReSlugged,
 }
 
 /// **What no line that lets a cache be rebuilt covers**, by its path from the repository's
@@ -807,6 +815,7 @@ impl<'a> Tally<'a> {
                         _ => false,
                     },
                     (May::Removed, Some(_), None) => true,
+                    (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
                     (May::Rebuilt, _, Some(Entry::File { .. })) => true,
                     (May::Rebuilt | May::LaidOut, None, Some(Entry::Dir(_))) => true,
                     (May::CopyOfAStagedDoc, _, Some(is)) => {
@@ -842,7 +851,7 @@ impl<'a> Tally<'a> {
                     (May::Removed | May::MovedAsideTo(_), None) => true,
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
                     // Laid out holds no file; read from holds nothing the command wrote.
-                    (_, None) | (May::LaidOut | May::CopiedFrom, _) => false,
+                    (_, None) | (May::LaidOut | May::CopiedFrom | May::ReSlugged, _) => false,
                     // A regular file, and no link: mode `100644` or `100755`.
                     (May::CopyOfAStagedDoc, Some((mode, blob))) => {
                         mode & 0o170_000 == 0o100_000 && self.staged.contains(blob.as_str())
@@ -869,6 +878,49 @@ impl<'a> Tally<'a> {
         let after = self.seen.after;
         after.files.values().any(|entry| entry.blob() == Some(blob)) || after.held.contains(blob)
     }
+
+    /// **Whether the staged doc at `path`, gone, was re-slugged** ([`May::ReSlugged`]):
+    /// its unit — the directory its `docs/` stands in — still carries its base pin, and
+    /// that `docs/` gained at least as many docs as it lost with the gone doc's lines but
+    /// its title, so no two docs gone are answered by one gained.
+    fn re_slugged(&self, path: &str) -> bool {
+        let (before, after) = (self.seen.before, self.seen.after);
+        let Some(Some(was)) = before.files.get(path).map(but_its_title) else {
+            return false;
+        };
+        let Some((docs, _)) = path.rsplit_once('/') else {
+            return false;
+        };
+        let Some(unit) = docs.strip_suffix("/docs") else {
+            return false;
+        };
+        if !after.files.contains_key(&format!("{unit}/base.json")) {
+            return false;
+        }
+        let alike = |manifest: &Manifest, other: &Manifest| {
+            staged_docs(manifest)
+                .into_iter()
+                .filter(|(at, _)| {
+                    at.rsplit_once('/').is_some_and(|(dir, _)| dir == docs)
+                        && !other.files.contains_key(*at)
+                })
+                .filter(|(at, _)| {
+                    manifest.files.get(*at).and_then(but_its_title).as_ref() == Some(&was)
+                })
+                .count()
+        };
+        alike(after, before) >= alike(before, after)
+    }
+}
+
+/// A doc's lines with its title — the first line that opens `# ` — left out: what a
+/// re-slug keeps of a staged doc. `None` for what is no regular file.
+fn but_its_title(entry: &Entry) -> Option<Vec<&[u8]>> {
+    let mut lines = entry.lines()?;
+    if let Some(title) = lines.iter().position(|line| line.starts_with(b"# ")) {
+        lines.remove(title);
+    }
+    Some(lines)
 }
 
 /// **The one classification of what was seen**, with why. `Err` is a fault of the cell as
@@ -1266,22 +1318,20 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             }
         }
     }
-    // Prose handed to jigc: a staged doc whose working area is gone stands in a commit the
-    // command made, or it is somewhere else, or it is lost. **Gone is the unit's base pin
-    // gone** — the file that makes a directory under `tasks/` or `milestones/` a work unit
-    // (`design/storage.md` → *A task is an area that carries its base pin*): a doc that
-    // leaves its name inside a unit that stands — a re-slug moves it — is the lines' to
-    // judge, as any other file of the area is.
+    // Prose handed to jigc: a staged doc gone from its working area stands in a commit the
+    // command made, or it is somewhere else, or it is lost — **whatever the unit's base pin
+    // does**. One move is the lines' to judge: a re-slug, under a line that lets it
+    // ([`May::ReSlugged`]) — the doc under a new name in the same unit, which stands.
     if acted {
         for (path, blob) in staged_docs(before) {
             if after.files.contains_key(path) || committed.contains(blob) {
                 continue;
             }
-            let pin: Vec<&str> = path.splitn(5, '/').take(4).collect();
-            if after
-                .files
-                .contains_key(&format!("{}/base.json", pin.join("/")))
-            {
+            let re_slugs = tally.in_force().any(|(_, line)| {
+                matches!(line.allows, Allows::Files(place, May::ReSlugged)
+                    if tally.placed(place, path))
+            });
+            if re_slugs && tally.re_slugged(path) {
                 continue;
             }
             // Under the consent, a staged doc the command's output names is one the
