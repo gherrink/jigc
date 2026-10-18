@@ -434,6 +434,12 @@ const RETITLE_ONE_WAY: &[&str] = &[
 /// the cell is listed refusing and marked (the record's §6, entry 14); and a deletion
 /// after the task's first write is not looked at, since *"a second write to an
 /// already-staged doc reads the staged copy and does not look at the home again"*.
+/// **What a refusal's route says is no cell's**: the six of `remove-item` and `set-slot`
+/// that refuse `write.non-reparseable` print *"nothing was persisted"* over the copy they
+/// leave staged — a claim of its own, held by no cell, since a cell holds bytes and not
+/// words: the findings' key
+/// `r1-doc-write-says-nothing-was-persisted-where-its-refusal-leaves-bytes-in-the-tasks-area`
+/// (`…/reshape/byte-table-findings.md` → §12). Each stays red under its byte key.
 const EDITS: [Cell; 66] = [
     cell(
         "doc-add-item-with-no-task",
@@ -1520,7 +1526,9 @@ const AUTHOR_THE_VISION: &[&str] = &[
 /// (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4)), and so over
 /// the doc's file deleted, which is the same free home; `doc author` runs through the same
 /// `create_gated` path, so the same holds of it. A file that is no doc of its type at the
-/// home is the record's §6, entry 14, marked.
+/// home is the record's §6, entry 14, marked. The three of `author` that refuse
+/// `write.non-reparseable` print *"nothing was persisted"* over the role they leave bound
+/// — the findings' key of §12, which no cell holds, as at the edit leaves ([`EDITS`]).
 const MINTS: [Cell; 22] = [
     cell(
         "doc-create-with-no-task",

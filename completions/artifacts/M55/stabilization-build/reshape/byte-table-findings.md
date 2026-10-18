@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, by the second of the fixes after the review of the doc family: §12, what a refusing `doc` write's route says it persisted — a key of its own under the surface contract's law 1, shown by nine cells of §10 and §11 and held by none; the two keys there keep their cells, and say where the sentence went.*
+
 *Changed 2026-10-18, with the third commit of the doc family's task (`B6`): §11, the two minting doors' cells — three more cells under one of §10's keys, and one key of its own.*
 
 *Changed 2026-10-18, with the second commit of the doc family's task (`B6`): §10, the six edit leaves' cells — two keys, eighteen cells, each at the home a write copies in from.*
@@ -387,7 +389,7 @@ git show --stat --format=%s HEAD                       # .jigc/version | 1 -
 ### `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged`
 
 - *The cells.* The same three shapes at `remove-item`, `retitle-item`, `set-field` (at `CHANGELOG.md`), `set-slot` and `rename` (at a decision a task of the cell landed, `docs/decisions/one-way.md`, retitled in place) — fifteen.
-- *What they came to.* **Refused, and changed what a refusal may not**: exit 1 — `write.non-reparseable`, `write.wrong-shape`, or *"the staged doc `adr:one-way` carries no `# H1` to retitle"* — and the copy-in stands: the task's area holds the user's file as the staged doc, its `docs/provenance.json` written for it, and at `rename` the role bound to it. The two codes' route says *"nothing was persisted"*.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1 — `write.non-reparseable`, `write.wrong-shape`, or *"the staged doc `adr:one-way` carries no `# H1` to retitle"* — and the copy-in stands: the task's area holds the user's file as the staged doc, its `docs/provenance.json` written for it, and at `rename` the role bound to it. Where the code is `write.non-reparseable` — `remove-item` and `set-slot`, six cells — its route says *"nothing was persisted"*: a claim of its own, the key of §12.
 - *Held against.* `W1` and the rest hold on no refusal (`W5`): *"A write verb resolves its addressed leaf against the declaring schema *before touching bytes*"*. Each cell carries entry 14's mark: under its other reading the cells stay red, the refusal then *not the listed outcome* as well. **No byte is lost** — but the next write in the task finds the user's file staged as its doc.
 
 ### Seen, and held by no cell
@@ -406,7 +408,45 @@ Where the home holds no doc body at all — a link to nothing, a directory, or t
 ### `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound`
 
 - *The cells.* `doc-author-the-vision-a-file-of-the-users-in-the-docs-place`, `…-a-link-to-a-file-in-the-repository-in-the-docs-place`, `…-a-link-to-a-file-outside-in-the-docs-place`.
-- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, `write.non-reparseable`, routed *"nothing was persisted"* — the staged copy rolled back, and the task's `roles.json` made, binding the role to the vision, and its `docs/provenance.json` written for it.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, `write.non-reparseable`, routed *"nothing was persisted"* (a claim of its own, the key of §12) — the staged copy rolled back, and the task's `roles.json` made, binding the role to the vision, and its `docs/provenance.json` written for it.
 - *Held against.* `W5`, and `design/write-commands.md` → *The verbs*, its own words for this door: the whole payload *"rejected with nothing staged and nothing to roll back"*, *"a corrupt payload is rejected whole (atomic), never half-applied"*, and *"the `create_gated` pre-image is rolled back too"*. Under entry 14's other reading the cells stay red. **No byte is lost.**
 
 *The previous release, for §10 and §11 alike*: the family's 136 cells come out there as they come out here, cell for cell (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked; the arm on a named binary). Its committed print of the whole table is the family's numbers commit's.
+
+## 12. What a refusing `doc` write's route says it persisted — one key, shown by nine cells and held by none
+
+*2026-10-18, by the second of the fixes after the review of the doc family (its third finding). Driven on this tree's debug build and on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each in the rig's `committed-singletons`: the review's two repros as it printed them, and `doc set-slot` beside them, each with every file under `.jigc/` hashed before and after the command. A cell holds bytes and never words, so no cell of the table holds this key, as none holds §9's: it is the surface contract's law 1, and it stands however the rows' record's §6, entry 14 is ruled.*
+
+### `r1-doc-write-says-nothing-was-persisted-where-its-refusal-leaves-bytes-in-the-tasks-area`
+
+- *What it printed.* Exit 1, `write.non-reparseable`, routed *"nothing was persisted — revise the payload so the result still conforms (the message names the break), then re-run the same write; if the staged source itself is what no longer parses, `jigc task discard <task-id> --force` and start the task over"* — and the same invocation left under `.jigc/`:
+  - at `doc remove-item` and `doc set-slot`, the task's first touch of the roadmap: the staged copy `docs/roadmap:roadmap.md` made, holding the user's bytes, and `docs/provenance.json` rewritten — `"roadmap:roadmap": "edited-from-base"`, and on this tree a `copied-in` witness besides;
+  - at `doc author vision`: the staged copy rolled back, `roles.json` made — `"vision": "vision:vision"`, absent before — and `docs/provenance.json` rewritten, for a doc the task no longer stages.
+
+  Every other file under `.jigc/` kept its bytes, and the tree and the index stood as the plant left them.
+- *Held against.* `design/surface-contract.md` → *The three laws*, law 1: *"Every claim a surface makes is generated from the thing it describes, or asserted against it."* The route is one fixed sentence a code (`crates/engine/src/write.rs`, `write_route`, the arms of `write.non-reparseable` and `write.target-escape`; `grep -rn 'nothing was persisted' crates/*/src` finds those two and no other), chosen by the code alone at a seam that holds the rejected buffer and no task. It is true of that buffer and asserted against nothing the invocation did before it: the copy-in, or `create_gated`'s binding and provenance. Its escape branch, *"if the staged source itself is what no longer parses"*, names a staged source the caller never staged — the same call made it. And the line that says a copy-in happened, *"copied in for update"* (`design/command-output-contract.md` → *The first-touch copy-in note*), rides the success ack only, so nothing a refusal prints says the copy stands.
+  - **The `author` half, against one sentence more**: `design/write-commands.md` → *The verbs*, batch authoring, *"persisting **once** at the end (rollback = discard the buffer; persist only on full success)"*. Beside it, and decided nowhere here: `DECISIONS.md` → *2026-08-15 — M48 complete* keeps the binding a failed author leaves — answered *"by a **state-derived** probe that holds however the orphan arose"*, not by unbinding, and pinned by `write_title_divergence::a_binding_whose_doc_is_gone_is_not_an_incumbent_at_any_minting_verb` — and the canary's verifier read *"rejected whole (atomic), never half-applied"* as a promise about the payload's leaves ([its report](../canary-one/run/r1/reports/test/verify-p3-r1-p3-doc-author-nothing-persisted-yet-task-bound.a1.md)). Whether the records may stay is the docs' question; that the route says nothing stayed is this key's, and it is false under either answer.
+- *The cells that show it* — nine, each red under its byte key, which it keeps: `doc-remove-a-milestone-…` and `doc-set-what-a-milestone-proves-…` (§10), and `doc-author-the-vision-…` (§11), each in the three shapes — a file of the user's, a link to a file in the repository, a link to one outside — and each listed as refusing with `write.non-reparseable`, whose words the cell checks, so the route is printed in every run of it. The other fifteen red cells refuse with another code (`write.wrong-shape`, *"carries no `# H1` to retitle"*), whose route claims nothing of what was kept, or exit 0.
+- *The class.* Both codes, at every door that copies a committed doc in, or binds a role, and then refuses under either code in the same invocation — not only where entry 14's plants stand. The per-axis review of `rc.24` met it at `doc set-slot` over a conformant committed doc whose edit fails conformance ([the fix pass's ledger](../../fix-pass-rc25/findings-ledger.md), row `(R3, F3)`, open), and the canary met the `author` half at a migrated `research` doc (`r1-p3-doc-author-nothing-persisted-yet-task-bound`, refuted as a blocker; its verifier: *"That residue is real"*). This key is the one both are instances of, and a ledger counts them once. `write.target-escape`'s arm was not driven.
+- *The previous release.* The same exit, route and files, byte for byte but the provenance's `copied-in` witness, which the fix pass added (`eb18e5fe`): not a regression.
+- *What the product should do* — the fixer's to settle, not this record's: say what the invocation kept — the copy the task now stages, the binding it made — or make the sentence true by rolling back what came before the refusal, which is entry 14's question of whether a write that copied in and then refuses keeps the copy.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+# (this tree's: target/debug/jigc; the previous release's: its rebuild)
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"
+$JIGC start --workflow single-task "sharpen the roadmap"
+git rm --cached -q docs/roadmap.md; printf 'notes of the user, no roadmap\n' > docs/roadmap.md
+$JIGC doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap; echo "exit=$?"   # exit=1 — route: nothing was persisted
+cat .jigc/tasks/sharpen-the-roadmap/docs/roadmap:roadmap.md    # notes of the user, no roadmap
+cat .jigc/tasks/sharpen-the-roadmap/docs/provenance.json       # "roadmap:roadmap": "edited-from-base"
+# the author half, in a rig of its own (the eval above moved into the first rig's repository)
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"
+mkdir -p ../outside
+printf 'title: Vision\nsections:\n  - id: open-questions\n    set:\n      open-questions: |-\n        <<Which domains earn a pack of their own, sharpened.>>\n' > ../outside/vision.yaml
+$JIGC start --workflow form-vision "form the project vision"
+git rm --cached -q VISION.md; printf 'notes of the user, no vision\n' > VISION.md
+$JIGC doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision; echo "exit=$?"   # exit=1 — the same route
+cat .jigc/tasks/form-the-project-vision/roles.json             # {"roles": {"vision": "vision:vision"}}, absent before the author
+```
