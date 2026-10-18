@@ -249,6 +249,25 @@ const A_FIRST_WRITE_TO_THE_ROADMAP: [Lead; 2] = [
     ]),
 ];
 
+/// **A sibling task that stages the roadmap too** — `plan-the-roadmap`, started beside
+/// [`A_TASK`], and its first write to the roadmap: a slot of the committed milestone, which
+/// copies the roadmap into **its own** area. A write of the other task must leave that
+/// area as it stands — *"a sub-agent physically cannot stage into a sibling's area"*
+/// (`design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*).
+const A_SIBLING_TASK_STAGING_THE_ROADMAP: [Lead; 3] = [
+    jigc(&["start", "--workflow", "single-task", "plan the roadmap"]),
+    WHAT_IT_PROVES,
+    jigc(&[
+        "doc",
+        "set-slot",
+        "roadmap:roadmap#milestones/m-alpha/decomposition",
+        "--from-file",
+        "../outside/proves",
+        "--task",
+        "plan-the-roadmap",
+    ]),
+];
+
 /// **The task's first write to the changelog**: a staged change-group added, which copies
 /// the changelog in.
 const A_FIRST_WRITE_TO_THE_CHANGELOG: Lead = jigc(&[
@@ -442,7 +461,7 @@ const RETITLE_ONE_WAY: &[&str] = &[
 /// words: the findings' key
 /// `r1-doc-write-says-nothing-was-persisted-where-its-refusal-leaves-bytes-in-the-tasks-area`
 /// (`…/reshape/byte-table-findings.md` → §12). Each stays red under its byte key.
-const EDITS: [Cell; 66] = [
+const EDITS: [Cell; 67] = [
     cell(
         "doc-add-item-with-no-task",
         &["doc", "add-item"],
@@ -458,6 +477,30 @@ const EDITS: [Cell; 66] = [
         &["doc", "add-item"],
         HOME,
         &[A_TASK],
+        ADD_A_MILESTONE,
+        Listed::Acts,
+        None,
+        &[],
+    ),
+    // **Beside a sibling task that stages the same doc** (after the family's review, its
+    // seventh finding): `W1` and `W4` reach every task's area — `Under(".jigc/tasks/*")`,
+    // one component left open, since a row is one for every task its cells name — where
+    // the sentence says a write cannot stage into a sibling's. This cell is the one with
+    // two live tasks: the command's first touch copies the roadmap into its task while
+    // `plan-the-roadmap` holds a staged roadmap of its own. A staged doc of the sibling's
+    // taken away is *lost* whatever `W1` says (the rule for prose handed to jigc); one
+    // **rewritten** is what `W1` lets go, and no cell can see that — the vocabulary's
+    // limit, named in the rows' record's §3b. A base cell: it plants nothing.
+    cell(
+        "doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap",
+        &["doc", "add-item"],
+        HOME,
+        &[
+            A_TASK,
+            A_SIBLING_TASK_STAGING_THE_ROADMAP[0],
+            A_SIBLING_TASK_STAGING_THE_ROADMAP[1],
+            A_SIBLING_TASK_STAGING_THE_ROADMAP[2],
+        ],
         ADD_A_MILESTONE,
         Listed::Acts,
         None,
@@ -1525,11 +1568,16 @@ const AUTHOR_THE_VISION: &[&str] = &[
 /// each listed from the rows' docs. A create over a doc that is already one copies it in
 /// for update; over a home with no doc body — a link to nothing, a directory — it *"still
 /// mints fresh and is refused at the committing door, not at the create"*
-/// (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4)), and so over
-/// the doc's file deleted, which is the same free home; `doc author` runs through the same
-/// `create_gated` path, so the same holds of it. A file that is no doc of its type at the
-/// home is the record's §6, entry 14, marked at `create`; the three of `author` are red
-/// under every reading — its own doc has a refusal persist nothing (entry 15) — and carry
+/// (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4)). Over the
+/// doc's file deleted the home is no free one — git still holds the doc — and the docs say
+/// so in their own words: *"Every probe that asks the disk reads that home as free — the
+/// create included, so the doc is `created`"*, and the committing door refuses it
+/// (the same section, *A home git holds is occupied*), as `finalize.promote-clobber` does
+/// at *"a path git still holds — a committed doc deleted from the worktree"*
+/// (`design/command-output-contract.md` → *The membership test*, the `finalize.*` table's
+/// `promote-clobber` row). `doc author` runs through the same `create_gated` path, so the
+/// same holds of it. A file that is no doc of its type at the home is the record's §6,
+/// entry 14, marked at `create`; the three of `author` are red under every reading — its own doc has a refusal persist nothing (entry 15) — and carry
 /// no mark. They refuse `write.non-reparseable` and print *"nothing was persisted"* over
 /// the role they leave bound
 /// — the findings' key of §12, which no cell holds, as at the edit leaves ([`EDITS`]).

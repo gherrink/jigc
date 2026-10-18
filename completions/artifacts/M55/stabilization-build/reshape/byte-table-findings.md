@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, by the fourth of the fixes after the review of the doc family: §10 counts **forty-eight** cells that hold where it said fifty-one, and gains the cell beside a sibling task; §12's `write.target-escape` arm is driven, with its repro; §13, what a refusing `doc` write whose copy stands says of the way out — a key of its own under law 2, shown by nine cells and held by none; §14, every other sentence of the product that says nothing was written, each answered, a lead or a key; and §1, the design doc that says an unset of an absent field writes no bytes. No cell's classification moved.*
+
 *Changed 2026-10-18, by the third of the fixes after the review of the doc family: §1 gains the inconsistency the rows' record's §6, entry 14 turned out to be — a design doc that copies a squatter in as the edit base, against one that says a staged copy is never a foreign squatter; §10, §11 and §12 say which of the two questions entry 14 was split into (entries 14 and 15) each cell turns on, and that `doc author`'s three turn on neither. No key, cell or classification moved.*
 
 *Changed 2026-10-18, by the second of the fixes after the review of the doc family: §12, what a refusing `doc` write's route says it persisted — a key of its own under the surface contract's law 1, shown by nine cells of §10 and §11 and held by none; the two keys there keep their cells, and say where the sentence went.*
@@ -123,6 +125,30 @@ and `design/surface-contract.md` → *The surface style guide (the judgment tier
 > the at-home squatter keeps the one-story adopt-it rule
 
 **What disagrees.** By the first, `doc create` — and every edit leaf on its first touch — copies a foreign file at the doc's home into the task as the doc; by the second, a staged copy is never one. **The product** is with the first: `doc create` over a user's file at `VISION.md` stages it as the vision (*"already existed — copied in for update"*, exit 0), and `jigc task validate` calls a user's file staged as the roadmap *"this task's in-flight version of the doc"* (the review's probe). **What follows** depends on how entry 14 is ruled: refused at the copy-in — the record's robust answer — and the first doc's *"stays intact for non-migration callers"* is corrected; or taken as it stands, and the read surface's two sentences and the style guide's are.
+
+### `r1-write-commands-design-says-an-unset-of-an-absent-field-writes-no-bytes-where-its-first-touch-copies-the-doc-in`
+
+*Recorded 2026-10-18, by the fourth of the fixes after the review of the doc family, which drove every sentence of the product that says nothing was written (§14). For the stabilization run's ledger: doctype `inconsistency`, two design docs that disagree, the product with the second. No cell runs `--unset`.*
+
+**One side** — `design/write-commands.md` → *`jigc doc set-field --unset` — clearing an optional field (M41)*, of a field already absent:
+
+  > the requested end state holds and the verb **acks** rather than blocking: `unset <addr> (already absent — nothing changed)`, exit 0, no bytes written, idempotent across re-runs
+
+**The other side** — `design/command-output-contract.md` → *2 · Write-acks*, the first-touch copy-in note:
+
+  > `set-field` (both arms), `set-slot`, `add-item`, `remove-item` and `retitle-item` all copy a base-committed doc into the working area on the task's first touch of it
+
+**What disagrees.** On a task's first touch of a committed doc, the unset of an absent field copies the doc in: bytes are written — the staged copy, its provenance — and the ack says so on the same line: *"unset changelog:changelog#releases/1-0-0/link (already absent — nothing changed) (copied in for update — the committed doc is now this task's staged copy, re-promoted at finalize)"*, exit 0, on this tree and on the previous release alike. **The product** is with the second, and its line is true — *nothing changed* of the field, the copy named beside it. **What follows**: the first doc's *"no bytes written"* is said of a write that is not the task's first touch; no product change. Driven:
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"
+printf '%s\n' "$(command grep -v '^- link: ' CHANGELOG.md)" > CHANGELOG.md && git commit -qam "docs(changelog): the release's link dropped"   # the optional field absent, committed
+$JIGC start --workflow single-task "tidy the changelog" > /dev/null
+$JIGC doc set-field changelog:changelog#releases/1-0-0/link --unset --task tidy-the-changelog; echo "exit=$?"   # exit=0 — "already absent — nothing changed"
+ls .jigc/tasks/tidy-the-changelog/docs/          # changelog:changelog.md — the committed changelog, copied in by this call
+```
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
@@ -402,9 +428,9 @@ $JIGC task finalize record-a-decision; echo "exit=$?"   # this tree: exit=0, the
 git show --stat --format=%s HEAD                       # .jigc/version | 1 -
 ```
 
-## 10. The doc family's six edit leaves — 66 cells in the gate and 36 on demand, eighteen red on this tree's binary under two keys
+## 10. The doc family's six edit leaves — 67 cells in the gate and 36 on demand, eighteen red on this tree's binary under two keys
 
-*2026-10-18, this tree's debug build, macOS arm64; the second commit of the doc family's task (`B6`). The leaves are `jigc doc add-item`, `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename`, on the rows the family's first commit wrote ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §3b). Each has eleven cells in the gate, in the arms of `fresh` (its refusing cell) and `committed-singletons`, and six base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)), none red there. **Fifty-one hold or refuse having changed nothing**: every base cell; a file of the user's in the task's area and beside the file-state record, with the baseline taken away so that the copy-in records one; a link to nothing, a directory and the doc's file deleted before the task's first write, where each leaf refuses (*"no staged instance for"*), nothing changed; and the file deleted after it, which the write does not look at. The eighteen below each stand at the home the copy is read from (`W3`) and lose no byte; the three of `add-item` carry the mark of the record's §6, entry 14 — does the copy-in take a file that is no doc of its type? — and the fifteen that refuse carry it and entry 15's — does a refusal keep the copy? (marks re-set 2026-10-18, after the family's review: the eighteen carried entry 14's alone, when it held both questions).*
+*2026-10-18, this tree's debug build, macOS arm64; the second commit of the doc family's task (`B6`). The leaves are `jigc doc add-item`, `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename`, on the rows the family's first commit wrote ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §3b). Each has eleven cells in the gate, in the arms of `fresh` (its refusing cell) and `committed-singletons`, and six base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)), none red there. **Forty-eight hold or refuse having changed nothing** — the 66 less the eighteen, six leaves of eight that hold in the gate (the print; *it read "fifty-one" until the fourth of the fixes after the family's review*): every base cell; a file of the user's in the task's area and beside the file-state record, with the baseline taken away so that the copy-in records one; a link to nothing, a directory and the doc's file deleted before the task's first write, where each leaf refuses (*"no staged instance for"*), nothing changed; and the file deleted after it, which the write does not look at. The eighteen below each stand at the home the copy is read from (`W3`) and lose no byte; the three of `add-item` carry the mark of the record's §6, entry 14 — does the copy-in take a file that is no doc of its type? — and the fifteen that refuse carry it and entry 15's — does a refusal keep the copy? (marks re-set 2026-10-18, after the family's review: the eighteen carried entry 14's alone, when it held both questions). **One cell more since**, by the fourth of the fixes after that review: `doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap`, `add-item`'s first touch of the roadmap with a second live task holding a staged roadmap of its own — a base cell, which holds; it is there for what `W1` and `W4` reach (the rows' record's §3b, *What a line cannot say*). So 67 in the gate, 49 that hold.*
 
 ### `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`
 
@@ -424,7 +450,7 @@ Where the home holds no doc body at all — a link to nothing, a directory, or t
 
 ## 11. The doc family's two minting doors — 22 cells in the gate and 12 on demand, six red on this tree's binary under two keys
 
-*2026-10-18, this tree's debug build, macOS arm64; the third commit of the doc family's task (`B6`). The leaves are `jigc doc create` and `jigc doc author`, each over the vision `committed-singletons` holds at `VISION.md`, in a task on `form-vision`, whose create-gate admits it. Eleven cells a leaf in the gate, as at the edit leaves (§10), and six on demand, none red there. **Sixteen hold or refuse having changed nothing**: the base cells, which copy the vision in for update; a file of the user's in the task's area and beside the file-state record; a link to nothing, a directory and the doc's file deleted, where each door mints a fresh vision at exit 0, as `design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4) has it — *"still mints fresh and is refused at the committing door, not at the create"*; and the file deleted after the task's first write. The six below stand at the home with a file there that is no doc of its type and lose no byte; the three of `create` carry the mark of the rows' record's §6, entry 14, and the three of `author` none, being red under every reading (marks re-set 2026-10-18, after the family's review).*
+*2026-10-18, this tree's debug build, macOS arm64; the third commit of the doc family's task (`B6`). The leaves are `jigc doc create` and `jigc doc author`, each over the vision `committed-singletons` holds at `VISION.md`, in a task on `form-vision`, whose create-gate admits it. Eleven cells a leaf in the gate, as at the edit leaves (§10), and six on demand, none red there. **Sixteen hold or refuse having changed nothing**: the base cells, which copy the vision in for update; a file of the user's in the task's area and beside the file-state record; a link to nothing and a directory, where each door mints a fresh vision at exit 0, as `design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4) has it — *"still mints fresh and is refused at the committing door, not at the create"*; the doc's file deleted, where each door mints too, as the same section's *A home git holds is occupied* has it — *"Every probe that asks the disk reads that home as free — the create included, so the doc is `created`"*, refused at the committing door as `finalize.promote-clobber` (`design/command-output-contract.md`, its row: *"a path git still holds — a committed doc deleted from the worktree"*; corrected by the fourth of the fixes after the family's review, where this read (4) as covering it); and the file deleted after the task's first write. The six below stand at the home with a file there that is no doc of its type and lose no byte; the three of `create` carry the mark of the rows' record's §6, entry 14, and the three of `author` none, being red under every reading (marks re-set 2026-10-18, after the family's review).*
 
 ### `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type` — three more cells
 
@@ -452,8 +478,8 @@ Where the home holds no doc body at all — a link to nothing, a directory, or t
   Every other file under `.jigc/` kept its bytes, and the tree and the index stood as the plant left them.
 - *Held against.* `design/surface-contract.md` → *The three laws*, law 1: *"Every claim a surface makes is generated from the thing it describes, or asserted against it."* The route is one fixed sentence a code (`crates/engine/src/write.rs`, `write_route`, the arms of `write.non-reparseable` and `write.target-escape`; `grep -rn 'nothing was persisted' crates/*/src` finds those two and no other), chosen by the code alone at a seam that holds the rejected buffer and no task. It is true of that buffer and asserted against nothing the invocation did before it: the copy-in, or `create_gated`'s binding and provenance. Its escape branch, *"if the staged source itself is what no longer parses"*, names a staged source the caller never staged — the same call made it. And the line that says a copy-in happened, *"copied in for update"* (`design/command-output-contract.md` → *The first-touch copy-in note*), rides the success ack only, so nothing a refusal prints says the copy stands.
   - **The `author` half, against one sentence more**: `design/write-commands.md` → *The verbs*, batch authoring, *"persisting **once** at the end (rollback = discard the buffer; persist only on full success)"*. Beside it, and decided nowhere here: `DECISIONS.md` → *2026-08-15 — M48 complete* keeps the binding a failed author leaves — answered *"by a **state-derived** probe that holds however the orphan arose"*, not by unbinding, and pinned by `write_title_divergence::a_binding_whose_doc_is_gone_is_not_an_incumbent_at_any_minting_verb` — and the canary's verifier read *"rejected whole (atomic), never half-applied"* as a promise about the payload's leaves ([its report](../canary-one/run/r1/reports/test/verify-p3-r1-p3-doc-author-nothing-persisted-yet-task-bound.a1.md)). Whether the records may stay is the docs' question — the rows' record's §6, entry 15 reads this door's own sentences as *no*, the M48 entry tolerating the binding without saying it may stay; that the route says nothing stayed is this key's, and it is false under either answer.
-- *The cells that show it* — nine, each red under its byte key, which it keeps: `doc-remove-a-milestone-…` and `doc-set-what-a-milestone-proves-…` (§10), and `doc-author-the-vision-…` (§11), each in the three shapes — a file of the user's, a link to a file in the repository, a link to one outside — and each listed as refusing with `write.non-reparseable`, whose words the cell checks, so the route is printed in every run of it. The other fifteen red cells refuse with another code (`write.wrong-shape`, *"carries no `# H1` to retitle"*), whose route claims nothing of what was kept, or exit 0.
-- *The class.* Both codes, at every door that copies a committed doc in, or binds a role, and then refuses under either code in the same invocation — not only where entry 14's plants stand. The per-axis review of `rc.24` met it at `doc set-slot` over a conformant committed doc whose edit fails conformance ([the fix pass's ledger](../../fix-pass-rc25/findings-ledger.md), row `(R3, F3)`, open), and the canary met the `author` half at a migrated `research` doc (`r1-p3-doc-author-nothing-persisted-yet-task-bound`, refuted as a blocker; its verifier: *"That residue is real"*). This key is the one both are instances of, and a ledger counts them once. `write.target-escape`'s arm was not driven.
+- *The cells that show it* — nine, each red under its byte key, which it keeps: `doc-remove-a-milestone-…` and `doc-set-what-a-milestone-proves-…` (§10), and `doc-author-the-vision-…` (§11), each in the three shapes — a file of the user's, a link to a file in the repository, a link to one outside — and each listed as refusing with `write.non-reparseable`, whose words the cell checks, so the route is printed in every run of it. The other fifteen red cells refuse with another code (`write.wrong-shape`, *"carries no `# H1` to retitle"*), whose route claims nothing of what was kept, or exit 0 — the nine that refuse so are §13's key, whose route sends the caller back to the copy it left.
+- *The class.* Both codes, at every door that copies a committed doc in, or binds a role, and then refuses under either code in the same invocation — not only where entry 14's plants stand. The per-axis review of `rc.24` met it at `doc set-slot` over a conformant committed doc whose edit fails conformance ([the fix pass's ledger](../../fix-pass-rc25/findings-ledger.md), row `(R3, F3)`, open), and the canary met the `author` half at a migrated `research` doc (`r1-p3-doc-author-nothing-persisted-yet-task-bound`, refuted as a blocker; its verifier: *"That residue is real"*). This key is the one both are instances of, and a ledger counts them once. **`write.target-escape`'s arm, driven** (2026-10-18, by the fourth of the fixes after the family's review — the second fix had it in the class by its code alone): the one shape tried on the shipped packs did not reach it — the shipped `changelog`'s `releases/1-0-0/link`, absent and shadowed by a nested change's `- link:` line, appends at the field group's end and acts, exit 0 — and no other was searched for, so the repro below reshapes a throwaway copy of the dev pack, as `item_region_boundary` does: a doctype whose item carries a settable `status` beside two prose leaves, its log **committed** with a statement whose prose holds a line `- status: from prose`. A later task's first touch, `doc set-field …/status --value done`, exits 1 `write.target-escape` under the same *"nothing was persisted"* — and the call has copied the committed log in as the task's staged copy, written `docs/provenance.json` for it (`edited-from-base`, and on this tree a `copied-in` witness) and made `roles.json` (`"findings": "changelog:findings-log"`), absent before it. On both binaries, the same but the witness. **It is an instance of this key**, at a conformant committed doc, and no doc-family cell reaches it: a cell's state is a corpus the shipped packs built.
 - *The previous release.* The same exit, route and files, byte for byte but the provenance's `copied-in` witness, which the fix pass added (`eb18e5fe`): not a regression.
 - *What the product should do* — the fixer's to settle, not this record's: say what the invocation kept — the copy the task now stages, the binding it made — or make the sentence true by rolling back what came before the refusal, which is the question of the rows' record's §6, entry 15 — whether a write that copied in and then refuses keeps the copy: answered at `doc author` by its own doc, *nothing*, and open at the five edit leaves.
 
@@ -476,3 +502,83 @@ git rm --cached -q VISION.md; printf 'notes of the user, no vision\n' > VISION.m
 $JIGC doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision; echo "exit=$?"   # exit=1 — the same route
 cat .jigc/tasks/form-the-project-vision/roles.json             # {"roles": {"vision": "vision:vision"}}, absent before the author
 ```
+
+`write.target-escape`, at a first touch — a repro of its own (run as committed, on both binaries):
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path;
+# SCHEMA and WORKFLOW two paths outside the repository, which the block writes first
+printf '%s\n' 'type: changelog' 'id-from: title' 'location: findings/' \
+  'description: A findings log whose item carries a settable field beside two prose leaves.' \
+  'usage: a write-escape repro needs a multi-slot item block carrying a settable field.' \
+  'sections:' '  - id: findings' '    repeatable:' '      id-from: label' '      block:' \
+  '        - { id: label, type: string }' '        - { id: status, type: string, optional: true }' \
+  '        - { id: statement, slot: { hint: "The finding, stated." } }' \
+  '        - { id: proves, slot: { hint: "What the finding proves." } }' > "$SCHEMA"
+printf '%s\n' '---' 'when: record a finding in the findings log' 'description: Author the findings log.' \
+  'usage: a finding needs recording in the findings log.' 'creates-task: true' \
+  'allows-create: [{type: changelog, as: findings}]' '---' '{{ include: step:finalize }}' > "$WORKFLOW"
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh --schema changelog "$SCHEMA" --workflow log-finding "$WORKFLOW") || exit; eval "$rig"
+mkdir -p ../outside
+printf 'Notes:\n\n- status: from prose\n' > ../outside/statement; printf 'It proves.\n' > ../outside/proves; printf 'record a finding\n' > ../outside/summary
+$JIGC start --workflow log-finding "record a finding" > /dev/null
+$JIGC doc create changelog --title "Findings log" --task record-a-finding
+$JIGC doc add-item changelog:findings-log#findings --title "First finding" --task record-a-finding
+$JIGC doc set-field changelog:findings-log#findings/first-finding/status --value draft --task record-a-finding
+$JIGC doc set-slot changelog:findings-log#findings/first-finding/statement --from-file ../outside/statement --task record-a-finding
+$JIGC doc set-slot changelog:findings-log#findings/first-finding/proves --from-file ../outside/proves --task record-a-finding
+$JIGC doc set-field commit:record-a-finding#type --value docs --task record-a-finding
+$JIGC doc set-slot commit:record-a-finding#summary --from-file ../outside/summary --task record-a-finding
+$JIGC task finalize record-a-finding > /dev/null     # the findings log committed, its prose carrying a line that reads as the field
+$JIGC start --workflow log-finding "sharpen the finding" > /dev/null
+$JIGC doc set-field changelog:findings-log#findings/first-finding/status --value done --task sharpen-the-finding; echo "exit=$?"   # exit=1 — write.target-escape, route: nothing was persisted
+ls .jigc/tasks/sharpen-the-finding/docs/                       # changelog:findings-log.md — the committed log, copied in by this call
+cat .jigc/tasks/sharpen-the-finding/roles.json                 # {"roles": {"findings": "changelog:findings-log"}}, absent before the write
+```
+
+## 13. What a refusing `doc` write whose copy stands says of the way out — one key, shown by nine cells and held by none
+
+*2026-10-18, by the fourth of the fixes after the review of the doc family — an entry the second fix left open: the cells that refuse after the copy-in under another code than §12's, and leave the copy staged. Driven on this tree's debug build and on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each in the rig's `committed-singletons` with a file of the user's at the doc's home, its index entry taken with it. As at §12, a cell holds bytes and never words: the nine keep their byte key, and none holds this one.*
+
+### `r1-doc-write-refuses-after-its-copy-in-and-routes-to-a-re-run-that-meets-the-copy-it-left-staged`
+
+- *What it printed.* `doc retitle-item` at the roadmap and `doc set-field` at the changelog: exit 1, `write.wrong-shape`, routed *"`jigc doc schema <doctype>` to see the declared shape, then re-run the write at a declared address"*. `doc rename` at a committed decision: exit 1, *"the staged doc `adr:one-way` carries no `# H1` to retitle"* — an error with no finding and no route, calling the user's file *the staged doc*. Each call has just copied the user's file in as the doc — §10's byte key — and `set-field` and `rename` made `roles.json`; nothing printed says the copy stands, or names `jigc task discard <task-id> --force`, the one way out of it.
+- *The route, run as printed* (the repro below): `jigc doc schema roadmap` exits 0; the same write again refuses the same way; and with the home put back from `HEAD` it still does — the write reads the staged copy and *"does not look at the home again"* (`W3`). The address was declared all along: the route repairs what is not broken.
+- *Held against.* `design/surface-contract.md` → *The three laws*, law 2: *"Every affordance that is the designated recovery for a state is named by the surfaces that produce that state"*; and → *The route fence (law 2)*: *"A mechanical route that hard-rejects, or repairs the wrong thing, is law 2 failing one level down."* `design/validation.md` → *The `write.*` route split* draws the same line for two codes: *"\"re-run the same write\" is the recovery only when the *payload* is what broke, never when the **staged source** is"* — and here the staged source is what broke, put there by the same call, under a code whose route has no escape. Silence is no false claim, so law 1 is not the clause; §12's two codes say something false, these say nothing of the copy.
+- *The cells that show it* — nine, each red under `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged` (§10), which it keeps: `doc-retitle-a-milestone-…`, `doc-set-a-releases-link-…` and `doc-retitle-a-committed-decision-…`, each in the three shapes.
+- *The class.* The route is one arm of `write_route` (`crates/engine/src/write.rs`) for `write.wrong-shape`, `write.unknown-field` and `write.unknown-section`; the last two are address misses, which `W5`'s first sentence refuses before anything is copied in, so only `write.wrong-shape` — and `rename`'s bare error, outside the finding channel — was met after a copy-in. Wider than entry 14's plants: any committed doc whose bytes do not parse as the schema expects at the addressed section reaches it.
+- *The previous release.* The same exits, words, route and files at all three — not a regression.
+- *What the product should do* — the fixer's to settle: whichever way the rows' record's §6, entry 15 is ruled, one thing changes — a refusal that rolls its copy back makes the route's re-run true; one that keeps it owes the copy and the way out, as §12's codes name `task discard`.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"
+$JIGC start --workflow single-task "sharpen the roadmap" > /dev/null
+git rm --cached -q docs/roadmap.md; printf 'notes of the user, no roadmap\n' > docs/roadmap.md
+$JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, sharpened" --task sharpen-the-roadmap; echo "exit=$?"   # exit=1 — write.wrong-shape, route: `jigc doc schema roadmap` … re-run the write at a declared address
+cat .jigc/tasks/sharpen-the-roadmap/docs/roadmap:roadmap.md    # notes of the user, no roadmap — staged by this call, and the output does not say so
+$JIGC doc schema roadmap > /dev/null; echo "exit=$?"          # exit=0 — the route, as printed
+$JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, sharpened" --task sharpen-the-roadmap > /dev/null; echo "exit=$?"   # exit=1 — the same refusal
+git checkout HEAD -- docs/roadmap.md                           # the home restored: the write reads the staged copy, not the home
+$JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, sharpened" --task sharpen-the-roadmap > /dev/null; echo "exit=$?"   # exit=1 — still: the way out is `jigc task discard <task-id> --force`, which nothing printed names
+```
+
+## 14. Every other sentence that says nothing was written — answered, a lead, or a key
+
+*2026-10-18, by the fourth of the fixes after the review of the doc family — the last entry the second fix left open, which named the sentences of `task.rs`, `relocate.rs` and `milestone.rs`. The class, derived and not taken from that list: every string the product prints that says nothing was written, persisted or changed — `command grep -rnE "nothing (was )?(written|persisted|changed)" crates/cli/src crates/engine/src`, 24 lines that are no comment, of which nine are test assertions (`task.rs` three, `relocate.rs` both, `cli.rs`, `finalize.rs`, `state.rs` and `file_state.rs` one each) and fifteen printed sentences, in the nine rows below; a sentence the source wraps between the words is not counted. **`relocate.rs` prints none**: its two are assertions of its own tests. *"Nothing (was) committed"* is outside the class — it says nothing of the working area. Driven where a `doc` door reaches the sentence; a lead for the family whose cells will, where none does.*
+
+| where | the door | what it is |
+|---|---|---|
+| `engine/src/write.rs`, `write.non-reparseable` and `write.target-escape` | every `doc` write | **§12's key**, both arms driven now |
+| `cli/src/render.rs`, `unset … (already absent — nothing changed)` | `doc set-field --unset` | **answered** — driven at a first touch, both binaries: the line names the copy-in beside it, true of the field; the design doc's *"no bytes written"* is the §1 key `r1-write-commands-design-says-an-unset-of-an-absent-field-writes-no-bytes-where-its-first-touch-copies-the-doc-in` |
+| `engine/src/state.rs`, the leftover area's route (*"nothing was changed"*) | a `doc` write `--task` naming a leftover area; `start`'s mint; the by-id seams | **answered** — driven at `doc set-slot … --task <leftover>`, both binaries: exit 1 `finalize.no-task`, and every file of the tree and `git status` hashed the same before and after; the mint is `B9`'s |
+| `engine/src/state.rs`, the save lock, twice (*"so nothing was written"*) | every writer that takes the lock; the `doc` copy-in among them (`W2`) | **answered** by `design/storage.md` → *Concurrent writers*, *"At the copy-in door a timed-out save fails the write, before anything is staged"* (`W5`); not driven — a held lock is no plant of the frame |
+| `cli/src/task.rs`, `git_home_claims` (*"nothing was written: `git …` failed"*) | the committing doors, `task finalize` and `milestone finalize`, and `milestone create`'s guard of a record's home | **a lead for `B7`** — `design/finalize.md` → *4. Promote managed docs*, *"a git that cannot answer fails the door **before anything is written**"*; the task family's cells make no git fail |
+| `engine/src/file_state.rs`, a pin git cannot answer (*"nothing was written and nothing was adopted"*) | `reconcile_committed`, the finalize preflight | **a lead for `B7`**, as above: no cell makes git fail |
+| `cli/src/milestone.rs`, the record whose home is no regular file; `engine/src/milestone.rs`, a record's home taken, and a record missing from the worktree (*"nothing was written"*); and a settled sub-task's leftover (*"nothing was changed"*) | the `milestone` doors | **a lead for `B7`** — four sentences |
+| `engine/src/finalize.rs`, the store door's shape arm (*"nothing was written through `<destination>`"*) | `rename`, `relocate`, `migrate-corpus` | **a lead for `B8`** |
+| `cli/src/render.rs`, the dry run's header and its tail (*"dry run — nothing written"*, *"nothing was written"*) | `migrate-corpus --dry-run` | **a lead for `B8`** — two sentences |
+
+No doc-family cell reaches any sentence of the table but §12's two and the unset's ack, and no row of it but §12's is a finding of the product.

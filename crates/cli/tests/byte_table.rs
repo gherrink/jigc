@@ -6,11 +6,11 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 344
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 345
 //! cells: the acceptance's
 //! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`), **the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
-//! **and the doc family's hundred and thirty-six** (its eight leaves), of which eighty-four
+//! **and the doc family's hundred and thirty-seven** (its eight leaves), of which eighty-four
 //! run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family —
 //! the arms that hold the
@@ -6456,11 +6456,11 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (344, 260, 84),
+        (345, 261, 84),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          sixty-five — fifty-three in the gate, twelve on demand — the install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \
-         the doc family's a hundred and thirty-six: eighty-eight in the gate, forty-eight \
+         the doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight \
          on demand"
     );
 }

@@ -4,6 +4,8 @@
 
 **The table committed beside this file is the arm's own bytes, and it is the whole table.** [byte-table-doc-family-cells.tsv](byte-table-doc-family-cells.tsv) is the block `cells` of `byte_table::the_cells_are_run_on_the_binary_a_variable_names` as one run printed it on 2026-10-18 — **all 344 cells** on the previous release's binary (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996ae4a66d13adb4bb03253606e0037b5ddb7be653a314a908f6b88ab5d`, checked before the run — the rebuild the earlier families used, not an installed `jigc`) and on this tree's debug build, on the tree of the family's third commit (its cells and frame as committed there; no product source changed since the earlier prints), each on a copy of the state that binary built, with each cell's seconds: 167 s at a load average of about 8 to 30, no gate beside it. A classification is what one binary did on one day. **Every count of the previous release below, and in the records that state one for a cell made since 2026-10-15, is read off it.**
 
+**That print is that run's record, and it is not brought up to date.** It holds the 344 cells as they stood at the family's third commit, with **the marks they were printed with** — twenty-six marked cells, all twenty-four of the family's with entry 14 — and not what the fixes after the family's review changed since: the marks re-set by the third of them (twenty-three marked cells, thirty-eight lines; *The table now*, below) and the cell the fourth added beside a sibling task, `doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap`. The fourth fix ran the same arm again on both binaries (2026-10-18, 168 s, the print not committed): **every one of the 344 came to the classification and exit the committed print has, on each binary**, and the new cell holds on both — **no committed run verifies that last**.
+
 Sources: **(suite)** — an assertion or a list of [byte_table.rs](../../../../../crates/cli/tests/byte_table.rs); **(print)** — that run; **(gate)** — the gate of the family's third commit, its timing record `target/jigc-gate/test-seconds.tsv` and the files the arms leave their cells' seconds in, at a load average of 32 to 38 while its second tier ran; **(on demand)** — the arm of the cells on demand, run by hand at a load of 8 to 24. macOS arm64 throughout.
 
 ---
@@ -13,10 +15,10 @@ Sources: **(suite)** — an assertion or a list of [byte_table.rs](../../../../.
 | | the six edit leaves | `create` | `author` | all | source |
 |---|---:|---:|---:|---:|---|
 | lines of a row | 7 (`rename` 8) | 7 | 7 | 57 | (suite) |
-| needs | 17 a leaf | 17 | 17 | 136 | (print), block `needs` |
+| needs | 17 a leaf | 17 | 17 | 136 — the cell beside a sibling task answers `add-item`'s *base* a second time | (print), block `needs` |
 | — answered by a cell | all | all | all | 136 | |
 | — scheduled | — | — | — | 0 | `scheduled-cells.tsv` |
-| cells in the gate | 66 | 11 | 11 | 88 | (suite) |
+| cells in the gate | 67 — 66, and the cell beside a sibling task since the fourth fix after the review | 11 | 11 | 89 | (suite) |
 | cells on demand | 36 | 6 | 6 | 48 | (suite) |
 | **red on this tree, in the gate** | **18** | **3** | **3** | **24** | (suite) `EXPECTED_RED` |
 | red on demand | 0 | 0 | 0 | 0 | (on demand) |
@@ -32,9 +34,9 @@ Sources: **(suite)** — an assertion or a list of [byte_table.rs](../../../../.
 
 All 24 stand at the home a write copies in from, with a file there that is no doc of its type — the user's own file where the committed doc stood, or the file a live link there leads to — and each carried the mark of the rows' record's §6, entry 14 when the print was made. *Since the third of the fixes after the family's review (2026-10-18)*: entry 14 is split in two, and the six of `add-item` and `create` carry entry 14's mark, the fifteen that refuse after the copy entry 14's and entry 15's, and the three of `author` none; the print's column of marks is the run's, and stands as printed. **No byte of the user's is lost in any cell of the family, on either binary.** Where the home holds no doc body — a link to nothing, a directory, the file deleted — the six edit leaves refuse with nothing changed and the two minting doors mint a fresh doc, as the docs have each; a deletion after the task's first write is not looked at.
 
-**The table now** (suite): fifteen rows, 134 lines; **344 cells — 260 in the gate in three arms, 84 on demand**; the acceptance 12, the task family 65, the install family 131, the doc family 136. **Red in the gate: 68 cells under sixteen keys**; on demand four, the `uninstall` cells by `U9`. Scheduled needs: six. Marked cells: twenty-six — two bounds and twenty-four of entry 14; *since the third of the fixes after the family's review*, twenty-three — two bounds, six of entry 14 alone and fifteen of entries 14 and 15 — in thirty-eight lines of marks. The leaves whose rows are owed: the fifteen of `B7` to `B9`; whose cells are owed: `milestone finalize`.
+**The table now** (suite, after the four fixes that followed the family's review): fifteen rows, 134 lines; **345 cells — 261 in the gate in three arms, 84 on demand**; the acceptance 12, the task family 65, the install family 131, the doc family 137 (89 in the gate, 48 on demand). **Red in the gate: 68 cells under sixteen keys**; on demand four, the `uninstall` cells by `U9`. Scheduled needs: six. Marked cells: twenty-six — two bounds and twenty-four of entry 14; *since the third of the fixes after the family's review*, twenty-three — two bounds, six of entry 14 alone and fifteen of entries 14 and 15 — in thirty-eight lines of marks. The leaves whose rows are owed: the fifteen of `B7` to `B9`; whose cells are owed: `milestone finalize`.
 
-**The whole table on the previous release** (print): **127 of the 344 cells are red there**, where 72 are red on this tree (68 in the gate, four on demand); two do not build there — an edit to and a deletion of the settings record, which that release does not write in this repository. By command, the acceptance's cells with theirs: `task finalize` and `task discard`, 68 cells, 25 red there and 7 here; `setup` to `unmanage`, 137 cells, 75 and 41; `milestone finalize`, 3 cells, 3 and none; the eight `doc` leaves, 136 cells, 24 and 24.
+**The whole table on the previous release** (print): **125 of the 344 cells are red there, and two did not build there — 127 not clean** — where 72 are red on this tree (68 in the gate, four on demand); the two are an edit to and a deletion of the settings record, which that release does not write in this repository. By command, the acceptance's cells with theirs: `task finalize` and `task discard`, 68 cells, 25 red there and 7 here; `setup` to `unmanage`, 137 cells, **73 red there and two not built**, and 41 here; `milestone finalize`, 3 cells, 3 and none; the eight `doc` leaves, 136 cells, 24 and 24. *[Corrected 2026-10-18 by the fourth of the fixes after the family's review: the record counted the two not built among the red — 127, and 75 for `setup` to `unmanage`.]*
 
 ## 2. Cost
 
@@ -46,6 +48,7 @@ All 24 stand at the home a write copies in from, with a file there that is no do
 | a write in `committed-singletons`, one task's start before it | 72 | 1.1 to 1.5 s, mean 1.4 | 1.3 to 2.5 s, mean 1.8 |
 | `doc rename`'s committed arm — a decision landed first, twelve lead-ins | 8 | 2.9 to 3.0 s | 4.2 to 5.1 s, mean 4.5 |
 | every gate cell of the family in `committed-singletons` | 80 | 1.1 to 3.0 s, mean 1.5 | 1.3 to 5.1 s, mean 2.1 |
+| the cell beside a sibling task, since — four lead-ins | 1 | 1.6 s, in the fourth fix's run | not timed in a gate |
 | on demand | 48 | 0.6 to 1.6 s, mean 1.2 | — |
 
 **What the family adds to a gate.** The arm of `committed-singletons` ran **25.6 s** in the gate of the family's third commit, where it held ten cells and ran 9.6 s in the gate of `B5`'s cells ([the install family's record](byte-table-install-family.md) → §2) — **about 16 s more**, at loads not measured alike; and the eight refusing cells add under a second to `fresh`'s arm. Cell by cell: the family's 88 gate cells summed **about 172 cell-seconds** inside the gate, which a pool of ten runs in about 17 s — the same number two ways. The three arms that run cells were 78.4 s of that gate's one-at-a-time chain (`bare` 22.0, `fresh` 30.8, `committed-singletons` 25.6); the gate's second tier ran 1,017 s, beside another lane's load.
@@ -61,7 +64,7 @@ All 24 stand at the home a write copies in from, with a file there that is no do
 | — the eight `milestone` leaves at a fan-out's 9.0 cell-seconds in place of 2.6 | (140 of them) | | + ≈ 900 | + ≈ 1.5 min |
 | **the whole table under the ruling, projected** | **≈ 540** | | **≈ 2,300** | **≈ 3.8 min** |
 
-*Arithmetic over measured numbers, not a measurement.* The family drew half the cells a leaf the projection had — eleven, where the task and install families drew 26 and 27 — because its rows are one row eight times with no commit line: no plant of a staged change, a name git quotes or a hook targets a line of it. Its cells cost about what the projection had a cell; its wall time came out at a third.
+*Arithmetic over measured numbers, not a measurement.* *Counted at the family's third commit: the cell beside a sibling task, added since, makes the table 261 gate cells and the families' 249 over fourteen leaves, 17.8 a leaf — the projection moves by less than its rounding (≈ 285 for the sixteen leaves to come).* The family drew half the cells a leaf the projection had — eleven, where the task and install families drew 26 and 27 — because its rows are one row eight times with no commit line: no plant of a staged change, a name git quotes or a hook targets a line of it. Its cells cost about what the projection had a cell; its wall time came out at a third.
 
 ## 3. The question the family met
 
@@ -71,4 +74,5 @@ The rows' record's §6, **entry 14**, open: what a `doc` write does where its ho
 
 - **That the rows are complete.** A `doc` write's own checks (`design/validation.md`) were not read for a write a row might lack; no cell plants at a place a write reads other than the home it copies in from — a ref's target, a role's bound doc.
 - **What the fixed product's refusals say** at entry 14's cells: the listed codes are today's.
+- **That a `doc` write leaves another task's staged doc as it stands.** `W1` lets a write rebuild any task's area — a line names a place with one component open for the task — so the cell beside a sibling task sees a staged doc of the sibling's taken away (*lost*), and not one rewritten ([the rows' record](byte-table-acceptance-rows.md) → §3b, *What a line cannot say*).
 - **A cell's seconds on a quiet machine, and on Linux**: no run in the runner-shaped container was made for the family.

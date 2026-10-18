@@ -552,6 +552,24 @@ The rows are one row eight times: W1 to W3 with `C1` to `C3` (§4a), and `doc re
 
 **What the docs do not say of the family:** whether a `doc` write may rebuild the edge index — `design/storage.md` → *Edge index lifecycle* rebuilds it at the *first read after a stamp mismatch* and names its five sites, none a `doc` write, and no sentence read says whether a write reads it; no line is written for it, and a cell that finds one is red and an entry of §6, as `task discard`'s is (§6, entry 7). What a `doc` write does where the home it copies in from holds no doc of its type — a file of the user's, a link to one, a link to nothing, a directory, nothing at all — is said for the minting doors over a link to nothing and a directory (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4): such a create *"still mints fresh and is refused at the committing door, not at the create"*), and for no other leaf or shape; the cells say where they meet it. *Corrected 2026-10-18, after the family's review:* where the home holds a file that is no doc of its type, the docs do say — two things — and §6, entries 14 and 15, quote both sides.
 
+*Corrected 2026-10-18, by the fourth of the fixes after the family's review (its eighth finding):* **the doc's file deleted is no free home, and the minting doors' cells over it are not listed by extending (4).** (4) speaks of *"an entry with no doc body"*; a committed doc whose file was deleted is no entry, and git still holds it. The docs say what the create does there in a paragraph of their own — it reads the home as free and mints, and the committing door refuses:
+
+> Every probe that asks the disk reads that home as free — the create included, so the doc is `created` — and landing it replaced what git holds under its own path
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+> A `created` doc whose home is free on disk and held by git blocks with the same `finalize.promote-clobber`, keyed at the same destination path
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+and the key's own record names the path — `design/command-output-contract.md` → *The membership test*, the `finalize.*` table's `promote-clobber` row:
+
+  > or, with nothing on disk there, **a path git still holds** — a committed doc deleted from the worktree, or a file staged and taken out of it — which the commit, or the promote's own `git add`, would have replaced
+
+So `doc-create-the-vision-the-doc-deleted-before-the-first-write` and `doc-author-…` are listed *acts*, as they were, on these sentences. No listing or classification moves.
+
+**What a line cannot say, and the cells cannot see — `W1` and `W4` over another task's area** (2026-10-18, the same fix, its seventh finding). The quoted sentences speak of *"the current task's working area"*, and `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)* adds that *"a sub-agent physically cannot stage into a sibling's area"*. A line names a place with one component left open for a task's id (`.jigc/tasks/*`, §7), since one row serves every task its cells name — so `W1` lets a `doc` write rebuild a file of **any** task's area, and `W4` names any task's staged docs. **What the frame still sees:** a staged doc of another task taken away is *lost* whatever a line says — `W4`'s word lets a staged doc go only where its own task gained its re-slugged body (the frame's rule for prose handed to jigc, as the first of these fixes left it) — and a file of the user's there is a plant, lost if it goes. **What it cannot see:** another task's staged doc **rewritten**, which `W1` lets go. One cell stands there now — `doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap`, a first touch of the roadmap with a second live task holding a staged roadmap of its own — and holds on this tree; a regression that rewrote the sibling's copy would hold there too. Narrowing the line to the command's own task is a word the vocabulary does not have (a place keyed on the task the command names), and no finding asks for it yet.
+
 ---
 
 ## 4. `jigc milestone finalize`
