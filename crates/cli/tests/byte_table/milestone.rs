@@ -1,8 +1,10 @@
-//! **The byte table's row for `jigc milestone finalize`**
-//! (`crates/cli/tests/byte_table.rs`) — lifted quote for quote from the committed record
-//! (`completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md`,
-//! §4), under the rules the install family's file states. The other leaves of the family
-//! join this file with their rows if the human rules for it at the pilot's stop.
+//! **The byte table's rows of the `milestone` family** (`crates/cli/tests/byte_table.rs`)
+//! — lifted quote for quote from the committed record
+//! (`completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md`):
+//! `jigc milestone finalize`'s, §4, and the seven other leaves', §4b — `create`,
+//! `add-task`, `add-from-spec`, `provision`, `execute`, `join`, `discard` — under the rules
+//! the install family's file states. A place a command mints, whose id no argv word holds,
+//! is written [`MINTED`](crate::support::byte_cell::MINTED).
 //!
 //! **What of the record is no line.** `M8` is where *on a refusal: no* comes from. `M9` —
 //! a refused boundary leaves objects in the store — is no difference to a table that
@@ -35,6 +37,27 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 /// **Where a sub-task's code is staged** — the place `M3`'s and `M4`'s commits take staged
 /// code from, and no other checkout's: each quotes the sentence that names it.
 const SUB_TASK_WORKTREES: &str = ".jigc/worktrees/<sub-task>";
+
+/// **The project config layer, a pending delta of which the aggregate carries** —
+/// `M3, the config`: its own sentence, the layer `T3` names, and the doc-only arm's
+/// sentence that an ordinary finalize commits a pending delta.
+const THE_CONFIG_CARRIED: [Quote; 3] = [
+    Quote {
+        doc: "design/finalize.md",
+        heading: "`fan-out` finalize",
+        words: "overlays the promoted docs + first-commit config",
+    },
+    Quote {
+        doc: "design/finalize.md",
+        heading: "5. Stage",
+        words: "on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),",
+    },
+    Quote {
+        doc: "design/finalize.md",
+        heading: "The doc-only arm",
+        words: "**Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh",
+    },
+];
 
 /// **`jigc milestone finalize`** — the record's §4. The record names no consent.
 pub const FINALIZE: Row = Row {
@@ -121,6 +144,19 @@ pub const FINALIZE: Row = Row {
                 ],
             )
         },
+        // The project config layer, carried into the aggregate as it stands: `M3`'s own
+        // *"overlays the promoted docs + first-commit config"*, under both spellings —
+        // `squash: false` replaces `M3` and not these.
+        line(
+            "M3, the config",
+            Allows::Files(Where::Under(".jigc/config"), May::Carried),
+            &THE_CONFIG_CARRIED,
+        ),
+        line(
+            "M3, the config's ignore file",
+            Allows::Files(Where::Path(".jigc/.gitignore"), May::Carried),
+            &THE_CONFIG_CARRIED,
+        ),
         // The record's home is the second sentence's — one file a milestone — under the
         // docs root the cascade resolves, the third's; and the record is the milestone's
         // own, the first's.
@@ -269,8 +305,496 @@ pub const FINALIZE: Row = Row {
     ],
 };
 
-/// The family's rows.
-pub const ROWS: &[Row] = &[FINALIZE];
+// ---------------------------------------------------------------------------
+// The family's other seven rows — the record's §4b
+// ---------------------------------------------------------------------------
+
+/// The heading of `design/team-ready-state.md`'s commit model.
+const THE_COMMIT_MODEL: &str = "The commit model — path-scoped commit at each milestone op";
+
+/// The heading of `design/team-ready-state.md`'s read-back capability, where the re-seed is.
+const THE_READ_BACK: &str =
+    "Engine capability 2 (read-back) — the committed record is the engine's authority";
+
+/// The heading of `design/write-commands.md`'s milestone verbs.
+const MINTING_A_MILESTONE: &str = "Minting a milestone + its task list (M7)";
+
+/// **A mint makes what was not there** — the sentence a place `<minted>` rests on beside
+/// the door's own.
+const A_MINT_REFUSES_WHAT_STOOD: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_COMMIT_MODEL,
+    words: "both mints still refuse a pre-existing id before creating anything, which is exactly what makes removing what this call minted safe",
+};
+
+/// **The record's home** — `M5`'s second and third sentences: one file a milestone, under
+/// the docs root the cascade resolves.
+const THE_RECORDS_HOME: [Quote; 2] = [
+    Quote {
+        doc: "design/storage.md",
+        heading: "Source of truth",
+        words: "M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`)",
+    },
+    Quote {
+        doc: "design/storage.md",
+        heading: "Config layout",
+        words: "The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load",
+    },
+];
+
+/// **The record doors' one commit**: the record alone — `A6`'s sentence.
+const THE_RECORD_ALONE: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_COMMIT_MODEL,
+    words: "it stages and commits **only the record file** (`git add <record> && git commit -- <record>`, index-restricted), never sweeping the agent's in-flight index/worktree WIP",
+};
+
+/// `create`'s and `add-task`'s record commit.
+const EACH_A_RECORD_COMMIT: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_COMMIT_MODEL,
+    words: "**`create` / `add-task`** — a **separate** record-only path-scoped commit each.",
+};
+
+/// `add-from-spec` and `discard` among the doors that write the record.
+const THE_FIVE_RECORD_DOORS: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_COMMIT_MODEL,
+    words: "the **five record-only doors** are `cli::rollback::ROLLBACK_POPULATIONS`' `milestone-record` row — the four milestone ops (`create`, `add-task`, `add-from-spec`, `discard`)",
+};
+
+/// **The record's baseline, advanced** — `A7`'s two sentences.
+const THE_BASELINE_ADVANCE: [Quote; 2] = [
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: "`jigc task discard <sub-id>` — the per-sub-task terminal (M49)",
+        words: "the reconcile preflight, the captured pre-image, the path-scoped commit of the record alone, the baseline advance, the survivable frame on a rejecting hook",
+    },
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: "Engine capability 1 (write) — `set: on-transition` machine-maintained leaves",
+        words: "the hash jigc recorded at its last landed record write — lives in `.jigc/state/`, which no clone carries",
+    },
+];
+
+/// The append of one item to the record.
+const AN_ITEM_APPENDED: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: "Engine capability 1 (write) — `set: on-transition` machine-maintained leaves",
+    words: "**`add-task` — append.** Appends one `tasks` item (`id`/`intent`/`status: active`) via the M16 `add-item` primitive. Ordered, byte-stable.",
+};
+
+/// **The cache, re-derived** — the half of the re-seed at the milestone's area.
+const THE_CACHE_RE_DERIVED: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_READ_BACK,
+    words: "the cache is **re-derived from the committed record when absent or stale**",
+};
+
+/// **Every operating door passes through the re-seed.**
+const EVERY_VERB_ONE_SITE: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: "The terminal is terminal — a settled record has no workbench (M42 completion audit)",
+    words: "**Every verb, one site.** `add-task` · `add-from-spec` · `provision` · `execute` · `join` · `finalize` · `discard` all pass through the reseed before their own guards",
+};
+
+/// **The re-seed's other half** — one standard area a sub-task the record names, an area
+/// that stands skipped.
+const THE_AREAS_RE_SEEDED: [Quote; 3] = [
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: THE_READ_BACK,
+        words: "So the re-seed has **two halves at one site**: the milestone cache, and one standard working area per sub-task the record names",
+    },
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: THE_READ_BACK,
+        words: "A sub-task whose area already exists is skipped untouched",
+    },
+    EVERY_VERB_ONE_SITE,
+];
+
+/// `add-task`'s mint and its append.
+const ADD_TASK_MINTS: Quote = Quote {
+    doc: "design/write-commands.md",
+    heading: MINTING_A_MILESTONE,
+    words: "mints a sub-task under the milestone (a task work-unit: id = slug from intent, pinned to the **milestone's** base, isolated `tasks/<sub>/` area) and appends it to the milestone's task list",
+};
+
+/// `add-from-spec`'s mints and its seeding.
+const ADD_FROM_SPEC_MINTS: Quote = Quote {
+    doc: "design/write-commands.md",
+    heading: MINTING_A_MILESTONE,
+    words: "seeds the task list from a committed spec by **enumerating its repeatable `criteria` items** (the parse-items read path — `parse_sections` → the section's `items`, *not* the `jigc task bind` slice path) and minting one sub-task per criterion, the criterion's text as that sub-task's intent",
+};
+
+/// **A sub-task's worktree** — `M6`'s first sentence, which names the directory.
+const THE_WORKTREES_DIRECTORY: Quote = Quote {
+    doc: "design/storage.md",
+    heading: "Repository layout & state location",
+    words: "ephemeral per-sub-agent code worktrees (provisioned per fan-out; torn down on a LANDED boundary, or by `milestone discard` — an aborted finalize leaves them intact for the re-run)",
+};
+
+/// **What `provision` makes** — a worktree of the base's tracked files, registered.
+const A_PROVISIONED_WORKTREE: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: "What a fan-out worktree isolates — and what it does not (M45)",
+    words: "**A provisioned worktree carries tracked files only.** `git worktree add --detach` populates from the pinned base's *tree*",
+};
+
+/// The heading of `design/team-ready-state.md`'s milestone abandon.
+const THE_RECORD_SETTLING_OP: &str = "`jigc milestone discard <id>` — the record-settling op";
+
+/// The two lines of the re-seed, under the ids a row gives them: the milestone's cache in
+/// its area, and the sub-tasks' areas.
+const fn the_re_seed(cache: &'static str, areas: &'static str) -> [Line; 2] {
+    [
+        line(
+            cache,
+            Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Rebuilt),
+            &[THE_CACHE_RE_DERIVED, EVERY_VERB_ONE_SITE],
+        ),
+        line(
+            areas,
+            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Rebuilt),
+            &THE_AREAS_RE_SEEDED,
+        ),
+    ]
+}
+
+/// **`jigc milestone create`** — the record's §4b. It mints the milestone its title names,
+/// whose id no argv word holds as such: its places are where nothing stood (`<minted>`, `byte_cell::MINTED`).
+pub const CREATE: Row = Row {
+    leaf: &["milestone", "create"],
+    unit: Unit::Nothing,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "MC1",
+            Allows::Files(Where::Under(".jigc/milestones/<minted>"), May::Rebuilt),
+            &[
+                Quote {
+                    doc: "design/write-commands.md",
+                    heading: MINTING_A_MILESTONE,
+                    words: "opens its area with an empty task list, and **pins one shared base** (= HEAD) that every sub-task inherits",
+                },
+                Quote {
+                    doc: "design/finalize.md",
+                    heading: "Dirty-tree policy",
+                    words: "snapshots the pre-task staged state — the staged set (path + blob) **and the staged-deletion set** — into the working area",
+                },
+                A_MINT_REFUSES_WHAT_STOOD,
+            ],
+        ),
+        line(
+            "MC2",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<minted>.md"),
+                May::WriteWhole,
+            ),
+            &[
+                EACH_A_RECORD_COMMIT,
+                THE_RECORDS_HOME[0],
+                THE_RECORDS_HOME[1],
+            ],
+        ),
+        line(
+            "MC3",
+            Allows::Commit(Holding::OnlyTheLines),
+            &[THE_RECORD_ALONE],
+        ),
+        line(
+            "MC4",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            &THE_BASELINE_ADVANCE,
+        ),
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The re-seed's two lines of `add-task`.
+const ADD_TASK_RE_SEEDS: [Line; 2] = the_re_seed("MA2", "MA6");
+
+/// **`jigc milestone add-task`** — the record's §4b. Its unit is the milestone, the first
+/// word after the leaf; the sub-task it mints is named by an intent, and its area is where
+/// nothing stood.
+pub const ADD_TASK: Row = Row {
+    leaf: &["milestone", "add-task"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "MA1",
+            Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+            &[ADD_TASK_MINTS, A_MINT_REFUSES_WHAT_STOOD],
+        ),
+        Line {
+            quotes: &[ADD_TASK_MINTS, THE_CACHE_RE_DERIVED],
+            ..ADD_TASK_RE_SEEDS[0]
+        },
+        line(
+            "MA3",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                May::MergeInto,
+            ),
+            &[
+                AN_ITEM_APPENDED,
+                EACH_A_RECORD_COMMIT,
+                THE_RECORDS_HOME[0],
+                THE_RECORDS_HOME[1],
+            ],
+        ),
+        line(
+            "MA4",
+            Allows::Commit(Holding::OnlyTheLines),
+            &[THE_RECORD_ALONE],
+        ),
+        line(
+            "MA5",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            &THE_BASELINE_ADVANCE,
+        ),
+        ADD_TASK_RE_SEEDS[1],
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The re-seed's two lines of `add-from-spec`.
+const ADD_FROM_SPEC_RE_SEEDS: [Line; 2] = the_re_seed("MS2", "MS6");
+
+/// **`jigc milestone add-from-spec`** — the record's §4b: `add-task`'s row, a sub-task a
+/// criterion of the spec. Its home is `vendored`, the one prepared state that holds a
+/// committed spec.
+pub const ADD_FROM_SPEC: Row = Row {
+    leaf: &["milestone", "add-from-spec"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Vendored),
+    lines: &[
+        line(
+            "MS1",
+            Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+            &[ADD_FROM_SPEC_MINTS, A_MINT_REFUSES_WHAT_STOOD],
+        ),
+        Line {
+            quotes: &[ADD_FROM_SPEC_MINTS, THE_CACHE_RE_DERIVED],
+            ..ADD_FROM_SPEC_RE_SEEDS[0]
+        },
+        line(
+            "MS3",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                May::MergeInto,
+            ),
+            &[
+                THE_FIVE_RECORD_DOORS,
+                AN_ITEM_APPENDED,
+                THE_RECORDS_HOME[0],
+                THE_RECORDS_HOME[1],
+            ],
+        ),
+        line(
+            "MS4",
+            Allows::Commit(Holding::OnlyTheLines),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_COMMIT_MODEL,
+                    words: "It mints one sub-task per spec criterion and commits the record once per sub-task",
+                },
+                THE_RECORD_ALONE,
+            ],
+        ),
+        line(
+            "MS5",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            &THE_BASELINE_ADVANCE,
+        ),
+        ADD_FROM_SPEC_RE_SEEDS[1],
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The re-seed's two lines of `provision`.
+const PROVISION_RE_SEEDS: [Line; 2] = the_re_seed("MP3", "MP4");
+
+/// **`jigc milestone provision`** — the record's §4b. It writes no record and commits
+/// nothing: a worktree a sub-task, registered, and the re-seed.
+pub const PROVISION: Row = Row {
+    leaf: &["milestone", "provision"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "MP1",
+            Allows::Files(Where::Under(SUB_TASK_WORKTREES), May::Rebuilt),
+            &[THE_WORKTREES_DIRECTORY, A_PROVISIONED_WORKTREE],
+        ),
+        line(
+            "MP2",
+            Allows::Registered(SUB_TASK_WORKTREES),
+            &[A_PROVISIONED_WORKTREE],
+        ),
+        PROVISION_RE_SEEDS[0],
+        PROVISION_RE_SEEDS[1],
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The re-seed's two lines of `execute`.
+const EXECUTE_RE_SEEDS: [Line; 2] = the_re_seed("ME1", "ME2");
+
+/// **`jigc milestone execute`** — the record's §4b: the re-seed, and nothing else; the door
+/// composes the fan-out walk and mints nothing (`ME3`, no line).
+pub const EXECUTE: Row = Row {
+    leaf: &["milestone", "execute"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        EXECUTE_RE_SEEDS[0],
+        EXECUTE_RE_SEEDS[1],
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The re-seed's two lines of `join`.
+const JOIN_RE_SEEDS: [Line; 2] = the_re_seed("MJ1", "MJ2");
+
+/// **`jigc milestone join`** — the record's §4b: the re-seed, and nothing else; the join is
+/// a preview and its overlay is never persisted (`MJ3`, no line).
+pub const JOIN: Row = Row {
+    leaf: &["milestone", "join"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: None,
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        JOIN_RE_SEEDS[0],
+        JOIN_RE_SEEDS[1],
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// What `discard` removes, a line a place — the record's `MD4`.
+const THE_WORKBENCH_REMOVED: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_RECORD_SETTLING_OP,
+    words: "**The workbench is actually removed.** `discard` removes the sub-task areas **and `.jigc/milestones/<id>/`**",
+};
+
+/// **`jigc milestone discard`** — the record's §4b. Its consent is `--force` (`MD5`): it
+/// refuses on three subjects and removes nothing, and under the consent the command's
+/// output names what it takes.
+pub const DISCARD: Row = Row {
+    leaf: &["milestone", "discard"],
+    unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
+    consent: Some("--force"),
+    home: Prepared::Of(State::Fresh),
+    lines: &[
+        line(
+            "MD1",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                May::WriteWhole,
+            ),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_RECORD_SETTLING_OP,
+                    words: "Every **non-joined** item flips to `discarded`; the header flips to `discarded`.",
+                },
+                THE_RECORDS_HOME[0],
+                THE_RECORDS_HOME[1],
+            ],
+        ),
+        line(
+            "MD2",
+            Allows::Commit(Holding::OnlyTheLines),
+            &[THE_FIVE_RECORD_DOORS, THE_RECORD_ALONE],
+        ),
+        line(
+            "MD3",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+            &THE_BASELINE_ADVANCE,
+        ),
+        line(
+            "MD4, the milestone's area",
+            Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Removed),
+            &[THE_WORKBENCH_REMOVED],
+        ),
+        line(
+            "MD4, the sub-tasks' areas",
+            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Removed),
+            &[THE_WORKBENCH_REMOVED],
+        ),
+        line(
+            "MD4, the worktrees",
+            Allows::Files(Where::Under(SUB_TASK_WORKTREES), May::Removed),
+            &[THE_WORKBENCH_REMOVED, THE_WORKTREES_DIRECTORY],
+        ),
+        line(
+            "MD6",
+            Allows::Unregistered(".jigc/worktrees"),
+            &[
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_RECORD_SETTLING_OP,
+                    words: "A door removes a registration from `.git/worktrees/` **only at a path it created** under `<jigc_home>/.jigc/worktrees/` — a sub-task's `<sub-task-id>`, or a boundary's own `.combine-*` — **by path**, one record at a time (`git worktree remove --force <path>`), and **a run that refuses removes none**",
+                },
+                Quote {
+                    doc: "design/team-ready-state.md",
+                    heading: THE_RECORD_SETTLING_OP,
+                    words: "So every other registration — live, `prunable` or locked; a human's, or jigc's own under another path (a moved repository's sub-task records name the old one, and are exactly what `git worktree repair` needs) — is left byte-identical",
+                },
+            ],
+        ),
+        ON_A_REFUSAL[0],
+        ON_A_REFUSAL[1],
+        ON_A_REFUSAL[2],
+        ON_A_REFUSAL[3],
+    ],
+};
+
+/// The family's rows: the boundary's, then the seven of the record's §4b.
+pub const ROWS: &[Row] = &[
+    FINALIZE,
+    CREATE,
+    ADD_TASK,
+    ADD_FROM_SPEC,
+    PROVISION,
+    EXECUTE,
+    JOIN,
+    DISCARD,
+];
 
 // ---------------------------------------------------------------------------
 // The cells

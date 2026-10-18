@@ -5,9 +5,9 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 354
-//! cells: the acceptance's
+//! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
+//! other leaves of the `milestone` family — and 354 cells: the acceptance's
 //! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -15,7 +15,8 @@
 //! **and the doc family's hundred and thirty-seven** (its eight leaves), of which eighty-four
 //! run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
-//! `B7` a place's own unit and the spelling of a leaf a cell names —
+//! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
+//! rows —
 //! the arms that hold the
 //! comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
@@ -492,9 +493,10 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        15,
+        22,
         "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, \
-         `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight: {rows:?}"
+         `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the milestone \
+         family's seven beside `milestone finalize`: {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -1719,6 +1721,143 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         &["milestone", "finalize"],
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (&["milestone", "create"], "MC1", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "MC2", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "MC3", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "MC4", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "create"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "create"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "add-task"], "MA1", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA2", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA3", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA4", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA5", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA6", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "add-task"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "add-task"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "add-from-spec"], "MS1", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS2", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS3", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS4", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS5", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS6", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "add-from-spec"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "provision"], "MP1", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "MP2", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "MP3", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "MP4", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "provision"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "provision"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "execute"], "ME1", ITS_FAMILYS_CELLS),
+    (&["milestone", "execute"], "ME2", ITS_FAMILYS_CELLS),
+    (&["milestone", "execute"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "execute"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "execute"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "execute"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "join"], "MJ1", ITS_FAMILYS_CELLS),
+    (&["milestone", "join"], "MJ2", ITS_FAMILYS_CELLS),
+    (&["milestone", "join"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "join"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "join"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "join"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "discard"], "MD1", ITS_FAMILYS_CELLS),
+    (&["milestone", "discard"], "MD2", ITS_FAMILYS_CELLS),
+    (&["milestone", "discard"], "MD3", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "discard"],
+        "MD4, the milestone's area",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "discard"],
+        "MD4, the sub-tasks' areas",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "discard"],
+        "MD4, the worktrees",
+        ITS_FAMILYS_CELLS,
+    ),
+    (&["milestone", "discard"], "MD6", ITS_FAMILYS_CELLS),
+    (&["milestone", "discard"], "C1", ITS_FAMILYS_CELLS),
+    (&["milestone", "discard"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "discard"],
+        "C3, the base pin",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "discard"],
+        "C3, the task list",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "finalize"],
+        "M3, the config",
+        ITS_FAMILYS_CELLS,
+    ),
+    (
+        &["milestone", "finalize"],
+        "M3, the config's ignore file",
+        ITS_FAMILYS_CELLS,
     ),
     (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
@@ -4579,6 +4718,260 @@ fn a_chain_holds_a_commit_a_sub_task_in_id_order_then_the_aggregate() {
         let (class, why) = came(UNSQUASHED, &after);
         assert!(
             class == Classification::GitMoved && why.iter().any(|why| why.contains(says)),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+}
+
+/// **A place a command mints is one where nothing stood** — the milestone family's rows,
+/// the task `B7`'s second part: `jigc milestone create` mints a milestone whose id is its
+/// title's slug, `add-task` a sub-task whose id is its intent's, `add-from-spec` one a
+/// criterion of a committed spec, so the argv names none of them by its id. A place's
+/// component may be [`byte_cell::MINTED`], alone or with a fixed suffix: an id at which
+/// nothing stood before the command — *"both mints still refuse a pre-existing id before
+/// creating anything"* (`design/team-ready-state.md` → *The commit model*). A new area and
+/// a new record hold under it; a sibling's area that stood, rewritten or added to, and a
+/// record that stood, rewritten, do not; nor does a file the suffix does not name.
+#[test]
+fn a_place_a_command_mints_is_one_nothing_stood_at() {
+    const MINTS: Row = row(&[
+        line(
+            "N1",
+            Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+        ),
+        line(
+            "N2",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<minted>.md"),
+                May::WriteWhole,
+            ),
+        ),
+    ]);
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/tasks");
+        dir(m, "repo/.jigc/tasks/t1");
+        put(m, "repo/.jigc/tasks/t1/base.json", "a pin\n");
+    });
+    // What stands under `.jigc/` was the lead-ins': the product's own, never a loss.
+    let base = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let came = |before: &Manifest, after: &Manifest| {
+        Cell {
+            base: Some(&base),
+            ..Cell::of(MINTS, before, after)
+        }
+        .came_to()
+    };
+
+    let minted = then(&before, |m| {
+        dir(m, "repo/.jigc/tasks/t2");
+        put(m, "repo/.jigc/tasks/t2/base.json", "a pin\n");
+        put(m, "repo/.jigc/tasks/t2/intent", "an intent\n");
+    });
+    let (class, why) = came(&before, &minted);
+    assert_eq!(class, Classification::Holds, "a new area: {why:#?}");
+    for (what, after) in [
+        (
+            "the area that stood, rewritten",
+            then(&before, |m| {
+                put(m, "repo/.jigc/tasks/t1/base.json", "another pin\n")
+            }),
+        ),
+        (
+            "the area that stood, added to",
+            then(&before, |m| {
+                put(m, "repo/.jigc/tasks/t1/intent", "an intent\n")
+            }),
+        ),
+    ] {
+        let (class, why) = came(&before, &after);
+        assert!(
+            class == Classification::WrittenOutside && why.iter().any(|why| why.contains("t1/")),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+
+    const RECORD: &str = "repo/docs/milestone-records/m.md";
+    let recorded = |m: &mut Manifest| {
+        dir(m, "repo/docs");
+        dir(m, "repo/docs/milestone-records");
+        put(m, RECORD, "# m\n");
+    };
+    let (class, why) = came(&before, &then(&before, recorded));
+    assert_eq!(class, Classification::Holds, "a new record: {why:#?}");
+    let stood = then(&before, recorded);
+    let (class, why) = came(&stood, &then(&stood, |m| put(m, RECORD, "# m, again\n")));
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.md")),
+        "a record that stood, rewritten: {class}, {why:#?}"
+    );
+    let (class, why) = came(
+        &before,
+        &then(&before, |m| {
+            dir(m, "repo/docs");
+            dir(m, "repo/docs/milestone-records");
+            put(m, "repo/docs/milestone-records/m.txt", "# m\n");
+        }),
+    );
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.txt")),
+        "a file the suffix does not name: {class}, {why:#?}"
+    );
+}
+
+/// `manifest` with a linked worktree added at `path`, from the sandbox's root, registered
+/// as `name`: its directory, a file of a sub-task's work staged in its index, its `HEAD`
+/// the main checkout's first commit.
+fn worktree_added(manifest: &mut Manifest, path: &str, name: &str) {
+    let mut at = String::new();
+    for part in path.split('/') {
+        at = if at.is_empty() {
+            part.to_string()
+        } else {
+            format!("{at}/{part}")
+        };
+        if at != REPO {
+            dir(manifest, &at);
+        }
+    }
+    put(manifest, &format!("{path}/work.txt"), "a sub-task's work\n");
+    manifest
+        .registrations
+        .insert(name.to_string(), path.to_string());
+    manifest.checkouts.insert(
+        path.to_string(),
+        Checkout {
+            head: "c0".to_string(),
+            branch: None,
+            index: [("work.txt".to_string(), staged("a sub-task's work\n"))].into(),
+        },
+    );
+    manifest.held.insert(blob_of("a sub-task's work\n"));
+}
+
+/// **A registration a command adds is at the place its line names** — `jigc milestone
+/// provision`'s *"`git worktree add --detach` populates from the pinned base's *tree*"*
+/// (`design/team-ready-state.md` → *What a fan-out worktree isolates*), the task `B7`'s
+/// second part. A worktree registered, its checkout with it, at `.jigc/worktrees/<sub-task>`
+/// — a sub-task the milestone's committed record names — holds under a line of
+/// [`Allows::Registered`]; with no such line it is git's state moved, and so is one for a
+/// task the record does not name, and one made outside the workbench.
+#[test]
+fn a_registration_a_command_adds_is_at_the_place_its_line_names() {
+    const WORKTREES: Line = line(
+        "P1",
+        Allows::Files(Where::Under(".jigc/worktrees/<sub-task>"), May::Rebuilt),
+    );
+    const PROVISIONS: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            WORKTREES,
+            line("P2", Allows::Registered(".jigc/worktrees/<sub-task>")),
+        ])
+    };
+    const FILES_ALONE: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[WORKTREES])
+    };
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        records(m, "docs", &[("m", &["s1"])]);
+    });
+    let came = |row: Row, path: &str, name: &str| {
+        let after = then(&before, |m| worktree_added(m, path, name));
+        Cell {
+            argv: &["probe", "m"],
+            ..Cell::of(row, &before, &after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(PROVISIONS, "repo/.jigc/worktrees/s1", "s1");
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "its sub-task's worktree: {why:#?}"
+    );
+    for (what, row, path, name) in [
+        (
+            "with no line that lets it",
+            FILES_ALONE,
+            "repo/.jigc/worktrees/s1",
+            "s1",
+        ),
+        (
+            "for a task the record does not name",
+            PROVISIONS,
+            "repo/.jigc/worktrees/s9",
+            "s9",
+        ),
+        ("outside the workbench", PROVISIONS, "outside/own", "own"),
+    ] {
+        let (class, why) = came(row, path, name);
+        assert!(
+            class == Classification::GitMoved
+                && why.iter().any(|why| why.contains(&format!("`{name}`"))),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+}
+
+/// **A commit carries a config delta as it stands** — [`May::Carried`], the milestone
+/// boundary's *"overlays the promoted docs + first-commit config"* (`design/finalize.md` →
+/// *`fan-out` finalize*), the task `B7`'s second part. A `.jigc/config` change in the working
+/// tree that a commit the command made holds, byte for byte, holds; a commit that holds
+/// other bytes there is git's state moved, the command's own rewrite of the place included;
+/// and the place rewritten while the commit holds what stood is written outside the
+/// allowance — the word lets the commit carry what stood before the command, and the
+/// command write nothing there.
+#[test]
+fn a_commit_carries_a_config_delta_as_it_stands() {
+    const CARRIES: Row = row(&[
+        line(
+            "K1",
+            Allows::Files(Where::Under(".jigc/config"), May::Carried),
+        ),
+        line("K2", Allows::Commit(Holding::OnlyTheLines)),
+    ]);
+    const KNOBS: &str = ".jigc/config/manifest.yaml";
+    let at = format!("{REPO}/{KNOBS}");
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/config");
+        put(m, &at, "scalar: {}\n");
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {}\n")))]);
+        put(m, &at, "scalar: {a: 1}\n");
+    });
+    let carried = then(&before, |m| {
+        commit(m, "c2", &[(KNOBS, Some((0o100_644, "scalar: {a: 1}\n")))]);
+    });
+    comes_out(&Cell::of(CARRIES, &before, &carried), Classification::Holds);
+    let other = then(&before, |m| {
+        commit(m, "c2", &[(KNOBS, Some((0o100_644, "scalar: {a: 2}\n")))]);
+    });
+    let (class, why) = Cell::of(CARRIES, &before, &other).came_to();
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains(KNOBS)),
+        "other bytes than stand there: {class}, {why:#?}"
+    );
+    for (what, written, expected) in [
+        (
+            "the place rewritten and committed so",
+            "scalar: {a: 2}\n",
+            Classification::GitMoved,
+        ),
+        (
+            "the place rewritten, and what stood committed",
+            "scalar: {a: 1}\n",
+            Classification::WrittenOutside,
+        ),
+    ] {
+        let after = then(&before, |m| {
+            put(m, &at, "scalar: {a: 2}\n");
+            commit(m, "c2", &[(KNOBS, Some((0o100_644, written)))]);
+        });
+        let (class, why) = Cell::of(CARRIES, &before, &after).came_to();
+        assert!(
+            class == expected && why.iter().any(|why| why.contains(KNOBS)),
             "{what}: {class}, {why:#?}"
         );
     }

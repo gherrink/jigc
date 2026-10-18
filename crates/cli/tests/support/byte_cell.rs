@@ -237,7 +237,8 @@ pub struct Quote {
 /// record of that unit names, which is a milestone's — so a line of a milestone's row
 /// reaches its own sub-tasks' areas and no other task's; and [`ITS_MILESTONE`], the
 /// milestone whose committed record names the unit as one of its tasks. **A place may open
-/// with [`DOCS_ROOT`]**, the directory the cascade resolves `docs-root` to.
+/// with [`DOCS_ROOT`]**, the directory the cascade resolves `docs-root` to. And a fourth
+/// stands for a unit the command mints and does not name by its id ([`MINTED`]).
 #[derive(Clone, Copy, Debug)]
 pub enum Where {
     /// One path.
@@ -276,6 +277,19 @@ pub const ITS_SUB_TASKS: &str = "<sub-task>";
 /// <sub-id>` — the per-sub-task terminal (M49)*). A unit no record names, or two records
 /// name, has none.
 pub const ITS_MILESTONE: &str = "<its-milestone>";
+
+/// **The component of a place that stands for a work unit the command mints**: an id at
+/// which nothing stood before the command — the path up to and with this component held
+/// no entry in the manifest taken before it. A mint makes what was not there and touches
+/// nothing that was: *"both mints still refuse a pre-existing id before creating anything,
+/// which is exactly what makes removing what this call minted safe"*
+/// (`design/team-ready-state.md` → *The commit model — path-scoped commit at each milestone
+/// op*). It is the word for a unit the command's argv does not name by its id — the
+/// milestone `jigc milestone create "<title>"` mints, whose id is the title's slug; the
+/// sub-task `add-task` mints from an intent, and the ones `add-from-spec` mints from a
+/// spec's criteria. **What it cannot tell apart**: one mint from two — a command that minted
+/// a second unit beside its own is not seen here.
+pub const MINTED: &str = "<minted>";
 
 /// **The leading component of a place that stands for the directory the cascade resolves
 /// `docs-root` to** — *"The resolved `docs-root` is prepended to every persisted doctype's
@@ -354,6 +368,13 @@ pub enum May {
     /// copy is read from, which are aimed at it ([`aimed`]). The `doc` family's `W3`
     /// (`…/reshape/byte-table-acceptance-rows.md` → §3b; the task `B6`).
     CopiedFrom,
+    /// **Carried as it stands** — a place whose bytes a commit the command makes may hold,
+    /// **the bytes the working tree holds there**, and which the command writes nothing at:
+    /// a pending `.jigc/config` delta the milestone boundary's aggregate commit carries,
+    /// *"overlays the promoted docs + first-commit config"* (`design/finalize.md` →
+    /// *`fan-out` finalize*). It lets no difference happen at the file layer, and lets a
+    /// commit or the index hold only what stands there in the working tree.
+    Carried,
     /// Gone from its place and standing, the same entry, under this directory of the
     /// repository.
     MovedAsideTo(&'static str),
@@ -425,6 +446,14 @@ pub enum Allows {
     /// A worktree's registration removed, with its checkout, at a path under this
     /// directory of the repository.
     Unregistered(&'static str),
+    /// **A worktree's registration added, with its checkout, at a path under this place of
+    /// the repository** — whose components [`OWN`] and [`ITS_SUB_TASKS`] may stand for the
+    /// acting unit and its sub-tasks: `jigc milestone provision`'s *"`git worktree add
+    /// --detach` populates from the pinned base's *tree*"* (`design/team-ready-state.md` →
+    /// *What a fan-out worktree isolates — and what it does not (M45)*), at
+    /// `.jigc/worktrees/<sub-task>`. A registration made anywhere else, or for a task the
+    /// unit's record does not name, is git's state moved outside the allowance.
+    Registered(&'static str),
 }
 
 /// A condition a line carries: read off the manifest taken before the command, or off how
@@ -835,6 +864,10 @@ struct Acting {
     /// From the repository's root, `""` for the root itself; `None` where a layer that
     /// stands does not read.
     docs_root: Option<String>,
+    /// Every path of the repository that held an entry before the command, from its root —
+    /// what [`MINTED`] asks a place against; `None` where no manifest was read, and then a
+    /// place that holds the word is nowhere.
+    stood: Option<BTreeSet<String>>,
 }
 
 impl Acting {
@@ -932,6 +965,13 @@ impl Acting {
             sub_tasks,
             milestone,
             docs_root,
+            stood: Some(
+                before
+                    .files
+                    .keys()
+                    .filter_map(|path| in_repo(path).map(str::to_string))
+                    .collect(),
+            ),
         }
     }
 
@@ -956,6 +996,14 @@ impl Acting {
             }
         }
         want == got
+    }
+
+    /// Whether `path`, from the repository's root, is a place a command mints at
+    /// ([`MINTED`]).
+    fn minted(&self, path: &str) -> bool {
+        self.stood
+            .as_ref()
+            .is_some_and(|stood| !stood.contains(path))
     }
 
     /// `pattern` with a leading [`DOCS_ROOT`] read as the directory it stands for — `None`
@@ -1048,10 +1096,20 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     let (want, got): (Vec<&str>, Vec<&str>) =
         (pattern.split('/').collect(), path.split('/').collect());
     want.len() == got.len()
-        && want
-            .iter()
-            .zip(&got)
-            .all(|(want, got)| acting.stands_for(want, got))
+        && want.iter().zip(&got).enumerate().all(|(at, (want, part))| {
+            match want.strip_prefix(MINTED) {
+                Some(suffix) => {
+                    part.strip_suffix(suffix).is_some_and(|id| !id.is_empty())
+                        && acting.minted(&got_so_far(&got, at))
+                }
+                None => acting.stands_for(want, part),
+            }
+        })
+}
+
+/// The first `at + 1` components of a path, joined.
+fn got_so_far(got: &[&str], at: usize) -> String {
+    got[..=at].join("/")
 }
 
 /// Whether `path` is the directory `pattern` names or lies under it.
@@ -1231,6 +1289,12 @@ impl<'a> Tally<'a> {
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
                     // Laid out holds no file; read from holds nothing the command wrote.
                     (_, None) | (May::LaidOut | May::CopiedFrom | May::ReSlugged, _) => false,
+                    // Carried: what stood there in the working tree before the command.
+                    (May::Carried, Some((mode, blob))) => {
+                        mode & 0o170_000 == 0o100_000
+                            && self.seen.before.files.get(&key).and_then(Entry::blob)
+                                == Some(blob.as_str())
+                    }
                     // A regular file, and no link: mode `100644` or `100755`.
                     (May::CopyOfAStagedDoc, Some((mode, blob))) => {
                         mode & 0o170_000 == 0o100_000 && self.staged.contains(blob.as_str())
@@ -1785,6 +1849,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 if in_repo(path).is_some_and(|rel| under(dir, rel)))
         })
     };
+    let registered = |tally: &Tally<'_>, path: &str| {
+        tally.line_for(|allows| {
+            matches!(allows, Allows::Registered(place)
+                if in_repo(path).is_some_and(|rel| under_for(place, rel, &tally.acting)))
+        })
+    };
     let names: BTreeSet<&String> = before
         .registrations
         .keys()
@@ -1800,6 +1870,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 Some(at) => tally.excused[at] += 1,
                 None => tally.git.push(format!(
                     "the registration `{name}`, of the worktree at `{path}`, is gone"
+                )),
+            },
+            (None, Some(path)) => match registered(&tally, path) {
+                Some(at) => tally.excused[at] += 1,
+                None => tally.git.push(format!(
+                    "the registration `{name}`, of a worktree at `{path}`, was made"
                 )),
             },
             _ => tally
@@ -1818,6 +1894,10 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             (Some(_), None) if place != REPO => match unregistered(&tally, place) {
                 Some(at) => tally.excused[at] += 1,
                 None => tally.git.push(format!("the checkout at `{place}` is gone")),
+            },
+            (None, Some(_)) if place != REPO => match registered(&tally, place) {
+                Some(at) => tally.excused[at] += 1,
+                None => tally.git.push(format!("a checkout at `{place}` was made")),
             },
             (Some(was), Some(is)) => {
                 if place != REPO && was.head != is.head {

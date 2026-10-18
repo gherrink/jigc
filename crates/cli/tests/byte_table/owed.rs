@@ -17,15 +17,9 @@ pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 /// rule where the plan's script had not: they stand under `B5`, the install family's task,
 /// whose docs they share with `setup` and `uninstall`, and left it with that task's
 /// second commit, which brought their rows. The eight `doc` leaves left it with the doc
-/// family's first commit of `B6`, which brought theirs.
+/// family's first commit of `B6`, which brought theirs, and the seven `milestone` leaves
+/// with the first commit of `B7`'s second part, which brought theirs.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["milestone", "create"], "B7"),
-    (&["milestone", "add-task"], "B7"),
-    (&["milestone", "add-from-spec"], "B7"),
-    (&["milestone", "provision"], "B7"),
-    (&["milestone", "execute"], "B7"),
-    (&["milestone", "join"], "B7"),
-    (&["milestone", "discard"], "B7"),
     (&["rename"], "B8"),
     (&["relocate"], "B8"),
     (&["migrate-corpus"], "B8"),
@@ -43,7 +37,17 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
 /// brought the install family's four; `B6` brought the doc family's eight — the six edit
 /// leaves with its second commit, the two minting doors with its third — and `B7` is built
-/// now, by the human's ruling of 2026-10-13. A leaf leaves
+/// now, by the human's ruling of 2026-10-13: its second part brought the rows of the
+/// family's seven other leaves, whose cells it brings in three parts after. A leaf leaves
 /// this list in the commit that brings its cells — after which every need of its row is a
 /// cell or a line of `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[(&["milestone", "finalize"], "B7")];
+pub const CELLS_OWED: &[(&[&str], &str)] = &[
+    (&["milestone", "create"], "B7"),
+    (&["milestone", "add-task"], "B7"),
+    (&["milestone", "add-from-spec"], "B7"),
+    (&["milestone", "provision"], "B7"),
+    (&["milestone", "execute"], "B7"),
+    (&["milestone", "join"], "B7"),
+    (&["milestone", "discard"], "B7"),
+    (&["milestone", "finalize"], "B7"),
+];

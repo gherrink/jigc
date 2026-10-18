@@ -2,6 +2,51 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The milestone family's seven rows are written from their docs before a cell of any runs — `create`, `add-task`, `add-from-spec`, `provision`, `execute`, `join`, `discard` — and `milestone finalize`'s row gains the config its own sentence names; three words the rows needed, each red first: a place the command mints, a worktree's registration added, and carried as it stands (the byte table, task `B7`, its second part: the first of its commits)
+
+**What.** The rows of the seven other `jigc milestone` write leaves, written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4b and lifted quote for quote into [milestone.rs](crates/cli/tests/byte_table/milestone.rs). **No cell is added and no binary was run to learn what a command writes**; no product source changes. The seven leave the owed list of leaves ([owed.rs](crates/cli/tests/byte_table/owed.rs)) and join the list of leaves whose cells are owed, beside `milestone finalize`.
+
+### The rows
+
+| leaf | lines | home | unit |
+|---|---|---|---|
+| `create` | `MC1` its area made · `MC2` its record made · `MC3` a commit of the record alone · `MC4` the baseline advanced | `fresh` | none — the milestone it mints is named by a title |
+| `add-task` | `MA1` the sub-task's area made · `MA2` the milestone's area rebuilt · `MA3` the record merged into · `MA4` the record's commit · `MA5` the baseline · `MA6` the re-seed of the sub-tasks' areas | `fresh` | the milestone |
+| `add-from-spec` | `MS1` to `MS6`, as `add-task`'s, a sub-task a criterion | `vendored` | the milestone |
+| `provision` | `MP1` the worktrees made · `MP2` their registrations added · `MP3`, `MP4` the re-seed | `fresh` | the milestone |
+| `execute`, `join` | `ME1`, `ME2`; `MJ1`, `MJ2` — the re-seed alone | `fresh` | the milestone |
+| `discard` | `MD1` the record's statuses flipped · `MD2` its commit · `MD3` the baseline · `MD4` the milestone's area, the sub-tasks' areas, the worktrees removed · `MD6` their registrations removed; consent `--force` | `fresh` | the milestone |
+
+`C1` to `C3` stand in each. **No line is**: `MC5` (a refusal restores the record's pre-image and unwinds the door's own mint), `MC6` (the identity guard), `MS7` (`add-from-spec`'s k−1 commits), `MP5` (the leftover guard), `ME3` (*"minting nothing"*), `MJ3` (the overlay is never persisted), `MD5` (the three refusals and the consent). **`milestone finalize`'s row gains `M3, the config` and `M3, the config's ignore file`** — the lead of 2026-10-18 that a pending config delta rides the aggregate, answered by `M3`'s own sentence: the boundary *"overlays the promoted docs + first-commit config"*, the layer `T3` names, and a pending delta is what an ordinary finalize commits (*The doc-only arm*: *"an ordinary code-less finalize commits it beside the doc"*); the line as data held nothing of it. Under both spellings: `squash: false` replaces `M3` alone.
+
+**The split the cells are built in**, by the docs the leaves share: the record doors (`create`, `add-task`, `add-from-spec` — *The commit model*), the fan-out doors (`provision`, `execute`, `join` — the re-seed and the worktrees), the terminals (`discard` and `finalize`'s plain spelling — *The lifecycle* and *`fan-out` finalize*).
+
+### Three words, red first
+
+[byte_cell.rs](crates/cli/tests/support/byte_cell.rs) gains:
+
+- **`<minted>` (`byte_cell::MINTED`)** — a component of a place that stands for a work unit the command mints: an id at which nothing stood before the command, the path up to and with the component holding no entry in the manifest taken before it. *"both mints still refuse a pre-existing id before creating anything, which is exactly what makes removing what this call minted safe"* (`design/team-ready-state.md` → *The commit model*). For the units no argv word names by their id: the milestone `create` mints from a title (its id is the title's slug, which the frame does not compute), the sub-task `add-task` mints from an intent, the ones `add-from-spec` mints from a spec's criteria. *Not taken*: a slug computed in the frame (the product's rule, copied); `.jigc/tasks/*` (a sibling's area rewritten, excused). *Its bound*: one mint is not told from two.
+- **`Allows::Registered(place)`** — a worktree's registration added, with its checkout, under a place whose components may stand for the unit and its sub-tasks: `provision`'s *"`git worktree add --detach` populates from the pinned base's *tree*"*. A registration or a checkout made anywhere else is *git's state moved*, where any registration made was before.
+- **`May::Carried`** — a place the command writes nothing at, whose bytes as the working tree held them **before** the command a commit it makes may hold: `M3, the config`.
+
+*Red first*: [`a_place_a_command_mints_is_one_nothing_stood_at`](crates/cli/tests/byte_table.rs), [`a_registration_a_command_adds_is_at_the_place_its_line_names`](crates/cli/tests/byte_table.rs) and [`a_commit_carries_a_config_delta_as_it_stands`](crates/cli/tests/byte_table.rs), new, against the three words declared and read by nobody — `<minted>` matching nothing, a registration added never excused, `Carried` holding nothing at the commit — came out red at their first case each: a new area *written outside its allowance*, a sub-task's worktree registered *git's state moved*, a delta carried *git's state moved*, each where it must hold. Built: so; and a sibling's area rewritten or added to, a record that stood rewritten, a file the suffix does not name, a registration with no line, for a task the record does not name and outside the workbench, a commit of other bytes than stood — the command's own rewrite included — and the place rewritten while what stood is committed, each red.
+
+### Decided here — as a builder, and open to being overturned
+
+- **`MA3`, `MS3` are *merged into*, not *written whole*** — `add-task`'s record write is an append, *"Ordered, byte-stable"*: every line that stood stays, in order. `MD1` stays *written whole*, as `A5`: the vocabulary has no word for one leaf flipped.
+- **The milestone's area is a line, not its files.** `MC1` and `MA2` let `.jigc/milestones/<id>/` be rebuilt whole: the docs name `base.json` and `tasks.json` and the snapshot by no path. So a message file a record door leaves there at exit 0 — the human's ruling of 2026-10-14 on §6, entry 6, has it *deleted whether or not the commit landed* — is covered; the record's §4b says so, and a run that shows one is a finding seen by hand.
+- **`execute` and `join` have the re-seed and nothing else**, on *"minting nothing"* and *"never persisted"*; whatever else either writes is outside the row.
+- **`add-from-spec`'s home is `vendored`**, the one prepared state with a committed spec — a new arm when its cells come.
+
+### The lists
+
+Twenty-two rows, where fifteen; the lines of the seven rows each stand on the list of lines that excuse nothing, until their cells run. The owed list of leaves holds the eight of `B8` and `B9`; the leaves whose cells are owed, the eight of the `milestone` family. Cells: 354, 270 in the gate, as they were; the expected-red list 68 under sixteen keys.
+
+### Not established
+
+- **That the rows are complete.** `design/validation.md` and `design/command-output-contract.md` were read for the milestone doors' refusals and outputs, not for a write a row might lack.
+- **That `add-from-spec` writes nothing at the spec's home.** It reads it; no line names that home, and no plant is put there.
+
 ## 2026-10-19 — The gate's `fmt` step reached none of the files a macro declared: thirteen files of two suites, formatted by nothing since 2026-10-11, are declared beside their macros and formatted, and a fence holds the step to every Rust file of the repository; two fault paths of the spelling switch seen red on their own; the cells ruling 1's words are owed to, a lead; and the records' counts re-derived from the suite (the byte table, task `B7`, after part A's review: the fifth of its fixes)
 
 **What.** The review of `B7`'s part A — its tenth, eleventh and twelfth findings — and the counts the third and fourth fixes left to this one. No product source changes.
