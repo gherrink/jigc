@@ -21,7 +21,7 @@
 use super::task::A_DECISION;
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared,
     Quote, Row, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -38,7 +38,17 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
     }
 }
 
-/// **`jigc setup`** — the record's §1.
+/// The sentence `S16` rests on: the human's ruling of 2026-10-15 on the record's §6, entry
+/// 1, as `DECISIONS.md` records it.
+const LAYS_OUT: &[Quote] = &[Quote {
+    doc: "DECISIONS.md",
+    heading: "2026-10-18 — The human's seven rulings on the install family's questions, recorded: `setup` refuses over a path whose bytes are not jigc's own; it lays out the workbench's cache directories; it refuses a link at the root `.gitignore` on any `HEAD`; `unmanage` never commits; the install commit runs the user's hooks; the install-footprint record is no cache; and `B6` builds the plant in the place of a file that stands (the byte table, task `B6`, the first of its commits)",
+    words: "**`jigc setup` also lays out the workbench's cache directories**",
+}];
+
+/// **`jigc setup`** — the record's §1. `S16` is a line whose sentence is the human's
+/// ruling of 2026-10-15 on the record's §6, entry 1: `setup` lays out the workbench's two
+/// cache directories, and writes no file into them.
 pub const SETUP: Row = Row {
     leaf: &["setup"],
     consent: Some("--force"),
@@ -215,6 +225,18 @@ pub const SETUP: Row = Row {
                     words: "The pathspec is **enumerated, never a blanket `git add -A`**: the always-loaded host file (`CLAUDE.md`), the settings file (`.claude/settings.json`), the managed `.jigc/AGENT.md`, `.jigc/.gitignore`, the `.jigc/version` provenance stamp, the project layer (`.jigc/config/`)",
                 },
             ],
+        ),
+        // The human's ruling of 2026-10-15 on the record's §6, entry 1: the row's two lines
+        // whose sentence is a ruling and not a design doc's, until the doc says it.
+        line(
+            "S16, the file-state hashes",
+            Allows::Files(Where::Under(".jigc/state"), May::LaidOut),
+            LAYS_OUT,
+        ),
+        line(
+            "S16, the edge index",
+            Allows::Files(Where::Under(".jigc/index"), May::LaidOut),
+            LAYS_OUT,
         ),
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
@@ -594,10 +616,10 @@ const UNBORN: Lead = Lead::Under(Condition::HeadUnborn);
 ///
 /// - **at a path it replaces** (`S1`, `S5`, `S6, written`): a link or a directory is no file
 ///   it can replace, and is refused before the first write; **a file the user committed**
-///   there is replaced on the way to the install commit — no sentence refuses a path a
-///   commit holds — which the record's §6, entry 10, asks about; a change **staged** there
-///   and not in the tree is refused as dirty, but at the stamp, where no sentence says the
-///   state refuses;
+///   there is refused as dirty too, by the human's ruling of 2026-10-15 on the record's §6,
+///   entry 10 — *"while its bytes are not jigc's own"*; a change **staged** there and not in
+///   the tree is refused as dirty, but at the stamp, where no sentence says the state
+///   refuses;
 /// - **the guide** (`S8`) is left as it stands whatever stands there — *"a copy the user
 ///   has edited is left"*, by `setup` as by `uninstall`;
 /// - **at a path it merges into, on a born `HEAD`** (`S2`, `S3`, `S7`): a link that leads
@@ -605,22 +627,18 @@ const UNBORN: Lead = Lead::Under(Condition::HeadUnborn);
 ///   a file that is dirty; the user's own file in no commit, and a change staged, are
 ///   refused as dirty; a directory is refused;
 /// - **on an unborn `HEAD`, at the root `.gitignore`** (`S9`): the user's own file rides
-///   the first commit (`S15`), and so does a link that leads into the checkout; one that
-///   leads nowhere or out, and a directory, are refused.
+///   the first commit (`S15`); a link there is refused wherever it leads, by the human's
+///   ruling of 2026-10-15 on the record's §6, entry 12, and so is a directory.
 ///
-/// **Every cell in which `setup` acts carries the mark of the record's §6, entry 1, its
-/// first point left open**: a `setup` that exits 0 makes `.jigc/state/`, and no sentence
-/// of its doc names a write there.
+/// A `setup` that exits 0 lays out `.jigc/state/`, empty: `S16`, the human's ruling of
+/// 2026-10-15 on the record's §6, entry 1.
 const SETUP_PLANTED: [Cell; 48] = [
-    Cell {
-        marks: &[Mark::Silence(1), Mark::Silence(10)],
-        ..setup(
+    setup(
         "setup-at-the-bootstrap-a-committed-file",
         &[Lead::Plant(Plant::Committed(".jigc/AGENT.md"))],
-        Listed::Acts,
+        DIRTY,
         at("S1", Kind::Committed),
-    )
-    },
+    ),
     setup(
         "setup-at-the-bootstrap-a-link-to-nothing",
         &[Lead::Plant(Plant::LinkToNothing(".jigc/AGENT.md"))],
@@ -651,15 +669,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         DIRTY,
         at("S1", Kind::StagedThere),
     ),
-    Cell {
-        marks: &[Mark::Silence(1), Mark::Silence(10)],
-        ..setup(
+    setup(
         "setup-at-the-stamp-a-committed-file",
         &[Lead::Plant(Plant::Committed(".jigc/version"))],
-        Listed::Acts,
+        DIRTY,
         at("S5", Kind::Committed),
-    )
-    },
+    ),
     setup(
         "setup-at-the-stamp-a-link-to-nothing",
         &[Lead::Plant(Plant::LinkToNothing(".jigc/version"))],
@@ -684,24 +699,18 @@ const SETUP_PLANTED: [Cell; 48] = [
         refuses(1, "setup.version-stamp"),
         at("S5", Kind::DirForAFile),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    setup(
         "setup-at-the-stamp-a-change-staged-and-not-in-the-tree",
         &[Lead::Plant(Plant::Staged { at: ".jigc/version", kept: false })],
         Listed::Acts,
         at("S5", Kind::StagedThere),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1), Mark::Silence(10)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-settings-record-a-committed-file",
         &[Lead::Plant(Plant::Committed(".jigc/settings-entries.json"))],
-        Listed::Acts,
+        DIRTY,
         at("S6, written", Kind::Committed),
-    )
-    },
+    ),
     setup(
         "setup-at-the-settings-record-a-link-to-nothing",
         &[Lead::Plant(Plant::LinkToNothing(".jigc/settings-entries.json"))],
@@ -732,60 +741,42 @@ const SETUP_PLANTED: [Cell; 48] = [
         DIRTY,
         at("S6, written", Kind::StagedThere),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    setup(
         "setup-at-the-guide-a-committed-file",
         &[Lead::Plant(Plant::Committed(".claude/skills/jigc/SKILL.md"))],
         Listed::Acts,
         at("S8", Kind::Committed),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-guide-a-link-to-nothing",
         &[Lead::Plant(Plant::LinkToNothing(".claude/skills/jigc/SKILL.md"))],
         Listed::Acts,
         at("S8", Kind::LinkToNothing),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-guide-a-link-to-a-file-in-the-repository",
         &[Lead::Plant(Plant::LinkToAFile { at: ".claude/skills/jigc/SKILL.md", outside: false })],
         Listed::Acts,
         at("S8", Kind::LinkInside),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-guide-a-link-to-a-file-outside-it",
         &[Lead::Plant(Plant::LinkToAFile { at: ".claude/skills/jigc/SKILL.md", outside: true })],
         Listed::Acts,
         at("S8", Kind::LinkOutside),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-guide-a-directory",
         &[Lead::Plant(Plant::Dir(".claude/skills/jigc/SKILL.md"))],
         Listed::Acts,
         at("S8", Kind::DirForAFile),
-    )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    ),
+    setup(
         "setup-at-the-guide-a-change-staged-and-not-in-the-tree",
         &[Lead::Plant(Plant::Staged { at: ".claude/skills/jigc/SKILL.md", kept: false })],
         Listed::Acts,
         at("S8", Kind::StagedThere),
-    )
-    },
+    ),
     setup(
         "setup-at-the-host-file-a-link-to-nothing",
         &[Lead::Plant(Plant::LinkToNothing("CLAUDE.md"))],
@@ -900,15 +891,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         refuses(1, "setup.secrets-gitignore"),
         at("S9", Kind::LinkToNothing),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    setup(
         "setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository",
         &[UNBORN, Lead::Plant(Plant::LinkToAFile { at: ".gitignore", outside: false })],
-        Listed::Acts,
+        refuses(1, "setup.secrets-gitignore"),
         at("S9", Kind::LinkInside),
-    )
-    },
+    ),
     setup(
         "setup-head-unborn-at-the-root-ignore-a-link-to-a-file-outside-it",
         &[UNBORN, Lead::Plant(Plant::LinkToAFile { at: ".gitignore", outside: true })],
@@ -921,15 +909,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         refuses(1, "setup.secrets-gitignore"),
         at("S9", Kind::DirForAFile),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
+    setup(
         "setup-head-unborn-at-the-root-ignore-the-users-own-file",
         &[UNBORN, Lead::Plant(Plant::UsersLine(".gitignore"))],
         Listed::Acts,
         at("S9", Kind::UsersLine),
-    )
-    },
+    ),
     setup(
         "setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree",
         &[UNBORN, Lead::Plant(Plant::Staged { at: ".gitignore", kept: false })],
@@ -946,8 +931,8 @@ const SETUP_PLANTED: [Cell; 48] = [
 /// - **a file in no commit at a path it replaces or merges into, on a born `HEAD`**, is
 ///   refused before the first write (`S4`'s second sentence; the carryover gate,
 ///   `design/surface-contract.md`); **one the user committed** at a path it replaces is
-///   replaced on the way to the install commit — no refusal, since a commit holds its
-///   bytes — which is the record's §6, entry 10; **the guide the user committed** is left
+///   refused the same way, by the human's ruling of 2026-10-15 on the record's §6, entry
+///   10; **the guide the user committed** is left
 ///   *byte-identical*, as a copy that is not jigc's own (`S8`);
 /// - **on an unborn `HEAD`, a file at a path it merges into rides the first commit** —
 ///   *"an *untracked* file at a path the install **merges into** rides the repository's
@@ -960,17 +945,16 @@ const SETUP_PLANTED: [Cell; 48] = [
 ///   no doc gives them;
 /// - **what is staged elsewhere stays out of the install commit** (`S11`: *"enumerated,
 ///   never a blanket `git add -A`"*), a name git quotes included; and **a hook that
-///   rejects** does not stop the install commit, which runs no hook — no doc says so, and
-///   no doc says otherwise: the record's §6, entry 11.
+///   rejects** the install commit fails it — the human's ruling of 2026-10-15 on the
+///   record's §6, entry 11: the install commit runs the user's hooks, and a rejection is a
+///   late failure, rolled back; the refusal's code is the one the door gives a failed
+///   install commit.
 const SETUP_CELLS: [Cell; 18] = [
     Cell {
         state: FRESH,
         ..setup("setup-run-again-where-it-is-installed", &[], Listed::Acts, None)
     },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup("setup-in-a-repository-jigc-was-never-set-up-in", &[], Listed::Acts, None)
-    },
+    setup("setup-in-a-repository-jigc-was-never-set-up-in", &[], Listed::Acts, None),
     setup(
         "setup-at-the-stamp-an-untracked-file",
         &[Lead::Plant(Plant::File(".jigc/version"))],
@@ -983,54 +967,42 @@ const SETUP_CELLS: [Cell; 18] = [
         DIRTY,
         at("S6, written", Kind::Untracked),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-at-the-guide-an-untracked-file",
-            &[Lead::Plant(Plant::File(".claude/skills/jigc/SKILL.md"))],
-            Listed::Acts,
-            at("S8", Kind::Untracked),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-under-the-project-layer-an-untracked-file",
-            &[Lead::Plant(Plant::File(".jigc/config/notes.md"))],
-            Listed::Acts,
-            at("S4", Kind::Untracked),
-        )
-    },
+    setup(
+        "setup-at-the-guide-an-untracked-file",
+        &[Lead::Plant(Plant::File(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::Untracked),
+    ),
+    setup(
+        "setup-under-the-project-layer-an-untracked-file",
+        &[Lead::Plant(Plant::File(".jigc/config/notes.md"))],
+        Listed::Acts,
+        at("S4", Kind::Untracked),
+    ),
     setup(
         "setup-a-file-where-the-workbench-goes",
         &[Lead::Plant(Plant::File(".jigc"))],
         refuses(1, "setup.write-bootstrap"),
         at("S1", Kind::FileForADir),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-a-file-where-the-guides-directory-goes",
-            &[Lead::Plant(Plant::File(".claude/skills/jigc"))],
-            Listed::Acts,
-            at("S8", Kind::FileForADir),
-        )
-    },
+    setup(
+        "setup-a-file-where-the-guides-directory-goes",
+        &[Lead::Plant(Plant::File(".claude/skills/jigc"))],
+        Listed::Acts,
+        at("S8", Kind::FileForADir),
+    ),
     setup(
         "setup-a-file-where-the-settings-directory-goes",
         &[Lead::Plant(Plant::File(".claude"))],
         refuses(1, "setup.inject-allowlist"),
         at("S3", Kind::FileForADir),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-the-users-own-hook",
-            &[Lead::Plant(Plant::UsersHook)],
-            Listed::Acts,
-            at("S10", Kind::UsersLine),
-        )
-    },
+    setup(
+        "setup-the-users-own-hook",
+        &[Lead::Plant(Plant::UsersHook)],
+        Listed::Acts,
+        at("S10", Kind::UsersLine),
+    ),
     setup(
         "setup-at-the-hook-a-link-to-nothing",
         &[HOOKS_IN_THE_TREE, Lead::Plant(Plant::LinkToNothing(THE_HOOK_IN_THE_TREE))],
@@ -1067,33 +1039,24 @@ const SETUP_CELLS: [Cell; 18] = [
         refuses(1, "setup.install-hook"),
         at("S10", Kind::FileForADir),
     ),
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-a-file-staged-elsewhere",
-            &[Lead::Plant(Plant::Staged { at: "notes/staged.txt", kept: true })],
-            Listed::Acts,
-            at("S11", Kind::StagedElsewhere),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-a-file-staged-under-a-name-git-quotes",
-            &[Lead::Plant(Plant::Staged { at: A_NAME_GIT_QUOTES, kept: true })],
-            Listed::Acts,
-            at("S11", Kind::QuotedName),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(1)],
-        ..setup(
-            "setup-a-hook-that-rejects",
-            &[Lead::Plant(Plant::RejectingHook)],
-            Listed::Acts,
-            at("S11", Kind::RejectingHook),
-        )
-    },
+    setup(
+        "setup-a-file-staged-elsewhere",
+        &[Lead::Plant(Plant::Staged { at: "notes/staged.txt", kept: true })],
+        Listed::Acts,
+        at("S11", Kind::StagedElsewhere),
+    ),
+    setup(
+        "setup-a-file-staged-under-a-name-git-quotes",
+        &[Lead::Plant(Plant::Staged { at: A_NAME_GIT_QUOTES, kept: true })],
+        Listed::Acts,
+        at("S11", Kind::QuotedName),
+    ),
+    setup(
+        "setup-a-hook-that-rejects",
+        &[Lead::Plant(Plant::RejectingHook)],
+        refuses(1, "setup.install-commit"),
+        at("S11", Kind::RejectingHook),
+    ),
 ];
 
 /// **A task that landed** — `record-a-decision`, created and finalized: the repository a

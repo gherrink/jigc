@@ -1176,6 +1176,7 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (&["setup"], "S9", &[Prepared::Bare]),
     (&["setup"], "S10", &[Prepared::Bare]),
     (&["setup"], "S11", &[Prepared::Bare]),
+    (&["setup"], "S16, the file-state hashes", &[Prepared::Bare]),
     (&["setup"], "C2", &[Prepared::Bare]),
     (&["uninstall"], "U1", &[Prepared::Of(State::Fresh)]),
     (&["uninstall"], "U4", &[Prepared::Of(State::Fresh)]),
@@ -1311,6 +1312,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "S6, removed",
         A_RECORD_WHERE_THE_COMMIT_CANNOT_CARRY_IT,
     ),
+    (
+        &["setup"],
+        "S16, the edge index",
+        NO_SETUP_LAYS_THE_INDEX_OUT,
+    ),
     (&["setup"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["setup"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["setup"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
@@ -1391,6 +1397,11 @@ const A_REGISTRATION_UNDER_THE_WORKBENCH: &str = "a registration under `.jigc/wo
 const A_RECORD_WHERE_THE_COMMIT_CANNOT_CARRY_IT: &str = "a settings record standing where the install commit cannot carry the settings file — an \
      ignored or untracked `.claude/settings.json`, which no cell of the family constructs: before \
      the port";
+
+/// What would use the half of `S16` over the edge index: a `setup` that lays that
+/// directory out as well.
+const NO_SETUP_LAYS_THE_INDEX_OUT: &str = "a `setup` that lays out `.jigc/index/` as the ruling's sentence lets it: no cell's does \
+     — each that acts lays out `.jigc/state/` alone";
 
 /// Why the line that lets a command stage excuses nothing by itself.
 const STAGED_UNDER_ANOTHER_LINE: &str = "no cell can: the comparison excuses a staged entry under the line that wrote the file, or \
@@ -3392,6 +3403,77 @@ fn a_refusal_may_rebuild_a_cache_and_may_not_take_one_away() {
     );
 }
 
+/// **The install-footprint record is no cache, and a directory laid out holds no file** —
+/// the two words the human's rulings of 2026-10-15 on the install family's questions put
+/// into the frame (the record's §6, entries 3 and 1). A refusal that leaves the record at
+/// the path a run showed it under is *refused, and changed what a refusal may not*: a line
+/// that lets a cache be rebuilt does not cover it ([`byte_cell::NO_CACHE`]), where a file
+/// of the cache beside it still is. And a line that lays a directory out ([`May::LaidOut`])
+/// lets the directory be made by a command that acts, and nothing in it: a file made there
+/// is *written outside its allowance*, as is a directory made outside the line's place.
+#[test]
+fn the_footprint_record_is_no_cache_and_a_directory_laid_out_holds_no_file() {
+    const CACHE: Row = row(&[Line {
+        when: When::Refused,
+        on_refusal: true,
+        ..line(
+            "C2",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+        )
+    }]);
+    let before = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let refused = |after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(CACHE, &before, after)
+        }
+        .came_to()
+    };
+    let with = |file: &str| {
+        then(&before, |m| {
+            dir(m, "repo/.jigc/state");
+            put(m, &format!("repo/.jigc/state/{file}"), "a run's own\n");
+        })
+    };
+    let (rebuilt, footprint) = (with("file-state.json"), with("setup-install-footprint"));
+    let (class, why) = refused(&rebuilt);
+    assert_eq!(class, Classification::RefusesNothingChanged, "{why:#?}");
+    let (class, why) = refused(&footprint);
+    assert!(
+        class == Classification::RefusedAndChanged
+            && why
+                .iter()
+                .any(|why| why.contains("`repo/.jigc/state/setup-install-footprint` was made")),
+        "the footprint record left by a refusal is no rebuilt cache: {class}, {why:#?}"
+    );
+
+    const LAYS_OUT: Row = row(&[line(
+        "L1",
+        Allows::Files(Where::Under(".jigc/state"), May::LaidOut),
+    )]);
+    let laid_out = then(&before, |m| dir(m, "repo/.jigc/state"));
+    let verdict = Cell::of(LAYS_OUT, &before, &laid_out)
+        .verdict()
+        .expect("a cell");
+    assert_eq!(
+        (verdict.classification, verdict.excused.as_slice()),
+        (Classification::Holds, &[("L1", 1)][..]),
+        "an empty directory laid out under the line: {:#?}",
+        verdict.why
+    );
+    for (what, after) in [
+        ("a file in the directory laid out", rebuilt.clone()),
+        (
+            "a directory beside the line's place",
+            then(&before, |m| dir(m, "repo/.jigc/logs")),
+        ),
+    ] {
+        let (class, why) = Cell::of(LAYS_OUT, &before, &after).came_to();
+        assert_eq!(class, Classification::WrittenOutside, "{what}: {why:#?}");
+    }
+}
+
 /// **A line lets a file under a directory go only where its sentence does** — the lines of
 /// the table's own rows, each driven over a file of the product's own that stands in a
 /// directory the row lets its command write into when it acts: the project layer `setup`
@@ -5102,26 +5184,6 @@ fn row_of(cell: &byte_cell::Cell) -> &'static Row {
 /// grammar the route catalog's have.
 const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     (
-        "r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names",
-        Classification::WrittenOutside,
-        &[
-            "setup-a-file-staged-elsewhere",
-            "setup-a-file-staged-under-a-name-git-quotes",
-            "setup-a-file-where-the-guides-directory-goes",
-            "setup-a-hook-that-rejects",
-            "setup-at-the-guide-a-committed-file",
-            "setup-at-the-guide-a-directory",
-            "setup-at-the-guide-a-link-to-a-file-in-the-repository",
-            "setup-at-the-guide-a-link-to-a-file-outside-it",
-            "setup-at-the-guide-a-link-to-nothing",
-            "setup-at-the-guide-an-untracked-file",
-            "setup-head-unborn-at-the-root-ignore-the-users-own-file",
-            "setup-in-a-repository-jigc-was-never-set-up-in",
-            "setup-the-users-own-hook",
-            "setup-under-the-project-layer-an-untracked-file",
-        ],
-    ),
-    (
         "r1-setup-replaces-a-file-the-user-committed-at-a-path-it-writes-whole",
         Classification::GitMoved,
         &[
@@ -5160,6 +5222,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree",
             "setup-head-unborn-at-the-root-ignore-a-directory",
         ],
+    ),
+    (
+        "r1-setup-runs-no-hook-at-its-install-commit",
+        Classification::NotTheListedOutcome,
+        &["setup-a-hook-that-rejects"],
     ),
     (
         "r1-uninstall-leaves-its-teardown-in-the-working-tree-and-commits-nothing",

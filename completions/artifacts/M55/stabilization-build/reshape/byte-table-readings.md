@@ -1,8 +1,8 @@
 # The byte table's pilot — the questions of reading, and the cells each one decides
 
-*Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
+*Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`); and to the rulings of 2026-10-15 on the install family's questions on 2026-10-18, with the first commit of the doc family's task (`B6`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
 
-Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) bring twenty more marked cells**: twenty in which `setup` acts carry the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. The table has 25 lines over 22 cells.
+Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) brought twenty more marked cells**: twenty in which `setup` acts carried the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. **The rulings of 2026-10-15 took all twenty-three marks off**: the table has two lines over two cells, each a declared bound.
 
 ## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — ruled on 2026-10-14: reading (b)
 
@@ -57,7 +57,9 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 
 - Nothing of the 61 bears on the three the plan leaves open (`migrate-corpus` at a path it touches, `relocate`, and what was then unread of `milestone finalize`, which the record's §4 has since read). **What the family's cells show of the answered ones**: at `task finalize` a file staged elsewhere rides the commit, a name git quotes included, as `T4` declares; at a sub-task's `task discard` the same two stay staged and out of the record's commit, as `A6` declares.
 
-## 10. The install family's questions (the record's entries 1 (i), 3, 10, 11 and 12) — open
+## 10. The install family's questions (the record's entries 1 (i), 3, 9, 10, 11 and 12) — ruled on 2026-10-15, each option A
+
+*The rulings, as the record's §6 has each and `DECISIONS.md` → its entry of 2026-10-18 records them:* entry 1 — the product is unchanged and the doc is to say that `setup` lays out the workbench's cache directories, carried by `S16`: **thirteen of the twenty marked cells hold**, six stay red under their own keys, and `setup-a-hook-that-rejects` is red under a key of its own; entry 3 — the footprint record is no cache, and the table checks its path; entry 9 — `unmanage` never commits, a doc-only finding; entry 10 — `setup` refuses where a path's bytes are not jigc's own, its three cells one finding, listed now as refused; entry 11 — the install commit runs the user's hooks, one finding, its cell listed as refused; entry 12 — `setup` refuses a link at the root `.gitignore` on any `HEAD`, its cell a finding, listed as refused. **Every mark below that named one of them is gone.** What the entries said before the rulings:
 
 - **Entry 1, the first open point — a command that exits 0 writes a cache its doc names no write to.** Met by twenty cells: every `setup` that acts makes `.jigc/state/`, an empty directory. Under the reading in force each is *written outside its allowance*; under the other — such a directory is jigc's own and no loss — seventeen would hold. The record says what the product should do.
 - **Entry 3 — the install-footprint record.** Seen in each of the twelve late failures, at `.jigc/state/setup-install-footprint`, excused there by `C2`; the twelve are red on other grounds.
@@ -78,28 +80,5 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 
 | mark | cell |
 |---|---|
-| silence 1 | `setup-a-file-staged-elsewhere` |
-| silence 1 | `setup-a-file-staged-under-a-name-git-quotes` |
-| silence 1 | `setup-a-file-where-the-guides-directory-goes` |
-| silence 1 | `setup-a-hook-that-rejects` |
-| silence 1 | `setup-at-the-bootstrap-a-committed-file` |
-| silence 1 | `setup-at-the-guide-a-change-staged-and-not-in-the-tree` |
-| silence 1 | `setup-at-the-guide-a-committed-file` |
-| silence 1 | `setup-at-the-guide-a-directory` |
-| silence 1 | `setup-at-the-guide-a-link-to-a-file-in-the-repository` |
-| silence 1 | `setup-at-the-guide-a-link-to-a-file-outside-it` |
-| silence 1 | `setup-at-the-guide-a-link-to-nothing` |
-| silence 1 | `setup-at-the-guide-an-untracked-file` |
-| silence 1 | `setup-at-the-settings-record-a-committed-file` |
-| silence 1 | `setup-at-the-stamp-a-change-staged-and-not-in-the-tree` |
-| silence 1 | `setup-at-the-stamp-a-committed-file` |
-| silence 1 | `setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository` |
-| silence 1 | `setup-head-unborn-at-the-root-ignore-the-users-own-file` |
-| silence 1 | `setup-in-a-repository-jigc-was-never-set-up-in` |
-| silence 1 | `setup-the-users-own-hook` |
-| silence 1 | `setup-under-the-project-layer-an-untracked-file` |
-| silence 10 | `setup-at-the-bootstrap-a-committed-file` |
-| silence 10 | `setup-at-the-settings-record-a-committed-file` |
-| silence 10 | `setup-at-the-stamp-a-committed-file` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |

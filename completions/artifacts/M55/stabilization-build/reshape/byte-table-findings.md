@@ -4,9 +4,13 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, with the first commit of the doc family's task (`B6`), for the human's rulings of 2026-10-15 on the install family's questions: §1 gains the three corrections of a design doc the rulings name and nothing else carries — a doc-only finding each; in §6 one key retires, its cells holding, one is minted, and four say how the ruling that names them is carried. What moved is said under each key.*
+
 *Changed 2026-10-15, with the first commit of the install family's task (`B5`), for the human's rulings of 2026-10-14: §1 gains the inconsistency the ruling on `setup`'s refusals names; in §4 three keys lose the open question each was carried with — what *held* means is ruled, reading (b), and the cells stay *lost*; the record's entries 6 and 8 are ruled, and the cells they named are findings. No cell's classification moved.*
 
 ## 1. Where two design docs say two things — recorded here, and corrected by nobody in this lane
+
+*And, since the rulings of 2026-10-15, where a design doc is to say what a ruling decided and nothing in the product changes. A ruling whose doc correction comes with a product change is recorded under the cell's key, in §6.*
 
 ### `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`
 
@@ -43,6 +47,28 @@ and `design/storage.md` → *Edge index lifecycle*, the first row of its table o
 > **And because the ask is pre-write, the refusal installs nothing**
 
 **What disagrees.** The first doc declares a refusal that leaves the install written and staged; the second says a refusal installs nothing, and the ruling makes that the rule for every refusal. **What follows** is a change to the product — the rollback — and the first doc's sentence corrected with it. The cells that show it are the install family's late failures.
+
+### `r1-assistant-adapter-design-does-not-name-the-cache-directories-setup-lays-out`
+
+*Recorded 2026-10-18, for the human's ruling of 2026-10-15 on the rows' record's §6, entry 1, option A. For the stabilization run's ledger: doctype `inconsistency`, a doc that does not say what the product does and is ruled to.*
+
+**The doc** — `design/assistant-adapter.md` → *Generated, minimal, regenerated* names what `setup` lays down, and no directory under `.jigc/` beyond the project layer:
+
+> `jigc setup` also **initializes the in-repo project layer** (`.jigc/config/`) when absent
+
+**The product** makes an empty `.jigc/state/` on every install — seen in twenty cells of the install family. **The ruling**: the product is unchanged, and the doc says that `setup` also lays out the workbench's cache directories. Until it does, the row carries the ruling's sentence as `S16`, and the twenty cells are marked off.
+
+### `r1-write-commands-design-counts-unmanage-among-the-self-committing-ops-where-it-never-commits`
+
+*Recorded 2026-10-18, for the human's ruling of 2026-10-15 on the rows' record's §6, entry 9, option A — *"stick with what git does"*. For the stabilization run's ledger: doctype `inconsistency`, two design docs that disagree, the product on one side.*
+
+**One side** — `design/project-setup.md` → *Flow 2 hardening — full ingest/adopt/cleanup (M21)*:
+
+> un-manage touches only jigc's own index/state (asserted: the doc's bytes on disk are unchanged) and is idempotent (re-run on an already-unmanaged doc is a clean no-op, not an error)
+
+**The other side** — `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*, which counts `unmanage` among *"the other top-level direct-store ops"* beside a verb that is *"task-less and self-committing"*, and → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*, which says `migrate-corpus`, *"unlike them"*, has *"**never committed its own writes**"*.
+
+**The ruling**: `unmanage` never commits; the two sentences of `design/write-commands.md` are corrected. No product change — it committed nothing in any of its ten cells.
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
@@ -158,9 +184,13 @@ Seven cells of the family come out otherwise on the previous release, beside the
 
 ## 6. The install family's cells — 47 are red on this tree's binary, under seven keys
 
+*Read again on 2026-10-18, with the first commit of the task `B6`, for the human's rulings of 2026-10-15: one key retires — its thirteen cells hold under `S16` — and one is minted, so **34 of the family's cells are red** in the gate under seven keys, where 47 were; the counts below are the record of 2026-10-15, and each key says what moved.*
+
 *2026-10-15, this tree's debug build, macOS arm64; the third commit of the task `B5`. The family is `jigc setup`, `jigc uninstall`, `jigc ingest` and `jigc unmanage`: 113 cells beside the acceptance's six — 89 that the gate runs, in the arms of `bare`, `fresh` and `committed-singletons`, and 24 base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)). The suite's expected-red list names the 47 below, and is exact. **Every one of the 47 is red on the previous release too** (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked before the run; the arm on a named binary, 2026-10-15) — 40 in the same class, seven in another, said under each key — so none is a cell the fix pass made red. Nothing here is a grade.*
 
-### `r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names`
+### `r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names` — retired 2026-10-18
+
+*Retired by the human's ruling of 2026-10-15 on the rows' record's §6, entry 1: the product is unchanged, the row gains `S16`, and the thirteen cells red for this alone hold — the fourteenth, `setup-a-hook-that-rejects`, is red under `r1-setup-runs-no-hook-at-its-install-commit` by the ruling on entry 11. The doc's half is §1's `r1-assistant-adapter-design-does-not-name-the-cache-directories-setup-lays-out`. As it stood:*
 
 - *The cells.* Fourteen in the gate in which `setup` acts and nothing else is red: the never-adopted repository as typed; a file staged elsewhere, under a name git quotes, a hook that rejects, the user's own hook; the guide, whatever stands at it — a file, a committed one, three links, a directory, a file at its directory's place; a file under the project layer; and on an unborn `HEAD`, the user's own root `.gitignore`. Six more red cells show it beside their own class.
 - *What they came to.* **Written outside its allowance**: exit 0, the install landed, and `.jigc/state/` was made — an empty directory no line of the row covers.
@@ -173,6 +203,7 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - *What they came to.* **Git's state moved outside its allowance**: exit 0, the install commit replaces the user's file; history holds its bytes, so it is no loss.
 - *Held against.* The plan's rule that a planted entry is the user's; `S4`'s second sentence refuses such a file only *"while no commit holds its bytes"*. The record's §6, entry 10, has what the product should do — refuse, as its siblings do — and the other reading. Each cell carries entry 10's mark.
 - *The previous release.* Red in all three: two the same, one *written outside its allowance*.
+- *Ruled on 2026-10-15*, option A: **`setup` refuses without `--force` where the bytes at a path it replaces are not jigc's own**, committed or not, and the sentence of `design/project-setup.md` becomes *"while its bytes are not jigc's own"* — a product change and its doc's correction, one finding. The cells lose entry 10's mark and are listed as refused with `setup.dirty-install-path`; on this tree each stays *git's state moved outside its allowance*, now with *not the listed outcome* beside it.
 
 ### `r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head`
 
@@ -180,6 +211,7 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - *What it came to.* **Git's state moved outside its allowance**: exit 0; `setup` merged into the file the link leads to — *"note: `.gitignore` is a link, so `jigc setup` merged into the file it leads to … that is the file the install commit carries"* — and the install commit holds the link and that file, a file of the user's in no commit before.
 - *Held against.* `S9` and `S11`: the row declares the root `.gitignore` merged into, and no line the file a link there leads to. The record's §6, entry 12.
 - *The previous release.* Red, as *written outside its allowance*.
+- *Ruled on 2026-10-15*, option A: **`setup` refuses a link at the root `.gitignore` on any `HEAD`**, as on a born one, and `design/assistant-adapter.md` lists the root `.gitignore` beside `.jigc/.gitignore` as a member a link is never followed at — a product change and its doc's correction, one finding. The cell is listed as refused with `setup.secrets-gitignore`; on this tree it stays *git's state moved outside its allowance*, now with *not the listed outcome* beside it.
 
 ### `r1-setup-replaces-a-change-staged-at-a-path-it-writes-whole`
 
@@ -194,6 +226,14 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - *What they came to.* **Refused, and changed what a refusal may not**: exit 1, with `setup.dirty-install-path`, `setup.install-hook`, `setup.inject-reference`, `setup.init-project-layer` or `setup.secrets-gitignore` — *"the install files are written and staged, and no install commit was made"* — and the files of the install written, in most staged, and the install-footprint record under `.jigc/state/`.
 - *Held against.* **The human's ruling of 2026-10-14 on the record's §6, entry 2: every refusal of `setup` leaves the repository as it was**, caches aside — a failure after the first write rolls back. These are the late failures it decides, and the `S12` behaviour it overrules (§1 of this file, `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`). **No byte of the user's is lost** in any of the twelve: the plant stands in each.
 - *The previous release.* Red in all twelve: eleven the same, one *written outside its allowance*.
+- *Ruled on 2026-10-15, the record's §6, entry 3*, option A: **the install-footprint record is named in the doc and moves out of `.jigc/state/`, since it is not rebuildable; a refusal leaves none**, and it is part of this finding; the fixer settles how the old path is read. The table checks its path: `C2` no longer excuses `.jigc/state/setup-install-footprint` (`byte_cell::NO_CACHE`), so each of the twelve names it among what the refusal changed. The class is the one it was.
+
+### `r1-setup-runs-no-hook-at-its-install-commit`
+
+- *The cell.* `setup-a-hook-that-rejects` — a `pre-commit` hook of the user's that rejects every commit, put in the hook git resolves before `setup` runs in the never-adopted repository.
+- *What it came to.* **Not the listed outcome**: exit 0 — the install commit landed past the hook, which never ran — where the cell is listed as refused with `setup.install-commit`, the code the door gives a failed install commit. No byte is lost: the hook's lines stand, wrapped by jigc's block.
+- *Held against.* **The human's ruling of 2026-10-15 on the rows' record's §6, entry 11**, option A (*"we should not work around the users existing setup"*): `setup`'s install commit runs the user's hooks, jigc's own hook kept from triggering itself; a rejection is a late failure, rolled back as the ruling on entry 2 has it. The commit is made with `--no-verify` today, by a code comment's reasoning and no doc's. **What follows** is a change to the product and the sentence of `design/assistant-adapter.md` → *`jigc setup` has assistant-neutral install responsibilities too* that says the install commit runs the user's hooks.
+- *The previous release.* The same: *not the listed outcome* — its install commit runs no hook either.
 
 ### `r1-uninstall-leaves-its-teardown-in-the-working-tree-and-commits-nothing`
 

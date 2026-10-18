@@ -2,6 +2,51 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-18 — The human's seven rulings on the install family's questions, recorded: `setup` refuses over a path whose bytes are not jigc's own; it lays out the workbench's cache directories; it refuses a link at the root `.gitignore` on any `HEAD`; `unmanage` never commits; the install commit runs the user's hooks; the install-footprint record is no cache; and `B6` builds the plant in the place of a file that stands (the byte table, task `B6`, the first of its commits)
+
+**What.** The human ruled on the six questions the install family met ([the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, entries 1, 3 and 9 to 12; [the family's record](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family.md) → §3) on 2026-10-15, each option A, and on 2026-10-18 on the one thing the earlier families left unbuilt that every later family needs. This commit records the seven, as the orchestrating session handed them on, and brings the records, the frame and the suite to them: the rows' record (§1 `S16`, §6, §7), [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md), [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md), the marks the cells carry and four cells' listed outcome. **No cell's leads, argv or state changed**, and no product source.
+
+### The rulings
+
+1. **Entry 10 — option A.** `setup` refuses without `--force` where the bytes at a path it replaces are not jigc's own, committed or not; the sentence of `design/project-setup.md` → *Idempotency & irreversibility* that reads *"while no commit holds its bytes"* becomes *"while its bytes are not jigc's own"*. Its three cells are one finding — `r1-setup-replaces-a-file-the-user-committed-at-a-path-it-writes-whole`, which they had.
+2. **Entry 1 — option A.** The product is unchanged. In the words the row's new line quotes:
+
+   **`jigc setup` also lays out the workbench's cache directories**
+
+   — and `design/assistant-adapter.md` → *Generated, minimal, regenerated* is to say so. The twenty cells the entry marked are marked off.
+3. **Entry 12 — option A.** `setup` refuses a link at the root `.gitignore` on any `HEAD`, as it does on a born one; the doc lists the root `.gitignore` beside `.jigc/.gitignore` as a member a link is never followed at. Its one cell is a finding — `r1-setup-commits-the-file-a-root-ignore-link-leads-to-and-the-link-on-an-unborn-head`, which it had.
+4. **Entry 9 — option A.** `unmanage` never commits; the two sentences of `design/write-commands.md` that count it among the self-committing direct-store ops are corrected. A doc-only inconsistency. The human: *"stick with what git does"*.
+5. **Entry 11 — option A.** `setup`'s install commit runs the user's hooks, and jigc's own hook is kept from triggering itself; a rejection is a late failure, rolled back as the ruling of 2026-10-14 on entry 2 has it. One finding. The human: *"we should not work around the users existing setup"*. The record's entry 11 said the opposite — *"as it does"* — and is corrected.
+6. **Entry 3 — option A.** The install-footprint record is named in the doc and moves out of `.jigc/state/`, since it is not rebuildable; a refusal leaves none; **the table checks its path**; it is part of the setup-rollback finding (`r1-setup-refuses-after-its-first-write-and-leaves-the-install-written`); the fixer settles how the old path is read.
+7. **The plant the pilot and `B5` left unbuilt — option A** (2026-10-18). **A link or a directory in the place of a file that stands** is built by `B6`, in its own commit before the doc rows, and the needs that wait for it in the earlier families — the task family's fourteen, the install family's eight — are filled by `B6` too. Why: every later family needs it, and the doc family is the first where it carries weight. Built by the next commit.
+
+**Where a ruling's doc correction is made.** Not in this lane, as `228f2eda` did not make its own: `S12`'s sentence was recorded as an inconsistency, *"corrected with the product's fix"*, and where a doc was silent the ruling itself became the line's sentence (`U9` quotes `DECISIONS.md`). So the five corrections the rulings name — the sentences of entries 1, 3, 9, 10 and 12, and entry 11's — are findings of the run's ledger, each under its key in the findings file, and the one line a ruling adds, `S16`, quotes this entry.
+
+### What the table carries, a ruling each
+
+- **Entry 1** — `S16` (the record's §1), a line of `setup`'s row over `.jigc/state/` and `.jigc/index/`, the two directories `design/storage.md` declares the workbench's caches, and a word for it, **`May::LaidOut`**: a directory made, and no file in it. A milestone's `{base,tasks}.json` stand under a milestone's own area, which no `setup` makes, so the line names no third place.
+- **Entry 3** — **`byte_cell::NO_CACHE`**: a file at `.jigc/state/setup-install-footprint`, the path the record was seen under, is covered by no line that lets a cache be rebuilt — on a refusal `C2` no longer excuses it.
+- **Entries 10, 11 and 12** — the cells' listed outcome follows the ruling, which is the row's sentence until the doc says it: the three committed files at a path the install replaces are listed as refused `setup.dirty-install-path` (the refusal the same guard gives an uncommitted file there); the link at the root `.gitignore` on an unborn `HEAD` as `setup.secrets-gitignore` (its two sibling links' refusal there); and the hook that rejects the install commit as `setup.install-commit` (the code the door gives a failed install commit). What a cell is listed as is the row's doc's to say and never what the command did; a cell's leads, argv and state, which a ruling never changes, did not.
+- **Entries 9 and 11's doc halves, and entry 1's** — findings of their own, doc-only, in the findings file's §1.
+
+### What the frame gained, red first
+
+[`the_footprint_record_is_no_cache_and_a_directory_laid_out_holds_no_file`](crates/cli/tests/byte_table.rs): against the frame with `NO_CACHE` declared and not read, a refusal that left the record under `C2` came out *refuses, nothing changed* where it must be *refused, and changed what a refusal may not*; against `LaidOut` declared and covering nothing, an empty `.jigc/state/` made under the line came out *written outside its allowance* where it must hold. Built, both are as the arm says, and a file in the laid-out directory or a directory beside it is *written outside its allowance*.
+
+### What moved
+
+Read on this tree's binary in the commit's gate, and on the previous release's (`1.0.0-rc.24`, built from `91834b5e`, sha256 `accf3996…ab5d` — the earlier families' binary, rebuilt from that commit for this run since its scratch copy was gone, and the same hash) by the arm on a named binary:
+
+- **On this tree.** Thirteen cells that were *written outside its allowance* for the empty `.jigc/state/` alone **hold**, and their key, `r1-setup-makes-a-cache-directory-no-sentence-of-its-doc-names`, retires. The fourteenth, `setup-a-hook-that-rejects`, is *not the listed outcome* under a new key, `r1-setup-runs-no-hook-at-its-install-commit`. The three committed files at a path the install replaces and the root `.gitignore`'s link stay *git's state moved outside its allowance*, with *not the listed outcome* beside it now. The twelve late failures stay *refused, and changed what a refusal may not*, each naming the footprint record among what it changed. **34 of the family's cells are red in the gate, under seven keys**, where 47 were; the table's, 39 under twelve. The record's entry 1 projected *seventeen* of its twenty to hold: it read entry 10's three under the reading the ruling on entry 10 did not take.
+- **On the previous release** (the arm, 118 s at a load of about 2, no gate beside it): twelve of the thirteen hold there too — `setup-at-the-guide-a-link-to-nothing` stays *git's state moved*, since that release writes through the link; the hook cell is *not the listed outcome* there too; and the seven cells at the settings record, which that release does not refuse, read *not the listed outcome* where the directory had them *written outside its allowance*. No other cell of the 174 moved on either binary.
+- **Marks.** Twenty-three marks leave twenty cells; two cells carry one each, bound 1 and bound 2. The readings' table has two lines.
+- **Lines.** `setup`'s row has eighteen, the table's 77; `S16, the file-state hashes` excuses the directory in the thirteen cells and in every other `setup` that acts in `bare`, and `S16, the edge index` stands on the list of lines that excuse nothing — no `setup` of the table lays that directory out.
+
+### Not established
+
+- **What the fixed product's refusals say.** The four listed refusals are the codes the doors give today for the nearest state; the fix may say another, and the cell's listing then follows the run that shows it.
+- **That the footprint record has no other path today.** It was seen at one; the frame checks that one.
+
 ## 2026-10-15 — The install family's numbers are on record: 113 cells, 47 red on this tree under seven keys and every one red on the previous release; a cell of the family in one to two seconds outside a gate and under three inside one; the family adds about 24 s to a gate, as the pilot's projection had it; the whole table under the ruling projected at about 680 gate cells and five minutes of the gate's one-at-a-time chain (the byte table, task `B5`, the last of its commits)
 
 **What.** The family's record — [byte-table-install-family.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family.md) — and beside it the arm on a named binary as it printed every cell of the table, [byte-table-install-family-cells.tsv](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family-cells.tsv). No cell, row, frame or product source changes. **Nothing of `B6` to `B10` is built.**

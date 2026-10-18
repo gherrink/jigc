@@ -260,6 +260,10 @@ pub enum May {
     /// and what a command that acts may do in a directory it writes into, where no
     /// sentence of its doc lets a file of that directory go.
     Rebuilt,
+    /// **A directory made, and nothing in it** — what a command lays out for a later writer
+    /// and writes no file into: the workbench's cache directories `setup` lays out, by the
+    /// human's ruling of 2026-10-15 on the record's §6, entry 1.
+    LaidOut,
     /// Made or replaced by a regular file that is, byte for byte, a doc staged in a work
     /// unit.
     CopyOfAStagedDoc,
@@ -267,6 +271,15 @@ pub enum May {
     /// repository.
     MovedAsideTo(&'static str),
 }
+
+/// **What no line that lets a cache be rebuilt covers**, by its path from the repository's
+/// root: the install-footprint record of a failed `jigc setup`, at the path a run showed it
+/// under (`…/reshape/byte-table-acceptance-rows.md` → §6, entry 3). The human's ruling of
+/// 2026-10-15 on that entry: the record **is not rebuildable**, so it is no cache — it is
+/// to move out of `.jigc/state/`, a refusal leaves none, and **the table checks its path**.
+/// A file here is covered by no [`May::Rebuilt`] line, at exit 0 or on a refusal; where
+/// the record moves to, no line of a cache's covers it either.
+pub const NO_CACHE: &[&str] = &[".jigc/state/setup-install-footprint"];
 
 /// What a commit the command makes may hold, beside what the row's lines of the file
 /// layer wrote.
@@ -746,6 +759,11 @@ impl<'a> Tally<'a> {
                 if !self.placed(place, diff.path) {
                     return false;
                 }
+                if matches!(may, May::Rebuilt)
+                    && in_repo(diff.path).is_some_and(|rel| NO_CACHE.contains(&rel))
+                {
+                    return false;
+                }
                 match (may, diff.before, diff.after) {
                     (May::WriteWhole, _, Some(Entry::File { .. })) => true,
                     (May::WriteWhole, _, _) => matches!(place, Where::Under(_)),
@@ -760,7 +778,7 @@ impl<'a> Tally<'a> {
                     },
                     (May::Removed, Some(_), None) => true,
                     (May::Rebuilt, _, Some(Entry::File { .. })) => true,
-                    (May::Rebuilt, None, Some(Entry::Dir(_))) => true,
+                    (May::Rebuilt | May::LaidOut, None, Some(Entry::Dir(_))) => true,
                     (May::CopyOfAStagedDoc, _, Some(is)) => {
                         is.blob().is_some_and(|blob| self.staged.contains(blob))
                     }
@@ -793,7 +811,7 @@ impl<'a> Tally<'a> {
                 match (may, entry) {
                     (May::Removed | May::MovedAsideTo(_), None) => true,
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
-                    (_, None) => false,
+                    (_, None) | (May::LaidOut, _) => false,
                     // A regular file, and no link: mode `100644` or `100755`.
                     (May::CopyOfAStagedDoc, Some((mode, blob))) => {
                         mode & 0o170_000 == 0o100_000 && self.staged.contains(blob.as_str())
