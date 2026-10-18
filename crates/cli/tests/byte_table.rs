@@ -2865,13 +2865,16 @@ fn bytes_that_stand_elsewhere_are_not_lost() {
     );
 
     // A planted, committed file, and a commit that puts other bytes in its place.
-    const LANDS: Row = row(&[
-        line(
-            "L1",
-            Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
-        ),
-        line("L2", Allows::Commit(Holding::TheIndex)),
-    ]);
+    const LANDS: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "L1",
+                Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
+            ),
+            line("L2", Allows::Commit(Holding::TheIndex)),
+        ])
+    };
     let before = then(&sandbox(), |m| {
         put(m, "repo/docs.md", MARKER);
         commit(m, "c1", &[("docs.md", Some((0o100_644, MARKER)))]);
@@ -2900,6 +2903,7 @@ fn bytes_that_stand_elsewhere_are_not_lost() {
     comes_out(
         &Cell {
             planted: &[("repo/docs.md", MARKER)],
+            argv: &["probe", "t1"],
             ..Cell::of(LANDS, &before, &landed)
         },
         Classification::GitMoved,
@@ -3311,7 +3315,10 @@ fn a_commit_holds_what_its_line_declares() {
             "K1",
             Allows::Files(Where::Path(".jigc/version"), May::WriteWhole),
         ),
-        line("K2", Allows::Commit(Holding::TheWorktrees)),
+        line(
+            "K2",
+            Allows::Commit(Holding::TheWorktrees(".jigc/worktrees/*")),
+        ),
     ]);
     let before = then(
         &with_a_worktree("repo/.jigc/worktrees/sub-1", "sub-1"),
@@ -3586,17 +3593,27 @@ fn an_object_that_is_gone_is_seen() {
 /// with the working area.
 #[test]
 fn a_staged_doc_is_accounted_for() {
-    const FINALIZES: Row = row(&[
-        line(
-            "F1",
-            Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
-        ),
-        line("F2", Allows::Commit(Holding::TheIndex)),
-        line(
-            "F3",
-            Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
-        ),
-    ]);
+    const FINALIZES: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "F1",
+                Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
+            ),
+            line("F2", Allows::Commit(Holding::TheIndex)),
+            line(
+                "F3",
+                Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+            ),
+        ])
+    };
+    // The command finalizes `t1`: the unit whose staged docs `F1` lets land.
+    fn finalizing<'a>(before: &'a Manifest, after: &'a Manifest) -> Cell<'a> {
+        Cell {
+            argv: &["probe", "t1"],
+            ..Cell::of(FINALIZES, before, after)
+        }
+    }
     const PROSE: &str = "# Use tabs\n\nthe prose somebody handed to jigc\n";
     let before = then(&sandbox(), |m| {
         for path in [
@@ -3619,23 +3636,14 @@ fn a_staged_doc_is_accounted_for() {
         put(m, "repo/docs/use-tabs.md", PROSE);
         commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
     });
-    comes_out(
-        &Cell::of(FINALIZES, &before, &landed),
-        Classification::Holds,
-    );
+    comes_out(&finalizing(&before, &landed), Classification::Holds);
     let nowhere = then(&before, area_gone);
-    comes_out(
-        &Cell::of(FINALIZES, &before, &nowhere),
-        Classification::Lost,
-    );
+    comes_out(&finalizing(&before, &nowhere), Classification::Lost);
     let elsewhere = then(&before, |m| {
         area_gone(m);
         put(m, "repo/docs/nowhere.md", PROSE);
     });
-    comes_out(
-        &Cell::of(FINALIZES, &before, &elsewhere),
-        Classification::GitMoved,
-    );
+    comes_out(&finalizing(&before, &elsewhere), Classification::GitMoved);
     // The row's own case: a link at the doc's home, the prose written through it.
     let through_a_link = then(&before, |m| {
         area_gone(m);
@@ -3650,7 +3658,7 @@ fn a_staged_doc_is_accounted_for() {
             &[("docs/use-tabs.md", Some((0o120_000, "nowhere.md")))],
         );
     });
-    let (got, why) = Cell::of(FINALIZES, &before, &through_a_link).came_to();
+    let (got, why) = finalizing(&before, &through_a_link).came_to();
     assert_eq!(got, Classification::GitMoved, "{why:#?}");
     assert!(
         why.iter()
@@ -3658,10 +3666,7 @@ fn a_staged_doc_is_accounted_for() {
         "{why:#?}"
     );
     // The area still there: nothing is asked of the doc yet.
-    comes_out(
-        &Cell::of(FINALIZES, &before, &before),
-        Classification::Holds,
-    );
+    comes_out(&finalizing(&before, &before), Classification::Holds);
     // The unit's commit doc is rendered into the commit's message and promoted nowhere:
     // its file goes with the working area, and nothing asks where its bytes stand. A doc
     // whose name only begins like it is prose like any other.
@@ -3678,7 +3683,7 @@ fn a_staged_doc_is_accounted_for() {
         commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
     });
     comes_out(
-        &Cell::of(FINALIZES, &with_its_commit_doc, &landed),
+        &finalizing(&with_its_commit_doc, &landed),
         Classification::Holds,
     );
     let with_a_lookalike = then(&before, |m| {
@@ -3694,7 +3699,7 @@ fn a_staged_doc_is_accounted_for() {
         commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
     });
     comes_out(
-        &Cell::of(FINALIZES, &with_a_lookalike, &landed),
+        &finalizing(&with_a_lookalike, &landed),
         Classification::Lost,
     );
 
@@ -3753,17 +3758,14 @@ fn a_staged_doc_is_accounted_for() {
         commit(m, "c1", &[("docs/use-tabs.md", Some((0o100_644, PROSE)))]);
     };
     comes_out(
-        &Cell::of(FINALIZES, &two_tasks, &then(&two_tasks, t1_landed)),
+        &finalizing(&two_tasks, &then(&two_tasks, t1_landed)),
         Classification::Holds,
     );
     let and_t2s_doc = then(&two_tasks, |m| {
         t1_landed(m);
         m.files.remove("repo/.jigc/tasks/t2/docs/use-colours.md");
     });
-    comes_out(
-        &Cell::of(FINALIZES, &two_tasks, &and_t2s_doc),
-        Classification::Lost,
-    );
+    comes_out(&finalizing(&two_tasks, &and_t2s_doc), Classification::Lost);
     // Under the line a re-slug is let go by: a doc gone with nothing gained in its unit, a
     // doc gone where its unit gained another doc's prose, and a doc gone where another
     // unit gained its prose under the new name are each a staged doc lost.
@@ -3918,6 +3920,214 @@ fn a_line_reaches_its_own_units_area_and_no_siblings() {
         class == Classification::WrittenOutside && why.iter().any(|why| why.contains("t9")),
         "a task its record does not name: {class}, {why:#?}"
     );
+
+    // **The three sets a line is read through, beside its place** (the review of the task
+    // `B7`'s first part, its second finding): the docs staged in the unit, whose copies a
+    // line lets land; every unit's staged docs, which the loss loop holds to a commit; and
+    // the checkouts whose staged code a fan-out's commit may hold.
+    const PROMOTES: Row = Row {
+        leaf: &["task", "finalize"],
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "O3",
+                Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
+            ),
+            line("O4", Allows::Commit(Holding::OnlyTheLines)),
+            line(
+                "O5",
+                Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Removed),
+            ),
+        ])
+    };
+    let finalize_t1: &[&str] = &["task", "finalize", "t1"];
+    let in_docs = |before: &Manifest| then(before, |m| dir(m, "repo/docs"));
+    let promoted = |before: &Manifest, docs: &[(&str, &str)]| {
+        then(before, |m| {
+            m.files
+                .retain(|path, _| !path.starts_with("repo/.jigc/tasks/t1"));
+            let mut changed = Vec::new();
+            for (name, bytes) in docs {
+                put(m, &format!("repo/docs/{name}.md"), bytes);
+                changed.push((format!("docs/{name}.md"), *bytes));
+            }
+            let changed: Vec<(&str, Option<(u32, &str)>)> = changed
+                .iter()
+                .map(|(path, bytes)| (path.as_str(), Some((0o100_644, *bytes))))
+                .collect();
+            if !changed.is_empty() {
+                commit(m, "c1", &changed);
+            }
+        })
+    };
+    const TABS: &str = "# use-tabs\n\nthe prose task t1 handed to jigc\n";
+    const COLOURS: &str = "# use-colours\n\nthe prose task t2 handed to jigc\n";
+    let siblings = in_docs(&two);
+    let came = |before: &Manifest, after: &Manifest, row: Row, argv: &[&str]| {
+        Cell {
+            base: Some(&base),
+            argv,
+            ..Cell::of(row, before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(
+        &siblings,
+        &promoted(&siblings, &[("use-tabs", TABS)]),
+        PROMOTES,
+        finalize_t1,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "its own doc promoted: {why:#?}"
+    );
+    // A sibling's staged doc promoted with it is no copy of a doc of the unit's.
+    let (class, why) = came(
+        &siblings,
+        &promoted(&siblings, &[("use-tabs", TABS), ("use-colours", COLOURS)]),
+        PROMOTES,
+        finalize_t1,
+    );
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains("use-colours.md")),
+        "a sibling's staged doc promoted is no line's: {class}, {why:#?}"
+    );
+
+    // A joined milestone stands in the repository: its merged set is no reason to leave a
+    // task's own staged docs unread. t1's doc dropped is *lost*, and promoted it holds.
+    let beside_a_joined_milestone = then(&siblings, |m| {
+        for path in [
+            "repo/.jigc/milestones",
+            "repo/.jigc/milestones/m",
+            "repo/.jigc/milestones/m/merged",
+            "repo/.jigc/milestones/m/merged/docs",
+        ] {
+            dir(m, path);
+        }
+        put(
+            m,
+            "repo/.jigc/milestones/m/merged/docs/joined.md",
+            "# joined\n\nthe prose a joined milestone holds\n",
+        );
+    });
+    let (class, why) = came(
+        &beside_a_joined_milestone,
+        &promoted(&beside_a_joined_milestone, &[]),
+        PROMOTES,
+        finalize_t1,
+    );
+    assert!(
+        class == Classification::Lost && why.iter().any(|why| why.contains("use-tabs.md")),
+        "its own doc dropped beside a joined milestone: {class}, {why:#?}"
+    );
+    let (class, why) = came(
+        &beside_a_joined_milestone,
+        &promoted(&beside_a_joined_milestone, &[("use-tabs", TABS)]),
+        PROMOTES,
+        finalize_t1,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "its own doc promoted beside a joined milestone: {why:#?}"
+    );
+
+    // A milestone's boundary lands its own merged set, and no other milestone's.
+    const LANDS: Row = Row {
+        leaf: &["milestone", "finalize"],
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "O6",
+                Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
+            ),
+            line("O7", Allows::Commit(Holding::OnlyTheLines)),
+        ])
+    };
+    let two_milestones = then(&in_docs(&base), |m| {
+        dir(m, "repo/.jigc/milestones");
+        for id in ["m", "m2"] {
+            for path in ["", "/merged", "/merged/docs"] {
+                dir(m, &format!("repo/.jigc/milestones/{id}{path}"));
+            }
+            put(
+                m,
+                &format!("repo/.jigc/milestones/{id}/merged/docs/joined-{id}.md"),
+                &format!("# joined-{id}\n\nthe prose milestone {id} joined\n"),
+            );
+        }
+    });
+    let landed = |id: &str| {
+        then(&two_milestones, |m| {
+            let bytes = format!("# joined-{id}\n\nthe prose milestone {id} joined\n");
+            let path = format!("docs/joined-{id}.md");
+            put(m, &format!("repo/{path}"), &bytes);
+            commit(
+                m,
+                "c1",
+                &[(path.as_str(), Some((0o100_644, bytes.as_str())))],
+            );
+        })
+    };
+    let finalize_m: &[&str] = &["milestone", "finalize", "m"];
+    let (class, why) = came(&two_milestones, &landed("m"), LANDS, finalize_m);
+    assert_eq!(class, Classification::Holds, "its own merged doc: {why:#?}");
+    let (class, why) = came(&two_milestones, &landed("m2"), LANDS, finalize_m);
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains("joined-m2.md")),
+        "another milestone's merged doc landed is no line's: {class}, {why:#?}"
+    );
+
+    // A fan-out's commit holds what its own sub-tasks' worktrees staged — a checkout at
+    // `.jigc/worktrees/<sub-task>` — and not what another checkout did: a task's worktree
+    // its record does not name, or the user's own.
+    const FOLDS: Row = Row {
+        leaf: &["milestone", "finalize"],
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[line(
+            "O8",
+            Allows::Commit(Holding::TheWorktrees(".jigc/worktrees/<sub-task>")),
+        )])
+    };
+    let worktrees = then(&a_milestone, |m| {
+        for (at, file) in [
+            ("repo/.jigc/worktrees/s1", "s1.txt"),
+            ("repo/.jigc/worktrees/t9", "t9.txt"),
+            ("outside/own", "own.txt"),
+        ] {
+            let bytes = format!("the work staged at {at}\n");
+            m.checkouts.insert(
+                at.to_string(),
+                Checkout {
+                    head: "c0".to_string(),
+                    branch: None,
+                    index: [(file.to_string(), staged(&bytes))].into(),
+                },
+            );
+            m.held.insert(blob_of(&bytes));
+        }
+    });
+    for (at, file, expected) in [
+        ("repo/.jigc/worktrees/s1", "s1.txt", Classification::Holds),
+        (
+            "repo/.jigc/worktrees/t9",
+            "t9.txt",
+            Classification::GitMoved,
+        ),
+        ("outside/own", "own.txt", Classification::GitMoved),
+    ] {
+        let bytes = format!("the work staged at {at}\n");
+        let folded = then(&worktrees, |m| {
+            put(m, &format!("repo/{file}"), &bytes);
+            commit(m, "c1", &[(file, Some((0o100_644, bytes.as_str())))]);
+        });
+        let (class, why) = came(&worktrees, &folded, FOLDS, argv);
+        assert_eq!(
+            class, expected,
+            "what the checkout at `{at}` staged: {why:#?}"
+        );
+    }
 }
 
 /// **Every way a row's spellings do not stand on its lines**: a line in force under a

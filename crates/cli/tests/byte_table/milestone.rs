@@ -32,6 +32,10 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
     }
 }
 
+/// **Where a sub-task's code is staged** — the place `M3`'s and `M4`'s commits take staged
+/// code from, and no other checkout's: each quotes the sentence that names it.
+const SUB_TASK_WORKTREES: &str = ".jigc/worktrees/<sub-task>";
+
 /// **`jigc milestone finalize`** — the record's §4. The record names no consent.
 pub const FINALIZE: Row = Row {
     leaf: &["milestone", "finalize"],
@@ -71,7 +75,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M3",
-            Allows::Commit(Holding::TheWorktrees),
+            Allows::Commit(Holding::TheWorktrees(SUB_TASK_WORKTREES)),
             &[
                 Quote {
                     doc: "design/finalize.md",
@@ -83,6 +87,11 @@ pub const FINALIZE: Row = Row {
                     heading: "`fan-out` finalize",
                     words: "The main checkout is never mutated until that clean fast-forward, so a blocked combine or a hook rejection lands nothing and leaves unrelated main-checkout WIP intact (WIP-safe).",
                 },
+                Quote {
+                    doc: "design/finalize.md",
+                    heading: "`fan-out` finalize",
+                    words: "a sub-agent's **code** lives in its own git worktree (`.jigc/worktrees/<sub-id>`, `git add`ed there)",
+                },
             ],
         ),
         // `M4`: under `finalize.fan-out.squash: false` the boundary commits a sub-task's
@@ -92,7 +101,7 @@ pub const FINALIZE: Row = Row {
             spelling: Some("squash: false"),
             ..line(
                 "M4",
-                Allows::Commit(Holding::TheWorktrees),
+                Allows::Commit(Holding::TheWorktrees(SUB_TASK_WORKTREES)),
                 &[
                     Quote {
                         doc: "design/finalize.md",
@@ -103,6 +112,11 @@ pub const FINALIZE: Row = Row {
                         doc: "design/finalize.md",
                         heading: "`fan-out` finalize",
                         words: "Each per-sub-task commit applies **that one worktree's** staged code onto the checkout and `git commit -F`s the sub-task's own authored `commit` doc",
+                    },
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "`fan-out` finalize",
+                        words: "a sub-agent's **code** lives in its own git worktree (`.jigc/worktrees/<sub-id>`, `git add`ed there)",
                     },
                 ],
             )

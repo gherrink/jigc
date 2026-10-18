@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, by the first of the fixes after the review of the milestone family's task (`B7`), part A (its second finding): three sets a line is read through beside its place were blind to the unit the command acts on, and are not now. §7's *a copy of a staged doc* is a doc staged **in the unit** — its own task area, its sub-tasks' areas, its own merged set — so a sibling's doc promoted, or another milestone's merged doc, is no copy `T1` or `M2` lets land; `M3`'s and `M4`'s commit holds what the checkouts at `.jigc/worktrees/<sub-task>` staged, and no other checkout's, on a third sentence `M3` quotes; and `T8`'s rule reads every unit's staged docs and every merged set together, where a joined milestone in the repository had left a task's own docs unread. No sentence of a line moved.*
+
 *Changed 2026-10-18, with the third commit of the milestone family's task (`B7`), which builds the spelling switch: §3's doc-only arm is the line `T9`, which takes `T2`, `T3` and `T4` out of force — `T2` too, read whole, where the paragraph had said `T3` and `T4` — and `M4` takes `M3` out of force, with a second sentence; §6 gains entries 16 and 17; §7 the word a spelling is carried by.*
 
 *Changed 2026-10-18, with the second commit of the milestone family's task (`B7`): §7 gains a place one component of which is the work unit the command acts on, or a sub-task of it, and §3b's *What a line cannot say* is said; `W1`, `W4`, `T6`, `A1`, `M1` and `M6` are carried by it as data. No sentence of a line moved.*
@@ -614,6 +616,12 @@ Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-read
 
 — `design/finalize.md` → *`fan-out` finalize*
 
+The worktrees are the sub-tasks' own, at the place this sentence names — `.jigc/worktrees/<sub-task>`, a sub-task the milestone's record names — and no other checkout's: a task's the record does not name, or a user's own linked worktree, is none of them. `M4` quotes it too. (Added 2026-10-18, after the review of `B7`'s part A: the commit line had held what *every* other checkout staged.)
+
+> a sub-agent's **code** lives in its own git worktree (`.jigc/worktrees/<sub-id>`, `git add`ed there)
+
+— `design/finalize.md` → *`fan-out` finalize*
+
 **M4 — a second spelling: under `finalize.fan-out.squash: false`, one commit a sub-task that staged code, then the aggregate.** A cascade knob, so a spelling a cell names; no cell of the acceptance sets it. **Ruled 2026-10-18**, option A: the spelling switch `B7` builds names it, with cells (§3, the doc-only arm, the same ruling). **Built 2026-10-18**, by that task's third commit: the spelling `squash: false`, which takes `M3` out of force and puts `M4` in its place — a commit line holding what the sub-tasks' worktrees staged and what the row's other lines wrote, as `M3`'s does, now over the commits of a chain. *What it cannot say*: that the chain is in task-id order, and that each sub-task's commit holds its own worktree's code and no other's — a line holds what the commits the command made hold together. The second sentence is added with it.
 
 > **`squash: false` — one commit per code-carrying sub-task in task-id order, then the parent's aggregate commit.**
@@ -1009,12 +1017,12 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **re-slugged** — gone from its name and standing under another in the same unit, whose base pin stands: a doc it did not hold, with the gone doc's lines but its `# ` title line; the one word under which a staged doc gone from a unit that stands is not *lost* (added 2026-10-18, after the doc family's review: `W4` was *removed*, which let any staged doc of any task go while its pin stood) | W4 |
 | **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table; W1, W2 |
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
-| **a copy of a staged doc**, as a regular file | T1; M2 |
+| **a copy of a staged doc of the unit** — staged in its own task area, a sub-task's area, or its own merged set (narrowed 2026-10-18, after the review of `B7`'s part A: it had been a doc staged in *any* unit, so a sibling's doc promoted was let land) — as a regular file | T1; M2 |
 | **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6; T9 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
-| **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** | M3; M4 |
+| **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** — the checkouts at a place the line names, `.jigc/worktrees/<sub-task>`, and no other (narrowed 2026-10-18, after the review of `B7`'s part A: it had been every checkout but the main one, a user's own included) | M3; M4 |
 | **a commit** holding **all of what the row's other lines changed at a tracked path, and nothing else — no edit of the user's that no commit held** (added 2026-10-15, for the ruling on §6, entry 5) | U9 |
 | **the index staged** at the places the row's other lines wrote | T3 (and S11, M3, through their commits) |
 | **a worktree's registration removed**, at a path under a named directory | U6; M7 |

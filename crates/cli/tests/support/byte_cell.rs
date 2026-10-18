@@ -341,8 +341,13 @@ pub enum Holding {
     OnlyTheLines,
     /// The main checkout's index, whole, as it stood.
     TheIndex,
-    /// What every other checkout of the sandbox had staged.
-    TheWorktrees,
+    /// **What the checkouts at this place had staged** — a path from the repository's root
+    /// whose components [`OWN`] and [`ITS_SUB_TASKS`] may stand for the acting unit and its
+    /// sub-tasks: a fan-out's *"sub-agent's **code** lives in its own git worktree
+    /// (`.jigc/worktrees/<sub-id>`, `git add`ed there)"* (`design/finalize.md` →
+    /// *`fan-out` finalize*). Another checkout's staged bytes — a task's its unit's record
+    /// does not name, the user's own linked worktree — are none of it.
+    TheWorktrees(&'static str),
     /// **Only what the row's lines changed, and every change of theirs to a tracked path**
     /// — a path the main checkout's index held before the command: such a change lands in
     /// a commit the command made, and one the working tree keeps with no commit carrying
@@ -881,7 +886,8 @@ struct Tally<'a> {
     acting: Acting,
     acted: bool,
     seen: &'a Seen<'a>,
-    /// The ids of the docs staged in a work unit before the command.
+    /// The ids of the docs staged in the unit the command acts on, before the command
+    /// ([`staged_in_the_unit`]).
     staged: BTreeSet<&'a str>,
     excused: Vec<usize>,
     lost: Vec<String>,
@@ -1149,15 +1155,16 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     }
 
     let (before, after) = (seen.before, seen.after);
+    let acting = Acting::of(row, seen.argv, before);
     let mut tally = Tally {
         row,
-        acting: Acting::of(row, seen.argv, before),
-        acted,
-        seen,
-        staged: staged_docs(before)
+        staged: staged_in_the_unit(before, &acting)
             .into_iter()
             .map(|(_, blob)| blob)
             .collect(),
+        acting,
+        acted,
+        seen,
         excused: vec![0; row.lines.len()],
         lost: Vec::new(),
         git: Vec::new(),
@@ -1430,10 +1437,14 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             };
             let as_it_stood = match holding {
                 Some(Holding::TheIndex) => main.0.is_some_and(staged),
-                Some(Holding::TheWorktrees) => before
-                    .checkouts
-                    .iter()
-                    .any(|(at, checkout)| at != REPO && entry.is_some() && staged(checkout)),
+                Some(Holding::TheWorktrees(place)) => {
+                    before.checkouts.iter().any(|(at, checkout)| {
+                        at != REPO
+                            && in_repo(at).is_some_and(|rel| is_at_for(place, rel, &tally.acting))
+                            && entry.is_some()
+                            && staged(checkout)
+                    })
+                }
                 _ => false,
             };
             if let Some(at) = tally.written_by_a_line(path, entry) {
@@ -1655,13 +1666,15 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     Ok(verdict(classification, why, red.collect(), Some(&tally)))
 }
 
-/// **The docs staged in a work unit**, each with its id: the regular `.md` files under a
-/// task's `docs/` — `.jigc/tasks/<id>/docs/`, which is where the design docs say staged
+/// **The docs staged in every work unit**, each with its id: the regular `.md` files under
+/// a task's `docs/` — `.jigc/tasks/<id>/docs/`, which is where the design docs say staged
 /// prose stands (`design/project-setup.md` → *Flow 2 hardening*: *an open task under
-/// `.jigc/tasks/` holding a staged `docs/*.md`*) — or, where a milestone's join has built
-/// its merged set, the files of that set (`.jigc/milestones/<id>/merged/docs/`), which is
-/// what the boundary lands. **A stated bound:** at a milestone's boundary a sub-task's own
-/// staged copy is held through the merged set and not by itself.
+/// `.jigc/tasks/` holding a staged `docs/*.md`*) — **and** the files of every merged set a
+/// milestone's join has built (`.jigc/milestones/<id>/merged/docs/`), which is what a
+/// boundary lands. Both, always: a joined milestone in the repository is no reason to
+/// leave a task's own staged docs unread, and a sub-task's staged copy is held by itself
+/// as well as through the merged set. What the loss loop holds to a commit; which of them
+/// a line lets land is the acting unit's to say ([`Tally::staged`]).
 ///
 /// **The unit's commit doc is none of them.** It is staged beside the others, as
 /// `commit:<id>.md` (`design/write-commands.md`: *`jigc start` itself stages
@@ -1687,12 +1700,37 @@ fn staged_docs(manifest: &Manifest) -> Vec<(&str, &str)> {
             .filter_map(|(path, entry)| Some((path.as_str(), entry.blob()?)))
             .collect()
     };
-    let merged = docs(".jigc/milestones/*/merged/docs");
-    if merged.is_empty() {
-        docs(".jigc/tasks/*/docs")
-    } else {
-        merged
-    }
+    let mut all = docs(STAGED_IN_A_TASK);
+    all.extend(docs(MERGED_IN_A_MILESTONE));
+    all
+}
+
+/// Where a task's staged docs stand, a component for its id.
+const STAGED_IN_A_TASK: &str = ".jigc/tasks/*/docs";
+
+/// Where a milestone's join builds its merged set, a component for its id.
+const MERGED_IN_A_MILESTONE: &str = ".jigc/milestones/*/merged/docs";
+
+/// **The docs staged in the unit the command acts on** ([`staged_docs`], read through
+/// [`Acting`]): its own task area's — `.jigc/tasks/<unit>/docs/` — its sub-tasks' areas'
+/// — `.jigc/tasks/<sub-task>/docs/` — and its own merged set —
+/// `.jigc/milestones/<unit>/merged/docs/`. Whose copy a line of [`May::CopyOfAStagedDoc`]
+/// lets land: *"**Copy** (not move) the file from the working area to its canonical
+/// path"* (`design/finalize.md` → *4. Promote managed docs*) — the unit's own working area,
+/// so a sibling's staged doc, or another milestone's merged set, is none. Where the command
+/// names no unit, nothing.
+fn staged_in_the_unit<'a>(manifest: &'a Manifest, acting: &Acting) -> Vec<(&'a str, &'a str)> {
+    let homes = [
+        STAGED_IN_A_TASK.replacen('*', OWN, 1),
+        STAGED_IN_A_TASK.replacen('*', ITS_SUB_TASKS, 1),
+        MERGED_IN_A_MILESTONE.replacen('*', OWN, 1),
+    ];
+    staged_docs(manifest)
+        .into_iter()
+        .filter(|(path, _)| {
+            in_repo(path).is_some_and(|rel| homes.iter().any(|home| under_for(home, rel, acting)))
+        })
+        .collect()
 }
 
 /// **What is wrong with `quote`, where its words do not stand in its doc under its
