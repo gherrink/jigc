@@ -1584,11 +1584,18 @@ pub enum Plant {
     /// file at the plant's path is taken away, and the plant put where it stood — a file of
     /// the user's, one the user committed, a link, a directory. The file taken away is the
     /// prepared state's or a lead-in's, never a plant, and is gone before the picture the
-    /// command is held to. **A plant that is put into what stands** — an edit, a staged
-    /// change, a line, a hook — **or a place that holds no regular file** is a fault of the
-    /// cell; and a file in the place of a *directory* that stands is no plant of this
-    /// kind: a cell moves the directory away first ([`Lead::MovedAway`]) and plants a
-    /// [`Plant::File`] there.
+    /// command is held to. **Each is what its kind says, at a path git tracks too:** a file
+    /// of the user's is **U**, *an untracked file*, so the index's entry at the path goes
+    /// with the file taken away, as `git rm --cached` takes it — the index has the path
+    /// deleted, and the tree a file git does not track, where a file written over the
+    /// tracked one would be an edit of it, which is **E**; a file the user committed is
+    /// committed over it; a link or a directory leaves the index's entry standing, as
+    /// `ln -sf` or a `rm` and a `mkdir` leave it — **L** and **K** name what stands in
+    /// the tree, not whether git tracks it. **A plant that is put into what stands** — an
+    /// edit, a staged change, a line, a hook — **or a place that holds no regular file** is
+    /// a fault of the cell; and a file in the place of a *directory* that stands is no
+    /// plant of this kind: a cell moves the directory away first ([`Lead::MovedAway`]) and
+    /// plants a [`Plant::File`] there.
     InPlaceOf(&'static Plant),
 }
 
@@ -2002,6 +2009,16 @@ impl Plant {
                         "a plant goes in the place of the file at `{path}`, and no regular \
                          file stands there"
                     ));
+                }
+                // **U** is an untracked file: where a file of the user's goes, the entry
+                // the index holds at the path goes too, as `git rm --cached` takes it —
+                // else git would see an edit of the tracked file, which is **E**.
+                if matches!(inner, Plant::File(_)) {
+                    git(
+                        sandbox,
+                        &repo,
+                        &["rm", "-q", "--cached", "--ignore-unmatch", "--", path],
+                    )?;
                 }
                 fs::remove_file(&file).map_err(written(path))?;
                 inner.put(sandbox, at, hooks)

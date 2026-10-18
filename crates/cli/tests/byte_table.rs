@@ -1019,6 +1019,69 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         );
     }
 
+    // A plant in the place of a file that stands is of its inner plant's kind, but for the
+    // two that stand where no file does — in a directory the command removes (**D**), and
+    // in a directory's place (**K**): a file of the user's put there is of neither, where
+    // the same file put on its own is of both.
+    const REMOVES: Row = Row {
+        leaf: &["task", "finalize"],
+        home: Prepared::Of(State::Fresh),
+        ..row(&[
+            line("F1", Allows::Files(Where::Path("a-file"), May::WriteWhole)),
+            line(
+                "F4",
+                Allows::Files(Where::Under(".jigc/tasks"), May::Removed),
+            ),
+        ])
+    };
+    const IN_A_FILES_PLACE: &[Lead] = &[Lead::Plant(Plant::InPlaceOf(&Plant::File("a-file")))];
+    for (line, kind) in [("F4", Kind::Foreign), ("F1", Kind::FileForADir)] {
+        assert_eq!(
+            answers(
+                &cell(
+                    "in-a-files-place",
+                    FRESH,
+                    IN_A_FILES_PLACE,
+                    ACTING,
+                    at(line, kind)
+                ),
+                &REMOVES
+            ),
+            Err(format!(
+                "says its plant is of the kind *{}*, and puts in none that is",
+                kind.tag()
+            )),
+            "a file of the user's in the place of a file that stands is no plant of *{}*",
+            kind.tag()
+        );
+        assert_eq!(
+            answers(
+                &cell("on-its-own", FRESH, A_FILE, ACTING, at(line, kind)),
+                &REMOVES
+            ),
+            Ok(Need::Planted(Aim { line, kind })),
+            "the same file put on its own is a plant of *{}*",
+            kind.tag()
+        );
+    }
+    assert_eq!(
+        answers(
+            &cell(
+                "in-a-files-place",
+                FRESH,
+                IN_A_FILES_PLACE,
+                ACTING,
+                at("F1", Kind::Untracked)
+            ),
+            &REMOVES
+        ),
+        Ok(Need::Planted(Aim {
+            line: "F1",
+            kind: Kind::Untracked
+        })),
+        "a file of the user's in the place of a file that stands is a plant of *U*"
+    );
+
     // This tree.
     let (rows, cells) = (rows(), cells());
     let wrong = unmet(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED);
@@ -4783,6 +4846,34 @@ fn the_reader_reads_what_the_comparison_reads() {
         "a directory stands where the committed file stood: {:?}",
         in_place.before.files.get("repo/README.md")
     );
+    // A file of the user's in the place of a tracked file is what **U** says — an
+    // untracked file: its bytes stand where the committed file stood, and the index holds
+    // no entry at its path, so git sees a file it does not track and not an edit of one
+    // it does (which is **E**'s).
+    let untracked = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| {
+            matches!(
+                on.cell.leads,
+                [Lead::Plant(Plant::InPlaceOf(Plant::File(_)))]
+            )
+        })
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of a file of the user's in the file's place ran");
+    assert!(
+        matches!(
+            untracked.before.files.get("repo/README.md"),
+            Some(Entry::File { bytes, .. })
+                if String::from_utf8_lossy(bytes).contains("byte-table-plant-0-only-of-its-cell")
+        ) && !untracked.before.checkouts[REPO]
+            .index
+            .contains_key("README.md"),
+        "a file of the user's stands untracked where the committed file stood: {:?}, \
+         and the index holds {:?} at its path",
+        untracked.before.files.get("repo/README.md"),
+        untracked.before.checkouts[REPO].index.get("README.md")
+    );
 
     // A hook the user's lines are put into keeps whatever else it held.
     let hooked = ON_A_STAND_IN
@@ -4892,7 +4983,8 @@ fn the_reader_reads_what_the_comparison_reads() {
                 )))],
                 &["probe"],
             ),
-            "no regular file stands there",
+            "a plant goes in the place of the file at `no-such-file.md`, and no regular \
+             file stands there",
         ),
         (
             cell(
@@ -4904,7 +4996,8 @@ fn the_reader_reads_what_the_comparison_reads() {
                 ],
                 &["probe"],
             ),
-            "no regular file stands there",
+            "a plant goes in the place of the file at `a-dir`, and no regular \
+             file stands there",
         ),
         (
             cell(

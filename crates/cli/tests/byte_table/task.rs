@@ -995,6 +995,9 @@ const FINALIZE_CELLS: [Cell; 24] = [
 /// jigc's own one-line stamp is not jigc's to write — so the finalize acts and leaves it,
 /// where a link or a directory is no stamp to refresh either; with the workbench gone
 /// there is no task, and the finalize refuses as it does over a task that is not there.
+/// The file of the user's is untracked, as **U** says — the index's entry for the stamp
+/// goes with the stamp — so the commit carries the stamp's deletion the user staged:
+/// *"the git index … committed whole"* (`T4`).
 /// The refusal's words are read off a run where no doc gives them.
 const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
     finalize(
@@ -1289,7 +1292,8 @@ const DISCARD_CELLS: [Cell; 15] = [
 
 /// **The cells of `jigc task discard` at the record that stands** — `A5`'s needs a plant in
 /// the place of a file that stands answers (the human's ruling of 2026-10-18): where the
-/// milestone's committed record stood, a file of the user's, one the user committed — last
+/// milestone's committed record stood, a file of the user's (untracked: the index's entry
+/// for the record goes with it), one the user committed — last
 /// before the command, since the record stands only from the lead-in that mints the
 /// milestone — three links and a directory; and a file in the place of the directory the
 /// record stands in. Each is listed from the row's doc: the record is written through
