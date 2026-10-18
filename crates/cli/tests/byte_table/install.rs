@@ -23,7 +23,7 @@ use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared,
     Quote, Row, When, Where,
-};
+ Unit,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -51,6 +51,7 @@ const LAYS_OUT: &[Quote] = &[Quote {
 /// cache directories, and writes no file into them.
 pub const SETUP: Row = Row {
     leaf: &["setup"],
+    unit: Unit::Nothing,
     consent: Some("--force"),
     home: Prepared::Bare,
     lines: &[
@@ -252,6 +253,7 @@ pub const SETUP: Row = Row {
 /// the working tree keeps with no commit carrying it is outside the allowance.
 pub const UNINSTALL: Row = Row {
     leaf: &["uninstall"],
+    unit: Unit::Nothing,
     consent: Some("--force"),
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -369,6 +371,7 @@ const ADOPTS: &[Quote] = &[Quote {
 /// row has no line for any file outside the two caches. Its doc names no consent.
 pub const INGEST: Row = Row {
     leaf: &["ingest"],
+    unit: Unit::Nothing,
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -409,6 +412,7 @@ const DETACHES: &[Quote] = &[
 /// line. Its doc names no consent.
 pub const UNMANAGE: Row = Row {
     leaf: &["unmanage"],
+    unit: Unit::Nothing,
     consent: None,
     home: Prepared::Of(State::CommittedSingletons),
     lines: &[

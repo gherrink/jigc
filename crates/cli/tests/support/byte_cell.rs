@@ -230,7 +230,12 @@ pub struct Quote {
 }
 
 /// The place a line of the file layer speaks of. A path is from the repository's root,
-/// and a `*` in it stands for one component — a work unit's id.
+/// and a `*` in it stands for one component — any work unit's id. **Two components stand
+/// for the work unit the command acts on, and no other** ([`Unit`]): [`OWN`], the unit the
+/// command names — a task's area is `.jigc/tasks/<unit>`, never a sibling's; and
+/// [`ITS_SUB_TASKS`], any sub-task the committed record of that unit names, which is a
+/// milestone's — so a line of a milestone's row reaches its own sub-tasks' areas and no
+/// other task's.
 #[derive(Clone, Copy, Debug)]
 pub enum Where {
     /// One path.
@@ -244,6 +249,36 @@ pub enum Where {
     /// [`May::CopiedFrom`] it is the same home seen before the task holds the doc: where
     /// the committed doc a write copies in stands.
     AStagedDocsHome,
+}
+
+/// **The component of a place that stands for the work unit the command acts on** — the id
+/// its row's [`Unit`] reads off the command. Where the command names no unit, a place that
+/// holds it is nowhere.
+pub const OWN: &str = "<unit>";
+
+/// **The component of a place that stands for any sub-task of the unit the command acts
+/// on**: an id the unit's committed record names as one of its tasks — a `### <id>  {#<id>}`
+/// item of `docs/milestone-records/<unit>.md`, the record `design/storage.md` → *Source of
+/// truth* makes the milestone's source of truth (*"its ordered sub-task list"*). A unit no
+/// record names has no sub-task.
+pub const ITS_SUB_TASKS: &str = "<sub-task>";
+
+/// **How a row's command names the work unit it acts on** — read off its argv, as the
+/// command's own grammar has it, so that a line written with [`OWN`] or [`ITS_SUB_TASKS`]
+/// reaches that unit's area and no sibling's: *"a sub-agent physically cannot stage into a
+/// sibling's area"* (`design/write-commands.md` → *The write-time `--task`-scoped barrier
+/// (M8)*).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unit {
+    /// The command acts on no work unit.
+    Nothing,
+    /// **`--task <id>`, and with no flag the single task that stands** — the same section:
+    /// *"explicit `--task <id>` wins; else the single active task"*. A task stands where
+    /// `.jigc/tasks/<id>/` is a directory before the command.
+    TheTaskFlag,
+    /// **The first word after the leaf** — `jigc task finalize <id>`, `jigc milestone
+    /// finalize <id>`.
+    TheWordAfterTheLeaf,
 }
 
 /// What may happen at a place.
@@ -362,6 +397,9 @@ pub struct Line {
 #[derive(Clone, Copy, Debug)]
 pub struct Row {
     pub leaf: &'static [&'static str],
+    /// How the command names the work unit it acts on — whose area [`OWN`] and
+    /// [`ITS_SUB_TASKS`] are.
+    pub unit: Unit,
     pub consent: Option<&'static str>,
     /// **The leaf's home state** — the smallest prepared state in which its write happens
     /// (the plan's §3): where its planted cells and its base cell stand, and run in the
@@ -662,6 +700,8 @@ pub struct Seen<'a> {
     pub before: &'a Manifest,
     pub after: &'a Manifest,
     pub planted: &'a [Planted],
+    /// The command: the words after `jigc` — what the row's [`Unit`] reads the unit off.
+    pub argv: &'a [&'a str],
     pub ended: Ended<'a>,
     /// Whether the cell runs the row's consent spelling.
     pub consent: bool,
@@ -695,18 +735,103 @@ impl Verdict {
     }
 }
 
-/// Whether `path` is `pattern`, component for component, a `*` standing for any one.
-fn is_at(pattern: &str, path: &str) -> bool {
+/// **The work unit a command acts on** — the id its row's [`Unit`] reads off the command,
+/// and the sub-tasks the unit's committed record names: what [`OWN`] and [`ITS_SUB_TASKS`]
+/// stand for in a place. Neither where the command names no unit.
+#[derive(Clone, Debug, Default)]
+struct Acting {
+    unit: Option<String>,
+    sub_tasks: BTreeSet<String>,
+}
+
+impl Acting {
+    /// What the row's [`Unit`] reads off `argv`, against the manifest taken before the
+    /// command — where the task areas stand, and the unit's committed record.
+    fn of(row: &Row, argv: &[&str], before: &Manifest) -> Acting {
+        let flag = argv.iter().enumerate().find_map(|(at, word)| match *word {
+            "--task" => argv.get(at + 1).map(|id| id.to_string()),
+            word => word.strip_prefix("--task=").map(str::to_string),
+        });
+        let unit = match row.unit {
+            Unit::Nothing => None,
+            Unit::TheTaskFlag => flag.or_else(|| {
+                let standing: Vec<&str> = before
+                    .files
+                    .iter()
+                    .filter(|(_, entry)| matches!(entry, Entry::Dir(_)))
+                    .filter_map(|(path, _)| {
+                        let id = in_repo(path)?.strip_prefix(".jigc/tasks/")?;
+                        (!id.contains('/')).then_some(id)
+                    })
+                    .collect();
+                match standing.as_slice() {
+                    [one] => Some(one.to_string()),
+                    _ => None,
+                }
+            }),
+            Unit::TheWordAfterTheLeaf => argv
+                .get(row.leaf.len())
+                .filter(|word| !word.starts_with('-'))
+                .map(|word| word.to_string()),
+        };
+        // The record's items: `### <id>  {#<id>}`, the sub-task's id its anchor.
+        let sub_tasks = unit
+            .as_ref()
+            .and_then(|unit| {
+                before
+                    .files
+                    .get(&format!("{REPO}/docs/milestone-records/{unit}.md"))
+            })
+            .and_then(Entry::lines)
+            .map(|lines| {
+                lines
+                    .into_iter()
+                    .filter_map(|line| {
+                        let line = std::str::from_utf8(line).ok()?.trim_end();
+                        let anchor = line.strip_prefix("### ")?.rsplit_once("{#")?.1;
+                        Some(anchor.strip_suffix('}')?.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Acting { unit, sub_tasks }
+    }
+
+    /// Whether the component `want` of a place stands for `got`: `*` for any, [`OWN`] for
+    /// the unit, [`ITS_SUB_TASKS`] for a sub-task of it, and else the word itself.
+    fn stands_for(&self, want: &str, got: &str) -> bool {
+        match want {
+            "*" => true,
+            OWN => self.unit.as_deref() == Some(got),
+            ITS_SUB_TASKS => self.sub_tasks.contains(got),
+            _ => want == got,
+        }
+    }
+}
+
+/// Whether `path` is `pattern`, component for component, a `*` standing for any one — and,
+/// for a command that acts on a unit, [`OWN`] for it and [`ITS_SUB_TASKS`] for its
+/// sub-tasks ([`Acting`]).
+fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     let (want, got): (Vec<&str>, Vec<&str>) =
         (pattern.split('/').collect(), path.split('/').collect());
-    want.len() == got.len() && want.iter().zip(&got).all(|(w, g)| *w == "*" || w == g)
+    want.len() == got.len()
+        && want
+            .iter()
+            .zip(&got)
+            .all(|(want, got)| acting.stands_for(want, got))
 }
 
 /// Whether `path` is the directory `pattern` names or lies under it.
-fn under(pattern: &str, path: &str) -> bool {
+fn under_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     let depth = pattern.split('/').count();
     let head: Vec<&str> = path.split('/').take(depth).collect();
-    head.len() == depth && is_at(pattern, &head.join("/"))
+    head.len() == depth && is_at_for(pattern, &head.join("/"), acting)
+}
+
+/// [`under_for`] with no unit: a place that names one is nowhere.
+fn under(pattern: &str, path: &str) -> bool {
+    under_for(pattern, path, &Acting::default())
 }
 
 /// `path` from the repository's root, where it lies in the repository.
@@ -730,6 +855,8 @@ struct Diff<'a> {
 /// What a comparison keeps as it goes.
 struct Tally<'a> {
     row: &'a Row,
+    /// The work unit the command acts on, which [`OWN`] and [`ITS_SUB_TASKS`] stand for.
+    acting: Acting,
     acted: bool,
     seen: &'a Seen<'a>,
     /// The ids of the docs staged in a work unit before the command.
@@ -764,8 +891,8 @@ impl<'a> Tally<'a> {
     fn placed(&self, place: Where, path: &str) -> bool {
         match (place, in_repo(path)) {
             (Where::Hook, _) => path == format!("{}/pre-commit", self.seen.before.hooks),
-            (Where::Path(pattern), Some(rel)) => is_at(pattern, rel),
-            (Where::Under(pattern), Some(rel)) => under(pattern, rel),
+            (Where::Path(pattern), Some(rel)) => is_at_for(pattern, rel, &self.acting),
+            (Where::Under(pattern), Some(rel)) => under_for(pattern, rel, &self.acting),
             (Where::AStagedDocsHome, Some(rel)) => !under(".git", rel),
             (_, None) => false,
         }
@@ -993,6 +1120,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     let (before, after) = (seen.before, seen.after);
     let mut tally = Tally {
         row,
+        acting: Acting::of(row, seen.argv, before),
         acted,
         seen,
         staged: staged_docs(before)
@@ -2007,6 +2135,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
             before: &before,
             after: &after,
             planted: &planted,
+            argv: cell.argv,
             ended: Ended {
                 ended: ended.held.is_none(),
                 code: ended.code,

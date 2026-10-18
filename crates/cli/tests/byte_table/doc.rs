@@ -16,7 +16,7 @@ use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row,
     When, Where,
-};
+ Unit,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -37,7 +37,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 /// **`W1`** — the task's working area, rebuilt: every write stages there.
 const W1: Line = line(
     "W1",
-    Allows::Files(Where::Under(".jigc/tasks/*"), May::Rebuilt),
+    Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Rebuilt),
     &[
         Quote {
             doc: "design/write-commands.md",
@@ -106,7 +106,7 @@ const W3: Line = line(
 /// under it, and none of another task.
 const W4: Line = line(
     "W4",
-    Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::ReSlugged),
+    Allows::Files(Where::Path(".jigc/tasks/<unit>/docs/*"), May::ReSlugged),
     &[Quote {
         doc: "design/write-commands.md",
         heading: "`jigc doc rename` — the in-task title change, split on committed-store identity (M48)",
@@ -134,6 +134,7 @@ const LINES: [Line; 7] = [
 const fn row(leaf: &'static [&'static str]) -> Row {
     Row {
         leaf,
+        unit: Unit::TheTaskFlag,
         consent: None,
         home: HOME,
         lines: &LINES,
@@ -485,14 +486,16 @@ const EDITS: [Cell; 67] = [
         &[],
     ),
     // **Beside a sibling task that stages the same doc** (after the family's review, its
-    // seventh finding): `W1` and `W4` reach every task's area — `Under(".jigc/tasks/*")`,
-    // one component left open, since a row is one for every task its cells name — where
-    // the sentence says a write cannot stage into a sibling's. This cell is the one with
+    // seventh finding): `W1` and `W4` reached every task's area — `Under(".jigc/tasks/*")`,
+    // one component left open — where the sentence says a write cannot stage into a
+    // sibling's; since the task `B7`'s second commit they reach the area of the task the
+    // command names alone (`<unit>`, the row's `Unit::TheTaskFlag`). This cell is the one with
     // two live tasks: the command's first touch copies the roadmap into its task while
     // `plan-the-roadmap` holds a staged roadmap of its own. A staged doc of the sibling's
-    // taken away is *lost* whatever `W1` says (the rule for prose handed to jigc); one
-    // **rewritten** is what `W1` lets go, and no cell can see that — the vocabulary's
-    // limit, named in the rows' record's §3b. A base cell: it plants nothing.
+    // taken away is *lost* whatever `W1` says (the rule for prose handed to jigc), and one
+    // **rewritten** is now *written outside its allowance*, which `W1` let go before — the
+    // frame's fence `a_line_reaches_its_own_units_area_and_no_siblings`. A base cell: it
+    // plants nothing.
     cell(
         "doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap",
         &["doc", "add-item"],

@@ -162,7 +162,7 @@ use owed::{CELLS_OWED, OWED, OWING};
 use crate::support::byte_cell::{
     self, Aim, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding,
     Kind, Layer, Lead, Line, Listed, Manifest, Mark, May, Plant, Planted, Prepared, Quote, REPO,
-    Refusal, Row, Seen, Staged, Stands, When, Where, blob_of,
+    Refusal, Row, Seen, Staged, Stands, Unit, When, Where, blob_of,
 };
 use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
@@ -2567,6 +2567,8 @@ struct Cell<'a> {
     said: &'a str,
     consent: bool,
     listed: Listed,
+    /// The command, as the row's [`Unit`] reads its work unit off it.
+    argv: &'a [&'a str],
 }
 
 impl<'a> Cell<'a> {
@@ -2582,6 +2584,7 @@ impl<'a> Cell<'a> {
             said: "",
             consent: false,
             listed: Listed::Acts,
+            argv: &[],
         }
     }
 
@@ -2607,6 +2610,7 @@ impl<'a> Cell<'a> {
                 before: &before,
                 after: &after,
                 planted: &planted,
+                argv: self.argv,
                 ended: Ended {
                     ended: true,
                     code: self.code,
@@ -2647,6 +2651,7 @@ const fn line(id: &'static str, allows: Allows) -> Line {
 const fn row(lines: &'static [Line]) -> Row {
     Row {
         leaf: &["probe"],
+        unit: Unit::Nothing,
         consent: Some("--force"),
         home: Prepared::Bare,
         lines,
@@ -3714,6 +3719,134 @@ fn a_staged_doc_is_accounted_for() {
     );
 }
 
+/// **A line reaches its own unit's area and no sibling's** — the task `B7`'s first part, for
+/// the doc family's review (its seventh finding): a line whose place reads `.jigc/tasks/*`
+/// lets a command rewrite any task's area, where *"a sub-agent physically cannot stage into
+/// a sibling's area"* (`design/write-commands.md` → *The write-time `--task`-scoped barrier
+/// (M8)*). A place written with [`byte_cell::OWN`] is the area of the unit the row's
+/// [`Unit`] reads off the command, and one with [`byte_cell::ITS_SUB_TASKS`] the areas of
+/// the sub-tasks that unit's committed record names.
+///
+/// Under `--task t1`, t1's staged doc rewritten holds and t2's is *written outside its
+/// allowance* — the product's own bytes, written by a lead-in, so no loss, and no line's.
+/// With no flag the one task that stands is the unit; with two, neither is. And a
+/// milestone's line lets its own sub-task's area go and not a task its record does not
+/// name.
+#[test]
+fn a_line_reaches_its_own_units_area_and_no_siblings() {
+    const STAGES: Row = Row {
+        unit: Unit::TheTaskFlag,
+        ..row(&[line(
+            "O1",
+            Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Rebuilt),
+        )])
+    };
+    let base = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let a_task = |m: &mut Manifest, id: &str, doc: &str| {
+        for path in ["", "/docs"] {
+            dir(m, &format!("repo/.jigc/tasks/{id}{path}"));
+        }
+        put(m, &format!("repo/.jigc/tasks/{id}/base.json"), "{}\n");
+        put(
+            m,
+            &format!("repo/.jigc/tasks/{id}/docs/{doc}.md"),
+            &format!("# {doc}\n\nthe prose task {id} handed to jigc\n"),
+        );
+    };
+    let one = then(&base, |m| {
+        dir(m, "repo/.jigc/tasks");
+        a_task(m, "t1", "use-tabs");
+    });
+    let two = then(&one, |m| a_task(m, "t2", "use-colours"));
+    let rewritten = |before: &Manifest, path: &str| {
+        then(before, |m| put(m, path, "# rewritten\n\nother prose\n"))
+    };
+    const T1: &str = "repo/.jigc/tasks/t1/docs/use-tabs.md";
+    const T2: &str = "repo/.jigc/tasks/t2/docs/use-colours.md";
+    let came_to = |before: &Manifest, after: &Manifest, argv: &[&str]| {
+        Cell {
+            base: Some(&base),
+            argv,
+            ..Cell::of(STAGES, before, after)
+        }
+        .came_to()
+    };
+    let flagged: &[&str] = &["doc", "add-item", "x:x#y", "--task", "t1"];
+    let (class, why) = came_to(&two, &rewritten(&two, T1), flagged);
+    assert_eq!(class, Classification::Holds, "its own area: {why:#?}");
+    let (class, why) = came_to(&two, &rewritten(&two, T2), flagged);
+    assert!(
+        class == Classification::WrittenOutside
+            && why.iter().any(|why| why.contains("use-colours.md")),
+        "a sibling's staged doc rewritten is no line's: {class}, {why:#?}"
+    );
+    let plain: &[&str] = &["doc", "add-item", "x:x#y"];
+    let (class, why) = came_to(&one, &rewritten(&one, T1), plain);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the one task that stands: {why:#?}"
+    );
+    let (class, why) = came_to(&two, &rewritten(&two, T1), plain);
+    assert_eq!(
+        class,
+        Classification::WrittenOutside,
+        "two tasks and no flag name no unit: {why:#?}"
+    );
+
+    const ITS_OWN: Row = Row {
+        leaf: &["milestone", "finalize"],
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[line(
+            "O2",
+            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Removed),
+        )])
+    };
+    let a_milestone = then(&base, |m| {
+        dir(m, "repo/.jigc/tasks");
+        for id in ["s1", "t9"] {
+            dir(m, &format!("repo/.jigc/tasks/{id}"));
+            put(m, &format!("repo/.jigc/tasks/{id}/intent"), "an intent\n");
+        }
+        dir(m, "repo/docs");
+        dir(m, "repo/docs/milestone-records");
+        put(
+            m,
+            "repo/docs/milestone-records/m.md",
+            "# m\n\n## Tasks\n\n### s1  {#s1}\n\n<!-- fields -->\n- intent: an intent\n",
+        );
+    });
+    let gone = |id: &str| {
+        then(&a_milestone, |m| {
+            let area = format!("repo/.jigc/tasks/{id}");
+            m.files.retain(|path, _| !path.starts_with(&area));
+        })
+    };
+    let argv: &[&str] = &["milestone", "finalize", "m"];
+    let (class, why) = Cell {
+        base: Some(&base),
+        argv,
+        ..Cell::of(ITS_OWN, &a_milestone, &gone("s1"))
+    }
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "its own sub-task's area: {why:#?}"
+    );
+    let after = gone("t9");
+    let (class, why) = Cell {
+        base: Some(&base),
+        argv,
+        ..Cell::of(ITS_OWN, &a_milestone, &after)
+    }
+    .came_to();
+    assert!(
+        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("t9")),
+        "a task its record does not name: {class}, {why:#?}"
+    );
+}
+
 /// **A refusal may change only what a line that holds on a refusal covers.** A command
 /// that exits non-zero and wrote one file is *refused, and changed what a refusal may
 /// not* — under a line that covers the write at exit 0 too; it is *refuses, nothing
@@ -4018,7 +4151,8 @@ fn a_directory_a_command_writes_into_is_not_one_it_may_empty() {
             leaf.join(" ")
         );
     }
-    // The pair: `materialize` *clears and rebuilds* a milestone's `merged/` every call.
+    // The pair: `materialize` *clears and rebuilds* a milestone's `merged/` every call —
+    // the milestone the command names.
     let merged = ".jigc/milestones/a-milestone/merged";
     let before = then(&with(merged), |m| {
         dir(m, "repo/.jigc/milestones/a-milestone")
@@ -4026,7 +4160,12 @@ fn a_directory_a_command_writes_into_is_not_one_it_may_empty() {
     let cleared = then(&before, |m| {
         m.files.remove(&cache(merged));
     });
-    let (class, why) = came(&["milestone", "finalize"], &before, &cleared);
+    let (class, why) = Cell {
+        base: Some(&base),
+        argv: &["milestone", "finalize", "a-milestone"],
+        ..Cell::of(row_of(&["milestone", "finalize"]), &before, &cleared)
+    }
+    .came_to();
     assert_eq!(class, Classification::Holds, "{why:#?}");
 }
 
@@ -4259,6 +4398,7 @@ fn the_classifications_in_their_order() {
                 marker: MARKER.to_string(),
                 staged: false,
             }],
+            argv: &[],
             ended: Ended {
                 ended: false,
                 code: None,

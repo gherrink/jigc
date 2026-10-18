@@ -15,7 +15,7 @@ use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
     Where,
-};
+ Unit,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -33,6 +33,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 /// **`jigc milestone finalize`** — the record's §4. The record names no consent.
 pub const FINALIZE: Row = Row {
     leaf: &["milestone", "finalize"],
+    unit: Unit::TheWordAfterTheLeaf,
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -41,7 +42,7 @@ pub const FINALIZE: Row = Row {
             on_refusal: true,
             ..line(
                 "M1",
-                Allows::Files(Where::Under(".jigc/milestones/*/merged"), May::WriteWhole),
+                Allows::Files(Where::Under(".jigc/milestones/<unit>/merged"), May::WriteWhole),
                 &[
                     Quote {
                         doc: "design/finalize.md",
@@ -98,7 +99,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M6, the worktrees",
-            Allows::Files(Where::Under(".jigc/worktrees/*"), May::Removed),
+            Allows::Files(Where::Under(".jigc/worktrees/<sub-task>"), May::Removed),
             &[
                 Quote {
                     doc: "design/storage.md",
@@ -114,7 +115,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M6, the sub-tasks' areas",
-            Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Removed),
             &[
                 Quote {
                     doc: "design/storage.md",
@@ -131,7 +132,7 @@ pub const FINALIZE: Row = Row {
         line(
             "M6, moved aside",
             Allows::Files(
-                Where::Under(".jigc/tasks/*"),
+                Where::Under(".jigc/tasks/<sub-task>"),
                 May::MovedAsideTo(".jigc/displaced"),
             ),
             &[
@@ -149,7 +150,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M6, the milestone's area",
-            Allows::Files(Where::Under(".jigc/milestones/*"), May::Removed),
+            Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Removed),
             &[
                 Quote {
                     doc: "design/storage.md",

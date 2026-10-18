@@ -17,7 +17,7 @@ use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
     Quote, Row, When, Where,
-};
+ Unit,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -35,6 +35,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 /// **`jigc task finalize`** — the record's §3. The record names no consent of its own.
 pub const FINALIZE: Row = Row {
     leaf: &["task", "finalize"],
+    unit: Unit::TheWordAfterTheLeaf,
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -126,7 +127,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "T6",
-            Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+            Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Removed),
             &[
                 Quote {
                     doc: "design/finalize.md",
@@ -138,7 +139,7 @@ pub const FINALIZE: Row = Row {
         line(
             "T6, moved aside",
             Allows::Files(
-                Where::Under(".jigc/tasks/*"),
+                Where::Under(".jigc/tasks/<unit>"),
                 May::MovedAsideTo(".jigc/displaced"),
             ),
             &[
@@ -170,12 +171,13 @@ const THE_SUB_TASK_TERMINAL: &str =
 /// is an ordinary one.
 pub const DISCARD: Row = Row {
     leaf: &["task", "discard"],
+    unit: Unit::TheWordAfterTheLeaf,
     consent: Some("--force"),
     home: Prepared::Of(State::Fresh),
     lines: &[
         line(
             "A1",
-            Allows::Files(Where::Under(".jigc/tasks/*"), May::Removed),
+            Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Removed),
             &[Quote {
                 doc: "design/write-commands.md",
                 heading: "The verbs",
