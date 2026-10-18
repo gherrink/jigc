@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, with the second commit of the doc family's task (`B6`): §10, the six edit leaves' cells — two keys, eighteen cells, each at the home a write copies in from.*
+
 *Changed 2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits: in §7 the cell of `T2` with a file in the workbench's place leaves the table for a scheduled row, since it never reached `T2`; §6's ruling on entry 10 reads in the human's words; and §9 records what `task finalize` prints at the stamp when the user's index holds a change there — a key of its own.*
 
 *Changed 2026-10-18, after the review of the task `B6`'s first two commits: in §7 the key `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides` retires — the design doc was not silent, its cell is listed as refused and holds — and §1 gains the one sentence that did say otherwise, a guide's: a doc-only finding.*
@@ -369,3 +371,23 @@ git rm --cached -q .jigc/version && command rm .jigc/version && printf 'the user
 $JIGC task finalize record-a-decision; echo "exit=$?"   # this tree: exit=0, the advisory and "deleted .jigc/version"
 git show --stat --format=%s HEAD                       # .jigc/version | 1 -
 ```
+
+## 10. The doc family's six edit leaves — 66 cells in the gate and 36 on demand, eighteen red on this tree's binary under two keys
+
+*2026-10-18, this tree's debug build, macOS arm64; the second commit of the doc family's task (`B6`). The leaves are `jigc doc add-item`, `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename`, on the rows the family's first commit wrote ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §3b). Each has eleven cells in the gate, in the arms of `fresh` (its refusing cell) and `committed-singletons`, and six base cells on demand ([byte-table-on-demand-cells.tsv](byte-table-on-demand-cells.tsv)), none red there. **Fifty-one hold or refuse having changed nothing**: every base cell; a file of the user's in the task's area and beside the file-state record, with the baseline taken away so that the copy-in records one; a link to nothing, a directory and the doc's file deleted before the task's first write, where each leaf refuses (*"no staged instance for"*), nothing changed; and the file deleted after it, which the write does not look at. The eighteen below each stand at the home the copy is read from (`W3`), carry the mark of the record's §6, entry 14, and lose no byte.*
+
+### `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`
+
+- *The cells.* `doc-add-a-milestone-a-file-of-the-users-in-the-docs-place`, `…-a-link-to-a-file-in-the-repository-in-the-docs-place`, `…-a-link-to-a-file-outside-in-the-docs-place`: where `docs/roadmap.md` stood, a file of the user's (the index's entry taken with it), or a link to one; then the task's first write to the roadmap, `jigc doc add-item roadmap:roadmap#milestones --title M-Beta`.
+- *What they came to.* **Not the listed outcome**: exit 0 — *"copied in for update"* — the user's file copied into the task as the roadmap and the item spliced into it. The file stands at the home, and its bytes in the staged copy.
+- *Held against.* `W5`, under the reading in force of the record's §6, entry 14: a write refuses over what is no doc of its type, staging nothing. Each cell carries entry 14's mark.
+
+### `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged`
+
+- *The cells.* The same three shapes at `remove-item`, `retitle-item`, `set-field` (at `CHANGELOG.md`), `set-slot` and `rename` (at a decision a task of the cell landed, `docs/decisions/one-way.md`, retitled in place) — fifteen.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1 — `write.non-reparseable`, `write.wrong-shape`, or *"the staged doc `adr:one-way` carries no `# H1` to retitle"* — and the copy-in stands: the task's area holds the user's file as the staged doc, its `docs/provenance.json` written for it, and at `rename` the role bound to it. The two codes' route says *"nothing was persisted"*.
+- *Held against.* `W1` and the rest hold on no refusal (`W5`): *"A write verb resolves its addressed leaf against the declaring schema *before touching bytes*"*. Each cell carries entry 14's mark: under its other reading the cells stay red, the refusal then *not the listed outcome* as well. **No byte is lost** — but the next write in the task finds the user's file staged as its doc.
+
+### Seen, and held by no cell
+
+Where the home holds no doc body at all — a link to nothing, a directory, or the committed doc's file deleted from the tree — each of the six refuses with *"no staged instance for `<address>`"*, and two of its forms route at the create: *"create `roadmap` from a task minted on a workflow that grants it"*, and at `set-field` and `rename` *"provision it first (`jigc start` / `jigc doc create <type> --title 'X'`)"* — over a doc the committed store holds, whose file the user has only to bring back. A cell holds bytes and not words, and these cells hold; what the route says is the surface contract's to judge (law 1), for the run's ledger.

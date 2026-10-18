@@ -2,7 +2,7 @@
 
 *Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`); and to the rulings of 2026-10-15 on the install family's questions on 2026-10-18, with the first commit of the doc family's task (`B6`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
 
-Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) brought twenty more marked cells**: twenty in which `setup` acts carried the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. **The rulings of 2026-10-15 took all twenty-three marks off**: the table had two lines over two cells, each a declared bound — and the plant in the place of a file that stands (`B6`, 2026-10-18) brought one more, §12, which the review of that commit found answered by the design docs: its mark is off, and the table holds the two lines again.
+Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) brought twenty more marked cells**: twenty in which `setup` acts carried the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. **The rulings of 2026-10-15 took all twenty-three marks off**: the table had two lines over two cells, each a declared bound — and the plant in the place of a file that stands (`B6`, 2026-10-18) brought one more, §12, which the review of that commit found answered by the design docs: its mark is off, and the table holds the two lines again. **The doc family's six edit leaves** (`B6`, 2026-10-18) **brought eighteen**, each for one open place, §13: the table has twenty lines.
 
 ## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — ruled on 2026-10-14: reading (b)
 
@@ -80,11 +80,35 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *As it was read.* Two readings — (a) S15's on-ramp covers it, the file rides the first commit, and the cell is red, *not the listed outcome*; (b) it refuses as on a born `HEAD`, and holds. The cell followed (a) and was marked.
 - *Answered, not ruled.* The review of the plant's commit found the question answered where the record had read a silence: `design/assistant-adapter.md` → *The install commit's pathspec* refuses *"a path whose index *or* worktree bytes differ from `HEAD` before the install writes anything"*, and its one exemption on an unborn `HEAD` is for an *untracked* file; `design/surface-contract.md` → *The carryover gate* says the same. A staged file is tracked, and its index bytes differ from `HEAD`: reading (b) is the docs'. The cell is listed as refused with `setup.dirty-install-path`, its mark is off, and it holds. The one sentence that says otherwise is a guide's — [byte-table-findings.md](byte-table-findings.md) → §1, `r1-quickstart-guide-says-every-file-is-untracked-before-the-first-commit-where-a-staged-one-is-tracked-and-refused`.
 
+## 13. A `doc` write whose home holds a file that is no doc of its type (the record's entry 14) — open
+
+- *The words, and what is open.* The copy-in reads the home, through a live link too, and copies an untracked draft that does not yet conform; `W5`'s sentences have a write refuse before it touches bytes. Nothing says what a write does where the file at the home does not parse as its doctype at all — the user's own file where the committed doc stood, or the file a live link there leads to.
+- *The cells* — eighteen, at each of the six edit leaves (`B6`, the doc family's second commit), each marked: **under the reading in force** — the write refuses and stages nothing — the three of `doc add-item`, which splices into the file and exits 0, are *not the listed outcome*, and the fifteen of the other five, which refuse and leave the copy staged, *refused, and changed what a refusal may not*. **Under the other reading** — the copy-in takes what stands, and a write acts where its splice can — the three hold and the fifteen stay red. No byte of the user's is lost in any of them.
+- The record says what the product should do: refuse before the copy-in, one rule at every leaf.
+
 ## The marked cells
 
 A line a mark of a cell, as the suite prints it. A cell with two marks has two lines.
 
 | mark | cell |
 |---|---|
+| silence 14 | `doc-add-a-milestone-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-add-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-add-a-milestone-a-link-to-a-file-outside-in-the-docs-place` |
+| silence 14 | `doc-remove-a-milestone-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-remove-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-remove-a-milestone-a-link-to-a-file-outside-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-committed-decision-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-committed-decision-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-committed-decision-a-link-to-a-file-outside-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-milestone-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-retitle-a-milestone-a-link-to-a-file-outside-in-the-docs-place` |
+| silence 14 | `doc-set-a-releases-link-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-set-a-releases-link-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-set-a-releases-link-a-link-to-a-file-outside-in-the-docs-place` |
+| silence 14 | `doc-set-what-a-milestone-proves-a-file-of-the-users-in-the-docs-place` |
+| silence 14 | `doc-set-what-a-milestone-proves-a-link-to-a-file-in-the-repository-in-the-docs-place` |
+| silence 14 | `doc-set-what-a-milestone-proves-a-link-to-a-file-outside-in-the-docs-place` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |

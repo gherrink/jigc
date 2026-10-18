@@ -7,12 +7,13 @@
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight, whose
-//! cells are owed — and 208 cells: the acceptance's
-//! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`) **and
-//! the install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`,
-//! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to
-//! `B5`, and of `B6` the plant in the place of a file that stands and the plant of a file
-//! simply deleted — the arms that hold the
+//! cells are owed but for its six edit leaves' — and 310 cells: the acceptance's
+//! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`), **the
+//! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
+//! **and the doc family's hundred and two** (its six edit leaves), of which seventy-two run
+//! on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! place of a file that stands, the plant of a file simply deleted and the doc family —
+//! the arms that hold the
 //! comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
@@ -1441,7 +1442,78 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         "M10, the file-state hashes",
         &[Prepared::Of(State::Fresh)],
     ),
+    (
+        &["doc", "add-item"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "add-item"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "remove-item"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "remove-item"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "retitle-item"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "retitle-item"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "rename"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "rename"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "rename"],
+        "W4",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "set-field"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "set-field"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "set-slot"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "set-slot"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
 ];
+
+/// Why the doc family's `W3` excuses nothing, and never will: it lets nothing change at
+/// its place. It names the home a write copies in from, which the plants in a doc's place
+/// are aimed at.
+const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference happen at the home a write copies in from — it \
+     names the place, which is what the plants in a doc's place are aimed at";
 
 /// What would use every line of a row that no cell of the gate excuses a difference
 /// under: the cells of its family, which a later task of the plan owes.
@@ -1524,9 +1596,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["doc", "add-item"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "add-item"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "add-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "add-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1539,9 +1609,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "remove-item"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "remove-item"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "remove-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "remove-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "remove-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "remove-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1554,9 +1622,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "retitle-item"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "retitle-item"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "retitle-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "retitle-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "retitle-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "retitle-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1569,10 +1635,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "rename"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "rename"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "rename"], "W3", ITS_FAMILYS_CELLS),
-    (&["doc", "rename"], "W4", ITS_FAMILYS_CELLS),
+    (&["doc", "rename"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "rename"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "rename"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -1581,9 +1644,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "set-field"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "set-field"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "set-field"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "set-field"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "set-field"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "set-field"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1596,9 +1657,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "set-slot"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "set-slot"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "set-slot"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "set-slot"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "set-slot"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "set-slot"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -3542,6 +3601,41 @@ fn a_staged_doc_is_accounted_for() {
     });
     comes_out(
         &Cell::of(FINALIZES, &with_a_lookalike, &landed),
+        Classification::Lost,
+    );
+
+    // **The rule is for a working area that is gone — a unit no longer**, its base pin
+    // taken away (`design/storage.md` → *A task is an area that carries its base pin*).
+    // A doc re-slugged inside a task that stands — `doc rename`, its body under a new name
+    // and a new `# H1` — is the lines' to judge, and holds under a row that lets the old
+    // name go; the same move in an area whose pin is gone, a file of another's keeping the
+    // directory, is a staged doc lost.
+    const RE_SLUGS: Row = row(&[
+        line(
+            "F4",
+            Allows::Files(Where::Under(".jigc/tasks/*"), May::Rebuilt),
+        ),
+        line(
+            "F5",
+            Allows::Files(Where::Path(".jigc/tasks/*/docs/*"), May::Removed),
+        ),
+    ]);
+    const RE_SLUGGED: &str = "# Use spaces\n\nthe prose somebody handed to jigc\n";
+    let a_task = then(&before, |m| put(m, "repo/.jigc/tasks/t1/base.json", "{}\n"));
+    let moved = |m: &mut Manifest| {
+        m.files.remove("repo/.jigc/tasks/t1/docs/use-tabs.md");
+        put(m, "repo/.jigc/tasks/t1/docs/use-spaces.md", RE_SLUGGED);
+    };
+    comes_out(
+        &Cell::of(RE_SLUGS, &a_task, &then(&a_task, moved)),
+        Classification::Holds,
+    );
+    let unpinned = then(&a_task, |m| {
+        moved(m);
+        m.files.remove("repo/.jigc/tasks/t1/base.json");
+    });
+    comes_out(
+        &Cell::of(RE_SLUGS, &a_task, &unpinned),
         Classification::Lost,
     );
 }
@@ -5818,6 +5912,36 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
+        "r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type",
+        Classification::NotTheListedOutcome,
+        &[
+            "doc-add-a-milestone-a-file-of-the-users-in-the-docs-place",
+            "doc-add-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-add-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
+        ],
+    ),
+    (
+        "r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged",
+        Classification::RefusedAndChanged,
+        &[
+            "doc-remove-a-milestone-a-file-of-the-users-in-the-docs-place",
+            "doc-remove-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-remove-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
+            "doc-retitle-a-committed-decision-a-file-of-the-users-in-the-docs-place",
+            "doc-retitle-a-committed-decision-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-retitle-a-committed-decision-a-link-to-a-file-outside-in-the-docs-place",
+            "doc-retitle-a-milestone-a-file-of-the-users-in-the-docs-place",
+            "doc-retitle-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-retitle-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
+            "doc-set-a-releases-link-a-file-of-the-users-in-the-docs-place",
+            "doc-set-a-releases-link-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-set-a-releases-link-a-link-to-a-file-outside-in-the-docs-place",
+            "doc-set-what-a-milestone-proves-a-file-of-the-users-in-the-docs-place",
+            "doc-set-what-a-milestone-proves-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-set-what-a-milestone-proves-a-link-to-a-file-outside-in-the-docs-place",
+        ],
+    ),
+    (
         "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
         Classification::RefusedAndChanged,
         &["task-discard-a-hook-that-rejects"],
@@ -6246,10 +6370,12 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (208, 172, 36),
+        (310, 238, 72),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         sixty-five — fifty-three in the gate, twelve on demand — and the install family's \
-         are a hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand"
+         sixty-five — fifty-three in the gate, twelve on demand — the install family's are a \
+         hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \
+         the doc family's six edit leaves' a hundred and two: sixty-six in the gate, \
+         thirty-six on demand"
     );
 }
 

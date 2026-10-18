@@ -1,6 +1,7 @@
 # The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate, beyond a line a cell.
 # Printed on 2026-10-15 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 11 at its start and 9 at its end: thirty-six cells — the task family's twelve and the install family's twenty-four — four red, each `jigc uninstall` that acts, by its line `U9`. The block below is the arm's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the fourth of the fixes after the review of the task `B6`, at a load average of 11 at its start and 9 at its end: the same block, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's six edit leaves (the task `B6`'s second commit of that family), at a load average of 10 to 18: seventy-two cells — the thirty-six above, the same lines byte for byte, and the six edit leaves' thirty-six, none red. The block below is that run's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -38,3 +39,39 @@ task-discard-a-sub-task-nobody-re-entered-in-migrated	jigc task discard do-the-t
 task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-the-thing	refs-post-hoc	acts	holds	exit 0
 task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	holds	exit 0
 task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	holds	exit 0
+doc-add-a-milestone-in-bare	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-fresh	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-migrated	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-refs-post-hoc	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-add-a-milestone-in-chatty-hooks	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-vendored	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-bare	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-fresh	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-migrated	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-refs-post-hoc	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-remove-a-milestone-in-chatty-hooks	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-vendored	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-bare	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-fresh	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-migrated	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-refs-post-hoc	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-retitle-a-milestone-in-chatty-hooks	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-vendored	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-bare	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-fresh	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-migrated	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-refs-post-hoc	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-set-a-releases-link-in-chatty-hooks	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-vendored	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-bare	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-fresh	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-migrated	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-refs-post-hoc	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-set-what-a-milestone-proves-in-chatty-hooks	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-vendored	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-rename-a-decision-the-task-made-in-bare	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-rename-a-decision-the-task-made-in-fresh	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	fresh	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-migrated	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	migrated	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-refs-post-hoc	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	refs-post-hoc	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-chatty-hooks	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	chatty-hooks	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-vendored	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	vendored	acts	holds	exit 0

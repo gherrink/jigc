@@ -2,6 +2,46 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-18 — The doc family's six edit leaves have their cells — 66 in the gate and 36 on demand — and eighteen are red on this tree under two keys, each at the home a write copies in from and each marked with one new silence: a file there that is no doc of its type is copied in, spliced into by `add-item` and left staged by the five that refuse; and a staged doc re-slugged inside a task that stands is no staged doc lost (the byte table, task `B6`, the doc family's second commit)
+
+**What.** The cells of `jigc doc add-item`, `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename` ([doc.rs](crates/cli/tests/byte_table/doc.rs)) on the rows of the family's first commit; one correction of the frame a cell of `doc rename` needed, red first; the lists. No row was touched, and no product source changes. The six leave the list of leaves whose cells are owed; `create` and `author`, the second part, stay on it for the next commit.
+
+### The cells, on this tree's binary
+
+Eleven a leaf in the gate — its refusing cell in `fresh` (*"no active task"*, the create-gate's step 1); its base cell; a file of the user's in the task's area (`W1` × U); a file of the user's beside the file-state record, the baseline taken away first so that the copy-in records one (`W2` × U); and `W3`'s seven, at the home the copy is read from — the user's file, three links and a directory in the doc's place, and the doc's file deleted before and after the task's first write — and six base cells on demand. The five leaves of the roadmap and the changelog write one doc of `committed-singletons`; `doc rename`'s base cell re-slugs a decision its task created (`W4`), and its cells at a home retitle one a task of the cell landed, since every doc of the state is a singleton, whose identity the verb refuses outright.
+
+**Fifty-one hold or refuse having changed nothing**, and all thirty-six on demand. Where the home holds no doc body — a link to nothing, a directory, the file deleted — each leaf refuses with nothing changed, as *"A working instance must exist before you can `set-slot` into it"* has it; a deletion after the first write is not looked at, as *"a second write to an already-staged doc reads the staged copy and does not look at the home again"* has it. **Eighteen are red, under two keys** ([byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §10), at the three homes that hold a file that is no doc of its type:
+
+| key | cells | came to |
+|---|---:|---|
+| `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type` | 3 | *not the listed outcome* — `add-item` copies the file in and splices its item into it, exit 0 |
+| `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged` | 15 | *refused, and changed what a refusal may not* — the other five refuse and leave the copy-in staged, under a route that says *"nothing was persisted"* |
+
+**No byte of the user's is lost** in any of the 102. **The same 102 on the previous release** (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 159 s at a load of 10 to 14): every one comes to what it comes to here — the eighteen red the same, none red that is not red here. The committed print of the whole table on that binary is the family's numbers commit's.
+
+### One more place where the docs are silent
+
+[The rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, **entry 14**: what a `doc` write does where its home holds a file that is no doc of its type — the copy-in reads a live link and copies a draft that does not yet conform, and `W5`'s sentences have a write refuse before it touches bytes; nothing says which governs bytes that do not parse as the doctype. *Robust*: refuse before the copy-in, staging nothing, and say what stands there — one rule at every leaf. *Until ruled*: that reading, under which all eighteen are red; each carries the mark ([the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) → §13).
+
+### What the frame gained, red first
+
+**A staged doc is held to a commit once its unit is gone — its base pin taken away** ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs), the rule for prose handed to jigc), where it was held so once its own file was gone. `doc rename`'s re-slug moves a staged body to a new name with a new `# H1` inside a task that stands: the old bytes stand nowhere, and the rule read that as a staged doc *lost*. *"A task is an area that carries its base pin"* (`design/storage.md` → *The per-task working area (staging)*) is what *gone* means, and a doc that leaves its name in a unit that stands is the lines' to judge — `W4` here. *Red first:* [`a_staged_doc_is_accounted_for`](crates/cli/tests/byte_table.rs) gained the move inside a task that stands, under a row that lets the old name go, and came out *lost* where it must hold; built, it holds, and the same move with the pin gone is still *lost*. A finalize whose teardown leaves the area to a foreign file takes the pin first, so the rule still reaches it; no cell of the 208 that stood moved on this tree, the expected-red list holding them as it did.
+
+### Decided here — as a builder, and open to being overturned
+
+- **The cells came in one commit for the part, and not in commits of about ten**: the gate of the family's first commit took 19 minutes at a load of 23 to 43 — every commit is one gate — and a part's 66 cells are one construction a leaf.
+- **A refusal's words are read off a run where no doc gives them**: *"no staged instance for"*, *"no active task"*, and the three codes of entry 14's cells, which name for `add-item` the code its siblings refuse with.
+- **What a refusal at a home with no doc body says** — *"no staged instance for `<address>`"*, routed at a create of a doc the committed store holds — is recorded in the findings' §10 for the run's ledger and held by no cell: a cell holds bytes, not words.
+
+### The lists
+
+310 cells — 238 in the gate, 72 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 36 that stood, byte for byte, and the family's 36). The expected-red list: **62 cells under fifteen keys**, where 44 under thirteen. Marked cells: twenty, where two. Scheduled needs: six, as they were. `W1`, `W2` and `W4` excuse their differences in `committed-singletons`; `W3` excuses nothing, and never will — it names the place.
+
+### Not established
+
+- **What the fixed product's refusal says** at entry 14's cells: the codes are today's.
+- **That the copy-in takes no other place** a write reads — a ref's target, a bound role: no cell plants one.
+
 ## 2026-10-18 — The doc family's eight rows are written from their docs before a cell of any runs — three lines each over quoted sentences, a fourth for `doc rename`, two rules that are no line — and the third line names the home a write copies a committed doc in from, read and never written, which is where a plant in a doc's place is aimed (the byte table, task `B6`, the doc family's first commit)
 
 **What.** The rows of the eight `jigc doc` write leaves — `add-item`, `remove-item`, `retitle-item`, `rename`, `set-field`, `set-slot`, `create`, `author` — written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §3b and lifted quote for quote into [doc.rs](crates/cli/tests/byte_table/doc.rs). **No cell is added, no binary was run to learn what a command writes**, and no product source changes. The eight leave the owed list of leaves ([owed.rs](crates/cli/tests/byte_table/owed.rs)) and join the list of leaves whose cells are owed, under `B6`.

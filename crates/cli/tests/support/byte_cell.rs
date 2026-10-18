@@ -1267,10 +1267,21 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         }
     }
     // Prose handed to jigc: a staged doc whose working area is gone stands in a commit the
-    // command made, or it is somewhere else, or it is lost.
+    // command made, or it is somewhere else, or it is lost. **Gone is the unit's base pin
+    // gone** — the file that makes a directory under `tasks/` or `milestones/` a work unit
+    // (`design/storage.md` → *A task is an area that carries its base pin*): a doc that
+    // leaves its name inside a unit that stands — a re-slug moves it — is the lines' to
+    // judge, as any other file of the area is.
     if acted {
         for (path, blob) in staged_docs(before) {
             if after.files.contains_key(path) || committed.contains(blob) {
+                continue;
+            }
+            let pin: Vec<&str> = path.splitn(5, '/').take(4).collect();
+            if after
+                .files
+                .contains_key(&format!("{}/base.json", pin.join("/")))
+            {
                 continue;
             }
             // Under the consent, a staged doc the command's output names is one the
