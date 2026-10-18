@@ -2,6 +2,47 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-18 — The plant in the place of a file that stands is built, and the twenty-two needs that waited for it have their cells: a link, a directory, a file of the user's or one the user committed where jigc's stamp or a milestone's record stood, and an edit to each file of `setup`'s own install — two red on this tree under two keys, ten more red on the previous release alone (the byte table, task `B6`, the second of its commits)
+
+**What.** The human's ruling of 2026-10-18 (the entry below, ruling 7), built: **`Plant::InPlaceOf`**, a kind of the frame ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)), and the 22 cells that answer the needs the earlier families scheduled for it ([task.rs](crates/cli/tests/byte_table/task.rs), [install.rs](crates/cli/tests/byte_table/install.rs)), each leaving [scheduled-cells.tsv](crates/cli/tests/byte_table/scheduled-cells.tsv). No row was touched, and no product source changes. **Nothing of the doc family is built** — the orchestrator's change of scope, ruled by the human: its rows and cells are a fresh builder's, after a review of this commit and the one before it.
+
+### The plant, and how it is fenced
+
+- **The kind.** `Plant::InPlaceOf(&inner)` takes away the regular file that stands at the inner plant's path and puts the inner plant where it stood — a file of the user's (**U**), one the user commits (**T**), a link to nothing or to a file in or outside the repository (**L**), a directory holding a file of the user's (**K**). It is of the inner plant's kind, but for the two that stand where no file does (**D**, and a file in a directory's place). The file taken away is the prepared state's or a lead-in's and is gone before the picture the command is held to; its bytes are a commit's.
+- **What it is not.** A plant put *into* what stands — an edit, a staged change, a line, a hook — has no place to make, and a place that holds no regular file has no file to take: each is a fault of the cell. **A file in the place of a *directory* that stands** is not this kind: a cell moves the directory away (`Lead::MovedAway`, the frame's) and puts a `Plant::File` there — the two cells of that shape below.
+- **Red first.** Five cells on the stand-in, one a shape, against the committed `README.md` of the never-adopted repository — [`the_reader_reads_what_the_comparison_reads`](crates/cli/tests/byte_table.rs), with a new act of the stand-in, `empties-the-readme`. Against the kind declared and putting its inner plant with nothing taken away, all five were faults — *"a plant goes to `README.md`, and something stands there already"*. Built: the file of the user's rewritten is *lost*; the committed one *git's state moved*; the link to nothing written through *written outside its allowance*; the link to a file outside written through *lost*; the directory emptied *lost*; and the picture before the command holds the directory where the file stood. Three faults sit beside the earlier ones — a place with no file, a place with a directory, an edit in a file's place; written with the five and not seen red apart from them.
+
+### The twenty-two needs, every one a cell
+
+| need | cells | on this tree | on the previous release |
+|---|---|---|---|
+| `task finalize` · `T2` × U, T, L ×3, K (a directory) — what stands in jigc's stamp's place | 6 | act at exit 0 and leave it: **hold** | five red at exit 0 — three *lost*, two *git's state moved*; the directory refused with another refusal |
+| `task finalize` · `T2` × K, a file in a directory's place — the workbench itself moved away, a file at `.jigc` | 1 | refuses `finalize.no-task`, nothing changed | the same |
+| `task discard` · `A5` × U, T — a file in the record's place, and one the user committed | 2 | refuse `reconciliation.conflict-block`, nothing changed | the same |
+| `task discard` · `A5` × L ×3, K (a directory) | 4 | refuse `store.home-not-regular-file`, nothing changed | refused with another refusal |
+| `task discard` · `A5` × K, a file in a directory's place — `docs/milestone-records/` moved away, a file there | 1 | **red** — exit 0, the sub-task discarded and no record settled | the same |
+| `setup` · `S1`, `S2`, `S3`, `S5`, `S6, written`, `S7` × E — an edit to its own installed file | 6 | refuse `setup.dirty-install-path`, nothing changed | the same, but at the settings record, which that release does not write in this repository: the cell does not build there |
+| `setup` · `S8` × E — an edit to the guide | 1 | acts and leaves it: **holds** | the same |
+| `setup` · `S9` × E — on an unborn `HEAD`, the user's staged root `.gitignore` and a line added after it | 1 | **red** — refuses as dirty where S15's on-ramp has an untracked file ride; marked | the same |
+
+**What *the state it needs* came to, where a need waited for *"a file the never-adopted repository does not have"*.** Seven of `setup`'s eight: a lead-in that installs on the binary under test, so each file stands committed, and then the edit — `setup` run again over an installed tree. The eighth, `S9`'s, cannot be built so: its line holds only on an unborn `HEAD`, where no file is in a commit, so the file that stands is the user's own `.gitignore`, `git add`ed after `git init`, with the edit beside it. **Every need waiting for the plant has a cell; none is left scheduled for it.** The five lines of the scheduled list that remain are `setup`'s `K` (a file in a directory's place) at `S2`, `S5`, `S6, written`, `S7` and `S9`, whose reasons are their own (*"the line's file stands at the repository's root"*; *"the same construction as the cell aimed at `S1`"*) and are not this plant's.
+
+### Two keys, and one more silence
+
+- `r1-task-discard-settles-no-record-and-discards-a-sub-task-whose-record-is-not-on-disk` — *not the listed outcome*: the sub-task is named by the record `HEAD` holds, and the discard read the record off the working tree, found none, and discarded it as an ordinary task (`A8`, `A9`). No byte is lost. The cell is listed as refused naming the record, and no run gives the words.
+- `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides` — *not the listed outcome*, marked with the rows' record's §6, **entry 13**, which leads with what the product should do: refuse, as it does, and S15's sentence say *untracked and unstaged*. Until ruled, the reading by which the cell is red.
+
+[The findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §7 has both and what the other twenty show; [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) → §12 the silence.
+
+### The lists
+
+196 cells — 160 in the gate, 36 on demand; the expected-red list holds 41 cells under fourteen keys. Scheduled needs: five, where 27. The marked cells: three — bound 1, bound 2, silence 13. No line of a row excuses more or less in any state than it did: the fences of what each line excuses are green over the 22 as they stood. **No cell of the 174 that stood moved on either binary** (the arm on a named binary, 130 s at a load of about 10).
+
+### Not established
+
+- **The words a fixed discard refuses with** where the record's directory is gone: the cell names the record's path and nothing else.
+- **That the three fault cells were red** before the kind was built: they were written with the five stand-in cells, whose red stopped the arm first.
+
 ## 2026-10-18 — The human's seven rulings on the install family's questions, recorded: `setup` refuses over a path whose bytes are not jigc's own; it lays out the workbench's cache directories; it refuses a link at the root `.gitignore` on any `HEAD`; `unmanage` never commits; the install commit runs the user's hooks; the install-footprint record is no cache; and `B6` builds the plant in the place of a file that stands (the byte table, task `B6`, the first of its commits)
 
 **What.** The human ruled on the six questions the install family met ([the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, entries 1, 3 and 9 to 12; [the family's record](completions/artifacts/M55/stabilization-build/reshape/byte-table-install-family.md) → §3) on 2026-10-15, each option A, and on 2026-10-18 on the one thing the earlier families left unbuilt that every later family needs. This commit records the seven, as the orchestrating session handed them on, and brings the records, the frame and the suite to them: the rows' record (§1 `S16`, §6, §7), [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md), [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md), the marks the cells carry and four cells' listed outcome. **No cell's leads, argv or state changed**, and no product source.

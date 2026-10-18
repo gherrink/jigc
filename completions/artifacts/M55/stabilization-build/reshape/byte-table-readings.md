@@ -2,7 +2,7 @@
 
 *Begun 2026-10-13 on the branch `fix/rc24-route-catalog`, with the task that brought the table its first cells (`B2d` of [the plan](byte-table-plan.md)); rewritten the same day with the cells of the task family (`B4`), the first that turn on a question; brought to the human's rulings of 2026-10-13 and 2026-10-14 on 2026-10-15, with the first commit of the install family's task (`B5`); and to the rulings of 2026-10-15 on the install family's questions on 2026-10-18, with the first commit of the doc family's task (`B6`). In the form of [the route catalog's list](route-catalog-doubts.md): the words, what a committed doc answers, what stays open, and the cells that turn on it. It decides nothing. A cell that turns on an open question follows the reading under which more is red, **and carries a mark that names the question** — the last section's table, which the suite holds to the cells (`byte_table::a_mark_names_a_question_the_list_of_readings_has`). A ruling changes a mark and this list, and never a cell's construction.*
 
-Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) brought twenty more marked cells**: twenty in which `setup` acts carried the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. **The rulings of 2026-10-15 took all twenty-three marks off**: the table has two lines over two cells, each a declared bound.
+Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-plan.md) → §7) and the eight places where a design doc is silent or says two things ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6). **Of the 61 cells, five turned on an open question or stood on a declared bound** on 2026-10-13; each is named below with what it showed on this tree's binary and on the previous release's. **Since the rulings, two carry a mark — each for a declared bound — and none turns on an open question.** A ruling changed marks and this list, and no cell's construction. **The install family's 113 cells (`B5`, 2026-10-15) brought twenty more marked cells**: twenty in which `setup` acts carried the mark of the record's entry 1, its first open point, and three of them the mark of entry 10 too — §10 below. **The rulings of 2026-10-15 took all twenty-three marks off**: the table had two lines over two cells, each a declared bound — and the plant in the place of a file that stands (`B6`, 2026-10-18) brings one more, §12.
 
 ## 1. *Bytes no git object holds* — how far *holds* reaches (the plan's question 1) — ruled on 2026-10-14: reading (b)
 
@@ -74,11 +74,17 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - **Bound (2)** — *an uncommitted edit made before a task first writes a doc is carried into the task, and a write by that task to the same part replaces it*: `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` — exit 0, and the line added by hand stands at no path and in no object. **The previous release does not show it**: there the finalize refuses (`reconciliation.conflict-block`, exit 3) and the line stands. The cell beside it, in which the task writes another part, carries the line into the commit on this tree, and is refused the same way on the previous release.
 - The human's entries for the four bounds are still owed as one list with reach ([decisions-pending.md](../../../../../implementation/decisions-pending.md) → *The declared bounds, as one list with reach*); a mark names a bound by its number in the plan's §1.1.
 
+## 12. A file staged at a path `setup` merges into, on an unborn `HEAD` (the record's entry 13) — open
+
+- *The cell.* `setup-head-unborn-an-edit-to-the-root-ignore`: on an unborn `HEAD`, a root `.gitignore` of the user's own, `git add`ed, and a line added after it; then `jigc setup`. It refuses, exit 1, `setup.dirty-install-path`, and nothing changed.
+- *Under reading (a)* — S15's on-ramp covers it, the file rides the first commit — the cell is listed as acting, and is red: *not the listed outcome*. *Under (b)* — it refuses as on a born `HEAD` — it holds. The cell follows (a) and is marked. The record says what the product should do: refuse, as it does, and S15's sentence say *untracked and unstaged*.
+
 ## The marked cells
 
 A line a mark of a cell, as the suite prints it. A cell with two marks has two lines.
 
 | mark | cell |
 |---|---|
+| silence 13 | `setup-head-unborn-an-edit-to-the-root-ignore` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |

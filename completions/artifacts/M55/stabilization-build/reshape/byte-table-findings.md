@@ -252,3 +252,28 @@ Seven cells of the family come out otherwise on the previous release, beside the
 ### What the same cells show the other way
 
 Twenty-seven cells of the family are red on the previous release and not on this tree: eight refused there with another refusal than the one the cell names, or acted where it refuses here; six wrote outside the allowance; five refused after writing; four lost a plant — an untracked file or a link at a path the install replaces, written over at exit 0; four moved git's state. The arm counts; it does not say which of these is a regression.
+
+## 7. The plant in the place of a file that stands — 22 cells, two red on this tree's binary under two keys
+
+*2026-10-18, this tree's debug build, macOS arm64; the second commit of the task `B6`. The human's ruling of 2026-10-18 had `B6` build **a link or a directory in the place of a file that stands** (`byte_cell::Plant::InPlaceOf`) and fill the needs that waited for it: the task family's fourteen — `T2`, `.jigc/version` at `task finalize`, and `A5`, the milestone's record at a sub-task's `task discard`, each by a file of the user's, one the user committed, three links, a directory, and a file in the place of the directory the file stands in — and the install family's eight, an edit to each file of `setup`'s own install, built by a lead-in that installs first. All 22 run in the gate. On the previous release (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 130 s at a load of about 10): **ten of them are red there and not here**: five at exit 0 at the stamp — what the user put in its place written over, *lost* three times (a file of the user's, and the file each of two links led to) and *git's state moved* twice (the file the user committed, and the link to nothing) — the directory in the stamp's place refused with another refusal, and the three links and the directory in the record's place refused with another refusal than this tree's; and one cell does not build there (`setup` in the never-adopted repository writes no settings record there to edit). Nothing here is a grade.*
+
+### `r1-task-discard-settles-no-record-and-discards-a-sub-task-whose-record-is-not-on-disk`
+
+- *The cell.* `task-discard-a-file-in-the-place-of-the-records-directory` — a milestone with one sub-task nobody re-entered; the directory `docs/milestone-records/` moved away and a file of the user's put in its place; then `jigc task discard do-the-thing`.
+- *What it came to.* **Not the listed outcome**: exit 0, *"discarded task do-the-thing"* — the sub-task's working area removed and no record settled, where the record `HEAD` holds still names the sub-task. No byte is lost: the area held nothing staged, the record stands in `HEAD` and under the sandbox's `moved/`, and the file in its directory's place stands.
+- *Held against.* `A8`: *"The record commit runs **before** the working area is removed"* — the discard settles before it destroys; and `A9`, which makes the discard that writes no record an **ordinary** task's: one *"named by no record"*. This sub-task is named by a committed record; the discard read the record off the working tree, found none, and discarded it as an ordinary task. The cell is listed as refused, naming the record, and no run gives the words.
+- *The previous release.* The same: exit 0, *not the listed outcome*.
+
+### `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides`
+
+- *The cell.* `setup-head-unborn-an-edit-to-the-root-ignore` — the never-adopted repository with its `HEAD` unborn; a root `.gitignore` of the user's own, `git add`ed, and a line added after it; then `jigc setup`.
+- *What it came to.* **Not the listed outcome**: exit 1, `setup.dirty-install-path` over `.gitignore`, nothing changed — where the cell is listed as acting, by S15's on-ramp.
+- *Held against.* The rows' record's §6, **entry 13**, open: S15 lets an *untracked* file at a path the install merges into ride the first commit on an unborn `HEAD`, and no sentence says what becomes of a **staged** one. The cell follows the reading by which it is red, and carries the entry's mark. The record leads with what the product should do — refuse, as it does — so the ruling may retire this key.
+- *The previous release.* The same.
+
+### What the other twenty show
+
+- **At the stamp (`T2`)**, `task finalize` leaves what stands in jigc's stamp's place — a file of the user's, one the user committed, three links, a directory — and lands at exit 0; with the workbench itself replaced by a file, there is no task and it refuses (`finalize.no-task`). Seven hold or refuse with nothing changed.
+- **At the record (`A5`)**, a sub-task's discard refuses over a file or a committed file in the record's place (`reconciliation.conflict-block`) and over a link or a directory there (`store.home-not-regular-file`), each with nothing changed.
+- **At `setup`'s own files**, an edit is refused as dirty at the bootstrap, the host file, the settings file, the stamp, the settings record and the workbench's ignore file — the edit's bytes in no commit — and the guide a user edited is left as it is, the install acting around it.
+

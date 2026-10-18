@@ -1579,6 +1579,17 @@ pub enum Plant {
     /// **M**, in the hook — the user's own line in the `pre-commit` hook git resolves,
     /// which lets every commit through: put in as [`Plant::RejectingHook`]'s lines are.
     UsersHook,
+    /// **A plant in the place of a file that stands** — the human's ruling of 2026-10-18
+    /// (`DECISIONS.md`, the entry of the task `B6`'s first commit, ruling 7): the regular
+    /// file at the plant's path is taken away, and the plant put where it stood — a file of
+    /// the user's, one the user committed, a link, a directory. The file taken away is the
+    /// prepared state's or a lead-in's, never a plant, and is gone before the picture the
+    /// command is held to. **A plant that is put into what stands** — an edit, a staged
+    /// change, a line, a hook — **or a place that holds no regular file** is a fault of the
+    /// cell; and a file in the place of a *directory* that stands is no plant of this
+    /// kind: a cell moves the directory away first ([`Lead::MovedAway`]) and plants a
+    /// [`Plant::File`] there.
+    InPlaceOf(&'static Plant),
 }
 
 /// The name of the file a [`Plant::Dir`] holds.
@@ -1724,6 +1735,24 @@ impl Plant {
             }
             Plant::RejectingHook => kind == Kind::RejectingHook,
             Plant::UsersLine(_) | Plant::UsersHook => kind == Kind::UsersLine,
+            // In a file's place: the inner plant's kind, but for the two that stand where
+            // no file does — in a directory removed, or in a directory's place.
+            Plant::InPlaceOf(inner) => {
+                !matches!(kind, Kind::Foreign | Kind::FileForADir) && inner.is_of(kind)
+            }
+        }
+    }
+
+    /// Where a plant that makes an entry of its own stands, from the repository's root —
+    /// `None` for one put into what stands there.
+    fn place(self) -> Option<&'static str> {
+        match self {
+            Plant::File(path)
+            | Plant::Committed(path)
+            | Plant::LinkToNothing(path)
+            | Plant::Dir(path)
+            | Plant::LinkToAFile { at: path, .. } => Some(path),
+            _ => None,
         }
     }
 }
@@ -1899,6 +1928,7 @@ impl Plant {
             staged: false,
         };
         match self {
+            Plant::InPlaceOf(inner) => inner.planted(at, hooks),
             Plant::LinkToAFile { at: path, outside } => vec![
                 piece(format!("{REPO}/{path}"), "only"),
                 piece(
@@ -1958,6 +1988,24 @@ impl Plant {
         let written =
             |path: &'static str| move |why: std::io::Error| format!("the plant at `{path}`: {why}");
         match self {
+            Plant::InPlaceOf(inner) => {
+                let Some(path) = inner.place() else {
+                    return Err(
+                        "a plant in the place of a file is one that makes an entry of \
+                                its own — a file, a committed file, a link or a directory"
+                            .to_string(),
+                    );
+                };
+                let file = repo.join(path);
+                if !fs::symlink_metadata(&file).is_ok_and(|entry| entry.is_file()) {
+                    return Err(format!(
+                        "a plant goes in the place of the file at `{path}`, and no regular \
+                         file stands there"
+                    ));
+                }
+                fs::remove_file(&file).map_err(written(path))?;
+                inner.put(sandbox, at, hooks)
+            }
             Plant::File(path) => {
                 fs::write(free(path)?, format!("{}\n", marker(at, "only"))).map_err(written(path))
             }

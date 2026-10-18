@@ -986,6 +986,96 @@ const FINALIZE_CELLS: [Cell; 24] = [
     ),
 ];
 
+/// **The cells of `jigc task finalize` at the stamp that stands** — `T2`'s needs a plant in
+/// the place of a file that stands answers (the human's ruling of 2026-10-18): a file of
+/// the user's, one the user committed before the task began, three links and a directory
+/// where jigc's own `.jigc/version` stood; and a file in the place of the directory it
+/// stands in, `.jigc/`, which takes the task with it. Each is listed from the row's doc:
+/// the stamp is refreshed *"where it is jigc's to write"* (`T2`), and a stamp that is not
+/// jigc's own one-line stamp is not jigc's to write — so the finalize acts and leaves it,
+/// where a link or a directory is no stamp to refresh either; with the workbench gone
+/// there is no task, and the finalize refuses as it does over a task that is not there.
+/// The refusal's words are read off a run where no doc gives them.
+const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
+    finalize(
+        "task-finalize-a-file-of-the-users-in-the-stamps-place",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_STAMP)))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::Untracked),
+    ),
+    finalize(
+        "task-finalize-a-file-the-user-committed-in-the-stamps-place",
+        FRESH,
+        a_decision!([Lead::Plant(Plant::InPlaceOf(&Plant::Committed(THE_STAMP)))], []),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::Committed),
+    ),
+    finalize(
+        "task-finalize-a-link-to-nothing-in-the-stamps-place",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(THE_STAMP)))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::LinkToNothing),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-file-in-the-repository-in-the-stamps-place",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: THE_STAMP,
+                outside: false,
+            }))]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::LinkInside),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-file-outside-in-the-stamps-place",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: THE_STAMP,
+                outside: true,
+            }))]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::LinkOutside),
+    ),
+    finalize(
+        "task-finalize-a-directory-in-the-stamps-place",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::InPlaceOf(&Plant::Dir(THE_STAMP)))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::DirForAFile),
+    ),
+    finalize(
+        "task-finalize-a-file-in-the-place-of-the-workbench",
+        FRESH,
+        a_decision!(
+            [],
+            [
+                Lead::MovedAway("repo/.jigc"),
+                Lead::Plant(Plant::File(".jigc")),
+            ]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(1, "finalize.no-task"),
+        at("T2", Kind::FileForADir),
+    ),
+];
+
+/// The stamp `T2` refreshes.
+const THE_STAMP: &str = ".jigc/version";
+
 /// **The base cell of `jigc task finalize` in the prepared states that are not its home**
 /// — on demand, in no gate: the same task, the same command.
 const FINALIZE_ELSEWHERE: [Cell; 5] = [
@@ -1197,6 +1287,105 @@ const DISCARD_CELLS: [Cell; 15] = [
     },
 ];
 
+/// **The cells of `jigc task discard` at the record that stands** — `A5`'s needs a plant in
+/// the place of a file that stands answers (the human's ruling of 2026-10-18): where the
+/// milestone's committed record stood, a file of the user's, one the user committed — last
+/// before the command, since the record stands only from the lead-in that mints the
+/// milestone — three links and a directory; and a file in the place of the directory the
+/// record stands in. Each is listed from the row's doc: the record is written through
+/// *"the byte-stable item-leaf splice"* (`A5`), and what stands there is no record to splice
+/// — an edit to the record *"conflict-blocks on drift"*, and a link or a directory is no
+/// record at all — so each refuses, with the words read off a run where no doc gives them;
+/// and with the record's directory gone there is no record to settle, which the discard
+/// does *"before it destroys"* (`A8`), so it refuses there too — no run gives its words,
+/// and any refusal names the record.
+const DISCARD_AT_THE_RECORD: [Cell; 7] = [
+    discard(
+        "task-discard-a-file-of-the-users-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_RECORD))),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("A5", Kind::Untracked),
+    ),
+    discard(
+        "task-discard-a-file-the-user-committed-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::Committed(THE_RECORD))),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("A5", Kind::Committed),
+    ),
+    discard(
+        "task-discard-a-link-to-nothing-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(THE_RECORD))),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("A5", Kind::LinkToNothing),
+    ),
+    discard(
+        "task-discard-a-link-to-a-file-in-the-repository-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: THE_RECORD,
+                outside: false,
+            })),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("A5", Kind::LinkInside),
+    ),
+    discard(
+        "task-discard-a-link-to-a-file-outside-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: THE_RECORD,
+                outside: true,
+            })),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("A5", Kind::LinkOutside),
+    ),
+    discard(
+        "task-discard-a-directory-in-the-records-place",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::InPlaceOf(&Plant::Dir(THE_RECORD))),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("A5", Kind::DirForAFile),
+    ),
+    discard(
+        "task-discard-a-file-in-the-place-of-the-records-directory",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::MovedAway("repo/docs/milestone-records"),
+            Lead::Plant(Plant::File("docs/milestone-records")),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "docs/milestone-records/ship-it.md"),
+        at("A5", Kind::FileForADir),
+    ),
+];
+
 /// One base cell of `jigc task discard` in a prepared state that is not its home.
 const fn discard_in(name: &'static str, state: State) -> Cell {
     Cell {
@@ -1242,7 +1431,9 @@ const DISCARD_ELSEWHERE: [Cell; 5] = [
 pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &FINALIZE_CELLS,
+    &FINALIZE_AT_THE_STAMP,
     &FINALIZE_ELSEWHERE,
     &DISCARD_CELLS,
+    &DISCARD_AT_THE_RECORD,
     &DISCARD_ELSEWHERE,
 ];

@@ -21,7 +21,7 @@
 use super::task::A_DECISION;
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
     Quote, Row, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -1059,6 +1059,84 @@ const SETUP_CELLS: [Cell; 18] = [
     ),
 ];
 
+/// The install, laid down by the binary under test itself — so that a file `setup` writes
+/// stands, committed, where a cell's edit goes.
+const INSTALLED: Lead = Lead::Step(Step::Jigc(&["setup"]));
+
+/// **The cells of `setup` over an edit to a file of its own install** — the needs that
+/// waited for *"a file the never-adopted repository does not have"*: each is built by a
+/// lead-in that installs first, so the file stands committed, then a line added by hand
+/// to it, in no commit (the plan's plant **E**, last before the command). The root
+/// `.gitignore`'s is the one `S9`'s condition, an unborn `HEAD`, lets stand: no file is in
+/// a commit there, so the file that stands is the user's own, staged — `git add` after
+/// `git init` — and the edit is a line added after it. Each is listed from the row's doc: a file at a path
+/// the install **replaces** *"is refused before the first write while no commit holds its
+/// bytes"* (`S4`; *"while its bytes are not jigc's own"*, by the human's ruling of
+/// 2026-10-15), and so is one at a path it **merges into** on a born `HEAD` (the carryover
+/// gate, `design/surface-contract.md`); the guide a user edited is *"left
+/// **byte-identical**"* (`S8`); and on an unborn `HEAD` a file the install merges into
+/// *"rides the repository's first commit instead of refusing"* (`S15`).
+const SETUP_OVER_ITS_OWN: [Cell; 8] = [
+    setup(
+        "setup-an-edit-to-its-bootstrap",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".jigc/AGENT.md"))],
+        DIRTY,
+        at("S1", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-host-file",
+        &[INSTALLED, Lead::Plant(Plant::Edit("CLAUDE.md"))],
+        DIRTY,
+        at("S2", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-settings-file",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".claude/settings.json"))],
+        DIRTY,
+        at("S3", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-stamp",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".jigc/version"))],
+        DIRTY,
+        at("S5", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-settings-record",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".jigc/settings-entries.json"))],
+        DIRTY,
+        at("S6, written", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-workbench-ignore",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".jigc/.gitignore"))],
+        DIRTY,
+        at("S7", Kind::EditAfter),
+    ),
+    setup(
+        "setup-an-edit-to-the-guide",
+        &[INSTALLED, Lead::Plant(Plant::Edit(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::EditAfter),
+    ),
+    // The doc is silent on a file staged at a path the install merges into on an unborn
+    // `HEAD`: the record's §6, entry 13 — the cell follows the reading by which it is red.
+    Cell {
+        marks: &[Mark::Silence(13)],
+        ..setup(
+        "setup-head-unborn-an-edit-to-the-root-ignore",
+        &[
+            UNBORN,
+            Lead::Step(Step::File(Place::Repo(".gitignore"), "target/\n")),
+            Lead::Step(Step::Git(&["add", "--", ".gitignore"])),
+            Lead::Plant(Plant::Edit(".gitignore")),
+        ],
+        Listed::Acts,
+        at("S9", Kind::EditAfter),
+    )
+    },
+];
+
 /// **A task that landed** — `record-a-decision`, created and finalized: the repository a
 /// teardown or a second install meets after somebody worked in it.
 const A_LANDED_TASK: [Lead; 12] = [
@@ -1331,6 +1409,7 @@ pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &SETUP_CELLS,
     &SETUP_PLANTED,
+    &SETUP_OVER_ITS_OWN,
     &UNINSTALL_CELLS,
     &REGISTER_CELLS,
     &ELSEWHERE,

@@ -6,10 +6,12 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has seven rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 174 cells: the acceptance's
-//! twelve, the task family's forty-nine** (`jigc task finalize`, `jigc task discard`) **and
-//! the install family's hundred and thirteen** (`setup`, `uninstall`, `ingest`,
-//! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to `B5` — the arms that hold the comparison, the reader and the
+//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 196 cells: the acceptance's
+//! twelve, the task family's sixty-three** (`jigc task finalize`, `jigc task discard`) **and
+//! the install family's hundred and twenty-one** (`setup`, `uninstall`, `ingest`,
+//! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to
+//! `B5`, and of `B6` the plant in the place of a file that stands — the arms that hold the
+//! comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
 //!
@@ -1048,7 +1050,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
                 scheduled row for it")
             && bare
                 .iter()
-                .any(|line| line.contains("*S1 × E, after the first write*"))
+                .any(|line| line.contains("*S2 × K, a file in a directory's place*"))
             && !bare.iter().any(|line| line.contains("*U1 × D*")),
         "{bare:#?}"
     );
@@ -4012,6 +4014,7 @@ prunes-the-worktrees) git worktree prune ;;
 seeds-the-ignore-file) echo secrets > .gitignore ;;
 writes-a-baseline) mkdir -p .jigc/state && echo '{}' > .jigc/state/hashes.json ;;
 empties-the-directory) rm -r a-dir ;;
+empties-the-readme) rm -r README.md ;;
 drops-the-staged) git reset -q -- README.md ;;
 commits-nothing) git commit -q --allow-empty -m nothing ;;
 commits-what-is-staged) git commit -q -m staged ;;
@@ -4191,6 +4194,47 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         NOTHING,
         Classification::WrittenOutside,
         "`repo/.jigc/state/hashes.json` was made, and no line covers it",
+    ),
+    // --- a plant in the place of a file that stands: the committed `README.md` taken away,
+    // and a file of the user's, one the user committed, a link or a directory put there ---
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::InPlaceOf(&Plant::File(README)))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/README.md` is gone, and its bytes stand at no path",
+    ),
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::InPlaceOf(&Plant::Committed(README)))],
+        NOTHING,
+        Classification::GitMoved,
+        "the planted `repo/README.md` is gone from every path of the sandbox, and an object \
+         within reach still has its bytes",
+    ),
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(README)))],
+        NOTHING,
+        Classification::WrittenOutside,
+        "-only-of-its-cell.md` was made, and no line covers it",
+    ),
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: README,
+            outside: true,
+        }))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `outside/byte-table-plant-0-only-of-its-cell.md` is gone",
+    ),
+    on_a_stand_in(
+        &["empties-the-readme"],
+        &[Lead::Plant(Plant::InPlaceOf(&Plant::Dir(README)))],
+        NOTHING,
+        Classification::Lost,
+        "the planted `repo/README.md/a-file-of-its-users.txt` is gone",
     ),
     // --- the plants of a family's cells: a link to a file, a directory, what is staged, a
     // hook that rejects — and a lead-in that must refuse ---
@@ -4715,6 +4759,31 @@ fn the_reader_reads_what_the_comparison_reads() {
         before.commits.len()
     );
 
+    // A plant in the place of a file that stands: the file is gone from the picture the
+    // command is held to, and the plant is where it stood — a directory, here.
+    let in_place = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| {
+            matches!(
+                on.cell.leads,
+                [Lead::Plant(Plant::InPlaceOf(Plant::Dir(_)))]
+            )
+        })
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of a directory in the file's place ran");
+    assert!(
+        matches!(
+            in_place.before.files.get("repo/README.md"),
+            Some(Entry::Dir(_))
+        ) && in_place
+            .before
+            .files
+            .contains_key("repo/README.md/a-file-of-its-users.txt"),
+        "a directory stands where the committed file stood: {:?}",
+        in_place.before.files.get("repo/README.md")
+    );
+
     // A hook the user's lines are put into keeps whatever else it held.
     let hooked = ON_A_STAND_IN
         .iter()
@@ -4813,6 +4882,38 @@ fn the_reader_reads_what_the_comparison_reads() {
                 &["probe"],
             ),
             "something stands there already",
+        ),
+        (
+            cell(
+                "a-plant-in-the-place-of-no-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::InPlaceOf(&Plant::File(
+                    "no-such-file.md",
+                )))],
+                &["probe"],
+            ),
+            "no regular file stands there",
+        ),
+        (
+            cell(
+                "a-plant-in-the-place-of-a-directory",
+                Prepared::Bare,
+                &[
+                    Lead::Step(Step::Dir(Place::Repo("a-dir"))),
+                    Lead::Plant(Plant::InPlaceOf(&Plant::Dir("a-dir"))),
+                ],
+                &["probe"],
+            ),
+            "no regular file stands there",
+        ),
+        (
+            cell(
+                "an-edit-in-the-place-of-a-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::InPlaceOf(&Plant::Edit(README)))],
+                &["probe"],
+            ),
+            "one that makes an entry of its own",
         ),
         (
             cell(
@@ -5224,6 +5325,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
+        "r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides",
+        Classification::NotTheListedOutcome,
+        &["setup-head-unborn-an-edit-to-the-root-ignore"],
+    ),
+    (
         "r1-setup-runs-no-hook-at-its-install-commit",
         Classification::NotTheListedOutcome,
         &["setup-a-hook-that-rejects"],
@@ -5274,6 +5380,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         "r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced",
         Classification::Lost,
         &["task-discard-a-change-staged-at-the-record-and-not-in-the-file"],
+    ),
+    (
+        "r1-task-discard-settles-no-record-and-discards-a-sub-task-whose-record-is-not-on-disk",
+        Classification::NotTheListedOutcome,
+        &["task-discard-a-file-in-the-place-of-the-records-directory"],
     ),
     (
         "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
@@ -5704,10 +5815,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (174, 138, 36),
+        (196, 160, 36),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         forty-nine — thirty-seven in the gate, twelve on demand — and the install family's \
-         are a hundred and thirteen: eighty-nine in the gate, twenty-four on demand"
+         sixty-three — fifty-one in the gate, twelve on demand — and the install family's \
+         are a hundred and twenty-one: ninety-seven in the gate, twenty-four on demand"
     );
 }
 
