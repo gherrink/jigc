@@ -1204,6 +1204,797 @@ const UNSQUASHED: [Cell; 4] = [
     ),
 ];
 
-/// The family's cells: the acceptance's. Its other cells are a later task's, if the human
-/// rules for it at the pilot's stop.
-pub const CELLS: &[&[Cell]] = &[ACCEPTANCE, &UNSQUASHED];
+// ---------------------------------------------------------------------------
+// The record doors' cells — `create`, `add-task`, `add-from-spec` (the first of the three
+// parts the record's §4b names)
+// ---------------------------------------------------------------------------
+
+const FRESH: Prepared = Prepared::Of(State::Fresh);
+const VENDORED: Prepared = Prepared::Of(State::Vendored);
+
+/// What a planted cell's plant is aimed at.
+const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+    Some(Aim { line, kind })
+}
+
+/// One cell of the family's, plainly spelled and beside no suite.
+const fn cell(
+    name: &'static str,
+    leaf: &'static [&'static str],
+    state: Prepared,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        spelling: None,
+        name,
+        leaf,
+        state,
+        leads,
+        argv,
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// The milestone the record doors' cells mint or continue: `ship-it`, whose title is its
+/// own slug — the id the record's home and the milestone's area are named by.
+const MINT_IT: Lead = jigc(&["milestone", "create", "ship-it"]);
+
+/// Its committed record, and the directory the record stands in.
+const ITS_RECORD: &str = "docs/milestone-records/ship-it.md";
+const THE_RECORDS_DIRECTORY: &str = "docs/milestone-records";
+
+/// A sub-task added before the cell's own — `do-a-first-thing`, whose area is the one the
+/// re-seed's line names.
+const A_FIRST_SUB_TASK: Lead = jigc(&["milestone", "add-task", "ship-it", "do a first thing"]);
+
+const CREATE_IT: &[&str] = &["milestone", "create", "ship-it"];
+const ADD_A_SUB_TASK: &[&str] = &["milestone", "add-task", "ship-it", "do the thing"];
+const SEED_FROM_THE_SPEC: &[&str] = &["milestone", "add-from-spec", "ship-it", "spec:padding"];
+
+/// A change of the user's staged at a place the command does not write, and one under a
+/// name git quotes — kept in the working file both.
+const STAGED_ELSEWHERE: Lead = Lead::Plant(Plant::Staged {
+    at: "notes/staged-by-its-user.txt",
+    kept: true,
+});
+const STAGED_UNDER_A_QUOTED_NAME: Lead = Lead::Plant(Plant::Staged {
+    at: A_NAME_GIT_QUOTES,
+    kept: true,
+});
+
+/// The words a refusal over a repository with no `jigc setup` says — every `jigc milestone`
+/// door's, *"the shipped `locate::not_set_up()` answer"* (`design/team-ready-state.md` →
+/// *Engine capability 2*); the words a run's.
+const NOT_SET_UP: Listed = refuses(1, "this project isn't set up");
+
+/// **The cells of `jigc milestone create`**, each listed from the row's doc:
+///
+/// - **the base cell mints `ship-it`** — its area, its record, one commit of the record
+///   alone (`MC1` to `MC4`); the leaf as the catalog types it, `"A Milestone"`, resolves
+///   nothing and mints too, so its refusing cell acts;
+/// - **a file of the user's in the milestone's area** (`MC1`) is a leftover the mint
+///   refuses over — *"A **residual** at the area path … takes the task mint's split above:
+///   same code, same key"* (`design/write-commands.md` → *Minting a milestone*);
+/// - **at the record's home** (`MC2`), a file of the user's, one the user committed, a
+///   change the user staged and a record that a discarded milestone's left and the user
+///   edited each own the id — *"`create` refuses when a record already owns the slug
+///   (`milestone.record-exists`)"* — and a link or a directory there is no regular file:
+///   *"any entry that is not a regular file — a link, a directory — refuses — under
+///   `store.home-not-regular-file`"* (`design/team-ready-state.md` → *The terminal is
+///   terminal*); a file in the place of the record's directory leaves the record nowhere
+///   to be made, and no doc names the refusal — the words are a run's;
+/// - **what is staged elsewhere stays out of the record's commit** (`MC3`: *"never
+///   sweeping the agent's in-flight index/worktree WIP"*), and **a hook that rejects** the
+///   commit leaves no residue (`MC5`);
+/// - **a file of the user's beside the baseline** (`MC4`) stays.
+const CREATE_CELLS: [Cell; 22] = [
+    cell(
+        "milestone-create-a-milestone-the-catalog-names",
+        &["milestone", "create"],
+        FRESH,
+        &[],
+        &["milestone", "create", "A Milestone"],
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it",
+        &["milestone", "create"],
+        FRESH,
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-a-file-of-the-users-in-the-milestones-area",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::File(
+            ".jigc/milestones/ship-it/notes.txt",
+        ))],
+        CREATE_IT,
+        refuses(1, "milestone.serial-collision"),
+        at("MC1", Kind::Untracked),
+    ),
+    cell(
+        "milestone-create-a-file-of-the-users-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::File(ITS_RECORD))],
+        CREATE_IT,
+        refuses(1, "milestone.record-exists"),
+        at("MC2", Kind::Untracked),
+    ),
+    cell(
+        "milestone-create-a-file-the-user-committed-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::Committed(ITS_RECORD))],
+        CREATE_IT,
+        refuses(1, "milestone.record-exists"),
+        at("MC2", Kind::Committed),
+    ),
+    cell(
+        "milestone-create-a-link-to-nothing-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::LinkToNothing(ITS_RECORD))],
+        CREATE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MC2", Kind::LinkToNothing),
+    ),
+    cell(
+        "milestone-create-a-link-to-a-file-in-the-repository-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: false,
+        })],
+        CREATE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MC2", Kind::LinkInside),
+    ),
+    cell(
+        "milestone-create-a-link-to-a-file-outside-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: true,
+        })],
+        CREATE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MC2", Kind::LinkOutside),
+    ),
+    cell(
+        "milestone-create-a-directory-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::Dir(ITS_RECORD))],
+        CREATE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MC2", Kind::DirForAFile),
+    ),
+    cell(
+        "milestone-create-a-file-in-the-place-of-the-records-directory",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::File(THE_RECORDS_DIRECTORY))],
+        CREATE_IT,
+        refuses(1, "could not create the record home"),
+        at("MC2", Kind::FileForADir),
+    ),
+    cell(
+        "milestone-create-over-a-discarded-milestones-record-edited-by-hand",
+        &["milestone", "create"],
+        FRESH,
+        &[
+            MINT_IT,
+            jigc(&["milestone", "discard", "ship-it"]),
+            Lead::Plant(Plant::Edit(ITS_RECORD)),
+        ],
+        CREATE_IT,
+        refuses(1, "milestone.record-exists"),
+        at("MC2", Kind::EditAfter),
+    ),
+    cell(
+        "milestone-create-a-change-staged-at-the-records-home",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::Staged {
+            at: ITS_RECORD,
+            kept: false,
+        })],
+        CREATE_IT,
+        refuses(1, "milestone.record-exists"),
+        at("MC2", Kind::StagedThere),
+    ),
+    cell(
+        "milestone-create-a-file-staged-elsewhere",
+        &["milestone", "create"],
+        FRESH,
+        &[STAGED_ELSEWHERE],
+        CREATE_IT,
+        Listed::Acts,
+        at("MC3", Kind::StagedElsewhere),
+    ),
+    cell(
+        "milestone-create-a-staged-file-whose-name-git-quotes",
+        &["milestone", "create"],
+        FRESH,
+        &[STAGED_UNDER_A_QUOTED_NAME],
+        CREATE_IT,
+        Listed::Acts,
+        at("MC3", Kind::QuotedName),
+    ),
+    cell(
+        "milestone-create-a-hook-that-rejects",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::RejectingHook)],
+        CREATE_IT,
+        refuses(1, "`git commit` was rejected"),
+        at("MC3", Kind::RejectingHook),
+    ),
+    cell(
+        "milestone-create-a-file-of-the-users-beside-the-baseline",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        CREATE_IT,
+        Listed::Acts,
+        at("MC4", Kind::Untracked),
+    ),
+    // The base cell in the never-adopted repository: the command as typed, with no lead.
+    cell(
+        "milestone-create-ship-it-in-bare",
+        &["milestone", "create"],
+        Prepared::Bare,
+        &[],
+        CREATE_IT,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it-in-committed-singletons",
+        &["milestone", "create"],
+        Prepared::Of(State::CommittedSingletons),
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it-in-migrated",
+        &["milestone", "create"],
+        Prepared::Of(State::Migrated),
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it-in-refs-post-hoc",
+        &["milestone", "create"],
+        Prepared::Of(State::RefsPostHoc),
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it-in-chatty-hooks",
+        &["milestone", "create"],
+        Prepared::Of(State::ChattyHooks),
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-create-ship-it-in-vendored",
+        &["milestone", "create"],
+        VENDORED,
+        &[],
+        CREATE_IT,
+        Listed::Acts,
+        None,
+    ),
+];
+
+/// **The cells of `jigc milestone add-task`**, each listed from the row's doc:
+///
+/// - **the base cell adds `do-the-thing` to `ship-it`** — its area, the task list, one item
+///   appended to the record, one commit of the record alone (`MA1` to `MA5`); the leaf as
+///   the catalog types it names a milestone that is not there and refuses;
+/// - **a file of the user's in the sub-task's area** (`MA1`) is a leftover the mint
+///   refuses over, as `create`'s; one **in the milestone's area** (`MA2`) is in an area the
+///   append writes into and no doc refuses over — it stays;
+/// - **at the record** (`MA3`), a link or a directory in its place is no regular file —
+///   *"an entry that is not a regular file refuses under `store.home-not-regular-file`"*;
+///   an edit to it, a line of the user's in it, a change staged at it and the record
+///   deleted each make the record one *"git calls modified"*, which *"conflict-blocks at
+///   **every door that rewrites the record**"* (`design/team-ready-state.md` → *Engine
+///   capability 1*); and with the record's directory gone there is no record to append
+///   to — refused, the words a run's;
+/// - **what is staged elsewhere stays out of the record's commit** (`MA4`), and **a hook
+///   that rejects** it leaves no residue — the area unwound and the task list restored
+///   (`MC5`);
+/// - **a file of the user's beside the baseline** (`MA5`), and **one in the area of a
+///   sub-task added before** (`MA6`: *"A sub-task whose area already exists is skipped
+///   untouched"*), stay.
+const ADD_TASK_CELLS: [Cell; 24] = [
+    cell(
+        "milestone-add-task-to-a-milestone-that-is-not-there",
+        &["milestone", "add-task"],
+        FRESH,
+        &[],
+        &["milestone", "add-task", "m-a-milestone", "do the thing"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-add-task-a-file-of-the-users-in-the-sub-tasks-area",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::File(".jigc/tasks/do-the-thing/notes.txt")),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "task.serial-collision"),
+        at("MA1", Kind::Untracked),
+    ),
+    cell(
+        "milestone-add-task-a-file-of-the-users-in-the-milestones-area",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::File(".jigc/milestones/ship-it/notes.txt")),
+        ],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        at("MA2", Kind::Untracked),
+    ),
+    cell(
+        "milestone-add-task-a-link-to-nothing-in-the-records-place",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(ITS_RECORD))),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("MA3", Kind::LinkToNothing),
+    ),
+    cell(
+        "milestone-add-task-a-link-to-a-file-in-the-repository-in-the-records-place",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: ITS_RECORD,
+                outside: false,
+            })),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("MA3", Kind::LinkInside),
+    ),
+    cell(
+        "milestone-add-task-a-link-to-a-file-outside-in-the-records-place",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: ITS_RECORD,
+                outside: true,
+            })),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("MA3", Kind::LinkOutside),
+    ),
+    cell(
+        "milestone-add-task-a-directory-in-the-records-place",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ITS_RECORD))),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "store.home-not-regular-file"),
+        at("MA3", Kind::DirForAFile),
+    ),
+    cell(
+        "milestone-add-task-a-file-in-the-place-of-the-records-directory",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::MovedAway("repo/docs/milestone-records"),
+            Lead::Plant(Plant::File(THE_RECORDS_DIRECTORY)),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, ITS_RECORD),
+        at("MA3", Kind::FileForADir),
+    ),
+    cell(
+        "milestone-add-task-a-hand-edit-to-the-record",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, Lead::Plant(Plant::Edit(ITS_RECORD))],
+        ADD_A_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MA3", Kind::EditAfter),
+    ),
+    cell(
+        "milestone-add-task-the-record-deleted",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, Lead::Plant(Plant::Deleted(ITS_RECORD))],
+        ADD_A_SUB_TASK,
+        refuses(1, ITS_RECORD),
+        at("MA3", Kind::EditAfter),
+    ),
+    cell(
+        "milestone-add-task-a-change-staged-at-the-record",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::Staged {
+                at: ITS_RECORD,
+                kept: false,
+            }),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MA3", Kind::StagedThere),
+    ),
+    cell(
+        "milestone-add-task-a-line-of-the-users-in-the-record",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, Lead::Plant(Plant::UsersLine(ITS_RECORD))],
+        ADD_A_SUB_TASK,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MA3", Kind::UsersLine),
+    ),
+    cell(
+        "milestone-add-task-a-file-staged-elsewhere",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, STAGED_ELSEWHERE],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        at("MA4", Kind::StagedElsewhere),
+    ),
+    cell(
+        "milestone-add-task-a-staged-file-whose-name-git-quotes",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, STAGED_UNDER_A_QUOTED_NAME],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        at("MA4", Kind::QuotedName),
+    ),
+    cell(
+        "milestone-add-task-a-hook-that-rejects",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, Lead::Plant(Plant::RejectingHook)],
+        ADD_A_SUB_TASK,
+        refuses(1, "`git commit` was rejected"),
+        at("MA4", Kind::RejectingHook),
+    ),
+    cell(
+        "milestone-add-task-a-file-of-the-users-beside-the-baseline",
+        &["milestone", "add-task"],
+        FRESH,
+        &[MINT_IT, Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        at("MA5", Kind::Untracked),
+    ),
+    cell(
+        "milestone-add-task-a-file-of-the-users-in-a-first-sub-tasks-area",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            A_FIRST_SUB_TASK,
+            Lead::Plant(Plant::File(".jigc/tasks/do-a-first-thing/notes.txt")),
+        ],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        at("MA6", Kind::Untracked),
+    ),
+    // The base cell in the never-adopted repository: the command as typed, with no lead.
+    cell(
+        "milestone-add-task-do-the-thing-in-bare",
+        &["milestone", "add-task"],
+        Prepared::Bare,
+        &[],
+        ADD_A_SUB_TASK,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing-in-committed-singletons",
+        &["milestone", "add-task"],
+        Prepared::Of(State::CommittedSingletons),
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing-in-migrated",
+        &["milestone", "add-task"],
+        Prepared::Of(State::Migrated),
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing-in-refs-post-hoc",
+        &["milestone", "add-task"],
+        Prepared::Of(State::RefsPostHoc),
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing-in-chatty-hooks",
+        &["milestone", "add-task"],
+        Prepared::Of(State::ChattyHooks),
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-add-task-do-the-thing-in-vendored",
+        &["milestone", "add-task"],
+        VENDORED,
+        &[MINT_IT],
+        ADD_A_SUB_TASK,
+        Listed::Acts,
+        None,
+    ),
+];
+
+/// One cell of `jigc milestone add-from-spec` in `vendored`, its home, over `ship-it`
+/// minted first: `$after` stands after the mint, last before the command.
+macro_rules! seeds {
+    ($name:literal, [$($after:expr),* $(,)?], $listed:expr, $aim:expr) => {
+        cell(
+            $name,
+            &["milestone", "add-from-spec"],
+            VENDORED,
+            &[MINT_IT, $($after,)*],
+            SEED_FROM_THE_SPEC,
+            $listed,
+            $aim,
+        )
+    };
+}
+
+/// **The cells of `jigc milestone add-from-spec`** — `add-task`'s, a sub-task a criterion of
+/// `vendored`'s committed spec `spec:padding`, whose one criterion mints `pads-the-input`;
+/// each listed as `add-task`'s is. In a prepared state with no spec the base cell refuses —
+/// the spec is not there, which no doc of the door's words; the words are a run's.
+const ADD_FROM_SPEC_CELLS: [Cell; 23] = [
+    cell(
+        "milestone-add-from-spec-to-a-milestone-that-is-not-there",
+        &["milestone", "add-from-spec"],
+        FRESH,
+        &[],
+        &["milestone", "add-from-spec", "m-a-milestone", "spec:a-spec"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    seeds!("milestone-add-from-spec-padding", [], Listed::Acts, None),
+    seeds!(
+        "milestone-add-from-spec-a-file-of-the-users-in-the-sub-tasks-area",
+        [Lead::Plant(Plant::File(
+            ".jigc/tasks/pads-the-input/notes.txt"
+        ))],
+        refuses(1, "task.serial-collision"),
+        at("MS1", Kind::Untracked)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-file-of-the-users-in-the-milestones-area",
+        [Lead::Plant(Plant::File(
+            ".jigc/milestones/ship-it/notes.txt"
+        ))],
+        Listed::Acts,
+        at("MS2", Kind::Untracked)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-link-to-nothing-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            ITS_RECORD
+        )))],
+        refuses(1, "store.home-not-regular-file"),
+        at("MS3", Kind::LinkToNothing)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-link-to-a-file-in-the-repository-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: false,
+        }))],
+        refuses(1, "store.home-not-regular-file"),
+        at("MS3", Kind::LinkInside)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-link-to-a-file-outside-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: true,
+        }))],
+        refuses(1, "store.home-not-regular-file"),
+        at("MS3", Kind::LinkOutside)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-directory-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ITS_RECORD)))],
+        refuses(1, "store.home-not-regular-file"),
+        at("MS3", Kind::DirForAFile)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-file-in-the-place-of-the-records-directory",
+        [
+            Lead::MovedAway("repo/docs/milestone-records"),
+            Lead::Plant(Plant::File(THE_RECORDS_DIRECTORY)),
+        ],
+        refuses(1, ITS_RECORD),
+        at("MS3", Kind::FileForADir)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-hand-edit-to-the-record",
+        [Lead::Plant(Plant::Edit(ITS_RECORD))],
+        refuses(1, "reconciliation.conflict-block"),
+        at("MS3", Kind::EditAfter)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-change-staged-at-the-record",
+        [Lead::Plant(Plant::Staged {
+            at: ITS_RECORD,
+            kept: false,
+        })],
+        refuses(1, "reconciliation.conflict-block"),
+        at("MS3", Kind::StagedThere)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-line-of-the-users-in-the-record",
+        [Lead::Plant(Plant::UsersLine(ITS_RECORD))],
+        refuses(1, "reconciliation.conflict-block"),
+        at("MS3", Kind::UsersLine)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-file-staged-elsewhere",
+        [STAGED_ELSEWHERE],
+        Listed::Acts,
+        at("MS4", Kind::StagedElsewhere)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-staged-file-whose-name-git-quotes",
+        [STAGED_UNDER_A_QUOTED_NAME],
+        Listed::Acts,
+        at("MS4", Kind::QuotedName)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-hook-that-rejects",
+        [Lead::Plant(Plant::RejectingHook)],
+        refuses(1, "`git commit` was rejected"),
+        at("MS4", Kind::RejectingHook)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-file-of-the-users-beside-the-baseline",
+        [Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        Listed::Acts,
+        at("MS5", Kind::Untracked)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-file-of-the-users-in-a-first-sub-tasks-area",
+        [
+            A_FIRST_SUB_TASK,
+            Lead::Plant(Plant::File(".jigc/tasks/do-a-first-thing/notes.txt")),
+        ],
+        Listed::Acts,
+        at("MS6", Kind::Untracked)
+    ),
+    // The base cell in the never-adopted repository: the command as typed, with no lead;
+    // in the others, the spec is not there.
+    cell(
+        "milestone-add-from-spec-padding-in-bare",
+        &["milestone", "add-from-spec"],
+        Prepared::Bare,
+        &[],
+        SEED_FROM_THE_SPEC,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "milestone-add-from-spec-padding-in-fresh",
+        &["milestone", "add-from-spec"],
+        FRESH,
+        &[MINT_IT],
+        SEED_FROM_THE_SPEC,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "milestone-add-from-spec-padding-in-committed-singletons",
+        &["milestone", "add-from-spec"],
+        Prepared::Of(State::CommittedSingletons),
+        &[MINT_IT],
+        SEED_FROM_THE_SPEC,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "milestone-add-from-spec-padding-in-migrated",
+        &["milestone", "add-from-spec"],
+        Prepared::Of(State::Migrated),
+        &[MINT_IT],
+        SEED_FROM_THE_SPEC,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "milestone-add-from-spec-padding-in-refs-post-hoc",
+        &["milestone", "add-from-spec"],
+        Prepared::Of(State::RefsPostHoc),
+        &[MINT_IT],
+        SEED_FROM_THE_SPEC,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "milestone-add-from-spec-padding-in-chatty-hooks",
+        &["milestone", "add-from-spec"],
+        Prepared::Of(State::ChattyHooks),
+        &[MINT_IT],
+        SEED_FROM_THE_SPEC,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+];
+
+/// **The family's cells**: `milestone finalize`'s acceptance and its spelling `squash:
+/// false`, then the record doors' — `create`, `add-task`, `add-from-spec`.
+pub const CELLS: &[&[Cell]] = &[
+    ACCEPTANCE,
+    &UNSQUASHED,
+    &CREATE_CELLS,
+    &ADD_TASK_CELLS,
+    &ADD_FROM_SPEC_CELLS,
+];

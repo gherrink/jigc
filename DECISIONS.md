@@ -2,6 +2,31 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The milestone family's record doors have their cells — `create`, `add-task`, `add-from-spec`, 51 in the gate and 18 on demand — and eight are red on this tree under three keys, each the same on the previous release: a change the user staged at the record is replaced, a rejected record commit leaves its message file rewritten, and a refusal leaves the directories it made (the byte table, task `B7`, its second part: the second of its commits)
+
+**What.** The first of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)), on the rows of the first commit; the arm of `vendored`, new — `add-from-spec`'s home, the one prepared state with a committed spec; the lists. No row and no frame changes, and no product source. The three leave the list of leaves whose cells are owed.
+
+### The cells, on this tree's binary
+
+Each leaf has its refusing cell, its base cell, its six on demand and a planted cell for every need its row's lines make — 22, 24 and 23. `create`'s refusing cell acts: the leaf as the catalog types it, `"A Milestone"`, resolves nothing and mints `a-milestone`. Each listed from the row's doc ([the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §17 has which): a leftover area refused (`milestone.serial-collision`, `task.serial-collision`); at the record's home before `create` a file, a committed file, a staged change and a settled milestone's record edited by hand refused `milestone.record-exists`, a link or a directory `store.home-not-regular-file`; at the record before an append a hand edit, a line of the user's, a staged change refused `reconciliation.conflict-block`, a link or a directory `store.home-not-regular-file`; what is staged elsewhere and under a quoted name kept out of the record's commit; a file of the user's in the milestone's area, beside the baseline or in a first sub-task's area kept. **Sixty-one hold or refuse having changed nothing**, the eighteen on demand among them. **Eight are red**:
+
+| key | cells | came to |
+|---|---:|---|
+| `r1-milestone-record-doors-replace-a-change-staged-at-the-record` | 2 | **lost** — `add-task` and `add-from-spec` act, and the line the user staged at the record, kept in no working file, is in the index no longer and in no object: entry 8's class, which the human's ruling of 2026-10-14 made a finding at `task discard` |
+| `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area` | 2 | *refused, and changed what a refusal may not* — a rejected record commit leaves `record-commit-msg.txt` rewritten: entry 6's ruling, *deleted whether or not the commit landed*; at exit 0 the file stands too, where `MC1` and `MA2` let the area be rebuilt and no cell sees it |
+| `r1-milestone-record-doors-refuse-and-leave-the-directories-they-made` | 4 | *refused, and changed what a refusal may not* — empty directories the door made on its way, against `MC5`'s *"leaving no residue"* |
+
+And a key of words, held by no cell: `add-task` over a record gone from the worktree answers with a bare read error, no code and no route (§17). **The same on the previous release** (`1.0.0-rc.24`, `accf3996…ab5d`, checked), each repro run as committed on both binaries: not a regression. *Seconds*: a cell of the family 0.8 to 2.6 s in the arm of `fresh` (mean 1.8) and 2.0 to 3.1 s in the arm of `vendored` (mean 2.3), whose state builds in 5.7 s — the arms run by hand, load not measured.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A record deleted is a second cell at `MA3` × *E, after the first write***, beside the hand edit, as the task family's deletion cells stand beside their edits; `add-from-spec`'s and `discard`'s same need are answered by the edit alone at the first and by both at the third.
+- **The words of a refusal are a run's where no doc gives them** — *"could not create the record home"*, and the record's path for the bare read error.
+
+### The lists
+
+423 cells — 321 in the gate in four arms, 102 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 84 that stood, byte for byte, and the family's 18). The expected-red list: **76 cells under nineteen keys**, where 68 under sixteen. Marked cells: two, as they were. Scheduled needs: six, as they were. `MA6` and `MS6`, the re-seed of an area that is absent, excuse nothing: no cell takes an area away.
+
 ## 2026-10-19 — The milestone family's seven rows are written from their docs before a cell of any runs — `create`, `add-task`, `add-from-spec`, `provision`, `execute`, `join`, `discard` — and `milestone finalize`'s row gains the config its own sentence names; three words the rows needed, each red first: a place the command mints, a worktree's registration added, and carried as it stands (the byte table, task `B7`, its second part: the first of its commits)
 
 **What.** The rows of the seven other `jigc milestone` write leaves, written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4b and lifted quote for quote into [milestone.rs](crates/cli/tests/byte_table/milestone.rs). **No cell is added and no binary was run to learn what a command writes**; no product source changes. The seven leave the owed list of leaves ([owed.rs](crates/cli/tests/byte_table/owed.rs)) and join the list of leaves whose cells are owed, beside `milestone finalize`.

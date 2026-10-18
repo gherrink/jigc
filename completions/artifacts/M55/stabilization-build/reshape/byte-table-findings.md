@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, with the second commit of the milestone family's own (the task `B7`, its second part): §17, the record doors' cells — three keys, eight cells, and a key of words held by no cell.*
+
 *Changed 2026-10-19, by the fifth of the fixes after the review of the milestone family's task (`B7`), part A (its eleventh finding, and the counts): §16, a lead for whoever fixes the product under §10's and §11's keys — the twenty-four cells whose listed refusal must come to hold the words the human's ruling on entry 14 has the refusal say, *what stands there*, once the product says them; each keeps today's code until then. §15's heading counts what it holds now: none of its cells is red. No key, cell or classification moved.*
 
 *Changed 2026-10-18, by the fourth of the fixes after the review of the milestone family's task (`B7`), part A (its first and third findings): in §15 the key `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` retires — the rows' record's §6, entry 16 is answered by the design docs, the edge index's file may be gone after a finalize, and the three cells hold — and its false premise is corrected; §15 gains three leads for the milestone rows and `B8`; and §1 gains the one sentence of `design/finalize.md` that says other than `design/command-output-contract.md` of the `squash: false` chain and the shared index (entry 17, answered), a doc-only finding.*
@@ -717,3 +719,54 @@ The human's ruling of 2026-10-18 on the rows' record's §6, entry 14 has a `doc`
 - *The twenty-one of `add-item` to `rename`* are the cells the ruling took entry 14's mark off (§10, §11). *`author`'s three* carried no mark — they are red under every reading, by entry 15's answer at that door — but the ruling's words are of every `doc` write and its home, so their refusal is owed the same words.
 - *Which words.* The ruling names two: *a squatter to adopt* (the user's file) *or a file to restore* (the committed doc's bytes gone from its home). Which of them a link to a file is — the bytes it leads to are no doc of the type either way — is the fixer's to say from the product's route, and the cell's `says` follows what the fixed product prints there.
 - *Not in this lane.* No cell's listing moves here: the words do not exist yet, and a listing is what one run shows.
+
+## 17. The milestone family's record doors — 69 cells, 51 in the gate and 18 on demand, eight red on this tree's binary under three keys
+
+*2026-10-19, this tree's debug build, macOS arm64; the second commit of the milestone family's own (the task `B7`, its second part), the first of its three parts of cells: `jigc milestone create`, `add-task` and `add-from-spec` ([milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)), on the rows of [the rows' record](byte-table-acceptance-rows.md) → §4b. **No byte of the user's is lost but at one place**, the record's index entry; every key below is the same on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each repro run as committed on both binaries — not a regression.*
+
+### `r1-milestone-record-doors-replace-a-change-staged-at-the-record`
+
+- *The cells.* `milestone-add-task-a-change-staged-at-the-record`, `milestone-add-from-spec-a-change-staged-at-the-record`.
+- *What they came to.* **Lost**, and *not the listed outcome*: exit 0, the item appended, the record committed alone — and the line the user staged at the record, kept in no working file, is in the index no longer and in no object within reach. The door wrote the record's own bytes over the user's index entry.
+- *Held against.* `MA3`'s and `MS3`'s *"merged into"* is of the working file; *"a record git calls modified conflict-blocks at **every door that rewrites the record**"* (`design/team-ready-state.md` → *Engine capability 1*), and git calls a record with a staged change modified; and the human's ruling of 2026-10-14 on the rows' record's §6, entry 8: the declared bound (1) is one case, a doc a task is updating, and a staged change replaced at the milestone's record is a finding — there, of `task discard` (§4, `r1-task-discard-a-change-staged-at-the-record-and-not-in-the-file-is-replaced`); here the same at the doors that append. `create` over a change staged at the record's home is refused (`milestone.record-exists`), and holds.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+$JIGC milestone create ship-it > /dev/null
+R=docs/milestone-records/ship-it.md; cp $R ../was
+printf 'a line staged by its user\n' >> $R && git add $R && cp ../was $R    # staged, and in no working file
+$JIGC milestone add-task ship-it "do the thing" > /dev/null; echo "exit=$?"  # exit=0
+git diff --cached --name-only                                               # nothing: the staged line is gone
+git rev-list --all | while read c; do git grep -q 'staged by its user' $c -- && echo "held by $c"; done   # nothing
+```
+
+### `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`
+
+- *The cells.* `milestone-add-task-a-hook-that-rejects`, `milestone-add-from-spec-a-hook-that-rejects`.
+- *What they came to.* **Refused, and changed what a refusal may not**: the rejected record commit rolled the record and the mint back, and left `.jigc/milestones/ship-it/record-commit-msg.txt` rewritten with the message it rendered.
+- *Held against.* The human's ruling of 2026-10-14 on the rows' record's §6, entry 6: *the file is deleted whether or not the commit landed*, as `design/finalize.md` → *6. Commit* says (*"a temp file, deleted after"*) — the key of `task discard`'s is §4's. **At exit 0 too**: each landed record door of the family leaves the file in the milestone's area, where `MC1` and `MA2` let the area be rebuilt and no cell can see it (the rows' record's §4b, *What a line cannot*); driven, the file stands after `create`, `add-task` and `add-from-spec` on both binaries — the same finding, held by the refusal cells alone.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+$JIGC milestone create ship-it > /dev/null; ls .jigc/milestones/ship-it/        # record-commit-msg.txt, at exit 0
+printf '#!/bin/sh\nexit 1\n' > .git/hooks/pre-commit; chmod +x .git/hooks/pre-commit
+a=$(shasum .jigc/milestones/ship-it/record-commit-msg.txt)
+$JIGC milestone add-task ship-it "do another" > /dev/null 2>&1; echo "exit=$?"   # exit=1
+[ "$a" = "$(shasum .jigc/milestones/ship-it/record-commit-msg.txt)" ] || echo "rewritten by the refusal"
+```
+
+### `r1-milestone-record-doors-refuse-and-leave-the-directories-they-made`
+
+- *The cells.* `milestone-create-a-file-in-the-place-of-the-records-directory`, `milestone-create-a-hook-that-rejects`, `milestone-add-task-a-file-in-the-place-of-the-records-directory`, `milestone-add-task-the-record-deleted`.
+- *What they came to.* **Refused, and changed what a refusal may not**: no file is left, and the directories the door made on its way stand empty — `.jigc/milestones`, `docs` and `docs/milestone-records` after a rejected `create`, `.jigc/tasks` after a refused `add-task`.
+- *Held against.* `MC5`: *"leaving no residue"*; the rule of the plan's §2 that a refusal may change only what a line that holds on a refusal covers. No byte is lost; the class is the empty `.jigc/state/` `setup` made, which the human's ruling on entry 1 took into the row as *laid out* — no ruling takes these.
+
+### Seen, and held by no cell
+
+- **A record gone from the worktree is answered with a bare read error.** `add-task` over the record deleted, or with its directory replaced by a file, exits 1 with *"could not read the milestone record … No such file or directory"* / *"Not a directory"* — no code, no route — where the door's own doc has *"a record git calls modified conflict-blocks"* and routes at the restore (`design/team-ready-state.md` → *Engine capability 1*), and `create` over the same deletion names the restore (`milestone.record-exists`, *"missing from the worktree but not from git"*). Law 2 of `design/surface-contract.md`, a key of words: `r1-milestone-record-doors-answer-a-record-gone-from-the-worktree-with-a-bare-read-error`. The cells hold bytes and name the record's path, which the error carries.
+- **`create` over a file in the place of the record's directory** says *"could not create the record home … File exists"* — no code and no route, the same law; under the key above.
+- **The other cells.** `create`'s base cell, its refusing cell (the leaf as the catalog types it mints `a-milestone`), its six on demand but `bare` (refused: not set up), every plant at the record's home (refused: `milestone.record-exists`, or `store.home-not-regular-file` at a link or a directory — the twins `(R6, D-7)` closed), a leftover milestone area (refused: `milestone.serial-collision`), what is staged elsewhere and under a quoted name (stays staged, in no record commit); `add-task`'s and `add-from-spec`'s the same — a leftover sub-task area refused (`task.serial-collision`), a hand edit, a line of the user's and a link or directory at the record refused (`reconciliation.conflict-block`, `store.home-not-regular-file`), a file of the user's in the milestone's or a sub-task's area kept: **hold or refuse having changed nothing**. `add-from-spec` in a state with no spec refuses `store.not-found`, nothing changed.

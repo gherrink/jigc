@@ -7,13 +7,14 @@
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
-//! other leaves of the `milestone` family — and 354 cells: the acceptance's
+//! other leaves of the `milestone` family — and 423 cells: the acceptance's
 //! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
-//! **and the doc family's hundred and thirty-seven** (its eight leaves), of which eighty-four
-//! run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! **the doc family's hundred and thirty-seven** (its eight leaves) **and the milestone
+//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), of which a
+//! hundred and two run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
 //! rows —
@@ -1549,6 +1550,76 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         &[Prepared::Of(State::Fresh)],
     ),
     (
+        &["milestone", "create"],
+        "MC1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "create"],
+        "MC2",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "create"],
+        "MC3",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "create"],
+        "MC4",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-task"],
+        "MA1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-task"],
+        "MA2",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-task"],
+        "MA3",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-task"],
+        "MA4",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-task"],
+        "MA5",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "MS1",
+        &[Prepared::Of(State::Vendored)],
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "MS2",
+        &[Prepared::Of(State::Vendored)],
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "MS3",
+        &[Prepared::Of(State::Vendored)],
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "MS4",
+        &[Prepared::Of(State::Vendored)],
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "MS5",
+        &[Prepared::Of(State::Vendored)],
+    ),
+    (
         &["doc", "add-item"],
         "W1",
         &[Prepared::Of(State::CommittedSingletons)],
@@ -1722,57 +1793,51 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "create"], "MC1", ITS_FAMILYS_CELLS),
-    (&["milestone", "create"], "MC2", ITS_FAMILYS_CELLS),
-    (&["milestone", "create"], "MC3", ITS_FAMILYS_CELLS),
-    (&["milestone", "create"], "MC4", ITS_FAMILYS_CELLS),
-    (&["milestone", "create"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "create"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "create"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["milestone", "create"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "create"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "create"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "add-task"], "MA1", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "MA2", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "MA3", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "MA4", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "MA5", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "MA6", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-task"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-task"], "MA6", NO_AREA_TO_RE_SEED),
+    (&["milestone", "add-task"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["milestone", "add-task"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "add-task"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "add-task"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "add-from-spec"], "MS1", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "MS2", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "MS3", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "MS4", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "MS5", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "MS6", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "add-from-spec"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "add-from-spec"], "MS6", NO_AREA_TO_RE_SEED),
+    (
+        &["milestone", "add-from-spec"],
+        "C1",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (
+        &["milestone", "add-from-spec"],
+        "C2",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
     (
         &["milestone", "add-from-spec"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "add-from-spec"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (&["milestone", "provision"], "MP1", ITS_FAMILYS_CELLS),
     (&["milestone", "provision"], "MP2", ITS_FAMILYS_CELLS),
@@ -1983,6 +2048,11 @@ const STAGED_UNDER_ANOTHER_LINE: &str = "no cell can: the comparison excuses a s
 /// leaf's cells has met.
 const A_REFUSAL_THAT_REBUILDS_IT: &str =
     "a refusal of this leaf that leaves that cache rebuilt: none of its cells' refusals does";
+
+/// What would use a line of the re-seed of the sub-tasks' areas: an area the record names
+/// that is absent before the command.
+const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names and the workbench lacks — a fresh clone, or the \
+     area taken away by hand — which no cell of the family constructs: before the port";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -7711,6 +7781,32 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::RefusedAndChanged,
         &["task-discard-a-hook-that-rejects"],
     ),
+    (
+        "r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area",
+        Classification::RefusedAndChanged,
+        &[
+            "milestone-add-task-a-hook-that-rejects",
+            "milestone-add-from-spec-a-hook-that-rejects",
+        ],
+    ),
+    (
+        "r1-milestone-record-doors-refuse-and-leave-the-directories-they-made",
+        Classification::RefusedAndChanged,
+        &[
+            "milestone-create-a-file-in-the-place-of-the-records-directory",
+            "milestone-create-a-hook-that-rejects",
+            "milestone-add-task-a-file-in-the-place-of-the-records-directory",
+            "milestone-add-task-the-record-deleted",
+        ],
+    ),
+    (
+        "r1-milestone-record-doors-replace-a-change-staged-at-the-record",
+        Classification::Lost,
+        &[
+            "milestone-add-task-a-change-staged-at-the-record",
+            "milestone-add-from-spec-a-change-staged-at-the-record",
+        ],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -8029,6 +8125,7 @@ arms! {
     bare => Prepared::Bare,
     fresh => Prepared::Of(State::Fresh),
     committed_singletons => Prepared::Of(State::CommittedSingletons),
+    vendored => Prepared::Of(State::Vendored),
 }
 
 /// The suite's own path inside the test binary, as the harness names its tests.
@@ -8135,14 +8232,15 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (354, 270, 84),
+        (423, 321, 102),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy — fifty-eight in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
-         hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \
-         the doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight \
-         on demand"
+         hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
+         doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
+         demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
+         eighteen on demand"
     );
 }
 

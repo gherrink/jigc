@@ -3,6 +3,7 @@
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the fourth of the fixes after the review of the task `B6`, at a load average of 11 at its start and 9 at its end: the same block, byte for byte.
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's six edit leaves (the task `B6`'s second commit of that family), at a load average of 10 to 18: seventy-two cells — the thirty-six above, the same lines byte for byte, and the six edit leaves' thirty-six, none red. The block below is that run's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's two minting doors (the task `B6`'s third commit of that family), at a load average of 8 to 24: eighty-four cells — the seventy-two above, the same lines byte for byte, and the minting doors' twelve, none red. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's record doors (the task `B7`'s second part, its second commit), macOS arm64, load not measured: a hundred and two cells — the eighty-four above, the same lines byte for byte, and the record doors' eighteen, none red.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -40,6 +41,24 @@ task-discard-a-sub-task-nobody-re-entered-in-migrated	jigc task discard do-the-t
 task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-the-thing	refs-post-hoc	acts	holds	exit 0
 task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	holds	exit 0
 task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	holds	exit 0
+milestone-create-ship-it-in-bare	jigc milestone create ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-create-ship-it-in-committed-singletons	jigc milestone create ship-it	committed-singletons	acts	holds	exit 0
+milestone-create-ship-it-in-migrated	jigc milestone create ship-it	migrated	acts	holds	exit 0
+milestone-create-ship-it-in-refs-post-hoc	jigc milestone create ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-create-ship-it-in-chatty-hooks	jigc milestone create ship-it	chatty-hooks	acts	holds	exit 0
+milestone-create-ship-it-in-vendored	jigc milestone create ship-it	vendored	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-bare	jigc milestone add-task ship-it do the thing	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-add-task-do-the-thing-in-committed-singletons	jigc milestone add-task ship-it do the thing	committed-singletons	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-migrated	jigc milestone add-task ship-it do the thing	migrated	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-refs-post-hoc	jigc milestone add-task ship-it do the thing	refs-post-hoc	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-chatty-hooks	jigc milestone add-task ship-it do the thing	chatty-hooks	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-vendored	jigc milestone add-task ship-it do the thing	vendored	acts	holds	exit 0
+milestone-add-from-spec-padding-in-bare	jigc milestone add-from-spec ship-it spec:padding	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-fresh	jigc milestone add-from-spec ship-it spec:padding	fresh	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-committed-singletons	jigc milestone add-from-spec ship-it spec:padding	committed-singletons	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-migrated	jigc milestone add-from-spec ship-it spec:padding	migrated	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-refs-post-hoc	jigc milestone add-from-spec ship-it spec:padding	refs-post-hoc	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-chatty-hooks	jigc milestone add-from-spec ship-it spec:padding	chatty-hooks	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
 doc-add-a-milestone-in-bare	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
 doc-add-a-milestone-in-fresh	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
 doc-add-a-milestone-in-migrated	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
