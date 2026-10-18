@@ -35,6 +35,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
         when: When::Always,
         on_refusal: false,
         quotes,
+        spelling: None,
     }
 }
 
@@ -52,6 +53,7 @@ const LAYS_OUT: &[Quote] = &[Quote {
 pub const SETUP: Row = Row {
     leaf: &["setup"],
     unit: Unit::Nothing,
+    spellings: &[],
     consent: Some("--force"),
     home: Prepared::Bare,
     lines: &[
@@ -254,6 +256,7 @@ pub const SETUP: Row = Row {
 pub const UNINSTALL: Row = Row {
     leaf: &["uninstall"],
     unit: Unit::Nothing,
+    spellings: &[],
     consent: Some("--force"),
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -372,6 +375,7 @@ const ADOPTS: &[Quote] = &[Quote {
 pub const INGEST: Row = Row {
     leaf: &["ingest"],
     unit: Unit::Nothing,
+    spellings: &[],
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -413,6 +417,7 @@ const DETACHES: &[Quote] = &[
 pub const UNMANAGE: Row = Row {
     leaf: &["unmanage"],
     unit: Unit::Nothing,
+    spellings: &[],
     consent: None,
     home: Prepared::Of(State::CommittedSingletons),
     lines: &[
@@ -461,6 +466,7 @@ const fn uninstall_over(
     beside: &'static str,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["uninstall"],
         state: Prepared::Of(State::Fresh),
@@ -490,6 +496,7 @@ const fn uninstall_over(
 /// nothing"* (`U7`).
 const ACCEPTANCE: &[Cell] = &[
     Cell {
+        spelling: None,
         name: "setup-head-unborn-a-file-at-the-bootstrap",
         leaf: &["setup"],
         state: Prepared::Bare,
@@ -504,6 +511,7 @@ const ACCEPTANCE: &[Cell] = &[
         marks: &[],
     },
     Cell {
+        spelling: None,
         name: "setup-head-born-a-file-at-the-bootstrap",
         leaf: &["setup"],
         state: Prepared::Bare,
@@ -564,6 +572,7 @@ const fn setup(
     aim: Option<Aim>,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["setup"],
         state: BARE,
@@ -584,6 +593,7 @@ const fn uninstall(
     aim: Option<Aim>,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["uninstall"],
         state: FRESH,
@@ -1372,6 +1382,7 @@ const fn ingest(
     aim: Option<Aim>,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["ingest"],
         state: FRESH,
@@ -1387,6 +1398,7 @@ const fn ingest(
 /// One cell of `jigc unmanage`, over the committed vision, in `committed-singletons`.
 const fn unmanage(name: &'static str, leads: &'static [Lead], aim: Option<Aim>) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["unmanage"],
         state: SINGLETONS,
@@ -1445,6 +1457,7 @@ const fn elsewhere(
     leads: &'static [Lead],
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf,
         state,

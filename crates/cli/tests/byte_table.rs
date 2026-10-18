@@ -6,13 +6,16 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 345
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 353
 //! cells: the acceptance's
-//! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`), **the
+//! twelve, the task family's sixty-nine** (`jigc task finalize`, `jigc task discard`; four of
+//! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
+//! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
 //! **and the doc family's hundred and thirty-seven** (its eight leaves), of which eighty-four
 //! run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
-//! place of a file that stands, the plant of a file simply deleted and the doc family —
+//! place of a file that stands, the plant of a file simply deleted and the doc family, and of
+//! `B7` a place's own unit and the spelling of a leaf a cell names —
 //! the arms that hold the
 //! comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
@@ -191,6 +194,7 @@ const fn rebuilt_on_a_refusal(id: &'static str, place: Where, quotes: &'static [
         when: When::Refused,
         on_refusal: true,
         quotes,
+        spelling: None,
     }
 }
 
@@ -505,6 +509,8 @@ enum Need {
     Refusing,
     Base,
     BaseIn(Prepared),
+    /// The base cell of a second spelling of the leaf, in its home state.
+    BaseAs(&'static str),
     Planted(Aim),
 }
 
@@ -515,6 +521,7 @@ impl Need {
             Need::Refusing => "refusing".to_string(),
             Need::Base => "base".to_string(),
             Need::BaseIn(state) => format!("base, in `{}`", state.name()),
+            Need::BaseAs(spelling) => format!("base, as `{spelling}`"),
             Need::Planted(aim) => format!("{} × {}", aim.line, aim.kind.tag()),
         }
     }
@@ -541,6 +548,11 @@ fn needs(row: &Row) -> Vec<Need> {
             .filter(|state| **state != row.home)
             .map(|state| Need::BaseIn(*state)),
     );
+    out.extend(
+        row.spellings
+            .iter()
+            .map(|spelling| Need::BaseAs(spelling.name)),
+    );
     for line in row.lines {
         for kind in Kind::ALL {
             if byte_cell::aimed(*kind, line).is_ok() {
@@ -561,13 +573,37 @@ fn needs(row: &Row) -> Vec<Need> {
 /// the cell says.
 fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
     let layer = cell.layer(row);
-    let aim = match (layer, cell.aim) {
-        (Layer::Planted, Some(aim)) => aim,
-        (Layer::Planted, None) => return Err("puts a plant in and aims it at no line".to_string()),
-        (_, Some(_)) => return Err("aims at a line and puts no plant in".to_string()),
-        (Layer::Refusing, None) => return Ok(Need::Refusing),
-        (Layer::Base, None) => return Ok(Need::Base),
-        (Layer::BaseElsewhere, None) => return Ok(Need::BaseIn(cell.state)),
+    if let Some(name) = cell.spelling
+        && !row.spellings.iter().any(|spelling| spelling.name == name)
+    {
+        return Err(format!(
+            "names the spelling `{name}`, which its row does not have"
+        ));
+    }
+    let aim = match (layer, cell.aim, cell.spelling) {
+        (Layer::Planted, Some(aim), _) => aim,
+        (Layer::Planted, None, _) => {
+            return Err("puts a plant in and aims it at no line".to_string());
+        }
+        (_, Some(_), _) => return Err("aims at a line and puts no plant in".to_string()),
+        (Layer::Base, None, Some(name)) => {
+            return Ok(Need::BaseAs(
+                row.spellings
+                    .iter()
+                    .find(|spelling| spelling.name == name)
+                    .map(|spelling| spelling.name)
+                    .expect("the spelling is the row's"),
+            ));
+        }
+        (Layer::Refusing | Layer::BaseElsewhere, None, Some(name)) => {
+            return Err(format!(
+                "names the spelling `{name}` where a spelling's base cell stands in its row's \
+                 home state, with the leads that make its state"
+            ));
+        }
+        (Layer::Refusing, None, None) => return Ok(Need::Refusing),
+        (Layer::Base, None, None) => return Ok(Need::Base),
+        (Layer::BaseElsewhere, None, None) => return Ok(Need::BaseIn(cell.state)),
     };
     let Some(line) = row.lines.iter().find(|line| line.id == aim.line) else {
         return Err(format!(
@@ -575,6 +611,19 @@ fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
             aim.line
         ));
     };
+    let replaced = row.spellings.iter().any(|spelling| {
+        cell.spelling == Some(spelling.name) && spelling.replaces.contains(&line.id)
+    });
+    if line
+        .spelling
+        .is_some_and(|name| cell.spelling != Some(name))
+        || replaced
+    {
+        return Err(format!(
+            "aims at the line `{}`, which is not in force under the spelling it runs",
+            aim.line
+        ));
+    }
     if let Err(why) = byte_cell::aimed(aim.kind, line) {
         return Err(format!(
             "aims a plant of the kind *{}* at the line `{}`, and {why}",
@@ -651,6 +700,15 @@ fn unmet(
             .filter(|(leaf, _, _)| leaf.as_slice() == row.leaf)
             .collect();
         let needs = needs(row);
+        // A spelling's needs are answered whatever is owed of the leaf's plain spelling.
+        let of_a_spelling = |need: &Need| match need {
+            Need::BaseAs(_) => true,
+            Need::Planted(aim) => row
+                .lines
+                .iter()
+                .any(|line| line.id == aim.line && line.spelling.is_some()),
+            _ => false,
+        };
         if !owing.is_empty() {
             if owing.len() > 1 {
                 out.push(format!(
@@ -666,28 +724,30 @@ fn unmet(
                     owing[0]
                 ));
             }
-        } else {
-            for need in &needs {
-                let cell = met
-                    .iter()
-                    .any(|(leaf, answer)| *leaf == row.leaf && answer == need);
-                let rows = waiting
-                    .iter()
-                    .filter(|(_, what, _)| *what == need.named())
-                    .count();
-                match (cell, rows) {
-                    (true, 0) | (false, 1) => {}
-                    (false, 0) => out.push(format!(
-                        "{} needs a cell for *{}*, and has no cell and no scheduled row for it",
-                        named(row.leaf),
-                        need.named()
-                    )),
-                    _ => out.push(format!(
-                        "{} is answered more than once for *{}*",
-                        named(row.leaf),
-                        need.named()
-                    )),
-                }
+        }
+        for need in needs
+            .iter()
+            .filter(|need| owing.is_empty() || of_a_spelling(need))
+        {
+            let cell = met
+                .iter()
+                .any(|(leaf, answer)| *leaf == row.leaf && answer == need);
+            let rows = waiting
+                .iter()
+                .filter(|(_, what, _)| *what == need.named())
+                .count();
+            match (cell, rows) {
+                (true, 0) | (false, 1) => {}
+                (false, 0) => out.push(format!(
+                    "{} needs a cell for *{}*, and has no cell and no scheduled row for it",
+                    named(row.leaf),
+                    need.named()
+                )),
+                _ => out.push(format!(
+                    "{} is answered more than once for *{}*",
+                    named(row.leaf),
+                    need.named()
+                )),
             }
         }
         for (_, what, reason) in waiting {
@@ -844,6 +904,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         aim: Option<Aim>,
     ) -> byte_cell::Cell {
         byte_cell::Cell {
+            spelling: None,
             name,
             leaf: &["task", "finalize"],
             state,
@@ -1359,6 +1420,7 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         ],
     ),
     (&["task", "finalize"], "T2", &[Prepared::Of(State::Fresh)]),
+    (&["task", "finalize"], "T9", &[Prepared::Of(State::Fresh)]),
     (
         &["task", "finalize"],
         "T4",
@@ -1400,6 +1462,11 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (
         &["milestone", "finalize"],
         "M1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M4",
         &[Prepared::Of(State::Fresh)],
     ),
     (
@@ -2569,6 +2636,8 @@ struct Cell<'a> {
     listed: Listed,
     /// The command, as the row's [`Unit`] reads its work unit off it.
     argv: &'a [&'a str],
+    /// The spelling of the leaf the command ran under.
+    spelling: Option<&'a str>,
 }
 
 impl<'a> Cell<'a> {
@@ -2585,6 +2654,7 @@ impl<'a> Cell<'a> {
             consent: false,
             listed: Listed::Acts,
             argv: &[],
+            spelling: None,
         }
     }
 
@@ -2611,6 +2681,7 @@ impl<'a> Cell<'a> {
                 after: &after,
                 planted: &planted,
                 argv: self.argv,
+                spelling: self.spelling,
                 ended: Ended {
                     ended: true,
                     code: self.code,
@@ -2645,6 +2716,7 @@ const fn line(id: &'static str, allows: Allows) -> Line {
         when: When::Always,
         on_refusal: false,
         quotes: &[],
+        spelling: None,
     }
 }
 
@@ -2652,6 +2724,7 @@ const fn row(lines: &'static [Line]) -> Row {
     Row {
         leaf: &["probe"],
         unit: Unit::Nothing,
+        spellings: &[],
         consent: Some("--force"),
         home: Prepared::Bare,
         lines,
@@ -3847,6 +3920,235 @@ fn a_line_reaches_its_own_units_area_and_no_siblings() {
     );
 }
 
+/// **Every way a row's spellings do not stand on its lines**: a line in force under a
+/// spelling the row does not have; a spelling that replaces a line the row does not have
+/// as a line of every spelling; a spelling with no line of its own; two spellings of one
+/// name.
+fn unspelled(rows: &[&Row]) -> Vec<String> {
+    let mut out = Vec::new();
+    for row in rows {
+        let leaf = row.leaf.join(" ");
+        for line in row.lines {
+            if let Some(name) = line.spelling
+                && !row.spellings.iter().any(|spelling| spelling.name == name)
+            {
+                out.push(format!(
+                    "the line `{}` of `jigc {leaf}` is in force under the spelling `{name}`, \
+                     which its row does not have",
+                    line.id
+                ));
+            }
+        }
+        for (at, spelling) in row.spellings.iter().enumerate() {
+            let name = spelling.name;
+            for id in spelling.replaces {
+                if !row
+                    .lines
+                    .iter()
+                    .any(|line| line.id == *id && line.spelling.is_none())
+                {
+                    out.push(format!(
+                        "the spelling `{name}` of `jigc {leaf}` replaces `{id}`, which is no line \
+                         of every spelling of its row"
+                    ));
+                }
+            }
+            if !row.lines.iter().any(|line| line.spelling == Some(name)) {
+                out.push(format!(
+                    "the spelling `{name}` of `jigc {leaf}` has no line of its own"
+                ));
+            }
+            if row.spellings[..at].iter().any(|other| other.name == name) {
+                out.push(format!(
+                    "the spelling `{name}` of `jigc {leaf}` is named twice"
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// **A cell is compared under the spelling of its leaf it names** — the human's ruling of
+/// 2026-10-18 on the two spellings: a command its doc has commit otherwise in a state no
+/// repository's bytes show — the doc-only arm of `task finalize`, `squash: false` at
+/// `milestone finalize` — is a spelling a cell names, and its row's lines as the spelling
+/// has them are what it is held to: every line of no spelling but those the spelling
+/// replaces, and the lines that name it.
+///
+/// A commit that sweeps a change the user staged elsewhere beside the doc it lands holds
+/// under the plain spelling, whose commit is the index whole, and is *git's state moved
+/// outside its allowance* under a spelling whose commit holds only its lines' paths; the
+/// commit of the doc alone holds under both. A spelling's own line is in force under it
+/// alone: the same commit under the plain spelling of a row whose only commit line is the
+/// spelling's is no line's.
+#[test]
+fn a_cell_is_compared_under_the_spelling_it_names() {
+    const DOC: &str = "docs/use-tabs.md";
+    const SPELLED: Row = Row {
+        spellings: &[byte_cell::Spelling {
+            name: "path-scoped",
+            replaces: &["P1"],
+        }],
+        ..row(&[
+            line("P1", Allows::Commit(Holding::TheIndex)),
+            line("P2", Allows::Files(Where::Path(DOC), May::WriteWhole)),
+            Line {
+                spelling: Some("path-scoped"),
+                ..line("P3", Allows::Commit(Holding::OnlyTheLines))
+            },
+        ])
+    };
+    const PROSE: &str = "# Use tabs\n\nthe prose\n";
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/docs");
+        put(m, "repo/staged.txt", "the user's own\n");
+        m.checkouts
+            .get_mut(REPO)
+            .expect("the main checkout")
+            .index
+            .insert("staged.txt".to_string(), staged("the user's own\n"));
+    });
+    let swept = then(&before, |m| {
+        put(m, &format!("repo/{DOC}"), PROSE);
+        commit(
+            m,
+            "c1",
+            &[
+                (DOC, Some((0o100_644, PROSE))),
+                ("staged.txt", Some((0o100_644, "the user's own\n"))),
+            ],
+        );
+    });
+    let alone = then(&before, |m| {
+        put(m, &format!("repo/{DOC}"), PROSE);
+        commit(m, "c1", &[(DOC, Some((0o100_644, PROSE)))]);
+    });
+    let under = |spelling: Option<&'static str>, after: &Manifest| {
+        Cell {
+            spelling,
+            ..Cell::of(SPELLED, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = under(None, &swept);
+    assert_eq!(class, Classification::Holds, "the plain spelling: {why:#?}");
+    let (class, why) = under(Some("path-scoped"), &swept);
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains("staged.txt")),
+        "a path-scoped commit that swept the index: {class}, {why:#?}"
+    );
+    for spelling in [None, Some("path-scoped")] {
+        let (class, why) = under(spelling, &alone);
+        assert_eq!(class, Classification::Holds, "{spelling:?}: {why:#?}");
+    }
+    const ITS_OWN_ONLY: Row = Row {
+        spellings: &[byte_cell::Spelling {
+            name: "path-scoped",
+            replaces: &[],
+        }],
+        ..row(&[
+            line("P2", Allows::Files(Where::Path(DOC), May::WriteWhole)),
+            Line {
+                spelling: Some("path-scoped"),
+                ..line("P3", Allows::Commit(Holding::OnlyTheLines))
+            },
+        ])
+    };
+    let (class, why) = Cell::of(ITS_OWN_ONLY, &before, &alone).came_to();
+    assert_eq!(
+        class,
+        Classification::GitMoved,
+        "a spelling's line under the plain spelling: {why:#?}"
+    );
+
+    // The rows' spellings stand on their lines: on a fixture, fault by fault; then this
+    // tree's rows.
+    says(&unspelled(&[&SPELLED]), &[]);
+    const ASTRAY: Row = Row {
+        spellings: &[
+            byte_cell::Spelling {
+                name: "path-scoped",
+                replaces: &["P9", "P3"],
+            },
+            byte_cell::Spelling {
+                name: "path-scoped",
+                replaces: &[],
+            },
+        ],
+        ..row(&[Line {
+            spelling: Some("elsewhere"),
+            ..line("P3", Allows::Commit(Holding::OnlyTheLines))
+        }])
+    };
+    says(
+        &unspelled(&[&ASTRAY]),
+        &[
+            (
+                "the line `P3`",
+                "the spelling `elsewhere`, which its row does not have",
+            ),
+            ("replaces `P9`", "no line of every spelling"),
+            ("replaces `P3`", "no line of every spelling"),
+            ("the spelling `path-scoped`", "has no line of its own"),
+            ("the spelling `path-scoped`", "has no line of its own"),
+            ("the spelling `path-scoped`", "is named twice"),
+        ],
+    );
+    let wrong = unspelled(&rows());
+    assert!(wrong.is_empty(), "{wrong:#?}");
+
+    // And a cell answers its spelling's needs, and no other's: its base cell, a plant at a
+    // line of its spelling — never one of another spelling, nor a line it replaces.
+    let cell = |spelling: Option<&'static str>, aim: Option<Aim>, leads: &'static [Lead]| {
+        byte_cell::Cell {
+            name: "a-cell",
+            leaf: &["probe"],
+            state: Prepared::Bare,
+            leads,
+            argv: &["probe", "it"],
+            listed: Listed::Acts,
+            beside: None,
+            aim,
+            marks: &[],
+            spelling,
+        }
+    };
+    const A_STAGED_CHANGE: &[Lead] = &[Lead::Plant(Plant::Staged {
+        at: "notes.txt",
+        kept: true,
+    })];
+    let at = |line| {
+        Some(Aim {
+            line,
+            kind: Kind::StagedElsewhere,
+        })
+    };
+    assert_eq!(
+        answers(&cell(Some("path-scoped"), None, &[]), &SPELLED),
+        Ok(Need::BaseAs("path-scoped"))
+    );
+    assert_eq!(
+        answers(
+            &cell(Some("path-scoped"), at("P3"), A_STAGED_CHANGE),
+            &SPELLED
+        ),
+        Ok(Need::Planted(at("P3").expect("an aim")))
+    );
+    for (spelling, line, why) in [
+        (None, "P3", "not in force under the spelling it runs"),
+        (
+            Some("path-scoped"),
+            "P1",
+            "not in force under the spelling it runs",
+        ),
+        (Some("elsewhere"), "P1", "which its row does not have"),
+    ] {
+        let fault = answers(&cell(spelling, at(line), A_STAGED_CHANGE), &SPELLED)
+            .expect_err("a cell that answers no need of its spelling");
+        assert!(fault.contains(why), "{spelling:?} at `{line}`: {fault}");
+    }
+}
+
 /// **A refusal may change only what a line that holds on a refusal covers.** A command
 /// that exits non-zero and wrote one file is *refused, and changed what a refusal may
 /// not* — under a line that covers the write at exit 0 too; it is *refuses, nothing
@@ -4399,6 +4701,7 @@ fn the_classifications_in_their_order() {
                 staged: false,
             }],
             argv: &[],
+            spelling: None,
             ended: Ended {
                 ended: false,
                 code: None,
@@ -4661,6 +4964,7 @@ const fn on_a_stand_in(
 ) -> OnAStandIn {
     OnAStandIn {
         cell: byte_cell::Cell {
+            spelling: None,
             name: argv[0],
             leaf: &["probe"],
             state: Prepared::Bare,
@@ -5222,6 +5526,7 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
     ),
     OnAStandIn {
         cell: byte_cell::Cell {
+            spelling: None,
             name: "refuses",
             leaf: &["probe"],
             state: Prepared::Bare,
@@ -5516,6 +5821,7 @@ fn the_reader_reads_what_the_comparison_reads() {
 
     // The faults of a cell.
     let cell = |name, state, leads, leaf| byte_cell::Cell {
+        spelling: None,
         name,
         leaf,
         state,
@@ -5735,6 +6041,7 @@ fn without_commit_ids(manifest: &Manifest, bytes: &[u8]) -> String {
 fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree() {
     let binary = Path::new(env!("CARGO_BIN_EXE_jigc"));
     let cell = |name, state, leads| byte_cell::Cell {
+        spelling: None,
         name,
         leaf: &["probe"],
         state,
@@ -5913,6 +6220,7 @@ fn silences(record: &str) -> Vec<u8> {
 fn a_mark_names_a_question_the_list_of_readings_has() {
     const fn cell(name: &'static str, marks: &'static [Mark]) -> byte_cell::Cell {
         byte_cell::Cell {
+            spelling: None,
             name,
             leaf: &["probe"],
             state: Prepared::Bare,
@@ -6171,6 +6479,15 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
         Classification::RefusedAndChanged,
         &["task-discard-a-hook-that-rejects"],
+    ),
+    (
+        "r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it",
+        Classification::WrittenOutside,
+        &[
+            "milestone-finalize-squash-false-a-file-staged-elsewhere",
+            "milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes",
+            "milestone-finalize-squash-false-two-sub-tasks",
+        ],
     ),
 ];
 
@@ -6596,9 +6913,11 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (345, 261, 84),
+        (353, 269, 84),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         sixty-five — fifty-three in the gate, twelve on demand — the install family's are a \
+         sixty-nine — fifty-seven in the gate, four of them its spelling `doc-only`, twelve \
+         on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
+         install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \
          the doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight \
          on demand"
@@ -6940,6 +7259,7 @@ fn the_table_runs_each_binary_on_the_state_that_binary_built() {
     place_script(&does_nothing, "#!/bin/sh\nexit 0\n");
     place_script(&refuses, "#!/bin/sh\nexit 1\n");
     const CELL: byte_cell::Cell = byte_cell::Cell {
+        spelling: None,
         name: "a-cell-in-fresh",
         leaf: &["setup"],
         state: Prepared::Of(State::Fresh),

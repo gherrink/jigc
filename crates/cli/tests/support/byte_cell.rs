@@ -389,6 +389,23 @@ pub struct Line {
     /// Whether the line still holds when the command refuses — from its sentence.
     pub on_refusal: bool,
     pub quotes: &'static [Quote],
+    /// **The spelling of the leaf the line is in force under** ([`Spelling`]): `None` for a
+    /// line of every spelling but one that replaces it — the leaf as typed plainly among
+    /// them — and a spelling's name for a line in force under that spelling alone.
+    pub spelling: Option<&'static str>,
+}
+
+/// **A second spelling of a leaf** — the same command, which its doc has commit, or write,
+/// otherwise in a state no repository's bytes show: a task whose workflow includes
+/// `step:finalize-doc-only`, a cascade knob. A cell names the spelling it runs
+/// ([`Cell::spelling`]), and is compared under its row's lines as that spelling has them:
+/// every line of no spelling but those it `replaces`, and the lines that name it. The
+/// human's ruling of 2026-10-18 on the two spellings (`DECISIONS.md`).
+#[derive(Clone, Copy, Debug)]
+pub struct Spelling {
+    pub name: &'static str,
+    /// The `id`s of the row's lines this spelling takes out of force.
+    pub replaces: &'static [&'static str],
 }
 
 /// **A leaf's row**: the command as `cli::cli::VERB_KINDS` holds it, the flag its owner
@@ -406,6 +423,9 @@ pub struct Row {
     /// gate. A base cell in any other state runs on demand ([`Layer`]).
     pub home: Prepared,
     pub lines: &'static [Line],
+    /// The leaf's second spellings, each with the lines it replaces; its own lines are the
+    /// row's lines that name it.
+    pub spellings: &'static [Spelling],
 }
 
 /// **A plant's kind, at one of its positions** — the plan's letters (§3, *The plants —
@@ -702,6 +722,8 @@ pub struct Seen<'a> {
     pub planted: &'a [Planted],
     /// The command: the words after `jigc` — what the row's [`Unit`] reads the unit off.
     pub argv: &'a [&'a str],
+    /// The spelling of the leaf the command ran under ([`Spelling`]).
+    pub spelling: Option<&'a str>,
     pub ended: Ended<'a>,
     /// Whether the cell runs the row's consent spelling.
     pub consent: bool,
@@ -877,8 +899,17 @@ impl<'a> Tally<'a> {
             .checkouts
             .get(REPO)
             .is_none_or(|main| main.head.is_empty());
+        // Under the spelling the cell names: its own lines, and every line of no spelling
+        // but those it replaces.
+        let spelled = |line: &Line| match line.spelling {
+            Some(name) => self.seen.spelling == Some(name),
+            None => !self.row.spellings.iter().any(|spelling| {
+                self.seen.spelling == Some(spelling.name) && spelling.replaces.contains(&line.id)
+            }),
+        };
         self.row.lines.iter().enumerate().filter(move |(_, line)| {
-            (self.acted || line.on_refusal)
+            spelled(line)
+                && (self.acted || line.on_refusal)
                 && match line.when {
                     When::Always => true,
                     When::NoCommitYet => unborn,
@@ -1917,6 +1948,10 @@ pub struct Cell {
     pub aim: Option<Aim>,
     /// The open questions the cell turns on and the bounds it stands on.
     pub marks: &'static [Mark],
+    /// **The spelling of its leaf the cell runs** ([`Spelling`]) — `None` for the leaf as
+    /// typed plainly. The cell builds the state the spelling stands for; the name says
+    /// which lines it is compared under.
+    pub spelling: Option<&'static str>,
 }
 
 impl Cell {
@@ -2084,6 +2119,14 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
             row.leaf.join(" ")
         ));
     }
+    if let Some(name) = cell.spelling
+        && !row.spellings.iter().any(|spelling| spelling.name == name)
+    {
+        return Err(format!(
+            "the cell names the spelling `{name}`, which the row of `jigc {}` does not have",
+            row.leaf.join(" ")
+        ));
+    }
     let started = std::time::Instant::now();
     let copy = built.corpus.copy_state();
     let sandbox = Sandbox::over(cell.name, under_test, |repo, home| {
@@ -2136,6 +2179,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
             after: &after,
             planted: &planted,
             argv: cell.argv,
+            spelling: cell.spelling,
             ended: Ended {
                 ended: ended.held.is_none(),
                 code: ended.code,

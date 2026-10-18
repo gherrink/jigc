@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, with the third commit of the milestone family's task (`B7`), which builds the spelling switch: §15, the cells of the two spellings — eight, three red under one key, marked with the rows' record's §6, entry 16.*
+
 *Changed 2026-10-18, with the first commit of the milestone family's task (`B7`), for the human's rulings of that day on the rows' record's §6, entries 14 and 15, each option A: §1's inconsistency between `design/auto-migration.md` and `design/doc-read-surface.md` is decided, the first giving way; §10 and §11 say that their cells are findings of a product change — a `doc` write refuses before its copy-in where the home's bytes do not parse as the doctype, and every `doc` write that refuses leaves the task's area as it found it — and lose their marks; §12 and §13 say what the ruling settles of what the product should do. No key, cell or classification moved.*
 
 *Changed 2026-10-18, by the fourth of the fixes after the review of the doc family: §10 counts **forty-eight** cells that hold where it said fifty-one, and gains the cell beside a sibling task; §12's `write.target-escape` arm is driven, with its repro; §13, what a refusing `doc` write whose copy stands says of the way out — a key of its own under law 2, shown by nine cells and held by none; §14, every other sentence of the product that says nothing was written, each answered, a lead or a key; and §1, the design doc that says an unset of an absent field writes no bytes. No cell's classification moved.*
@@ -584,3 +586,39 @@ $JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, shar
 | `cli/src/render.rs`, the dry run's header and its tail (*"dry run — nothing written"*, *"nothing was written"*) | `migrate-corpus --dry-run` | **a lead for `B8`** — two sentences |
 
 No doc-family cell reaches any sentence of the table but §12's two and the unset's ack, and no row of it but §12's is a finding of the product.
+
+## 15. The two spellings — eight cells in the gate, three red on this tree's binary under one key
+
+*2026-10-18, this tree's debug build, macOS arm64; the third commit of the milestone family's task (`B7`), for the human's ruling of that day on the two spellings. `jigc task finalize` under `doc-only` — a task on `report-inconsistency`, whose workflow includes `step:finalize-doc-only` — and `jigc milestone finalize` under `squash: false` — two code-carrying sub-tasks, each with its commit doc authored in its worktree, the knob set and committed before the milestone — each with its base cell and a cell at each need its spelling's commit line makes: a change the user staged elsewhere, one under a name git quotes, a hook that rejects. **Five hold or refuse having changed nothing**: `doc-only`'s four — the commit holds the doc alone, the user's staged changes stay staged, the rejected commit leaves everything as it was — and `squash: false`'s rejected chain. The acceptance's cell `task-finalize-a-link-to-nothing-at-the-created-docs-home` runs a task of the same workflow, and names the spelling now; it refuses as before. **The same on the previous release** (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked; the arm on a named binary), cell for cell.*
+
+### `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it`
+
+- *The cells.* `milestone-finalize-squash-false-two-sub-tasks`, `…-a-file-staged-elsewhere`, `…-a-staged-file-whose-name-git-quotes`.
+- *What they came to.* **Written outside its allowance**: exit 0, the chain landed — a commit a sub-task, then the aggregate — and `.jigc/index/edges.json` is gone afterwards, its lock left. Nothing else outside the lines: the user's staged changes stayed staged, and rode no commit of the chain.
+- *Held against.* `M10`'s edge-index half, *"invalidate the edge-index stamp"*, which §7 of the rows' record reads as *rebuilt* — a file made or written, none gone — the reading under which more is red; `task finalize` and the `squash: true` boundary write the file again. Which reading holds is the rows' record's §6, **entry 16**, open, and each cell carries its mark: under the other — a stamp's file taken away is an invalidation, the storage design's *"delete `.jigc/`'s gitignored caches … nothing lost"* — they hold. **No byte of the user's is lost.**
+- *The previous release.* The same, cell for cell: not a regression.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"
+mkdir -p ../outside && printf 'add a file\n' > ../outside/summary
+$JIGC config set finalize.fan-out.squash false > /dev/null && git add .jigc/config/manifest.yaml && git commit -qm "chore: squash false"
+$JIGC milestone create "Squash off" > /dev/null
+$JIGC milestone add-task squash-off "Add alpha file" > /dev/null; $JIGC milestone add-task squash-off "Add beta file" > /dev/null
+$JIGC milestone provision squash-off > /dev/null; $JIGC milestone execute squash-off > /dev/null
+for t in add-alpha-file add-beta-file; do
+  (cd .jigc/worktrees/$t && $JIGC workflow sub-task --task $t > /dev/null \
+    && $JIGC doc set-field commit:$t#type --value feat --task $t > /dev/null \
+    && $JIGC doc set-slot commit:$t#summary --from-file ../../../../outside/summary --task $t > /dev/null \
+    && printf 'code\n' > $t.txt && git add $t.txt)
+done
+$JIGC milestone join squash-off > /dev/null
+ls .jigc/index/                                         # edges.json, edges.json.lock
+$JIGC milestone finalize squash-off > /dev/null; echo "exit=$?"   # exit=0 — two sub-task commits and the aggregate
+ls .jigc/index/                                         # edges.json.lock alone: the stamp's file is gone
+```
+
+### What the other five show
+
+The doc-only arm keeps what its doc says: `T9` excuses its commit of the doc alone, `T2` to `T4` are out of force and nothing under them was needed — the stamp was not refreshed — and the user's staged changes stand in the index as they were. Under `squash: false` a change the user staged in the main checkout rides no commit — the rows' record's §6, **entry 17**, asks what the docs say of it, and no cell turns on it. A hook that rejects either commit is a refusal that leaves the tree as it was: at `task finalize` the edge index rebuilt under `C1`, at the boundary `merged/` under `M1`.

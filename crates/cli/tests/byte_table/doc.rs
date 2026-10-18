@@ -31,6 +31,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
         when: When::Always,
         on_refusal: false,
         quotes,
+        spelling: None,
     }
 }
 
@@ -135,6 +136,7 @@ const fn row(leaf: &'static [&'static str]) -> Row {
     Row {
         leaf,
         unit: Unit::TheTaskFlag,
+        spellings: &[],
         consent: None,
         home: HOME,
         lines: &LINES,
@@ -213,6 +215,7 @@ const fn cell(
     marks: &'static [Mark],
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf,
         state,

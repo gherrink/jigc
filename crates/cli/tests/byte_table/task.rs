@@ -8,16 +8,17 @@
 //!
 //! **What of the record is no line.** `T7` is where *on a refusal: no* comes from. `T8` is
 //! the rule for prose handed to jigc, which the frame holds a staged doc to by itself
-//! (`support::byte_cell` → *a staged doc*). **The doc-only arm is a second spelling** with
-//! a commit line of its own — a task whose workflow includes `step:finalize-doc-only`
-//! commits its own paths and never the index — and no cell names it yet: the comparison
-//! has no switch for it, and a cell of such a task would be read under `T4`.
+//! (`support::byte_cell` → *a staged doc*). **The doc-only arm is a second spelling**,
+//! `doc-only`, with a commit line of its own — a task whose workflow includes
+//! `step:finalize-doc-only` commits its own paths and never the index — `T9`, which takes
+//! `T2` to `T4` out of force; a cell of such a task names it ([`Spelling`]), by the human's
+//! ruling of 2026-10-18.
 
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
     Quote, Row, When, Where,
- Unit,};
+ Unit, Spelling,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -29,6 +30,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
         when: When::Always,
         on_refusal: false,
         quotes,
+        spelling: None,
     }
 }
 
@@ -36,6 +38,10 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 pub const FINALIZE: Row = Row {
     leaf: &["task", "finalize"],
     unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[Spelling {
+        name: "doc-only",
+        replaces: &["T2", "T3", "T4"],
+    }],
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -150,6 +156,34 @@ pub const FINALIZE: Row = Row {
                 },
             ],
         ),
+        // The doc-only arm's commit (the record's `T9`): a task whose workflow includes
+        // `step:finalize-doc-only` commits its own paths alone and never the index, and
+        // leaves the stamp and a pending config delta out — so under it `T2` to `T4` are
+        // out of force.
+        Line {
+            spelling: Some("doc-only"),
+            ..line(
+                "T9",
+                Allows::Commit(Holding::OnlyTheLines),
+                &[
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "The doc-only arm",
+                        words: "commits those paths alone (`git add -- <paths>` then `git commit -F <message> -- <paths>`), never the index",
+                    },
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "The doc-only arm",
+                        words: "Whatever else is staged in the checkout — by a code task open beside it, before or after this task was minted — **stays staged**",
+                    },
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "The doc-only arm",
+                        words: "**Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh",
+                    },
+                ],
+            )
+        },
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
@@ -172,6 +206,7 @@ const THE_SUB_TASK_TERMINAL: &str =
 pub const DISCARD: Row = Row {
     leaf: &["task", "discard"],
     unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[],
     consent: Some("--force"),
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -299,6 +334,8 @@ const A_HAND_EDIT: Lead = Lead::Plant(Plant::Edit("VISION.md"));
 
 /// **An open task that created a finding and is ready to finalize** — its id,
 /// `file-a-finding`; the doc it created promotes to `docs/inconsistencies/two-docs.md`.
+/// Its workflow, `report-inconsistency`, includes `step:finalize-doc-only`: its finalize is
+/// the leaf's spelling `doc-only` (`T9`), and a cell of it names that spelling.
 const A_TASK_WITH_A_CREATED_DOC: [Lead; 13] = [
     jigc(&["start", "--workflow", "report-inconsistency", "file a finding"]),
     jigc(&[
@@ -409,6 +446,7 @@ const THE_COPY_IN_SUITE: &str = "copy_in_baseline::a_hand_edit_after_the_first_w
 /// refuses before anything is written"* (`T1`).
 const ACCEPTANCE: &[Cell] = &[
     Cell {
+        spelling: None,
         name: "task-finalize-no-baseline-a-hand-edit-after-the-first-write",
         leaf: &["task", "finalize"],
         state: Prepared::Of(State::CommittedSingletons),
@@ -432,6 +470,7 @@ const ACCEPTANCE: &[Cell] = &[
         marks: &[],
     },
     Cell {
+        spelling: None,
         name: "task-finalize-a-baseline-a-hand-edit-after-the-first-write",
         leaf: &["task", "finalize"],
         state: Prepared::Of(State::CommittedSingletons),
@@ -454,6 +493,7 @@ const ACCEPTANCE: &[Cell] = &[
         marks: &[],
     },
     Cell {
+        spelling: Some("doc-only"),
         name: "task-finalize-a-link-to-nothing-at-the-created-docs-home",
         leaf: &["task", "finalize"],
         state: Prepared::Of(State::Fresh),
@@ -621,6 +661,7 @@ const fn finalize(
     aim: Option<Aim>,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["task", "finalize"],
         state,
@@ -642,6 +683,7 @@ const fn discard(
     aim: Option<Aim>,
 ) -> Cell {
     Cell {
+        spelling: None,
         name,
         leaf: &["task", "discard"],
         state: FRESH,
@@ -1484,12 +1526,89 @@ const DISCARD_ELSEWHERE: [Cell; 5] = [
 /// **The family's cells**: the acceptance's three, then the two leaves' own — the ones the
 /// gate runs, in the arm of their state, and the base cells in the states that are not a
 /// leaf's home, which run on demand.
+/// [`A_TASK_WITH_A_CREATED_DOC`], with what is put in after its last write, last before
+/// the command.
+macro_rules! a_finding {
+    ([$($after:expr),* $(,)?]) => {
+        &[
+            A_TASK_WITH_A_CREATED_DOC[0], A_TASK_WITH_A_CREATED_DOC[1],
+            A_TASK_WITH_A_CREATED_DOC[2], A_TASK_WITH_A_CREATED_DOC[3],
+            A_TASK_WITH_A_CREATED_DOC[4], A_TASK_WITH_A_CREATED_DOC[5],
+            A_TASK_WITH_A_CREATED_DOC[6], A_TASK_WITH_A_CREATED_DOC[7],
+            A_TASK_WITH_A_CREATED_DOC[8], A_TASK_WITH_A_CREATED_DOC[9],
+            A_TASK_WITH_A_CREATED_DOC[10], A_TASK_WITH_A_CREATED_DOC[11],
+            A_TASK_WITH_A_CREATED_DOC[12],
+            $($after,)*
+        ]
+    };
+}
+
+/// One cell of `jigc task finalize`'s spelling `doc-only`: the finding's task, finalized.
+const fn doc_only(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        spelling: Some("doc-only"),
+        ..finalize(
+            name,
+            FRESH,
+            leads,
+            &["task", "finalize", "file-a-finding"],
+            listed,
+            aim,
+        )
+    }
+}
+
+/// **The cells of the spelling `doc-only`** — the human's ruling of 2026-10-18 on the two
+/// spellings: a task whose workflow includes `step:finalize-doc-only` commits its own
+/// paths and never the index, so a change the user staged elsewhere, or under a name git
+/// quotes, **stays staged** (`T9`), and a hook that rejects the commit is a refusal that
+/// leaves the task as it was (`T7`). The words of the refusal are a run's: *"`git commit`
+/// was rejected"*, as the plain spelling's hook cell has them.
+const FINALIZE_DOC_ONLY: [Cell; 4] = [
+    doc_only(
+        "task-finalize-doc-only-a-finding",
+        a_finding!([]),
+        Listed::Acts,
+        None,
+    ),
+    doc_only(
+        "task-finalize-doc-only-a-file-staged-elsewhere",
+        a_finding!([Lead::Plant(Plant::Staged {
+            at: "notes/staged-by-its-user.txt",
+            kept: true,
+        })]),
+        Listed::Acts,
+        at("T9", Kind::StagedElsewhere),
+    ),
+    doc_only(
+        "task-finalize-doc-only-a-staged-file-whose-name-git-quotes",
+        a_finding!([Lead::Plant(Plant::Staged {
+            at: A_NAME_GIT_QUOTES,
+            kept: true,
+        })]),
+        Listed::Acts,
+        at("T9", Kind::QuotedName),
+    ),
+    doc_only(
+        "task-finalize-doc-only-a-hook-that-rejects",
+        a_finding!([Lead::Plant(Plant::RejectingHook)]),
+        refuses(1, "`git commit` was rejected"),
+        at("T9", Kind::RejectingHook),
+    ),
+];
+
 pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &FINALIZE_CELLS,
     &FINALIZE_AT_THE_STAMP,
     &FINALIZE_A_FILE_DELETED,
     &FINALIZE_ELSEWHERE,
+    &FINALIZE_DOC_ONLY,
     &DISCARD_CELLS,
     &DISCARD_AT_THE_RECORD,
     &DISCARD_A_FILE_DELETED,

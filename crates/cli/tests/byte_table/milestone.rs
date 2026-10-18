@@ -7,15 +7,16 @@
 //! **What of the record is no line.** `M8` is where *on a refusal: no* comes from. `M9` —
 //! a refused boundary leaves objects in the store — is no difference to a table that
 //! holds the store to one rule, that no object there before is absent after. **`M4` is a
-//! second spelling**: under `finalize.fan-out.squash: false` the boundary makes one
-//! commit a sub-task that staged code and then the aggregate; no cell sets that knob, and
-//! the comparison reads every commit the command made under `M3` either way.
+//! second spelling**, `squash: false`: under `finalize.fan-out.squash: false` the boundary
+//! makes one commit a sub-task that staged code and then the aggregate, and `M4` takes
+//! `M3` out of force; a cell that sets the knob names the spelling ([`Spelling`]), by the
+//! human's ruling of 2026-10-18.
 
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
     Where,
- Unit,};
+ Unit, Spelling, Mark,};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -27,6 +28,7 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
         when: When::Always,
         on_refusal: false,
         quotes,
+        spelling: None,
     }
 }
 
@@ -34,6 +36,10 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 pub const FINALIZE: Row = Row {
     leaf: &["milestone", "finalize"],
     unit: Unit::TheWordAfterTheLeaf,
+    spellings: &[Spelling {
+        name: "squash: false",
+        replaces: &["M3"],
+    }],
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -79,6 +85,28 @@ pub const FINALIZE: Row = Row {
                 },
             ],
         ),
+        // `M4`: under `finalize.fan-out.squash: false` the boundary commits a sub-task's
+        // staged code in a commit of its own, task by task, then the aggregate — so `M3`,
+        // the one combined commit, is out of force under it.
+        Line {
+            spelling: Some("squash: false"),
+            ..line(
+                "M4",
+                Allows::Commit(Holding::TheWorktrees),
+                &[
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "`fan-out` finalize",
+                        words: "**`squash: false` — one commit per code-carrying sub-task in task-id order, then the parent's aggregate commit.**",
+                    },
+                    Quote {
+                        doc: "design/finalize.md",
+                        heading: "`fan-out` finalize",
+                        words: "Each per-sub-task commit applies **that one worktree's** staged code onto the checkout and `git commit -F`s the sub-task's own authored `commit` doc",
+                    },
+                ],
+            )
+        },
         // The record's home is the second sentence's: one file a milestone, under the
         // docs root as the prepared states have it.
         line(
@@ -394,6 +422,7 @@ const BETAS_CODE: [Lead; 2] = staged_code!("add-beta-file", "beta.txt");
 /// refuse, and *"every other registration … is left byte-identical"* (`M7`).
 const ACCEPTANCE: &[Cell] = &[
     Cell {
+        spelling: None,
         name: "milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto",
         leaf: &["milestone", "finalize"],
         state: Prepared::Of(State::Fresh),
@@ -408,6 +437,7 @@ const ACCEPTANCE: &[Cell] = &[
         marks: &[],
     },
     Cell {
+        spelling: None,
         name: "milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone",
         leaf: &["milestone", "finalize"],
         state: Prepared::Of(State::Fresh),
@@ -422,6 +452,7 @@ const ACCEPTANCE: &[Cell] = &[
         marks: &[],
     },
     Cell {
+        spelling: None,
         name: "milestone-finalize-the-users-own-worktree-moved-away",
         leaf: &["milestone", "finalize"],
         state: Prepared::Of(State::Fresh),
@@ -447,6 +478,157 @@ const ACCEPTANCE: &[Cell] = &[
     },
 ];
 
+/// **One sub-task's commit doc, authored in its own worktree** — under `squash: false`
+/// each code-carrying sub-task lands in a commit of its own, whose message is its own
+/// `commit` doc: the sub-task re-entered from its worktree, and the doc's type and summary
+/// set there.
+macro_rules! its_commit_doc {
+    ($task:literal) => {
+        [
+            Lead::Step(Step::JigcAt(
+                Place::Repo(concat!(".jigc/worktrees/", $task)),
+                &["workflow", "sub-task", "--task", $task],
+            )),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(concat!(".jigc/worktrees/", $task)),
+                &[
+                    "doc",
+                    "set-field",
+                    concat!("commit:", $task, "#type"),
+                    "--value",
+                    "feat",
+                    "--task",
+                    $task,
+                ],
+            )),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(concat!(".jigc/worktrees/", $task)),
+                &[
+                    "doc",
+                    "set-slot",
+                    concat!("commit:", $task, "#summary"),
+                    "--from-file",
+                    "../../../../outside/summary",
+                    "--task",
+                    $task,
+                ],
+            )),
+        ]
+    };
+}
+
+const ALPHAS_COMMIT_DOC: [Lead; 3] = its_commit_doc!("add-alpha-file");
+const BETAS_COMMIT_DOC: [Lead; 3] = its_commit_doc!("add-beta-file");
+
+/// **A milestone of two code-carrying sub-tasks, joined, under `squash: false`** —
+/// `squash-off`: the knob set and committed before the milestone is created, which pins
+/// its base, so that no config delta is pending at the boundary; each sub-task re-entered
+/// in its worktree, its commit doc authored and one file of code staged there; then the
+/// join. `$after` stands after the join, last before the command.
+macro_rules! two_sub_tasks_unsquashed {
+    ([$($after:expr),* $(,)?]) => {
+        &[
+            jigc(&["config", "set", "finalize.fan-out.squash", "false"]),
+            Lead::Step(Step::Git(&["add", ".jigc/config/manifest.yaml"])),
+            Lead::Step(Step::Git(&["commit", "-q", "-m", "chore: squash false"])),
+            jigc(&["milestone", "create", "Squash off"]),
+            jigc(&["milestone", "add-task", "squash-off", "Add alpha file"]),
+            jigc(&["milestone", "add-task", "squash-off", "Add beta file"]),
+            jigc(&["milestone", "provision", "squash-off"]),
+            jigc(&["milestone", "execute", "squash-off"]),
+            payload("summary", "add a file\n"),
+            ALPHAS_COMMIT_DOC[0], ALPHAS_COMMIT_DOC[1], ALPHAS_COMMIT_DOC[2],
+            BETAS_COMMIT_DOC[0], BETAS_COMMIT_DOC[1], BETAS_COMMIT_DOC[2],
+            ALPHAS_CODE[0], ALPHAS_CODE[1], BETAS_CODE[0], BETAS_CODE[1],
+            jigc(&["milestone", "join", "squash-off"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// The mark of a cell whose boundary lands under `squash: false` and takes the edge index's
+/// file away: the rows' record's §6, entry 16 — is a stamp invalidated by taking its file
+/// away?
+const AT_THE_EDGE_INDEX: &[Mark] = &[Mark::Silence(16)];
+
+/// One cell of `jigc milestone finalize`'s spelling `squash: false`.
+const fn unsquashed(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+    marks: &'static [Mark],
+) -> Cell {
+    Cell {
+        name,
+        leaf: &["milestone", "finalize"],
+        state: Prepared::Of(State::Fresh),
+        leads,
+        argv: &["milestone", "finalize", "squash-off"],
+        listed,
+        beside: None,
+        aim,
+        marks,
+        spelling: Some("squash: false"),
+    }
+}
+
+/// A file whose name git quotes, staged in the main checkout.
+const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
+
+/// **The cells of the spelling `squash: false`** — the human's ruling of 2026-10-18 on the
+/// two spellings: one commit a code-carrying sub-task, then the aggregate (`M4`). Each
+/// needs a fan-out, built after the prepared state is copied in: a state that holds
+/// worktrees is never copied. A change the user staged in the main checkout, or under a
+/// name git quotes, is no sub-task's and rides no commit of the boundary's; a hook that
+/// rejects a commit of the chain is a refusal that tears nothing down (`M8`). The words of
+/// the refusal are a run's.
+const UNSQUASHED: [Cell; 4] = [
+    unsquashed(
+        "milestone-finalize-squash-false-two-sub-tasks",
+        two_sub_tasks_unsquashed!([]),
+        Listed::Acts,
+        None,
+        AT_THE_EDGE_INDEX,
+    ),
+    unsquashed(
+        "milestone-finalize-squash-false-a-file-staged-elsewhere",
+        two_sub_tasks_unsquashed!([Lead::Plant(Plant::Staged {
+            at: "notes/staged-by-its-user.txt",
+            kept: true,
+        })]),
+        Listed::Acts,
+        Some(Aim {
+            line: "M4",
+            kind: Kind::StagedElsewhere,
+        }),
+        AT_THE_EDGE_INDEX,
+    ),
+    unsquashed(
+        "milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes",
+        two_sub_tasks_unsquashed!([Lead::Plant(Plant::Staged {
+            at: A_NAME_GIT_QUOTES,
+            kept: true,
+        })]),
+        Listed::Acts,
+        Some(Aim {
+            line: "M4",
+            kind: Kind::QuotedName,
+        }),
+        AT_THE_EDGE_INDEX,
+    ),
+    unsquashed(
+        "milestone-finalize-squash-false-a-hook-that-rejects",
+        two_sub_tasks_unsquashed!([Lead::Plant(Plant::RejectingHook)]),
+        refuses(1, "`git commit` was rejected"),
+        Some(Aim {
+            line: "M4",
+            kind: Kind::RejectingHook,
+        }),
+        &[],
+    ),
+];
+
 /// The family's cells: the acceptance's. Its other cells are a later task's, if the human
 /// rules for it at the pilot's stop.
-pub const CELLS: &[&[Cell]] = &[ACCEPTANCE];
+pub const CELLS: &[&[Cell]] = &[ACCEPTANCE, &UNSQUASHED];

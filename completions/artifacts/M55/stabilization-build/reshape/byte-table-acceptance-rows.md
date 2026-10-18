@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, with the third commit of the milestone family's task (`B7`), which builds the spelling switch: §3's doc-only arm is the line `T9`, which takes `T2`, `T3` and `T4` out of force — `T2` too, read whole, where the paragraph had said `T3` and `T4` — and `M4` takes `M3` out of force, with a second sentence; §6 gains entries 16 and 17; §7 the word a spelling is carried by.*
+
 *Changed 2026-10-18, with the second commit of the milestone family's task (`B7`): §7 gains a place one component of which is the work unit the command acts on, or a sub-task of it, and §3b's *What a line cannot say* is said; `W1`, `W4`, `T6`, `A1`, `M1` and `M6` are carried by it as data. No sentence of a line moved.*
 
 *Changed 2026-10-18, with the first commit of the milestone family's task (`B7`), which records the human's three rulings of that day: §6, entries 14 and 15 are ruled, each option A, and say how each is carried; and the two second spellings — the doc-only arm of `task finalize` (§3) and `finalize.fan-out.squash: false` (§4, `M4`) — are ruled to be built, by a switch with which a cell names a spelling of its leaf, in a commit of their own. No line moved.*
@@ -369,9 +371,19 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *4. Promote managed docs*
 
-**A second spelling, with its own commit line — the doc-only arm.** A task whose workflow includes `step:finalize-doc-only` commits its own paths and never the index; which task that is cannot be read off a repository's bytes, so it is a spelling of the leaf that a cell names, and its row replaces T3 and T4 by this sentence. No cell of the acceptance is one. **Ruled 2026-10-18**, option A: `B7` builds the switch by which a cell names a spelling of its leaf, in a commit of its own before the milestone rows, with cells for this spelling and for `M4`'s.
+**A second spelling, with its own commit line — the doc-only arm.** A task whose workflow includes `step:finalize-doc-only` commits its own paths and never the index; which task that is cannot be read off a repository's bytes, so it is a spelling of the leaf that a cell names. No cell of the acceptance is one. **Ruled 2026-10-18**, option A: `B7` builds the switch by which a cell names a spelling of its leaf, in a commit of its own before the milestone rows, with cells for this spelling and for `M4`'s. **Built 2026-10-18**, by that task's third commit: the spelling `doc-only`, which takes `T2`, `T3` and `T4` out of force and puts `T9` in their place. *Corrected the same day, by the same commit:* this paragraph said the arm's row replaces `T3` and `T4`; read whole, *The doc-only arm* leaves the stamp out of its path set as well — `T2`'s write — and a pending config delta, `T3`'s second sentence. So all three.
+
+**T9 — under the spelling `doc-only`: one commit on the checked-out branch, holding only the paths the row's other lines wrote — the task's promoted docs — and never the index as it stood; whatever else is staged stays staged; the stamp is not refreshed and no pending config delta rides.** When: the task's composed workflow includes `step:finalize-doc-only`, a condition no manifest shows, carried as the spelling a cell names. On a refusal: no (T7).
 
 > commits those paths alone (`git add -- <paths>` then `git commit -F <message> -- <paths>`), never the index
+
+— `design/finalize.md` → *The doc-only arm*
+
+> Whatever else is staged in the checkout — by a code task open beside it, before or after this task was minted — **stays staged**
+
+— `design/finalize.md` → *The doc-only arm*
+
+> **Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh
 
 — `design/finalize.md` → *The doc-only arm*
 
@@ -602,9 +614,13 @@ Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-read
 
 — `design/finalize.md` → *`fan-out` finalize*
 
-**M4 — a second spelling: under `finalize.fan-out.squash: false`, one commit a sub-task that staged code, then the aggregate.** A cascade knob, so a spelling a cell names; no cell of the acceptance sets it. **Ruled 2026-10-18**, option A: the spelling switch `B7` builds names it, with cells (§3, the doc-only arm, the same ruling).
+**M4 — a second spelling: under `finalize.fan-out.squash: false`, one commit a sub-task that staged code, then the aggregate.** A cascade knob, so a spelling a cell names; no cell of the acceptance sets it. **Ruled 2026-10-18**, option A: the spelling switch `B7` builds names it, with cells (§3, the doc-only arm, the same ruling). **Built 2026-10-18**, by that task's third commit: the spelling `squash: false`, which takes `M3` out of force and puts `M4` in its place — a commit line holding what the sub-tasks' worktrees staged and what the row's other lines wrote, as `M3`'s does, now over the commits of a chain. *What it cannot say*: that the chain is in task-id order, and that each sub-task's commit holds its own worktree's code and no other's — a line holds what the commits the command made hold together. The second sentence is added with it.
 
 > **`squash: false` — one commit per code-carrying sub-task in task-id order, then the parent's aggregate commit.**
+
+— `design/finalize.md` → *`fan-out` finalize*
+
+> Each per-sub-task commit applies **that one worktree's** staged code onto the checkout and `git commit -F`s the sub-task's own authored `commit` doc
 
 — `design/finalize.md` → *`fan-out` finalize*
 
@@ -713,7 +729,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4 and 7 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4, 7, 16 and 17 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -930,6 +946,43 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *The ruling* — the human's, of 2026-10-18, option A, as the orchestrating session handed it on: **every `doc` write that refuses leaves the task's area as it found it — the copy, its provenance, its witness and any role it bound are rolled back**: one rule with `author`'s (`design/write-commands.md` → *The verbs*, *"persist only on full success"*, and the refusal that *"stages nothing (the `create_gated` pre-image is rolled back too)"*). *Why*: the rule the docs state for every refusal they name; it makes *"nothing was persisted"* true — closing [byte-table-findings.md](byte-table-findings.md) → §12 and the fix pass's row `(R3, F3)` — and removes §13's dead end. It is the robust answer above, taken whole, and `W5`'s rule now speaks of every refusal, before the copy-in or after it.
 - *How it is carried.* No line moves: `W1` to `W4` hold on no refusal, and `W5` is no line. The fifteen cells were red under this reading, and stay red, under their key, a finding now; the three of `author` were red under every reading, as they were. The mark of this entry leaves the fifteen. A refusal under entry 14's ruling comes before the copy-in, so for the table's plants the two rulings meet one shape; this one reaches every other refusal after a copy-in — the class of §12 and §13.
 
+**16. Is the edge index's stamp invalidated by taking its file away? Open — a reading the record's §7 named on 2026-10-13, which a cell now meets.**
+
+- *The words.* `T5`'s and `M10`'s edge-index halves rest on *"invalidate the edge-index stamp"*, and the docs say how the next read takes it:
+
+> - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.
+
+— `design/finalize.md` → *7. Post-commit (best-effort)*
+
+> | **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |
+
+— `design/storage.md` → *Edge index lifecycle*
+
+  and of the cache whole, the next sentence of the same section:
+
+> This is what makes "delete `.jigc/`'s gitignored caches, rebuild from `.md`s, nothing lost" hold for the index too
+
+— `design/storage.md` → *Edge index lifecycle*
+
+  No sentence says whether the stamp is invalidated by rewriting it or by taking its file away. §7's note under its table took the reading under which more is red — *rebuilt*, a file made or written and none gone — and said *"a cell that meets a stamp's file gone is this note's to answer for"*.
+- *What a cell met* (2026-10-18, the task `B7`'s third commit). Under `finalize.fan-out.squash: false`, a boundary that lands leaves `.jigc/index/edges.json` gone, where `task finalize` and the `squash: true` boundary write it again: three cells of the spelling are *written outside its allowance* for that file alone, under `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` ([byte-table-findings.md](byte-table-findings.md) → §15).
+- *What the product should do — robust.* **Nothing different: a stamp's file taken away is an invalidation.** The index is a cache whose loss costs one rebuild and never a wrong answer — the storage design's own model, *"delete `.jigc/`'s gitignored caches … nothing lost"* — and the next read rebuilds it. So the line's word is what changes: `T5`'s and `M10`'s edge-index halves let the stamp's file be written **or taken away**, nothing else under `.jigc/index/`. *Its price*: none in bytes; two arms of one door that invalidate in two ways stay so, which a reader may want named.
+- *The other reading*: invalidating means writing the stamp, the file stays, and the `squash: false` arm is the one to change.
+- *Until ruled*, the reading under which more is red — §7's: the three cells are red, and each carries this entry's mark.
+
+**17. What does a `squash: false` boundary's chain hold of the main checkout's index? Open — the docs say two things, and no cell turns on it.**
+
+- *The words.* Of `squash: true`, the WIP-safe sentence `M3` quotes — the main checkout is never mutated until the clean fast-forward, and *"leaves unrelated main-checkout WIP intact (WIP-safe)"*. Of `squash: false`, `M4`'s second sentence — each sub-task's commit *"applies **that one worktree's** staged code onto the checkout and `git commit -F`s"* its own doc — and the staging policy's, which commits the aggregate through the policy whose commit is *the git index … committed whole*:
+
+> **`squash: false`** commits each sub-task's worktree code per-sub-task (hooks run + relay on each) and then promotes the merged docs through `IndexHonoring` over the now-clean index
+
+— `design/finalize.md` → *Dirty-tree policy*
+
+  Read so, a change the user staged in the main checkout rides the chain; *"the now-clean index"* presumes there is none. No sentence of `squash: false` says what becomes of one.
+- *What the product does.* It keeps it staged and says so: *"staged in the shared checkout (not committed by this boundary — the aggregate commit is built from the sub-task worktrees; these stay staged)"* — `milestone-finalize-squash-false-a-file-staged-elsewhere` and the cell of a name git quotes; neither rides any commit of the chain.
+- *What the product should do — robust.* **What it does: the chain never takes a path the user staged in the main checkout**, as the `squash: true` arm, the doc-only arm (*"stays staged"*) and the per-sub-task record doors keep it — one rule for every commit jigc makes beside a user's staged work. *The doc sentence that changes*: the staging policy's *"through `IndexHonoring` over the now-clean index"*, to say the aggregate is path-scoped to what the boundary lands. *The other reading*: the aggregate commits the index whole, and `M4` holds the index as `T4` does.
+- *Until ruled*, the reading under which more is red: `M4` holds what the sub-tasks' worktrees staged and what the row's lines wrote, and not the main checkout's index. No cell turns on it — under either reading the product's two cells hold — so none is marked.
+
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.
@@ -959,14 +1012,15 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **a copy of a staged doc**, as a regular file | T1; M2 |
 | **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
-| **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6 |
+| **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6; T9 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
-| **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** | M3 |
+| **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** | M3; M4 |
 | **a commit** holding **all of what the row's other lines changed at a tracked path, and nothing else — no edit of the user's that no commit held** (added 2026-10-15, for the ruling on §6, entry 5) | U9 |
 | **the index staged** at the places the row's other lines wrote | T3 (and S11, M3, through their commits) |
 | **a worktree's registration removed**, at a path under a named directory | U6; M7 |
 | a condition read off the state before the command: **the repository has no commit** | S9 |
 | a condition read off how the command ended: **it refused** (added 2026-10-13, for the ruling) | C1, C2, C3 |
+| a line **of a spelling** — in force only where a cell names that spelling of its leaf, and the lines the spelling replaces out of force there (added 2026-10-18, by the task `B7`'s third commit, for the human's ruling on the two spellings) | T9 (`doc-only`, replacing T2, T3, T4); M4 (`squash: false`, replacing M3) |
 | **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); every other line (no) |
 | **the consent's flag**, under which a planted path named in the output may go | S14; U8; A4 |
 
