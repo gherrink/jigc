@@ -240,7 +240,9 @@ pub enum Where {
     /// The `pre-commit` hook in the hooks directory git resolves — no fixed path.
     Hook,
     /// Wherever a staged doc of the unit lands: the path is the product's to compute, so
-    /// the place is known by the bytes that arrive there ([`May::CopyOfAStagedDoc`]).
+    /// the place is known by the bytes that arrive there ([`May::CopyOfAStagedDoc`]). Under
+    /// [`May::CopiedFrom`] it is the same home seen before the task holds the doc: where
+    /// the committed doc a write copies in stands.
     AStagedDocsHome,
 }
 
@@ -267,6 +269,13 @@ pub enum May {
     /// Made or replaced by a regular file that is, byte for byte, a doc staged in a work
     /// unit.
     CopyOfAStagedDoc,
+    /// **Read, and nothing written** — the home of a committed doc a write copies into a
+    /// task's working area: the place the copy is read from, which the write leaves as it
+    /// stands. It lets no difference happen there, at exit 0 or on a refusal, and lets no
+    /// commit or index hold anything there; what it is for is the plants put where the
+    /// copy is read from, which are aimed at it ([`aimed`]). The `doc` family's `W3`
+    /// (`…/reshape/byte-table-acceptance-rows.md` → §3b; the task `B6`).
+    CopiedFrom,
     /// Gone from its place and standing, the same entry, under this directory of the
     /// repository.
     MovedAsideTo(&'static str),
@@ -455,6 +464,15 @@ impl Kind {
 /// the commit's to answer; **N** *where the command lists or stages paths*; **D** *in a
 /// directory the command removes*; **H** *at every leaf whose row has a commit*; **W**
 /// where a line removes a registration.
+///
+/// **And the home a write copies a committed doc in from** ([`May::CopiedFrom`]) — read,
+/// and nothing written: what stands in the doc's place there is what the copy-in meets,
+/// so **U**, **L** and **K**, *a directory in a file's place*, go there as they go to a
+/// place the command writes, and **E** at both of its positions, the command's own write
+/// being the task's first or a later one. **T** does not: a committed file there is the
+/// committed doc the line reads. Nor does **K**, *a file in a directory's place* — it
+/// takes every doc of the home's directory, not the one the line reads — nor **S** or
+/// **M**, which are held to a write.
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -465,21 +483,28 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     let one_file = |place: Where| !matches!(place, Where::Under(_));
     let lands = |may: May| matches!(may, May::WriteWhole | May::Rebuilt | May::CopyOfAStagedDoc);
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
+    let read = |may: May| matches!(may, May::CopiedFrom);
     let aimed = match (kind, line.allows) {
-        (Kind::Untracked, Allows::Files(_, may)) => lands(may),
+        (Kind::Untracked, Allows::Files(_, may)) => lands(may) || read(may),
         (Kind::Committed, Allows::Files(place, may)) => {
             lands(may) && one_file(place) && !matches!(place, Where::Hook)
         }
         (
-            Kind::LinkToNothing
-            | Kind::LinkInside
-            | Kind::LinkOutside
-            | Kind::DirForAFile
-            | Kind::FileForADir,
+            Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside | Kind::DirForAFile,
             Allows::Files(place, may),
-        ) => one_file(place) && (lands(may) || matches!(may, May::MergeInto)),
-        (Kind::EditBefore, Allows::Files(_, may)) => matches!(may, May::CopyOfAStagedDoc),
-        (Kind::EditAfter | Kind::StagedThere, Allows::Files(place, may)) => {
+        ) => one_file(place) && (lands(may) || read(may) || matches!(may, May::MergeInto)),
+        (Kind::FileForADir, Allows::Files(place, may)) => {
+            one_file(place) && (lands(may) || matches!(may, May::MergeInto))
+        }
+        (Kind::EditBefore, Allows::Files(_, may)) => {
+            matches!(may, May::CopyOfAStagedDoc) || read(may)
+        }
+        (Kind::EditAfter, Allows::Files(place, may)) => {
+            one_file(place)
+                && !matches!(place, Where::Hook)
+                && (lands(may) || merges(may) || read(may))
+        }
+        (Kind::StagedThere, Allows::Files(place, may)) => {
             one_file(place) && !matches!(place, Where::Hook) && (lands(may) || merges(may))
         }
         (Kind::UsersLine, Allows::Files(_, may)) => merges(may),
@@ -502,8 +527,11 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         Kind::DirForAFile | Kind::FileForADir => {
             "the line names no one file's place the command writes"
         }
-        Kind::EditBefore => "no staged doc of a work unit lands at the line's place",
-        Kind::EditAfter => "the line lets the command rewrite no tracked file",
+        Kind::EditBefore => {
+            "no staged doc of a work unit lands at the line's place, and no committed doc is \
+             copied in from it"
+        }
+        Kind::EditAfter => "the line lets the command rewrite or copy in no tracked file",
         Kind::UsersLine => "the line merges into no file and takes lines out of none",
         Kind::StagedThere => "the line names no tracked file's place the command writes",
         Kind::StagedElsewhere | Kind::QuotedName | Kind::RejectingHook => "the line is no commit's",
@@ -813,7 +841,8 @@ impl<'a> Tally<'a> {
                 match (may, entry) {
                     (May::Removed | May::MovedAsideTo(_), None) => true,
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
-                    (_, None) | (May::LaidOut, _) => false,
+                    // Laid out holds no file; read from holds nothing the command wrote.
+                    (_, None) | (May::LaidOut | May::CopiedFrom, _) => false,
                     // A regular file, and no link: mode `100644` or `100755`.
                     (May::CopyOfAStagedDoc, Some((mode, blob))) => {
                         mode & 0o170_000 == 0o100_000 && self.staged.contains(blob.as_str())

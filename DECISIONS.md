@@ -2,6 +2,40 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-18 — The doc family's eight rows are written from their docs before a cell of any runs — three lines each over quoted sentences, a fourth for `doc rename`, two rules that are no line — and the third line names the home a write copies a committed doc in from, read and never written, which is where a plant in a doc's place is aimed (the byte table, task `B6`, the doc family's first commit)
+
+**What.** The rows of the eight `jigc doc` write leaves — `add-item`, `remove-item`, `retitle-item`, `rename`, `set-field`, `set-slot`, `create`, `author` — written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §3b and lifted quote for quote into [doc.rs](crates/cli/tests/byte_table/doc.rs). **No cell is added, no binary was run to learn what a command writes**, and no product source changes. The eight leave the owed list of leaves ([owed.rs](crates/cli/tests/byte_table/owed.rs)) and join the list of leaves whose cells are owed, under `B6`.
+
+### The rows
+
+Owner doc: `design/write-commands.md`, with `design/reconciliation.md` → *Baseline adoption* and *Detection timing*, `design/storage.md` and `design/finalize.md` → *4. Promote managed docs*. A `doc` write stages, and only `finalize` commits — so the rows are one row eight times:
+
+| line | the place | what may happen there |
+|---|---|---|
+| `W1` | `.jigc/tasks/<id>/` | rebuilt — the staged doc, its provenance, its roles; nothing taken away |
+| `W2` | `.jigc/state/` | rebuilt — a copied-in doc's baseline, where the record holds none, and its save's lock |
+| `W3` | the home of a committed doc the write copies in | **read, and nothing written** |
+| `W4` (`doc rename` alone) | a staged doc's body under the name a re-slug leaves | removed |
+| `C1` to `C3` | the caches, on a refusal | rebuilt (§4a) |
+
+**Two rules are no line**: `W5`, a refusal stages nothing — five sentences, one a way a `doc` write refuses — and `W6`, *"Only `finalize` produces committed changes"*, which is why no row lets a write change a doc's home, git's index or a commit. **Every row's home is `committed-singletons`**, the smallest state in which `W2`'s write happens and `W3`'s place stands. **No row names a consent.** The letter is `W`, for *write*.
+
+**The two parts the cells are built in**, by the docs the leaves share — the split `design/reconciliation.md` itself makes when it names the copy-in's doors, *"the six edit leaves on their first touch, and `doc create` / `doc author` over an existing doc"*: the six edit leaves first, the two minting doors second. The rows are one commit, since every line stands in both parts.
+
+### Decided here — as a builder, and open to being overturned
+
+- **`W3` and its word, `May::CopiedFrom`** ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)): *read, and nothing written* — a line that lets no difference happen at its place, and no commit or index hold one. **Why a line that allows nothing**: the human's ruling of 2026-10-18 built the plant in the place of a file that stands and the plant of a file simply deleted for `B6` to have *a doc's home with a link, a directory or a user's file in its place, and a doc's file deleted outside jigc* — and a doc write never writes a doc's home, so no line of a row that only says what it writes would name the place those plants go. The place it *reads* is the copy-in's, with its own sentences, and the position rules ([`aimed`](crates/cli/tests/support/byte_cell.rs)) aim at it **U**, **L** (three), **K**, *a directory in a file's place*, and **E** at both of its positions; **T** is the committed doc the line reads, **K**, *a file in a directory's place*, takes every doc beside the one read, and **S** and **M** are held to a write. Seven needs a row. *Red first:* with the word declared and `aimed` unchanged, the cell fence's new assertion came out red — no kind targeted the line; and [`the_home_a_write_copies_in_from_is_read_and_never_written`](crates/cli/tests/byte_table.rs), a commit holding the rewritten home under a row whose commit holds only the lines, came out *holds* — the comparison let a line of the file layer excuse the commit's path, as it does for a line that writes it — where it must be *git's state moved outside its allowance*. Built, both are as the arm says, and the home rewritten in the tree is *written outside its allowance*.
+- **The record's §3b names what the docs do not say**: whether a `doc` write may rebuild the edge index, and what a write does where the home it copies in from holds no doc of its type — said for the minting doors over a link to nothing and a directory (`design/finalize.md`, *Declared bounds*, (4): *"still mints fresh and is refused at the committing door"*) and for nothing else. Neither is a §6 entry until a cell meets it.
+
+### The lists
+
+The table has fifteen rows and 134 lines. Each doc row needs seventeen cells — its refusing cell, its base cell and six more in the other prepared states, `W1` × U, `W2` × U and `W3`'s seven — 136 for the family. Their lines stand on the list of lines that excuse nothing, until their cells run.
+
+### Not established
+
+- **That the rows are complete.** `design/write-commands.md` → *Task origination* and *Instance provisioning*'s workflow-provisioned arm were read for nothing beyond the create-gate; `design/validation.md` was not read for a `doc` write's own checks.
+- **That a `doc` write reads no other place than the home it copies in from** — a ref's target, a role's bound doc: no sentence read says it does, and no line names one.
+
 ## 2026-10-18 — The cell that never reached `T2` is a scheduled row, the records say what the rulings said and what they counted, and what `task finalize` prints at the stamp when the user staged a change there is a finding of its own — 208 cells, 172 in the gate, 44 red under thirteen keys (the byte table, task `B6`, after its review: the fourth of its fixes)
 
 **What.** The last of the four fixes after the review of `B6`'s first two commits: its notes F3 and F6 to F9, the observation the second fix left open, and the family's numbers in every record that states them.

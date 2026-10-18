@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, with the first commit of the task `B6`'s doc family: the rows of the eight `jigc doc` write leaves are written from their docs (§3b), before a cell of any of them runs, and §7 gains the word their third line is carried by — *read, and nothing written*. No other line moved.*
+
 *Changed 2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits: §6, entry 10's ruling reads in the human's words, with the table's scope as a note beside it, and entry 1 says which four cells lie between the *seventeen* it projected and the thirteen that hold. No line moved.*
 
 *Changed 2026-10-18, after the review of the task `B6`'s first two commits: §6, entry 13 is answered by the design docs — two sentences it had not read — and says so; it was no silence. No line moved.*
@@ -23,7 +25,7 @@
 
 *Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
 
-**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under; since `B5`, the rows of `jigc ingest` and `jigc unmanage`, which the install family's cells are run under with `setup`'s and `uninstall`'s.
+**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under; since `B5`, the rows of `jigc ingest` and `jigc unmanage`, which the install family's cells are run under with `setup`'s and `uninstall`'s; since `B6`, the rows of the eight `jigc doc` write leaves, the doc family (§3b).
 
 **How a line is written.** Its number; the place it speaks of; what may happen there; when, where the doc gives a condition; and whether it still holds when the command refuses. Under it, set off as a quotation, **the sentence the line rests on — a run of the doc's own bytes, markup included, never a paraphrase** — and under that the doc and the heading the sentence stands under. A line that needs two sentences quotes both, each with its own source. The quotation is what `B1`'s fence holds against the doc: a doc that moves reddens the row.
 
@@ -455,6 +457,97 @@ Owner docs: `design/write-commands.md` → *The verbs* (the paragraph *Abandonin
 
 ---
 
+## 3b. The doc family — `jigc doc create`, `doc author`, `doc add-item`, `doc remove-item`, `doc retitle-item`, `doc rename`, `doc set-field`, `doc set-slot`
+
+*Written 2026-10-18, as the first commit of the doc family's own (the plan's task `B6`, after the plant in the place of a file that stands and the plant of a file simply deleted, each with its fixes): the eight rows from their docs, before a cell of any of them runs. No binary was run to learn what a command writes, and no list of files was taken from the product's source.*
+
+Owner doc: `design/write-commands.md` — *The verbs* with its sections on `doc retitle-item`, `doc rename` and `doc set-field --unset`, *Every write resolves its address before it moves bytes (M47)*, *Staging and the transaction model*, *Instance provisioning* with *The create-gate*, and *The write-time `--task`-scoped barrier (M8)* with its paragraph *Editing a base-committed doc — copy-on-first-touch (M8)*; with `design/reconciliation.md` → *Baseline adoption* and *Detection timing*, `design/storage.md` → *The per-task working area (staging)* and *Concurrent writers*, and `design/finalize.md` → *4. Promote managed docs*, its *Declared bounds*.
+
+**The family in one sentence.** A `doc` write stages: it writes the task's working area and, where it copies a committed doc in, that doc's baseline under `.jigc/state/` — and nothing else. **Only `finalize` produces committed changes**, so no line of these rows lets a write change a doc's home, git's index or a commit, and a change there is red.
+
+**The two parts the family's cells are built in**, by the docs the leaves share — the split `design/reconciliation.md` makes itself when it names the copy-in's two doors, *"the six edit leaves on their first touch, and `doc create` / `doc author` over an existing doc"*:
+
+- **the six edit leaves — `doc add-item`, `remove-item`, `retitle-item`, `rename`, `set-field`, `set-slot`**: the per-leaf sections of *The verbs*, *Every write resolves its address before it moves bytes*, and the copy-on-first-touch paragraph — each writes one leaf, item or heading of a doc the task stages, copying a committed doc in on its first touch;
+- **the two minting doors — `doc create` and `doc author`**: *Instance provisioning*, *The create-gate*, the shared title pre-check and the four-way write over a committed doc of *The verbs*, and the batch's atomic payload — each mints a doc into the task, or copies one in for update where it is already a doc.
+
+The rows are one row eight times: W1 to W3 with `C1` to `C3` (§4a), and `doc rename`'s has W4 as well. **Their letter is `W`**, for *write*: no line of the table is lettered `W` (the plan's plant **W** is a worktree, and no line of these rows names one). **No row names a consent**: no `doc` verb takes one. **The home of every row is `committed-singletons`** — the smallest prepared state in which W2's write happens and W3's place stands, since the copy-in needs a committed managed doc and `fresh` holds none; W1's write happens there too.
+
+**W1 — the task's working area, `.jigc/tasks/<task-id>/` and everything under it: rebuilt — the staged doc made or written whole, its provenance, the roles it is bound to; nothing of it taken away.** When: always. On a refusal: no (W5). No sentence read lets a file of the area go — but `doc rename`'s, which is W4 — so the word is *rebuilt* (§7), which lets a file be made or written and none be gone.
+
+> There is no separate proposal object: every write lands in the current task's working area immediately (no `begin`), and "propose / review / apply" is just `write / validate / finalize` over that area.
+
+— `design/write-commands.md` → *Staging and the transaction model*
+
+> **Where a write may be typed (the rc.24 fix pass).** Every write verb stages into the task's working area, which lives under the main checkout from every cwd
+
+— `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*
+
+**W2 — `.jigc/state/` and everything under it: rebuilt — the baseline of a committed doc the write copies in, where the record holds none, and the lock its save takes.** When: the write copies a committed doc in — its first touch of the doc, or a `create` or `author` over a doc that already exists at its home; a condition no manifest shows, so a word of the line only, and it lets the command do less. On a refusal: no (W5); what a refusal may do there is `C2` (§4a).
+
+> **The copy-in also records the doc's `file-state` baseline when it has none (the rc.24 fix pass)**
+
+— `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*
+
+> A write verb that stages a committed doc — the **copy-in**: the six edit leaves on their first touch, and `doc create` / `doc author` over an existing doc — reads the file at its home, and that read records the doc's baseline when the record holds none
+
+— `design/reconciliation.md` → *Baseline adoption*
+
+> `engine::state::with_save_lock` runs the whole critical section under an advisory lock — taken on a **stable `<filename>.lock` sibling**
+
+— `design/storage.md` → *Concurrent writers*
+
+**W3 — the home of a committed doc the write copies in: read, and nothing written there.** When: the write copies a committed doc in. On a refusal: no (W5). It lets no difference happen at the home and no commit or index hold one — W6 is why — and it names the place the copy is read from, which is what a plant put in a doc's place is aimed at: a file of the user's, a link, a directory where the doc's file stood, and the doc's file edited or deleted on either side of the task's first write. A read through a link is declared; nothing is declared written through one. A second write to a doc the task stages reads the staged copy, so the home is read by the first write alone.
+
+> The first write to such a doc **copies the committed body into the sub-area** (`copy_in` → `edited-from-base`), then splices
+
+— `design/write-commands.md` → *The write-time `--task`-scoped barrier (M8)*
+
+> (2) **Reads still follow a link at a home** — `jigc doc show` serves a linked doc and the copy-in reads one
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+> a second write to an already-staged doc reads the staged copy and does not look at the home again.
+
+— `design/reconciliation.md` → *Detection timing*
+
+**W4 — the staged body of a doc the task minted, under the name a re-slug leaves: removed — `doc rename`'s alone.** When: the doc was never committed, and `--to` mints another slug. On a refusal: no (W5). The body under its new name is W1's.
+
+> `--to` rewrites the `# H1` **and** moves the identity: the staged body, its `docs/provenance.json` entry (re-keyed, its recorded provenance intact — the by-task-id join classifies by it), every `roles.json` binding, every **staged doc's** `ref` fields, and a migration task's recorded `slug-override`.
+
+— `design/write-commands.md` → *`jigc doc rename` — the in-task title change, split on committed-store identity (M48)*
+
+**W5 — a refusal stages nothing and records nothing.** Not a line: it is where W1 to W4 take their *on a refusal: no* from, read off sentences that each say it for one way a `doc` write refuses — an address it cannot resolve, a lock it cannot take, a title or a payload it refuses, a create-only entry over an occupied home.
+
+> **A write verb resolves its addressed leaf against the declaring schema *before touching bytes*** — an undeclared address is **rejected, never written**.
+
+— `design/write-commands.md` → *Every write resolves its address before it moves bytes (M47)*
+
+> **At the copy-in door a timed-out save fails the write, before anything is staged**
+
+— `design/storage.md` → *Concurrent writers*
+
+> Both minting doors — `jigc doc create` and `jigc doc author` — now share **one pre-check**, running **before either persists**, so the whole payload is rejected with nothing staged and nothing to roll back.
+
+— `design/write-commands.md` → *The verbs*
+
+> a corrupt payload is rejected whole (atomic), never half-applied.
+
+— `design/write-commands.md` → *The verbs*
+
+> the create is refused **before anything is copied in**, so nothing is staged and no role is bound
+
+— `design/write-commands.md` → *The create-gate*
+
+**W6 — only `finalize` produces committed changes.** Not a line: it is why no row of the family names a doc's home as written, git's index or a commit.
+
+> Only `finalize` produces committed changes; the working area itself is never committed
+
+— `design/storage.md` → *The per-task working area (staging)*
+
+**What the docs do not say of the family:** whether a `doc` write may rebuild the edge index — `design/storage.md` → *Edge index lifecycle* rebuilds it at the *first read after a stamp mismatch* and names its five sites, none a `doc` write, and no sentence read says whether a write reads it; no line is written for it, and a cell that finds one is red and an entry of §6, as `task discard`'s is (§6, entry 7). What a `doc` write does where the home it copies in from holds no doc of its type — a file of the user's, a link to one, a link to nothing, a directory, nothing at all — is said for the minting doors over a link to nothing and a directory (`design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4): such a create *"still mints fresh and is refused at the committing door, not at the create"*), and for no other leaf or shape; the cells say where they meet it.
+
+---
+
 ## 4. `jigc milestone finalize`
 
 Owner doc: `design/finalize.md` → *`fan-out` finalize*, with `design/team-ready-state.md` and `design/storage.md`.
@@ -711,17 +804,18 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 
 | a line says | which lines needed it |
 |---|---|
-| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5, A5 and C3, with one component left open for a milestone's id or its record's name |
-| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2 |
+| a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; M5, A5 and C3, with one component left open for a milestone's id or its record's name; W4, with two left open for a task's id and a staged doc's name |
+| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2; W1, W2 |
 | a place that is **the `pre-commit` hook in the hooks directory git resolves** — not a fixed path | S10; U4 |
-| a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2 |
+| a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2; and W3, the same home before the task holds the doc |
 | **written whole** — made, or replaced by any bytes; over a directory, anything under it, a file gone included | S1, S5, S6, S8; T2; M1, M5; A5 |
 | **merged into** — every line that stood there stays, in order | S2, S3, S7, S9, S10 |
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
-| **removed** | S6; U1, U4, U5; T6; M6; A1 |
-| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table |
+| **removed** | S6; U1, U4, U5; T6; M6; A1; W4 |
+| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table; W1, W2 |
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
 | **a copy of a staged doc**, as a regular file | T1; M2 |
+| **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |

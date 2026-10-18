@@ -5,8 +5,9 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has seven rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 208 cells: the acceptance's
+//! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight, whose
+//! cells are owed — and 208 cells: the acceptance's
 //! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`) **and
 //! the install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`,
 //! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to
@@ -151,6 +152,8 @@ families! {
     mod task;
     #[path = "byte_table/milestone.rs"]
     mod milestone;
+    #[path = "byte_table/doc.rs"]
+    mod doc;
 }
 
 use owed::{CELLS_OWED, OWED, OWING};
@@ -462,9 +465,9 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        7,
-        "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, and \
-         `jigc ingest`'s and `jigc unmanage`'s: {rows:?}"
+        15,
+        "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, \
+         `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight: {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -1125,6 +1128,40 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         "a file deleted, the index left as it stands, is no staged change"
     );
 
+    // The home a write copies a committed doc in from — read, and nothing written there
+    // (`May::CopiedFrom`, the `doc` family's `W3`): a file of the user's, a link, a
+    // directory in the doc's place, and the doc edited or deleted on either side of the
+    // task's first write are each aimed at it — and nothing that is put at a place the
+    // command writes: a committed file is the doc the line reads, a staged change and a
+    // line of the user's are held to a write, a file in the home's directory's place
+    // takes every doc beside it.
+    const READS: Row = Row {
+        leaf: &["doc", "set-slot"],
+        home: Prepared::Of(State::CommittedSingletons),
+        ..row(&[line(
+            "F5",
+            Allows::Files(Where::AStagedDocsHome, May::CopiedFrom),
+        )])
+    };
+    let read: Vec<String> = needs(&READS)
+        .iter()
+        .map(Need::named)
+        .filter(|need| need.starts_with("F5"))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            "F5 × U",
+            "F5 × L, to nothing",
+            "F5 × L, to a file in the repository",
+            "F5 × L, to a file outside it",
+            "F5 × K, a directory in a file's place",
+            "F5 × E, before the first write",
+            "F5 × E, after the first write",
+        ],
+        "the home a write copies in from takes the plants that stand in a doc's place"
+    );
+
     // This tree.
     let (rows, cells) = (rows(), cells());
     let wrong = unmet(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED);
@@ -1486,6 +1523,115 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         &["milestone", "finalize"],
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (&["doc", "add-item"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "add-item"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "add-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "add-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "add-item"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["doc", "add-item"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "remove-item"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "remove-item"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "remove-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "remove-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "remove-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "remove-item"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["doc", "remove-item"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "retitle-item"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "retitle-item"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "retitle-item"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "retitle-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "retitle-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "retitle-item"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["doc", "retitle-item"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "rename"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "rename"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "rename"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "rename"], "W4", ITS_FAMILYS_CELLS),
+    (&["doc", "rename"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "rename"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (
+        &["doc", "rename"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "set-field"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "set-field"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "set-field"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "set-field"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "set-field"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "set-field"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["doc", "set-field"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "set-slot"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "set-slot"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "set-slot"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "set-slot"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "set-slot"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "set-slot"],
+        "C3, the base pin",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (
+        &["doc", "set-slot"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "create"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "create"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "create"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "create"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "create"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "create"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (
+        &["doc", "create"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["doc", "author"], "W1", ITS_FAMILYS_CELLS),
+    (&["doc", "author"], "W2", ITS_FAMILYS_CELLS),
+    (&["doc", "author"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "author"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "author"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["doc", "author"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (
+        &["doc", "author"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
     ),
 ];
 
@@ -1938,6 +2084,10 @@ const DOCS: &[(&str, &str)] = &[
     (
         "design/project-setup.md",
         include_str!("../../../design/project-setup.md"),
+    ),
+    (
+        "design/reconciliation.md",
+        include_str!("../../../design/reconciliation.md"),
     ),
     (
         "design/storage.md",
@@ -3072,6 +3222,62 @@ fn a_commit_holds_what_its_line_declares() {
     assert!(
         why.iter()
             .any(|why| why.contains("holds a link at `.jigc/version`")),
+        "{why:#?}"
+    );
+}
+
+/// **The home a write copies a committed doc in from is read, and never written**
+/// (`May::CopiedFrom`, the `doc` family's `W3`). A write that stages into its task's area
+/// and leaves the home as it stood holds. The home rewritten in the working tree is
+/// *written outside its allowance* — the line lets nothing change there; and a commit
+/// that holds the rewritten home is *git's state moved outside its allowance* — the line
+/// lets no commit hold it, though the file the commit holds is the one that stands there.
+#[test]
+fn the_home_a_write_copies_in_from_is_read_and_never_written() {
+    const COPIES_IN: Row = row(&[
+        line("R1", Allows::Files(Where::AStagedDocsHome, May::CopiedFrom)),
+        line("R2", Allows::Commit(Holding::OnlyTheLines)),
+        line(
+            "R3",
+            Allows::Files(Where::Under(".jigc/tasks/*"), May::Rebuilt),
+        ),
+    ]);
+    const VISION: &str = "# Vision\n\nwhat the project is for\n";
+    const SHARPENED: &str = "# Vision\n\nwhat the project is for, sharpened\n";
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/docs");
+        put(m, "repo/docs/vision.md", VISION);
+        commit(m, "c1", &[("docs/vision.md", Some((0o100_644, VISION)))]);
+    });
+    let staged = then(&before, |m| {
+        for path in [
+            "repo/.jigc",
+            "repo/.jigc/tasks",
+            "repo/.jigc/tasks/t1",
+            "repo/.jigc/tasks/t1/docs",
+        ] {
+            dir(m, path);
+        }
+        put(m, "repo/.jigc/tasks/t1/docs/vision.md", SHARPENED);
+    });
+    comes_out(
+        &Cell::of(COPIES_IN, &before, &staged),
+        Classification::Holds,
+    );
+    let rewritten = then(&staged, |m| put(m, "repo/docs/vision.md", SHARPENED));
+    comes_out(
+        &Cell::of(COPIES_IN, &before, &rewritten),
+        Classification::WrittenOutside,
+    );
+    let committed = then(&rewritten, |m| {
+        commit(m, "c2", &[("docs/vision.md", Some((0o100_644, SHARPENED)))]);
+    });
+    let (got, why) = Cell::of(COPIES_IN, &before, &committed).came_to();
+    assert_eq!(got, Classification::GitMoved, "{why:#?}");
+    assert!(
+        why.iter().any(|why| why.contains(
+            "a commit the command made holds at `docs/vision.md` what the row does not let it hold"
+        )),
         "{why:#?}"
     );
 }

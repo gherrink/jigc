@@ -16,16 +16,9 @@ pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 /// `unmanage` joined it with the task `B3`, whose count holds them touched under the plan's
 /// rule where the plan's script had not: they stand under `B5`, the install family's task,
 /// whose docs they share with `setup` and `uninstall`, and left it with that task's
-/// second commit, which brought their rows.
+/// second commit, which brought their rows. The eight `doc` leaves left it with the doc
+/// family's first commit of `B6`, which brought theirs.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["doc", "create"], "B6"),
-    (&["doc", "add-item"], "B6"),
-    (&["doc", "remove-item"], "B6"),
-    (&["doc", "retitle-item"], "B6"),
-    (&["doc", "rename"], "B6"),
-    (&["doc", "set-field"], "B6"),
-    (&["doc", "set-slot"], "B6"),
-    (&["doc", "author"], "B6"),
     (&["milestone", "create"], "B7"),
     (&["milestone", "add-task"], "B7"),
     (&["milestone", "add-from-spec"], "B7"),
@@ -48,8 +41,18 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// (`byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`) asks nothing
 /// of such a leaf need by need, and names it the day it also has a scheduled row. `B4`
 /// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
-/// brought the install family's four; `B7` is built now, by the human's ruling of
-/// 2026-10-13. A leaf leaves
+/// brought the install family's four; `B6` brings the doc family's eight, and `B7` is built
+/// now, by the human's ruling of 2026-10-13. A leaf leaves
 /// this list in the commit that brings its cells — after which every need of its row is a
 /// cell or a line of `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[(&["milestone", "finalize"], "B7")];
+pub const CELLS_OWED: &[(&[&str], &str)] = &[
+    (&["doc", "add-item"], "B6"),
+    (&["doc", "remove-item"], "B6"),
+    (&["doc", "retitle-item"], "B6"),
+    (&["doc", "rename"], "B6"),
+    (&["doc", "set-field"], "B6"),
+    (&["doc", "set-slot"], "B6"),
+    (&["doc", "create"], "B6"),
+    (&["doc", "author"], "B6"),
+    (&["milestone", "finalize"], "B7"),
+];
