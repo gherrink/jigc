@@ -12,7 +12,7 @@
 //! `M3` out of force; a cell that sets the knob names the spelling ([`Spelling`]), by the
 //! human's ruling of 2026-10-18.
 
-use super::{ON_A_REFUSAL, refuses};
+use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
     Where,
@@ -234,13 +234,24 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "M10, the edge index",
-            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            Allows::Files(
+                Where::Under(".jigc/index"),
+                May::Invalidated(".jigc/index/edges.json"),
+            ),
             &[
                 Quote {
                     doc: "design/finalize.md",
                     heading: "`fan-out` finalize",
                     words: "4. **Post-commit** runs once for the whole batch.",
                 },
+                Quote {
+                    doc: "design/finalize.md",
+                    heading: "7. Post-commit (best-effort)",
+                    words: "- **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.",
+                },
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[0],
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[1],
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[2],
             ],
         ),
         line(
@@ -570,11 +581,6 @@ macro_rules! two_sub_tasks_unsquashed {
     };
 }
 
-/// The mark of a cell whose boundary lands under `squash: false` and takes the edge index's
-/// file away: the rows' record's §6, entry 16 — is a stamp invalidated by taking its file
-/// away?
-const AT_THE_EDGE_INDEX: &[Mark] = &[Mark::Silence(16)];
-
 /// One cell of `jigc milestone finalize`'s spelling `squash: false`.
 const fn unsquashed(
     name: &'static str,
@@ -613,7 +619,7 @@ const UNSQUASHED: [Cell; 4] = [
         two_sub_tasks_unsquashed!([]),
         Listed::Acts,
         None,
-        AT_THE_EDGE_INDEX,
+        &[],
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-file-staged-elsewhere",
@@ -626,7 +632,7 @@ const UNSQUASHED: [Cell; 4] = [
             line: "M4",
             kind: Kind::StagedElsewhere,
         }),
-        AT_THE_EDGE_INDEX,
+        &[],
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes",
@@ -639,7 +645,7 @@ const UNSQUASHED: [Cell; 4] = [
             line: "M4",
             kind: Kind::QuotedName,
         }),
-        AT_THE_EDGE_INDEX,
+        &[],
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-hook-that-rejects",

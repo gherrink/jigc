@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, by the fourth of the fixes after the review of the milestone family's task (`B7`), part A (its first and third findings): §6, entries 16 and 17 are answered by the design docs, and were no silences. Entry 16 — the edge index's file may be gone after a finalize, whose next read rebuilds it — is carried by a word of its own, *invalidated* (§7), on `T5`'s and `M10`'s edge-index halves, which quote three more sentences of `design/storage.md`; its false premise, that `task finalize` and the `squash: true` boundary write the file again, is corrected. Entry 17 is answered by `design/command-output-contract.md`, and the one sentence of `design/finalize.md` that says otherwise is a doc-only finding.*
+
 *Changed 2026-10-18, by the third of the fixes after the review of the milestone family's task (`B7`), part A (its fourth, eighth and ninth findings): the `squash: false` spelling checks its chain. `M4` held what `M3` holds, so a product that ignored the knob kept the spelling's cells green; it is carried by a word of its own now (§7, *a chain*) — a commit for each sub-task whose worktree staged code, in task-id order, each holding what that worktree staged and nothing else, then the aggregate, holding only what the row's other lines wrote — and `M4`'s *What it cannot say* is said. `T9` names what it leaves out, the doc-only arm's owner-artifacts, a lead. And a need of a row is keyed by the spelling as well as the line: a cell of `doc-only` aimed at `T1` answers `T1` under `doc-only` and no longer the plain spelling's need, which has a cell of its own.*
 
 *Changed 2026-10-18, by the second of the fixes after the review of the milestone family's task (`B7`), part A (its fifth, sixth and seventh findings): how a line names its unit. `M5` and `A5` read `docs/milestone-records/*` — any milestone's record — and read `<docs-root>/milestone-records/<unit>.md` and `<docs-root>/milestone-records/<its-milestone>.md` now: the milestone's own record, and the one record that names the discarded sub-task, each under the docs root the cascade resolves, each on a sentence it now quotes; §7 gains the fixed suffix, `<its-milestone>` and `<docs-root>`, and says what *a task that stands* (an area carrying its base pin) and *a committed record* (the bytes `HEAD` holds at the record's resolved home) are. No sentence of a line moved; two lines gained quotes.*
@@ -345,15 +347,31 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *5. Stage*
 
-**T5 — `.jigc/index/` and `.jigc/state/`: written — the edge index's stamp, the file-state hashes.** When: the commit landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
+**T5 — `.jigc/index/` and `.jigc/state/`: written — the edge index's stamp, the file-state hashes; the stamp's own file, `.jigc/index/edges.json`, written or taken away.** When: the commit landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
 
-> - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches).
+> - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.
 
 — `design/finalize.md` → *7. Post-commit (best-effort)*
 
 > - **Update `file-state` hashes** for every committed managed doc.
 
 — `design/finalize.md` → *7. Post-commit (best-effort)*
+
+  The stamp's file, and what its loss costs — the index is rebuilt by the read after the commit, never by the finalize:
+
+> **`index/edges.json` — locked, not merged.** A decision, not an omission: the index is **stamp-rebuildable by construction** (a stamp mismatch rebuilds it from the committed `.md`s, per Derived caches above), so a lost delta costs one rebuild and never a wrong answer
+
+— `design/storage.md` → *Concurrent writers*
+
+> | **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |
+
+— `design/storage.md` → *Edge index lifecycle*
+
+> only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.jigc/`'s gitignored caches, rebuild from `.md`s, nothing lost" hold for the index too
+
+— `design/storage.md` → *Edge index lifecycle*
+
+  **Corrected 2026-10-18, by the fourth of the fixes after the review of `B7`'s part A (its first finding):** the edge index's half was *rebuilt* — a file made or written, none gone — on §7's reading of 2026-10-13, which no sentence backs: the docs leave the rebuild to the **next read**, and say of the cache whole that its loss costs one rebuild. Every door that invalidates takes the file away (§6, entry 16, *answered*). The half is carried by its own word, *invalidated* (§7): rebuilt, or the one stamped file, `.jigc/index/edges.json`, taken away; every other file under `.jigc/index/` as before, and the file-state half stays *rebuilt* — that record has *"no stamp and no rebuild path"* (`design/storage.md` → *Derived caches*).
 
 **T6 — the task's working area, `.jigc/tasks/<task-id>/`: removed — jigc's own files; what jigc did not write there is moved aside to `.jigc/displaced/<task-id>/`, under the path it had.** When: the commit landed. On a refusal: no (T7).
 
@@ -688,11 +706,13 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 
 — `design/finalize.md` → *2. Validate*
 
-**M10 — `.jigc/index/` and `.jigc/state/`: written, as T5.** When: the boundary landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
+**M10 — `.jigc/index/` and `.jigc/state/`: written, as T5 — the stamp's own file, `.jigc/index/edges.json`, written or taken away.** When: the boundary landed. On a refusal: no — what a refusal may do there is `C1` and `C2` (§4a; §6, entry 1, as ruled).
 
 > 4. **Post-commit** runs once for the whole batch.
 
 — `design/finalize.md` → *`fan-out` finalize*
+
+  The post-commit it runs is `T5`'s, and the line quotes `T5`'s sentences of the edge index's stamp with it. **Corrected 2026-10-18, with `T5`** (§6, entry 16, *answered*): the edge index's half is *invalidated* (§7), where it was *rebuilt*; under both spellings, since `squash: false` replaces `M3` alone.
 
 **What the docs do not say of `milestone finalize`:** the caches on a refusal (§6, entry 1 — ruled on 2026-10-12, and carried by `C1` to `C3`). **Declared, and not a line here:** the two worktrees the boundary makes for itself and removes on every exit — the dedicated one it commits from and the detached one its `doc-code` check reads (*2. Validate*: *torn down on both exits*) — leave no difference between the two manifests where they are removed as declared; one left behind is a registration under `.jigc/worktrees/` that M7 does not cover on a refusal, and is red. The plan's §7 lists this command's commit as *not read for this plan*: it is read now, and M3 to M5 are what the docs declare it holds.
 
@@ -755,7 +775,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4, 7, 16 and 17 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4 and 7 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -972,7 +992,7 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *The ruling* — the human's, of 2026-10-18, option A, as the orchestrating session handed it on: **every `doc` write that refuses leaves the task's area as it found it — the copy, its provenance, its witness and any role it bound are rolled back**: one rule with `author`'s (`design/write-commands.md` → *The verbs*, *"persist only on full success"*, and the refusal that *"stages nothing (the `create_gated` pre-image is rolled back too)"*). *Why*: the rule the docs state for every refusal they name; it makes *"nothing was persisted"* true — closing [byte-table-findings.md](byte-table-findings.md) → §12 and the fix pass's row `(R3, F3)` — and removes §13's dead end. It is the robust answer above, taken whole, and `W5`'s rule now speaks of every refusal, before the copy-in or after it.
 - *How it is carried.* No line moves: `W1` to `W4` hold on no refusal, and `W5` is no line. The fifteen cells were red under this reading, and stay red, under their key, a finding now; the three of `author` were red under every reading, as they were. The mark of this entry leaves the fifteen. A refusal under entry 14's ruling comes before the copy-in, so for the table's plants the two rulings meet one shape; this one reaches every other refusal after a copy-in — the class of §12 and §13.
 
-**16. Is the edge index's stamp invalidated by taking its file away? Open — a reading the record's §7 named on 2026-10-13, which a cell now meets.**
+**16. Is the edge index's stamp invalidated by taking its file away? Answered on 2026-10-18, by the design docs: a finalize leaves the rebuild to the next read, and the file may be gone after it. It was no silence.**
 
 - *The words.* `T5`'s and `M10`'s edge-index halves rest on *"invalidate the edge-index stamp"*, and the docs say how the next read takes it:
 
@@ -990,24 +1010,34 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 — `design/storage.md` → *Edge index lifecycle*
 
-  No sentence says whether the stamp is invalidated by rewriting it or by taking its file away. §7's note under its table took the reading under which more is red — *rebuilt*, a file made or written and none gone — and said *"a cell that meets a stamp's file gone is this note's to answer for"*.
-- *What a cell met* (2026-10-18, the task `B7`'s third commit). Under `finalize.fan-out.squash: false`, a boundary that lands leaves `.jigc/index/edges.json` gone, where `task finalize` and the `squash: true` boundary write it again: three cells of the spelling are *written outside its allowance* for that file alone, under `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` ([byte-table-findings.md](byte-table-findings.md) → §15).
-- *What the product should do — robust.* **Nothing different: a stamp's file taken away is an invalidation.** The index is a cache whose loss costs one rebuild and never a wrong answer — the storage design's own model, *"delete `.jigc/`'s gitignored caches … nothing lost"* — and the next read rebuilds it. So the line's word is what changes: `T5`'s and `M10`'s edge-index halves let the stamp's file be written **or taken away**, nothing else under `.jigc/index/`. *Its price*: none in bytes; two arms of one door that invalidate in two ways stay so, which a reader may want named.
-- *The other reading*: invalidating means writing the stamp, the file stays, and the `squash: false` arm is the one to change.
-- *Until ruled*, the reading under which more is red — §7's: the three cells are red, and each carries this entry's mark.
+- *What the entry asked, and what it should have asked.* It said *"No sentence says whether the stamp is invalidated by rewriting it or by taking its file away"*, and took §7's reading of 2026-10-13 — *rebuilt*, a file made or written and none gone. The question a line turns on is another: **may a finalize leave the file absent?** The docs answer it. The rebuild is the **next read**'s (*"The next read rebuilds"*, *"next read rebuilds against the new HEAD"*), not the finalize's; the index is *"stamp-rebuildable by construction … a lost delta costs one rebuild and never a wrong answer"* (`design/storage.md` → *Concurrent writers*, quoted under `T5`); *"delete `.jigc/`'s gitignored caches … nothing lost"* holds for the index too; and no sentence asks a finalize to leave a file at `.jigc/index/edges.json`. *Rebuilt* was the frame's translation of *invalidate*, which no sentence backs; the stricter reading is for a place where the docs are silent or say two things, and here they are neither. The review of `B7`'s part A found it (its first finding).
+- *What a cell met — corrected.* The entry said that under `squash: false` a boundary that lands leaves `.jigc/index/edges.json` gone, ~~where `task finalize` and the `squash: true` boundary write it again~~ — **false of the product**. Every finalize door runs one post-commit, which removes the file outright (`engine::index::invalidate`, *"Removes `<jigc_root>/index/edges.json` outright"*, called from `post_commit` in `crates/cli/src/task.rs`), and so does `jigc rename` (`crates/cli/src/rename.rs`). Driven over a built index on this tree's debug build and the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`): `task finalize` and a `squash: true` boundary each exit 0 with `edges.json.lock` alone left. What differed between the arms was the cells' leads: the three `squash: false` cells run `jigc workflow sub-task` in the worktrees, which builds the index; no other cell's leads built it, so no other cell met the file taken away.
+- *How it is carried.* `T5`'s and `M10`'s edge-index halves take a word of their own, *invalidated* (§7): rebuilt, or the one stamped file, `.jigc/index/edges.json`, taken away — nothing else under `.jigc/index/`, and never the file-state halves, whose record has *"no stamp and no rebuild path"* (`design/storage.md` → *Derived caches*); on a refusal `C1` is as it was, and takes nothing away. The three `squash: false` cells lose this entry's mark and hold, on both binaries; the key `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` retires ([byte-table-findings.md](byte-table-findings.md) → §15). `task-finalize-a-foreign-file-under-the-edge-index`, the cell aimed at `T5`'s edge-index half, now builds the index before the command (`jigc task validate`) and holds on both binaries — the first cell of `task finalize` that meets the file taken away.
+- *Bound.* Every door that reaches `index::invalidate`: two call sites in `crates/cli/src`, `post_commit` — every finalize door, `task finalize` and both of `milestone finalize`'s modes — and `jigc rename`, whose row is owed to `B8`; its edge-index line is owed the same word (a lead, [byte-table-findings.md](byte-table-findings.md) → §15).
 
-**17. What does a `squash: false` boundary's chain hold of the main checkout's index? Open — the docs say two things, and no cell turns on it.**
+**17. What does a `squash: false` boundary's chain hold of the main checkout's index? Answered on 2026-10-18, by the design docs: nothing — `design/command-output-contract.md` says it of both modes. One sentence of `design/finalize.md` says otherwise, a doc-only inconsistency.**
 
-- *The words.* Of `squash: true`, the WIP-safe sentence `M3` quotes — the main checkout is never mutated until the clean fast-forward, and *"leaves unrelated main-checkout WIP intact (WIP-safe)"*. Of `squash: false`, `M4`'s second sentence — each sub-task's commit *"applies **that one worktree's** staged code onto the checkout and `git commit -F`s"* its own doc — and the staging policy's, which commits the aggregate through the policy whose commit is *the git index … committed whole*:
+- *The words the entry read.* Of `squash: true`, the WIP-safe sentence `M3` quotes — the main checkout is never mutated until the clean fast-forward, and *"leaves unrelated main-checkout WIP intact (WIP-safe)"*. Of `squash: false`, `M4`'s second sentence — each sub-task's commit *"applies **that one worktree's** staged code onto the checkout and `git commit -F`s"* its own doc — and the staging policy's, which commits the aggregate through the policy whose commit is *the git index … committed whole*:
 
 > **`squash: false`** commits each sub-task's worktree code per-sub-task (hooks run + relay on each) and then promotes the merged docs through `IndexHonoring` over the now-clean index
 
 — `design/finalize.md` → *Dirty-tree policy*
 
-  Read so, a change the user staged in the main checkout rides the chain; *"the now-clean index"* presumes there is none. No sentence of `squash: false` says what becomes of one.
-- *What the product does.* It keeps it staged and says so: *"staged in the shared checkout (not committed by this boundary — the aggregate commit is built from the sub-task worktrees; these stay staged)"* — `milestone-finalize-squash-false-a-file-staged-elsewhere` and the cell of a name git quotes; neither rides any commit of the chain.
-- *What the product should do — robust.* **What it does: the chain never takes a path the user staged in the main checkout**, as the `squash: true` arm, the doc-only arm (*"stays staged"*) and the per-sub-task record doors keep it — one rule for every commit jigc makes beside a user's staged work. *The doc sentence that changes*: the staging policy's *"through `IndexHonoring` over the now-clean index"*, to say the aggregate is path-scoped to what the boundary lands. *The other reading*: the aggregate commits the index whole, and `M4` holds the index as `T4` does.
-- *Until ruled*, the reading under which more is red: `M4` holds what the sub-tasks' worktrees staged and what the row's lines wrote, and not the main checkout's index. No cell turns on it — under either reading the product's two cells hold — so none is marked.
+  Read so, a change the user staged in the main checkout rides the chain; *"the now-clean index"* presumes there is none. The entry found no sentence of `squash: false` that says what becomes of one.
+- *Answered — the sentences the entry had not read.* `design/command-output-contract.md` → *Evolution posture (declared)*, the paragraph that declares `still_staged` on the landed milestone boundary, says it of **both** modes:
+
+  > both aggregate channels build their commit from the sub-task worktrees over targeted pathspecs and land by `--ff-only` — so that entry structurally cannot ride the boundary commit
+
+  and, two paragraphs on, of the bytes that stay:
+
+  > These bytes are exactly where the sub-agent put them and stay staged across the boundary
+
+  > this door neither takes nor guards the shared index
+
+  A change staged in the shared checkout rides no commit of either mode, and stays staged. The product agrees: it says so — *"staged in the shared checkout (not committed by this boundary — the aggregate commit is built from the sub-task worktrees; these stay staged)"* — and `milestone-finalize-squash-false-a-file-staged-elsewhere` and the cell of a name git quotes ride no commit of the chain. The review of `B7`'s part A found it (its third finding), as entries 13 and 14 were found: the entry searched `design/finalize.md` and did not read `design/command-output-contract.md`.
+- *What disagrees.* `design/finalize.md` → *Dirty-tree policy*, *"through `IndexHonoring` over the now-clean index"*, alone: `IndexHonoring` commits the index whole, and the contract says the boundary takes nothing of it. A doc-only finding: [byte-table-findings.md](byte-table-findings.md) → §1, `r1-finalize-design-says-the-unsquashed-aggregate-commits-the-index-where-the-output-contract-says-the-boundary-takes-none-of-it`.
+- *How it is carried.* As it was — `M4` holds what the sub-tasks' worktrees staged and what the row's other lines wrote (§7, *a chain*), and not the main checkout's index. No cell moves; none was marked.
+- *A neighbour, for the milestone rows.* The same contract and `design/finalize.md` → *Dirty-tree policy*, the carryover gate, say `jigc milestone create` snapshots the shared checkout's index for its aggregate; a change staged **before** the milestone is minted meets that gate, under both spellings — a need other than the cells' post-join plant (a lead, [byte-table-findings.md](byte-table-findings.md) → §15).
 
 **Decided here, as a builder, and the human may overturn each:**
 
@@ -1033,7 +1063,8 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
 | **removed** | S6; U1, U4, U5; T6; M6; A1 |
 | **re-slugged** — gone from its name and standing under another in the same unit, whose base pin stands: a doc it did not hold, with the gone doc's lines but its `# ` title line; the one word under which a staged doc gone from a unit that stands is not *lost* (added 2026-10-18, after the doc family's review: `W4` was *removed*, which let any staged doc of any task go while its pin stood) | W4 |
-| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, T5, M10, A7 — see the note under this table; W1, W2 |
+| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, A7, and T5's and M10's file-state halves — see the note under this table; W1, W2 |
+| **invalidated** — rebuilt, or one stamped file, named by the line, taken away: a cache whose stamp the command invalidates and whose next read rebuilds it (added 2026-10-18, by the fourth of the fixes after the review of `B7`'s part A, its first finding: §6, entry 16, answered) | T5's and M10's edge-index halves, the file `.jigc/index/edges.json` |
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
 | **a copy of a staged doc of the unit** — staged in its own task area, a sub-task's area, or its own merged set (narrowed 2026-10-18, after the review of `B7`'s part A: it had been a doc staged in *any* unit, so a sibling's doc promoted was let land) — as a regular file | T1; M2 |
 | **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
@@ -1051,6 +1082,6 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); every other line (no) |
 | **the consent's flag**, under which a planted path named in the output may go | S14; U8; A4 |
 
-**Corrected 2026-10-13, with the first commit of the task `B4`: `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole*.** As data, *written whole* over a directory lets anything under it happen — a file of it gone too — which the acceptance's cells had no occasion to meet. Each of the three was read against its sentence again: *"initializes the in-repo project layer (`.jigc/config/`) when absent"*, *"Invalidate the edge-index stamp"* and *"Update `file-state` hashes"* let a file be made or written, and none lets one go; `M1` alone says the command **clears** its directory, and keeps the word. The entries' words did not change — each already said *written* — only the word they are carried by. **One of the three sentences can be read the other way**: a stamp can be invalidated by taking its file away. The line follows the reading under which more is red, and a cell that meets a stamp's file gone is this note's to answer for.
+**Corrected 2026-10-13, with the first commit of the task `B4`: `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole*.** As data, *written whole* over a directory lets anything under it happen — a file of it gone too — which the acceptance's cells had no occasion to meet. Each of the three was read against its sentence again: *"initializes the in-repo project layer (`.jigc/config/`) when absent"*, *"Invalidate the edge-index stamp"* and *"Update `file-state` hashes"* let a file be made or written, and none lets one go; `M1` alone says the command **clears** its directory, and keeps the word. The entries' words did not change — each already said *written* — only the word they are carried by. **One of the three sentences can be read the other way**: a stamp can be invalidated by taking its file away. The line follows the reading under which more is red, and a cell that meets a stamp's file gone is this note's to answer for. **[Answered 2026-10-18, by the fourth of the fixes after the review of `B7`'s part A: the docs do not leave it to a reading — the rebuild is the next read's, and the file may be gone after a finalize (§6, entry 16). `T5`'s and `M10`'s edge-index halves are *invalidated*, a word of their own; their file-state halves, and `S4`, stay *rebuilt*.]**
 
 Three conditions a doc gives could not be put as something a manifest shows, and are words in their lines only: *where its install commit can carry the settings file* (S6), *what stands there is jigc's own copy* (S8, U5; T2), and *git tracks the settings file and the record* (U3). Each lets the command do **less** — leave a file alone — so a line without the condition allows no write the doc forbids to anything but a file somebody edited, and such a file is a plant, which no line excuses.

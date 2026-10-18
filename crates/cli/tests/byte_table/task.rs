@@ -14,7 +14,7 @@
 //! `T2` to `T4` out of force; a cell of such a task names it ([`Spelling`]), by the human's
 //! ruling of 2026-10-18.
 
-use super::{ON_A_REFUSAL, refuses};
+use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
     Quote, Row, When, Where,
@@ -111,13 +111,19 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "T5, the edge index",
-            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            Allows::Files(
+                Where::Under(".jigc/index"),
+                May::Invalidated(".jigc/index/edges.json"),
+            ),
             &[
                 Quote {
                     doc: "design/finalize.md",
                     heading: "7. Post-commit (best-effort)",
-                    words: "- **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches).",
+                    words: "- **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.",
                 },
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[0],
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[1],
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[2],
             ],
         ),
         line(
@@ -1013,10 +1019,19 @@ const FINALIZE_CELLS: [Cell; 25] = [
         refuses(1, "`git commit` was rejected"),
         at("T4", Kind::RejectingHook),
     ),
+    // The index built before the command — a `task validate` reads it, and its read builds
+    // it — so the line's word meets the stamped file taken away, as no other cell's leads
+    // let it (the review of `B7`'s part A, its first finding).
     finalize(
         "task-finalize-a-foreign-file-under-the-edge-index",
         FRESH,
-        a_decision!([], [Lead::Plant(Plant::File(".jigc/index/notes.md"))]),
+        a_decision!(
+            [],
+            [
+                jigc(&["task", "validate", "record-a-decision"]),
+                Lead::Plant(Plant::File(".jigc/index/notes.md")),
+            ]
+        ),
         FINALIZE_THE_DECISION,
         Listed::Acts,
         at("T5, the edge index", Kind::Untracked),

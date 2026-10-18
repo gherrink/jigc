@@ -272,6 +272,29 @@ const ON_A_REFUSAL: [Line; 4] = [
     ),
 ];
 
+/// **The edge index's file is the stamp's, and its next read rebuilds it** — the sentences
+/// beside a finalize's own *"Invalidate the edge-index stamp"* that its lines `T5` and
+/// `M10` rest on for the word [`May::Invalidated`]: the file the stamp is kept in, a cache
+/// whose loss costs one rebuild, and the lifecycle site that leaves the rebuild to the next
+/// read. The review of the task `B7`'s first part, its first finding.
+const THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ: [Quote; 3] = [
+    Quote {
+        doc: "design/storage.md",
+        heading: "Concurrent writers",
+        words: "**`index/edges.json` — locked, not merged.** A decision, not an omission: the index is **stamp-rebuildable by construction** (a stamp mismatch rebuilds it from the committed `.md`s, per Derived caches above), so a lost delta costs one rebuild and never a wrong answer",
+    },
+    Quote {
+        doc: "design/storage.md",
+        heading: "Edge index lifecycle",
+        words: "| **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |",
+    },
+    Quote {
+        doc: "design/storage.md",
+        heading: "Edge index lifecycle",
+        words: "only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes \"delete `.jigc/`'s gitignored caches, rebuild from `.md`s, nothing lost\" hold for the index too",
+    },
+];
+
 /// **The scheduled list** — the write leaves the pilot leaves for before the port: one
 /// file of data, a line a leaf with its reason.
 const SCHEDULED: &str = include_str!("byte_table/scheduled.tsv");
@@ -5071,8 +5094,11 @@ fn the_footprint_record_is_no_cache_and_a_directory_laid_out_holds_no_file() {
 /// initializes, and the edge index and the file-state hashes a finalize writes after its
 /// commit. No sentence of those lines lets a file go — *initializes … when absent*,
 /// *invalidate the edge-index stamp*, *update `file-state` hashes* — so one that is gone
-/// is *written outside its allowance*, and one written again holds. Its pair is the one
-/// directory whose sentence says the command **clears** it: a milestone's `merged/`.
+/// is *written outside its allowance*, and one written again holds. The one file of them
+/// whose sentence lets it go is the stamped index's own, `.jigc/index/edges.json`, which
+/// the next read rebuilds ([`a_finalize_may_take_the_edge_indexs_file_away_and_no_other_file`]);
+/// the file here is another. Its pair is the one directory whose sentence says the command
+/// **clears** it: a milestone's `merged/`.
 ///
 /// Red first against the rows as they were lifted: each of the five lines said *written
 /// whole* over a directory, which lets anything under it happen, a file gone included.
@@ -5143,6 +5169,107 @@ fn a_directory_a_command_writes_into_is_not_one_it_may_empty() {
     }
     .came_to();
     assert_eq!(class, Classification::Holds, "{why:#?}");
+}
+
+/// **A finalize may take the edge index's file away, and no other file** — the review of the
+/// task `B7`'s first part, its first finding. The docs say a finalize invalidates the
+/// edge-index stamp after its commit and the **next read** rebuilds it (`design/finalize.md`
+/// → *7. Post-commit (best-effort)*; `design/storage.md` → *Edge index lifecycle*), and
+/// every door that invalidates takes `.jigc/index/edges.json` away; the line's word was
+/// *rebuilt*, under which a file gone is none, so a finalize that met a built index read
+/// red. On the rows `task::FINALIZE` (`T5`) and `milestone::FINALIZE` (`M10`) themselves,
+/// over a built index — its file and its lock — beside the file-state hashes: the index's
+/// file gone holds, and so does it written again or gone beside its lock written; its lock
+/// gone, a link or a directory in its place, and the file-state hashes gone — a record with
+/// *"no stamp and no rebuild path"* (`design/storage.md` → *Derived caches*) — are each red,
+/// a difference no line covers; and on a refusal the index's file gone is red: what a
+/// refusal may do to a cache is `C1`'s, which rebuilds and takes nothing away.
+///
+/// Red first against the line as it stood: the index's file gone came out *lost* on the
+/// first row — the bytes of a cache stand nowhere once it is invalidated.
+#[test]
+fn a_finalize_may_take_the_edge_indexs_file_away_and_no_other_file() {
+    const INDEX: &str = "repo/.jigc/index/edges.json";
+    const LOCK: &str = "repo/.jigc/index/edges.json.lock";
+    const HASHES: &str = "repo/.jigc/state/file-state.json";
+    let before = then(&sandbox(), |m| {
+        for at in ["repo/.jigc", "repo/.jigc/index", "repo/.jigc/state"] {
+            dir(m, at);
+        }
+        put(m, INDEX, "{\"stamp\":\"c0\",\"edges\":[]}\n");
+        put(m, LOCK, "");
+        put(m, HASHES, "{\"hashes\":{}}\n");
+    });
+    let gone = |path: &'static str| {
+        then(&before, move |m| {
+            m.files.remove(path);
+        })
+    };
+    for (row, argv) in [
+        (task::FINALIZE, &["task", "finalize", "t1"][..]),
+        (milestone::FINALIZE, &["milestone", "finalize", "m"][..]),
+    ] {
+        let leaf = row.leaf.join(" ");
+        let came = |after: &Manifest, code: i32| {
+            Cell {
+                argv,
+                code: Some(code),
+                listed: if code == 0 {
+                    Listed::Acts
+                } else {
+                    Listed::Refuses
+                },
+                ..Cell::of(row, &before, after)
+            }
+            .came_to()
+        };
+        for (what, after) in [
+            ("the index's file taken away", gone(INDEX)),
+            (
+                "the index's file written again",
+                then(&before, |m| {
+                    put(m, INDEX, "{\"stamp\":\"c1\",\"edges\":[]}\n")
+                }),
+            ),
+            (
+                "the index's file taken away, its lock written",
+                then(&gone(INDEX), |m| put(m, LOCK, "held\n")),
+            ),
+        ] {
+            let (class, why) = came(&after, 0);
+            assert_eq!(
+                class,
+                Classification::Holds,
+                "`jigc {leaf}`, {what}: {why:#?}"
+            );
+        }
+        for (what, after) in [
+            ("the index's lock taken away", gone(LOCK)),
+            (
+                "a link in the index's file's place",
+                then(&before, |m| {
+                    m.files
+                        .insert(INDEX.to_string(), Entry::Link("elsewhere".to_string()));
+                }),
+            ),
+            (
+                "a directory in the index's file's place",
+                then(&before, |m| dir(m, INDEX)),
+            ),
+            ("the file-state hashes taken away", gone(HASHES)),
+        ] {
+            let (class, why) = came(&after, 0);
+            assert!(
+                class.is_red() && why.iter().any(|why| why.contains("no line covers it")),
+                "`jigc {leaf}`, {what}: {class}, {why:#?}"
+            );
+        }
+        let (class, why) = came(&gone(INDEX), 1);
+        assert!(
+            class.is_red() && why.iter().any(|why| why.contains(INDEX)),
+            "`jigc {leaf}` refused, the index's file taken away: {class}, {why:#?}"
+        );
+    }
 }
 
 /// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
@@ -7153,15 +7280,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
         Classification::RefusedAndChanged,
         &["task-discard-a-hook-that-rejects"],
-    ),
-    (
-        "r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it",
-        Classification::WrittenOutside,
-        &[
-            "milestone-finalize-squash-false-a-file-staged-elsewhere",
-            "milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes",
-            "milestone-finalize-squash-false-two-sub-tasks",
-        ],
     ),
 ];
 

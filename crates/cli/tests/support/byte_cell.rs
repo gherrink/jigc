@@ -329,6 +329,17 @@ pub enum May {
     /// and what a command that acts may do in a directory it writes into, where no
     /// sentence of its doc lets a file of that directory go.
     Rebuilt,
+    /// **Rebuilt, or the stamped file — this path, from the repository's root — taken
+    /// away**: a cache whose stamp a command invalidates and whose **next read** rebuilds
+    /// it, so its file gone is an invalidation and no loss. The edge index's halves of
+    /// `T5` and `M10`, `.jigc/index/edges.json`: *"Invalidate the edge-index stamp … The
+    /// next read rebuilds from the new HEAD"* (`design/finalize.md` → *7. Post-commit
+    /// (best-effort)*), the index *"stamp-rebuildable by construction"* (`design/storage.md`
+    /// → *Concurrent writers*). Only that one regular file may go; every other file of the
+    /// place is as under [`May::Rebuilt`], and the file-state hashes, which have *"no stamp
+    /// and no rebuild path"* (→ *Derived caches*), never take this word. The review of the
+    /// task `B7`'s first part, its first finding.
+    Invalidated(&'static str),
     /// **A directory made, and nothing in it** — what a command lays out for a later writer
     /// and writes no file into: the workbench's cache directories `setup` lays out, by the
     /// human's ruling of 2026-10-15 on the record's §6, entry 1.
@@ -596,7 +607,12 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         );
     }
     let one_file = |place: Where| !matches!(place, Where::Under(_));
-    let lands = |may: May| matches!(may, May::WriteWhole | May::Rebuilt | May::CopyOfAStagedDoc);
+    let lands = |may: May| {
+        matches!(
+            may,
+            May::WriteWhole | May::Rebuilt | May::Invalidated(_) | May::CopyOfAStagedDoc
+        )
+    };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
     let read = |may: May| matches!(may, May::CopiedFrom);
     let aimed = match (kind, line.allows) {
@@ -1153,7 +1169,7 @@ impl<'a> Tally<'a> {
                 if !self.placed(place, diff.path) {
                     return false;
                 }
-                if matches!(may, May::Rebuilt)
+                if matches!(may, May::Rebuilt | May::Invalidated(_))
                     && in_repo(diff.path).is_some_and(|rel| NO_CACHE.contains(&rel))
                 {
                     return false;
@@ -1172,8 +1188,15 @@ impl<'a> Tally<'a> {
                     },
                     (May::Removed, Some(_), None) => true,
                     (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
-                    (May::Rebuilt, _, Some(Entry::File { .. })) => true,
-                    (May::Rebuilt | May::LaidOut, None, Some(Entry::Dir(_))) => true,
+                    (May::Rebuilt | May::Invalidated(_), _, Some(Entry::File { .. })) => true,
+                    (
+                        May::Rebuilt | May::Invalidated(_) | May::LaidOut,
+                        None,
+                        Some(Entry::Dir(_)),
+                    ) => true,
+                    (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
+                        in_repo(diff.path) == Some(stamped)
+                    }
                     (May::CopyOfAStagedDoc, _, Some(is)) => {
                         is.blob().is_some_and(|blob| self.staged.contains(blob))
                     }

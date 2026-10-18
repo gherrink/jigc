@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, by the fourth of the fixes after the review of the milestone family's task (`B7`), part A (its first and third findings): in §15 the key `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` retires — the rows' record's §6, entry 16 is answered by the design docs, the edge index's file may be gone after a finalize, and the three cells hold — and its false premise is corrected; §15 gains three leads for the milestone rows and `B8`; and §1 gains the one sentence of `design/finalize.md` that says other than `design/command-output-contract.md` of the `squash: false` chain and the shared index (entry 17, answered), a doc-only finding.*
+
 *Changed 2026-10-18, by the third of the fixes after the review of the milestone family's task (`B7`), part A: §15 says what `M4` now holds the chain to, gains the plain spelling's cell at `T1` with a link to nothing, and holds `T9`'s owner-artifacts as a lead.*
 
 *Changed 2026-10-18, with the third commit of the milestone family's task (`B7`), which builds the spelling switch: §15, the cells of the two spellings — eight, three red under one key, marked with the rows' record's §6, entry 16.*
@@ -155,6 +157,28 @@ $JIGC start --workflow single-task "tidy the changelog" > /dev/null
 $JIGC doc set-field changelog:changelog#releases/1-0-0/link --unset --task tidy-the-changelog; echo "exit=$?"   # exit=0 — "already absent — nothing changed"
 ls .jigc/tasks/tidy-the-changelog/docs/          # changelog:changelog.md — the committed changelog, copied in by this call
 ```
+
+### `r1-finalize-design-says-the-unsquashed-aggregate-commits-the-index-where-the-output-contract-says-the-boundary-takes-none-of-it`
+
+*Recorded 2026-10-18, by the fourth of the fixes after the review of the milestone family's task (`B7`), part A (its third finding), which found the rows' record's §6, entry 17 no silence: `design/command-output-contract.md` answers it, and one sentence of `design/finalize.md` says otherwise. For the stabilization run's ledger: doctype `inconsistency`, two design docs that disagree, the product with the second. No cell moves.*
+
+**One side** — `design/finalize.md` → *Dirty-tree policy*, the staging policy's paragraph, of the milestone boundary under `finalize.fan-out.squash: false`:
+
+> **`squash: false`** commits each sub-task's worktree code per-sub-task (hooks run + relay on each) and then promotes the merged docs through `IndexHonoring` over the now-clean index
+
+— `IndexHonoring` being the per-task policy whose commit is *"the git index … committed whole"* (*5. Stage*).
+
+**The other side** — `design/command-output-contract.md` → *Evolution posture (declared)*, the paragraph that declares `still_staged` on the landed milestone boundary, of both modes:
+
+> both aggregate channels build their commit from the sub-task worktrees over targeted pathspecs and land by `--ff-only` — so that entry structurally cannot ride the boundary commit
+
+and of the bytes that stay:
+
+> These bytes are exactly where the sub-agent put them and stay staged across the boundary
+
+> this door neither takes nor guards the shared index
+
+**What disagrees.** By the first, the `squash: false` aggregate commits the shared checkout's index, and *"the now-clean index"* presumes it holds nothing of the user's; by the second, no commit of either mode takes a change staged there, and it stays staged. **The product** is with the second: a change the user staged in the main checkout rides no commit of the chain and is named as staging still — *"staged in the shared checkout (not committed by this boundary — the aggregate commit is built from the sub-task worktrees; these stay staged)"* — in the cells `milestone-finalize-squash-false-a-file-staged-elsewhere` and `…-a-staged-file-whose-name-git-quotes`, which hold on this tree and on the previous release (§15). **What follows**: the staging policy's sentence says the aggregate is path-scoped to what the boundary lands; no product change.
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
@@ -591,13 +615,17 @@ No doc-family cell reaches any sentence of the table but §12's two and the unse
 
 ## 15. The two spellings — eight cells in the gate, three red on this tree's binary under one key
 
+*Read again on 2026-10-18, by the fourth of the fixes after the review of part A: the key retires, its three cells hold — **none of the eight is red**, on this tree or on the previous release. The rest of this section is the record of the day before, and its last subsection says what moved.*
+
 *2026-10-18, this tree's debug build, macOS arm64; the third commit of the milestone family's task (`B7`), for the human's ruling of that day on the two spellings. `jigc task finalize` under `doc-only` — a task on `report-inconsistency`, whose workflow includes `step:finalize-doc-only` — and `jigc milestone finalize` under `squash: false` — two code-carrying sub-tasks, each with its commit doc authored in its worktree, the knob set and committed before the milestone — each with its base cell and a cell at each need its spelling's commit line makes: a change the user staged elsewhere, one under a name git quotes, a hook that rejects. **Five hold or refuse having changed nothing**: `doc-only`'s four — the commit holds the doc alone, the user's staged changes stay staged, the rejected commit leaves everything as it was — and `squash: false`'s rejected chain. The acceptance's cell `task-finalize-a-link-to-nothing-at-the-created-docs-home` runs a task of the same workflow, and names the spelling now; it refuses as before. **The same on the previous release** (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked; the arm on a named binary), cell for cell.*
 
-### `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it`
+### `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` — retired 2026-10-18
+
+*Retired by the fourth of the fixes after the review of part A (its first finding): the design docs were not silent. A finalize invalidates the edge-index stamp and **the next read** rebuilds it (`design/finalize.md` → *7. Post-commit (best-effort)*; `design/storage.md` → *Edge index lifecycle*), the index is *"stamp-rebuildable by construction"* (→ *Concurrent writers*), and no sentence asks a finalize to leave a file at `.jigc/index/edges.json`; the rows' record's §6, entry 16 says how the docs answer it. `T5`'s and `M10`'s edge-index halves are *invalidated* (the record's §7): rebuilt, or that one file taken away. The three cells lose the entry's mark and **hold**, on this tree and on the previous release. **The premise below was false of the product**, and is corrected where it stands. As it stood:*
 
 - *The cells.* `milestone-finalize-squash-false-two-sub-tasks`, `…-a-file-staged-elsewhere`, `…-a-staged-file-whose-name-git-quotes`.
 - *What they came to.* **Written outside its allowance**: exit 0, the chain landed — a commit a sub-task, then the aggregate — and `.jigc/index/edges.json` is gone afterwards, its lock left. Nothing else outside the lines: the user's staged changes stayed staged, and rode no commit of the chain.
-- *Held against.* `M10`'s edge-index half, *"invalidate the edge-index stamp"*, which §7 of the rows' record reads as *rebuilt* — a file made or written, none gone — the reading under which more is red; `task finalize` and the `squash: true` boundary write the file again. Which reading holds is the rows' record's §6, **entry 16**, open, and each cell carries its mark: under the other — a stamp's file taken away is an invalidation, the storage design's *"delete `.jigc/`'s gitignored caches … nothing lost"* — they hold. **No byte of the user's is lost.**
+- *Held against.* `M10`'s edge-index half, *"invalidate the edge-index stamp"*, which §7 of the rows' record reads as *rebuilt* — a file made or written, none gone — the reading under which more is red; ~~`task finalize` and the `squash: true` boundary write the file again~~ **[false — corrected 2026-10-18: every finalize door runs one post-commit that removes the file outright (`engine::index::invalidate`, from `post_commit` in `crates/cli/src/task.rs`; `jigc rename` calls it too), and `task finalize` and a `squash: true` boundary each leave `edges.json.lock` alone over a built index, on both binaries — the block below. The arms differed in their leads: the `squash: false` cells' `jigc workflow sub-task` builds the index, and no other cell's leads did.]** Which reading holds is the rows' record's §6, **entry 16**, open, and each cell carries its mark: under the other — a stamp's file taken away is an invalidation, the storage design's *"delete `.jigc/`'s gitignored caches … nothing lost"* — they hold. **No byte of the user's is lost.**
 - *The previous release.* The same, cell for cell: not a regression.
 
 ```zsh
@@ -632,3 +660,35 @@ The doc-only arm keeps what its doc says: `T9` excuses its commit of the doc alo
 - **`M4` holds the chain** ([the rows' record](byte-table-acceptance-rows.md) → §4, `M4`, and §7, *a chain*): a commit for each sub-task whose worktree staged code, in task-id order, each holding what that worktree staged and nothing else, then the aggregate. The three acting cells of `squash: false` come out as they did on both binaries — the chain the product lands is the one the line now reads, two sub-task commits and the aggregate, and `M4` excuses 21 differences on each binary, as before — so they stay red under this section's key and nothing else. A product that ignored the knob would now be *git's state moved outside its allowance* (`byte_table::a_chain_holds_a_commit_a_sub_task_in_id_order_then_the_aggregate`).
 - **A need is keyed by its spelling.** `task-finalize-a-link-to-nothing-at-the-created-docs-home` runs the doc-only arm and answers `T1` under `doc-only`, which no row's need lists; the plain spelling's `T1` × *L, to nothing* has a cell of its own, `task-finalize-a-link-to-nothing-at-the-created-decisions-home` — a link to nothing at the created ADR's home. It **refuses, nothing changed** on this tree (exit 3, `store.home-not-regular-file`); on the previous release it acts — *git's state moved outside its allowance; also not the listed outcome*, exit 0 — as the doc-only cell does there: red on the previous release and not on this tree.
 - **A lead — `T9`'s owner-artifacts.** *The doc-only arm* stages *"its stageable recorded owner-artifacts"* beside the promoted docs; `T9` lets its commit hold only what the row's other lines wrote, and no line writes an owner-artifact, so a doc-only task with one would read *git's state moved* — the stricter direction. Unreachable with the shipped packs: only `completion-record` and `dogfood-record` declare an `owned-location` field, none of the four shipped doc-only workflows allows creating either, and no prepared state holds a committed one to copy in. The line, and a cell, are owed the day a pack lets a doc-only task hold one.
+
+### Since the fourth of the fixes after the review of part A
+
+*2026-10-18, this tree's debug build and the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), the whole table on the arm of a named binary, before the change and after it.*
+
+- **The key above retires; its three cells hold**, on both binaries, under `M10`'s edge-index half, *invalidated*. `task-finalize-a-foreign-file-under-the-edge-index` builds the index before the command (`jigc task validate`), so `T5`'s half meets the file taken away: it holds on both binaries. The other doors take the file away too — driven over a built index, each exits 0 with `edges.json.lock` alone left:
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+# task finalize
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"; cd "$REPO"
+$JIGC start --workflow single-task "add a file" > /dev/null; printf 'x\n' > a.txt; git add a.txt
+$JIGC doc set-field commit:add-a-file#type --value feat --task add-a-file > /dev/null
+printf 'add a file\n' > ../s; $JIGC doc set-slot commit:add-a-file#summary --from-file ../s --task add-a-file > /dev/null
+$JIGC task validate add-a-file > /dev/null 2>&1; ls .jigc/index/          # edges.json  edges.json.lock
+$JIGC task finalize add-a-file > /dev/null 2>&1; echo "exit=$?"; ls .jigc/index/   # exit=0 — edges.json.lock alone
+# a squash: true boundary
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"; m=squash-default
+$JIGC milestone create "Squash default" > /dev/null
+$JIGC milestone add-task $m "Add alpha file" > /dev/null; $JIGC milestone add-task $m "Add beta file" > /dev/null
+$JIGC milestone provision $m > /dev/null; $JIGC milestone execute $m > /dev/null
+for t in add-alpha-file add-beta-file; do (cd .jigc/worktrees/$t && $JIGC workflow sub-task --task $t > /dev/null && printf 'code\n' > $t.txt && git add $t.txt); done
+$JIGC milestone join $m > /dev/null; ls .jigc/index/                      # edges.json  edges.json.lock
+$JIGC milestone finalize $m > /dev/null 2>&1; echo "exit=$?"; ls .jigc/index/     # exit=0, one commit — edges.json.lock alone
+```
+
+- **Entry 17 is answered** by `design/command-output-contract.md`: a change the user staged in the shared checkout rides no commit of either mode and stays staged — what the two cells of a staged change show. The one sentence that says otherwise is §1's `r1-finalize-design-says-the-unsquashed-aggregate-commits-the-index-where-the-output-contract-says-the-boundary-takes-none-of-it`.
+- **Leads, for the milestone rows (`B7`, part B).**
+  - *A change staged before the milestone is minted.* `jigc milestone create` snapshots the shared checkout's staged set for the boundary's aggregate (`design/finalize.md` → *Dirty-tree policy*, the carryover gate: *"`jigc milestone create` for the shared checkout's aggregate index"*), so a change staged **before** `milestone create` meets that gate — a need other than the cells' plant, staged after the join, under both spellings.
+  - *`M10` meets a built index.* The plain spelling's cells are the milestone rows'; a cell whose leads build the index before the boundary — as `jigc workflow sub-task` in a worktree does — is what puts `M10`'s *invalidated* to a cell under `squash: true`, as `task-finalize-a-foreign-file-under-the-edge-index` does for `T5`.
+- **A lead, for `B8`.** `jigc rename` invalidates the edge index the same way (`crates/cli/src/rename.rs`, `index::invalidate`); its row's edge-index line is owed the same word, on its own doc's sentences, and a cell whose leads build the index first.
