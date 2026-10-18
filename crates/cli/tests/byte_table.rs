@@ -5325,11 +5325,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     (
-        "r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides",
-        Classification::NotTheListedOutcome,
-        &["setup-head-unborn-an-edit-to-the-root-ignore"],
-    ),
-    (
         "r1-setup-runs-no-hook-at-its-install-commit",
         Classification::NotTheListedOutcome,
         &["setup-a-hook-that-rejects"],

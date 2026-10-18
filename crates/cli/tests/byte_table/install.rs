@@ -21,7 +21,7 @@
 use super::task::A_DECISION;
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
+    Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared,
     Quote, Row, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -1074,8 +1074,13 @@ const INSTALLED: Lead = Lead::Step(Step::Jigc(&["setup"]));
 /// bytes"* (`S4`; *"while its bytes are not jigc's own"*, by the human's ruling of
 /// 2026-10-15), and so is one at a path it **merges into** on a born `HEAD` (the carryover
 /// gate, `design/surface-contract.md`); the guide a user edited is *"left
-/// **byte-identical**"* (`S8`); and on an unborn `HEAD` a file the install merges into
-/// *"rides the repository's first commit instead of refusing"* (`S15`).
+/// **byte-identical**"* (`S8`); and on an unborn `HEAD` only an *untracked* file the
+/// install merges into *"rides the repository's first commit instead of refusing"*
+/// (`S15`) — a file staged there is tracked, its index bytes differ from `HEAD`, and *"a
+/// path whose index *or* worktree bytes differ from `HEAD` before the install writes
+/// anything refuses"* (`design/assistant-adapter.md` → *The install commit's pathspec*;
+/// the carryover gate says the same, *untracked* in italics), so the root `.gitignore`'s
+/// cell is refused as the others are.
 const SETUP_OVER_ITS_OWN: [Cell; 8] = [
     setup(
         "setup-an-edit-to-its-bootstrap",
@@ -1119,11 +1124,7 @@ const SETUP_OVER_ITS_OWN: [Cell; 8] = [
         Listed::Acts,
         at("S8", Kind::EditAfter),
     ),
-    // The doc is silent on a file staged at a path the install merges into on an unborn
-    // `HEAD`: the record's §6, entry 13 — the cell follows the reading by which it is red.
-    Cell {
-        marks: &[Mark::Silence(13)],
-        ..setup(
+    setup(
         "setup-head-unborn-an-edit-to-the-root-ignore",
         &[
             UNBORN,
@@ -1131,10 +1132,9 @@ const SETUP_OVER_ITS_OWN: [Cell; 8] = [
             Lead::Step(Step::Git(&["add", "--", ".gitignore"])),
             Lead::Plant(Plant::Edit(".gitignore")),
         ],
-        Listed::Acts,
+        DIRTY,
         at("S9", Kind::EditAfter),
-    )
-    },
+    ),
 ];
 
 /// **A task that landed** — `record-a-decision`, created and finalized: the repository a

@@ -4,13 +4,15 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, after the review of the task `B6`'s first two commits: in §7 the key `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides` retires — the design doc was not silent, its cell is listed as refused and holds — and §1 gains the one sentence that did say otherwise, a guide's: a doc-only finding.*
+
 *Changed 2026-10-18, with the first commit of the doc family's task (`B6`), for the human's rulings of 2026-10-15 on the install family's questions: §1 gains the three corrections of a design doc the rulings name and nothing else carries — a doc-only finding each; in §6 one key retires, its cells holding, one is minted, and four say how the ruling that names them is carried. What moved is said under each key.*
 
 *Changed 2026-10-15, with the first commit of the install family's task (`B5`), for the human's rulings of 2026-10-14: §1 gains the inconsistency the ruling on `setup`'s refusals names; in §4 three keys lose the open question each was carried with — what *held* means is ruled, reading (b), and the cells stay *lost*; the record's entries 6 and 8 are ruled, and the cells they named are findings. No cell's classification moved.*
 
 ## 1. Where two design docs say two things — recorded here, and corrected by nobody in this lane
 
-*And, since the rulings of 2026-10-15, where a design doc is to say what a ruling decided and nothing in the product changes. A ruling whose doc correction comes with a product change is recorded under the cell's key, in §6.*
+*And, since the rulings of 2026-10-15, where a design doc is to say what a ruling decided and nothing in the product changes. A ruling whose doc correction comes with a product change is recorded under the cell's key, in §6. And, since 2026-10-18, where a guide says other than the design doc it follows.*
 
 ### `r1-finalize-design-says-no-side-effects-where-storage-design-says-caches-are-rebuilt`
 
@@ -69,6 +71,24 @@ and `design/storage.md` → *Edge index lifecycle*, the first row of its table o
 **The other side** — `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*, which counts `unmanage` among *"the other top-level direct-store ops"* beside a verb that is *"task-less and self-committing"*, and → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*, which says `migrate-corpus`, *"unlike them"*, has *"**never committed its own writes**"*.
 
 **The ruling**: `unmanage` never commits; the two sentences of `design/write-commands.md` are corrected. No product change — it committed nothing in any of its ten cells.
+
+### `r1-quickstart-guide-says-every-file-is-untracked-before-the-first-commit-where-a-staged-one-is-tracked-and-refused`
+
+*Recorded 2026-10-18, after the review of the task `B6`'s first two commits, which found that the rows' record's §6, entry 13 — a file staged at a path `setup` merges into, on an unborn `HEAD` — was no silence of the design docs: both answer it, and only the guide says otherwise. For the stabilization run's ledger: doctype `inconsistency`, a guide against two design docs, the product with the design docs. Not edited in this lane.*
+
+**One side** — `crates/cli/guides/QUICKSTART.md` → *1. `jigc setup` — adapter install*, of a repository with no commit:
+
+> **One exception, in a repository with no commit yet.** Every file is untracked there, so an untracked `CLAUDE.md`, `.gitignore` or `.claude/settings.json` is not a refusal
+
+**The other side** — `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph *The install commit's pathspec*:
+
+> a path whose index *or* worktree bytes differ from `HEAD` **before the install writes anything** refuses — one blocking routed `setup.dirty-install-path` over the whole sorted set, with **`jigc setup --force`** the single consent … **One stated exemption, and it is per member:** on an unborn `HEAD` an *untracked* file at a path the install **merges into** rides the repository's first commit instead of refusing
+
+and `design/surface-contract.md` → *The carryover gate (law 1 + 3 at the commit boundary)*, the same with *untracked* in italics:
+
+> on an unborn `HEAD`, an *untracked* file at a path whose writer **preserves** what it finds rides the repository's first commit — the on-ramp
+
+**What disagrees.** A file `git add`ed after `git init` is tracked: its index bytes differ from an unborn `HEAD`, so the design docs' rule refuses it and their exemption, which names an *untracked* file, does not reach it. The guide's *"Every file is untracked there"* says no such file exists. **The product** refuses it — `setup-head-unborn-an-edit-to-the-root-ignore`, exit 1, `setup.dirty-install-path`, nothing changed — as the design docs say. **What follows**: the guide's sentence corrected; no product change.
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
@@ -253,7 +273,9 @@ Seven cells of the family come out otherwise on the previous release, beside the
 
 Twenty-seven cells of the family are red on the previous release and not on this tree: eight refused there with another refusal than the one the cell names, or acted where it refuses here; six wrote outside the allowance; five refused after writing; four lost a plant — an untracked file or a link at a path the install replaces, written over at exit 0; four moved git's state. The arm counts; it does not say which of these is a regression.
 
-## 7. The plant in the place of a file that stands — 22 cells, two red on this tree's binary under two keys
+## 7. The plant in the place of a file that stands — 22 cells, one red on this tree's binary under one key
+
+*Read again on 2026-10-18, after the review of the task `B6`'s first two commits: the second key below retires — the design docs answer what the rows' record's §6, entry 13 asked, and its cell, listed as refused, holds — so **one of the 22 is red**, under one key, where two were under two; the paragraph that follows is the record as the second commit had it.*
 
 *2026-10-18, this tree's debug build, macOS arm64; the second commit of the task `B6`. The human's ruling of 2026-10-18 had `B6` build **a link or a directory in the place of a file that stands** (`byte_cell::Plant::InPlaceOf`) and fill the needs that waited for it: the task family's fourteen — `T2`, `.jigc/version` at `task finalize`, and `A5`, the milestone's record at a sub-task's `task discard`, each by a file of the user's, one the user committed, three links, a directory, and a file in the place of the directory the file stands in — and the install family's eight, an edit to each file of `setup`'s own install, built by a lead-in that installs first. All 22 run in the gate. On the previous release (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary, 130 s at a load of about 10): **ten of them are red there and not here**: five at exit 0 at the stamp — what the user put in its place written over, *lost* three times (a file of the user's, and the file each of two links led to) and *git's state moved* twice (the file the user committed, and the link to nothing) — the directory in the stamp's place refused with another refusal, and the three links and the directory in the record's place refused with another refusal than this tree's; and one cell does not build there (`setup` in the never-adopted repository writes no settings record there to edit). Nothing here is a grade.*
 
@@ -264,16 +286,18 @@ Twenty-seven cells of the family are red on the previous release and not on this
 - *Held against.* `A8`: *"The record commit runs **before** the working area is removed"* — the discard settles before it destroys; and `A9`, which makes the discard that writes no record an **ordinary** task's: one *"named by no record"*. This sub-task is named by a committed record; the discard read the record off the working tree, found none, and discarded it as an ordinary task. The cell is listed as refused, naming the record, and no run gives the words.
 - *The previous release.* The same: exit 0, *not the listed outcome*.
 
-### `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides`
+### `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides` — retired 2026-10-18
+
+*Retired after the review of the task `B6`'s first two commits: the design docs were not silent. `design/assistant-adapter.md` → *The install commit's pathspec* refuses *"a path whose index *or* worktree bytes differ from `HEAD` before the install writes anything"*, and its one exemption on an unborn `HEAD` is for an *untracked* file; `design/surface-contract.md` → *The carryover gate* says the same. A staged file is tracked and its index bytes differ from `HEAD`, so the docs refuse it — the refusal the product gives. The cell is listed as refused with `setup.dirty-install-path`, loses the entry's mark, and holds; the rows' record's §6, entry 13 says how the docs answer it. The one sentence that says otherwise is a guide's: §1's `r1-quickstart-guide-says-every-file-is-untracked-before-the-first-commit-where-a-staged-one-is-tracked-and-refused`. As it stood:*
 
 - *The cell.* `setup-head-unborn-an-edit-to-the-root-ignore` — the never-adopted repository with its `HEAD` unborn; a root `.gitignore` of the user's own, `git add`ed, and a line added after it; then `jigc setup`.
 - *What it came to.* **Not the listed outcome**: exit 1, `setup.dirty-install-path` over `.gitignore`, nothing changed — where the cell is listed as acting, by S15's on-ramp.
 - *Held against.* The rows' record's §6, **entry 13**, open: S15 lets an *untracked* file at a path the install merges into ride the first commit on an unborn `HEAD`, and no sentence says what becomes of a **staged** one. The cell follows the reading by which it is red, and carries the entry's mark. The record leads with what the product should do — refuse, as it does — so the ruling may retire this key.
 - *The previous release.* The same.
 
-### What the other twenty show
+### What the other twenty-one show
 
 - **At the stamp (`T2`)**, `task finalize` leaves what stands in jigc's stamp's place — a file of the user's, one the user committed, three links, a directory — and lands at exit 0; with the workbench itself replaced by a file, there is no task and it refuses (`finalize.no-task`). Seven hold or refuse with nothing changed.
 - **At the record (`A5`)**, a sub-task's discard refuses over a file or a committed file in the record's place (`reconciliation.conflict-block`) and over a link or a directory there (`store.home-not-regular-file`), each with nothing changed.
-- **At `setup`'s own files**, an edit is refused as dirty at the bootstrap, the host file, the settings file, the stamp, the settings record and the workbench's ignore file — the edit's bytes in no commit — and the guide a user edited is left as it is, the install acting around it.
+- **At `setup`'s own files**, an edit is refused as dirty at the bootstrap, the host file, the settings file, the stamp, the settings record and the workbench's ignore file — the edit's bytes in no commit — and the guide a user edited is left as it is, the install acting around it. *Since the second key's retirement:* on an unborn `HEAD`, the user's root `.gitignore`, staged, with a line added after it, is refused as dirty too, and nothing changed.
 

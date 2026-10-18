@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-18, after the review of the task `B6`'s first two commits: §6, entry 13 is answered by the design docs — two sentences it had not read — and says so; it was no silence. No line moved.*
+
 *Changed 2026-10-18, with the second commit of the task `B6`, which builds the plant in the place of a file that stands and fills the needs that waited for it: one more place where a doc is silent is listed (§6, entry 13). No line moved.*
 
 *Changed 2026-10-18, with the first commit of the task `B6`, which records the human's rulings on the install family's questions: entries 1, 3, 9, 10, 11 and 12 of §6 are ruled and say how each is carried; `setup`'s row gains `S16`, whose sentence is the ruling on entry 1 as [DECISIONS.md](../../../../../DECISIONS.md) records it, and §7 the word it is carried by. Entry 11's record said the opposite of what the ruling holds, and is corrected. No other line moved.*
@@ -588,7 +590,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11 and 12 are ruled** (2026-10-12, 2026-10-14 and 2026-10-15), each saying how it is carried; entries 4, 7 and 13 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11 and 12 are ruled** (2026-10-12, 2026-10-14 and 2026-10-15), each saying how it is carried; **entry 13 is answered by the design docs** (2026-10-18), and was no silence; entries 4 and 7 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -678,11 +680,20 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 - *Ruled on 2026-10-15*, option A: **`setup` refuses a link at the root `.gitignore` on any `HEAD`**; the doc lists it beside `.jigc/.gitignore` as never followed. Its one cell is a finding, the key it had. *How it is carried*: the cell is listed as refused with `setup.secrets-gitignore`, its two sibling links' refusal there; on this tree it acts, and stays *git's state moved outside its allowance*, now beside *not the listed outcome*.
 
-**13. A file the user staged at a path `setup` merges into, on an unborn `HEAD`, with an edit beside it.** S15 lets *"an *untracked* file at a path the install **merges into**"* ride the repository's first commit on an unborn `HEAD`, and S4's second sentence refuses a file at a path the install **replaces** there too; on a born `HEAD` a file in no commit at a path it merges into is refused (the carryover gate). No sentence says what becomes of a file **staged** at a path it merges into on an unborn `HEAD` — on an unborn `HEAD` no file is in a commit, so a file the user `git add`ed after `git init` is the one that stands there — with an edit in the working file beside it.
+**13. A file the user staged at a path `setup` merges into, on an unborn `HEAD`, with an edit beside it. Answered on 2026-10-18, by the design docs: it refuses.**
 
-- *What the product should do, by the project's principles.* **Refuse, as it does**, naming the path: a staged file is the user's work in flight that they mean to commit themselves, and the install commit would carry it — and the edit beside it — as jigc's, which is the exit rule's *commits content the user did not ask for*; the untracked file of S15 is the on-ramp's case and stays it. **The doc sentence that would change** is S15's, in `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*, to say *untracked and unstaged*, and that a staged file there refuses as on a born `HEAD`. **The product change that follows**: none.
-- *Reading (a)* — S15 covers it: the file rides the first commit, the cell is listed as acting, and today's refusal is *not the listed outcome*. *Reading (b)* — it refuses as dirty, as a file in no commit does on a born `HEAD`: the refusal holds.
-- *What each makes of the cells.* `setup-head-unborn-an-edit-to-the-root-ignore`, the one `S9 × E` cell (task `B6`, the plant's commit). *Until ruled:* (a), under which the cell is red — exit 1, `setup.dirty-install-path`, nothing changed — and marked.
+- *What was asked.* S15 lets *"an *untracked* file at a path the install **merges into**"* ride the repository's first commit on an unborn `HEAD`, and S4's second sentence refuses a file at a path the install **replaces** there too; on a born `HEAD` a file in no commit at a path it merges into is refused (the carryover gate). The entry read no sentence that says what becomes of a file **staged** at a path it merges into on an unborn `HEAD` — on an unborn `HEAD` no file is in a commit, so a file the user `git add`ed after `git init` is the one that stands there — with an edit in the working file beside it. Two readings were put: (a) S15 covers it, the file rides the first commit, and today's refusal is *not the listed outcome*; (b) it refuses as dirty, as a file in no commit does on a born `HEAD`. The entry led with (b) as what the product should do, and the cell followed (a) until ruled, marked.
+- *Answered — the sentences the entry had not read.* `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*, the paragraph *The install commit's pathspec*, which S15's own sentence ends:
+
+  > a path whose index *or* worktree bytes differ from `HEAD` **before the install writes anything** refuses — one blocking routed `setup.dirty-install-path` over the whole sorted set, with **`jigc setup --force`** the single consent … **One stated exemption, and it is per member:** on an unborn `HEAD` an *untracked* file at a path the install **merges into** rides the repository's first commit instead of refusing
+
+  And `design/surface-contract.md` → *The carryover gate (law 1 + 3 at the commit boundary)*:
+
+  > on an unborn `HEAD`, an *untracked* file at a path whose writer **preserves** what it finds rides the repository's first commit — the on-ramp
+
+  A file `git add`ed after `git init` is **tracked**, and its index bytes differ from an unborn `HEAD`: the first sentence refuses it, and the exemption, which names an *untracked* file, does not reach it. Reading (b) is the docs', and no doc sentence changes. It was no silence — the review of the task `B6`'s first two commits found it.
+- *How it is carried.* `setup-head-unborn-an-edit-to-the-root-ignore`, the one `S9 × E` cell, is listed as refused with `setup.dirty-install-path`, as its sibling `setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree` is, and loses this entry's mark; it holds — exit 1, nothing changed. The key it was red under, `r1-setup-refuses-a-staged-root-ignore-on-an-unborn-head-where-an-untracked-one-rides`, retires ([byte-table-findings.md](byte-table-findings.md) → §7).
+- *The one sentence that says otherwise* is a guide's, not a design doc's: `crates/cli/guides/QUICKSTART.md`, *"Every file is untracked there"*, of a repository with no commit — a doc-only finding, [byte-table-findings.md](byte-table-findings.md) → §1, `r1-quickstart-guide-says-every-file-is-untracked-before-the-first-commit-where-a-staged-one-is-tracked-and-refused`.
 
 **Decided here, as a builder, and the human may overturn each:**
 
