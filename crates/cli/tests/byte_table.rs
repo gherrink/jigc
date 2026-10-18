@@ -6,9 +6,9 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 353
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 354
 //! cells: the acceptance's
-//! twelve, the task family's sixty-nine** (`jigc task finalize`, `jigc task discard`; four of
+//! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
@@ -511,7 +511,10 @@ enum Need {
     BaseIn(Prepared),
     /// The base cell of a second spelling of the leaf, in its home state.
     BaseAs(&'static str),
-    Planted(Aim),
+    /// A plant aimed at a line, **under a spelling of the leaf** — `None` for the plain
+    /// one: a need is keyed by the spelling as well as the line, so a cell of a spelling
+    /// aimed at a line of every spelling never answers the plain spelling's need of it.
+    Planted(Aim, Option<&'static str>),
 }
 
 impl Need {
@@ -522,7 +525,10 @@ impl Need {
             Need::Base => "base".to_string(),
             Need::BaseIn(state) => format!("base, in `{}`", state.name()),
             Need::BaseAs(spelling) => format!("base, as `{spelling}`"),
-            Need::Planted(aim) => format!("{} × {}", aim.line, aim.kind.tag()),
+            Need::Planted(aim, None) => format!("{} × {}", aim.line, aim.kind.tag()),
+            Need::Planted(aim, Some(spelling)) => {
+                format!("{} × {}, as `{spelling}`", aim.line, aim.kind.tag())
+            }
         }
     }
 }
@@ -556,10 +562,13 @@ fn needs(row: &Row) -> Vec<Need> {
     for line in row.lines {
         for kind in Kind::ALL {
             if byte_cell::aimed(*kind, line).is_ok() {
-                out.push(Need::Planted(Aim {
-                    line: line.id,
-                    kind: *kind,
-                }));
+                out.push(Need::Planted(
+                    Aim {
+                        line: line.id,
+                        kind: *kind,
+                    },
+                    line.spelling,
+                ));
             }
         }
     }
@@ -641,7 +650,7 @@ fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
             aim.kind.tag()
         ));
     }
-    Ok(Need::Planted(aim))
+    Ok(Need::Planted(aim, cell.spelling))
 }
 
 /// **The scheduled list of cells** — what a row needs a cell for and the pilot leaves for
@@ -703,10 +712,7 @@ fn unmet(
         // A spelling's needs are answered whatever is owed of the leaf's plain spelling.
         let of_a_spelling = |need: &Need| match need {
             Need::BaseAs(_) => true,
-            Need::Planted(aim) => row
-                .lines
-                .iter()
-                .any(|line| line.id == aim.line && line.spelling.is_some()),
+            Need::Planted(_, spelling) => spelling.is_some(),
             _ => false,
         };
         if !owing.is_empty() {
@@ -942,10 +948,13 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
     );
     assert_eq!(
         answers(&planted, &REPLACES),
-        Ok(Need::Planted(Aim {
-            line: "F1",
-            kind: Kind::Untracked
-        }))
+        Ok(Need::Planted(
+            Aim {
+                line: "F1",
+                kind: Kind::Untracked
+            },
+            None
+        ))
     );
     // The argv that resolves nothing is the refusing cell's in `fresh` and with no lead,
     // and nowhere else.
@@ -1125,7 +1134,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
                 &cell("on-its-own", FRESH, A_FILE, ACTING, at(line, kind)),
                 &REMOVES
             ),
-            Ok(Need::Planted(Aim { line, kind })),
+            Ok(Need::Planted(Aim { line, kind }, None)),
             "the same file put on its own is a plant of *{}*",
             kind.tag()
         );
@@ -1141,10 +1150,13 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             ),
             &REMOVES
         ),
-        Ok(Need::Planted(Aim {
-            line: "F1",
-            kind: Kind::Untracked
-        })),
+        Ok(Need::Planted(
+            Aim {
+                line: "F1",
+                kind: Kind::Untracked
+            },
+            None
+        )),
         "a file of the user's in the place of a file that stands is a plant of *U*"
     );
 
@@ -1165,10 +1177,13 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             &cell("deleted", FRESH, DELETED, ACTING, at("F1", Kind::EditAfter)),
             &REMOVES
         ),
-        Ok(Need::Planted(Aim {
-            line: "F1",
-            kind: Kind::EditAfter
-        })),
+        Ok(Need::Planted(
+            Aim {
+                line: "F1",
+                kind: Kind::EditAfter
+            },
+            None
+        )),
         "a file deleted answers *E* at a line that lets the command rewrite it"
     );
     assert_eq!(
@@ -4418,6 +4433,135 @@ fn a_line_reaches_its_units_record_where_the_docs_root_has_it() {
     );
 }
 
+/// **Under `squash: false` a boundary is a chain: a commit a code-carrying sub-task, in
+/// task-id order, each holding its own worktree's code, then the aggregate** — the review of
+/// the task `B7`'s first part, its fourth finding: `M4` held what `M3` holds, so a product
+/// that ignored the knob kept every cell of the spelling green. On the row
+/// `milestone::FINALIZE` itself, run as `squash: false`: a milestone `m` whose committed
+/// record names `s1`, `s2` and `s3`, each with its worktree at `.jigc/worktrees/<id>` —
+/// `s1` and `s2` staged a file of code there, `s3` nothing. The chain `s1`, `s2`, the
+/// aggregate holds; so does the one combined commit under the plain spelling (`M3`). Under
+/// `squash: false` that combined commit is *git's state moved outside its allowance*, and
+/// so are the chain out of order, a sub-task's commit carrying its sibling's code, a chain
+/// with no aggregate, the aggregate carrying code, a commit for the sub-task that staged
+/// nothing, and no commit at all.
+#[test]
+fn a_chain_holds_a_commit_a_sub_task_in_id_order_then_the_aggregate() {
+    const RECORD: &str = "docs/milestone-records/m.md";
+    let before = then(&sandbox(), |m| {
+        records(m, "docs", &[("m", &["s1", "s2", "s3"])]);
+        let main = m.checkouts.get(REPO).expect("the main checkout").clone();
+        for at in ["repo/.jigc", "repo/.jigc/worktrees"] {
+            dir(m, at);
+        }
+        for id in ["s1", "s2", "s3"] {
+            let at = format!("repo/.jigc/worktrees/{id}");
+            dir(m, &at);
+            let mut index = main.index.clone();
+            if id != "s3" {
+                let bytes = format!("the code {id} staged\n");
+                put(m, &format!("{at}/{id}.txt"), &bytes);
+                index.insert(format!("{id}.txt"), staged(&bytes));
+                m.held.insert(blob_of(&bytes));
+            }
+            m.registrations.insert(id.to_string(), at.clone());
+            m.checkouts.insert(
+                at,
+                Checkout {
+                    head: main.head.clone(),
+                    branch: None,
+                    index,
+                },
+            );
+        }
+    });
+    let code = |id: &str| (format!("{id}.txt"), format!("the code {id} staged\n"));
+    let flipped = |m: &Manifest| {
+        let Some(Entry::File { bytes, .. }) = m.files.get(&format!("repo/{RECORD}")) else {
+            panic!("no record");
+        };
+        format!("{}- status: joined\n", String::from_utf8_lossy(bytes))
+    };
+    // The commits, oldest first, each the paths it lands: a sub-task's code by its id, the
+    // record flipped by `RECORD`.
+    let landed = |links: &[&[&str]]| {
+        then(&before, |m| {
+            let record = flipped(m);
+            for (at, link) in links.iter().enumerate() {
+                let changed: Vec<(String, String)> = link
+                    .iter()
+                    .map(|what| match *what {
+                        RECORD => (RECORD.to_string(), record.clone()),
+                        id => code(id),
+                    })
+                    .collect();
+                for (path, bytes) in &changed {
+                    put(m, &format!("repo/{path}"), bytes);
+                }
+                let changed: Vec<(&str, Option<(u32, &str)>)> = changed
+                    .iter()
+                    .map(|(path, bytes)| (path.as_str(), Some((0o100_644, bytes.as_str()))))
+                    .collect();
+                commit(m, &format!("chain-{at}"), &changed);
+            }
+        })
+    };
+    let came = |spelling: Option<&'static str>, after: &Manifest| {
+        Cell {
+            argv: &["milestone", "finalize", "m"],
+            spelling,
+            ..Cell::of(milestone::FINALIZE, &before, after)
+        }
+        .came_to()
+    };
+    const UNSQUASHED: Option<&str> = Some("squash: false");
+
+    let (class, why) = came(UNSQUASHED, &landed(&[&["s1"], &["s2"], &[RECORD]]));
+    assert_eq!(class, Classification::Holds, "the chain: {why:#?}");
+    let combined = landed(&[&["s1", "s2", RECORD]]);
+    let (class, why) = came(None, &combined);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "one combined commit, `M3`: {why:#?}"
+    );
+    for (what, after, says) in [
+        ("one combined commit", combined.clone(), "made 1 commit"),
+        (
+            "the chain out of order",
+            landed(&[&["s2"], &["s1"], &[RECORD]]),
+            "commit 1 of the chain under the line `M4` is the one of `s1`",
+        ),
+        (
+            "a sub-task's commit carrying its sibling's code",
+            landed(&[&["s1", "s2"], &[], &[RECORD]]),
+            "is the one of `s1`",
+        ),
+        (
+            "no aggregate",
+            landed(&[&["s1"], &["s2", RECORD]]),
+            "made 2 commits",
+        ),
+        (
+            "the aggregate carrying code",
+            landed(&[&["s1"], &[], &["s2", RECORD]]),
+            "is the one of `s2`",
+        ),
+        (
+            "a commit for the sub-task that staged nothing",
+            landed(&[&["s1"], &["s2"], &[], &[RECORD]]),
+            "made 4 commits",
+        ),
+        ("no commit at all", before.clone(), "made no commit"),
+    ] {
+        let (class, why) = came(UNSQUASHED, &after);
+        assert!(
+            class == Classification::GitMoved && why.iter().any(|why| why.contains(says)),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+}
+
 /// **Every way a row's spellings do not stand on its lines**: a line in force under a
 /// spelling the row does not have; a spelling that replaces a line the row does not have
 /// as a line of every spelling; a spelling with no line of its own; two spellings of one
@@ -4630,7 +4774,10 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
             &cell(Some("path-scoped"), at("P3"), A_STAGED_CHANGE),
             &SPELLED
         ),
-        Ok(Need::Planted(at("P3").expect("an aim")))
+        Ok(Need::Planted(
+            at("P3").expect("an aim"),
+            Some("path-scoped")
+        ))
     );
     for (spelling, line, why) in [
         (None, "P3", "not in force under the spelling it runs"),
@@ -4645,6 +4792,35 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
             .expect_err("a cell that answers no need of its spelling");
         assert!(fault.contains(why), "{spelling:?} at `{line}`: {fault}");
     }
+
+    // A need is keyed by the spelling as well as the line — the review of the task `B7`'s
+    // first part, its ninth finding: a cell of a spelling aimed at a line of every spelling
+    // is that line under the spelling, and never answers the plain spelling's need of it.
+    const A_FILE_AT_THE_DOC: &[Lead] = &[Lead::Plant(Plant::File(DOC))];
+    let at_the_doc = |spelling| {
+        cell(
+            spelling,
+            Some(Aim {
+                line: "P2",
+                kind: Kind::Untracked,
+            }),
+            A_FILE_AT_THE_DOC,
+        )
+    };
+    let plain_need = "`jigc probe` needs a cell for *P2 × U*, and has no cell";
+    let spelled = at_the_doc(Some("path-scoped"));
+    let unanswered = unmet(&[&SPELLED], &[&spelled], &[], &[]);
+    assert!(
+        unanswered.iter().any(|line| line.starts_with(plain_need)),
+        "a spelling's cell at a line of every spelling answers the plain spelling's need: \
+         {unanswered:#?}"
+    );
+    let plain = at_the_doc(None);
+    let unanswered = unmet(&[&SPELLED], &[&plain], &[], &[]);
+    assert!(
+        !unanswered.iter().any(|line| line.starts_with(plain_need)),
+        "the plain spelling's cell answers it: {unanswered:#?}"
+    );
 }
 
 /// **A refusal may change only what a line that holds on a refusal covers.** A command
@@ -7411,9 +7587,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (353, 269, 84),
+        (354, 270, 84),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         sixty-nine — fifty-seven in the gate, four of them its spelling `doc-only`, twelve \
+         seventy — fifty-eight in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \

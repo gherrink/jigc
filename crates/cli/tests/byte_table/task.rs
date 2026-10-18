@@ -750,7 +750,7 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 /// Two cells run their own command a second time over what a first refusal left
 /// ([`Lead::Refused`]): the ruling on a refusal's caches is bounded by *a refused command
 /// run again refuses again, with the plant standing*.
-const FINALIZE_CELLS: [Cell; 24] = [
+const FINALIZE_CELLS: [Cell; 25] = [
     finalize(
         "task-finalize-a-task-that-is-not-there",
         FRESH,
@@ -834,6 +834,19 @@ const FINALIZE_CELLS: [Cell; 24] = [
         FINALIZE_THE_DECISION,
         refuses(3, "store.home-not-regular-file"),
         at("T1", Kind::LinkOutside),
+    ),
+    // The plain spelling's own cell at a link to nothing: the acceptance's runs a task of
+    // the doc-only arm, and a need is keyed by its spelling.
+    finalize(
+        "task-finalize-a-link-to-nothing-at-the-created-decisions-home",
+        FRESH,
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::LinkToNothing(THE_DECISIONS_HOME))]
+        ),
+        FINALIZE_THE_DECISION,
+        refuses(3, "store.home-not-regular-file"),
+        at("T1", Kind::LinkToNothing),
     ),
     finalize(
         "task-finalize-a-directory-at-the-created-docs-home",

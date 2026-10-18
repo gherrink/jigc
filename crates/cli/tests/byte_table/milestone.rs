@@ -96,12 +96,13 @@ pub const FINALIZE: Row = Row {
         ),
         // `M4`: under `finalize.fan-out.squash: false` the boundary commits a sub-task's
         // staged code in a commit of its own, task by task, then the aggregate — so `M3`,
-        // the one combined commit, is out of force under it.
+        // the one combined commit, is out of force under it, and the commits the boundary
+        // made are held to that chain: how many, in which order, each holding what.
         Line {
             spelling: Some("squash: false"),
             ..line(
                 "M4",
-                Allows::Commit(Holding::TheWorktrees(SUB_TASK_WORKTREES)),
+                Allows::Commit(Holding::TheWorktreesOneByOne(SUB_TASK_WORKTREES)),
                 &[
                     Quote {
                         doc: "design/finalize.md",

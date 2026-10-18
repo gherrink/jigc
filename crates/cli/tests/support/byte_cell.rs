@@ -380,6 +380,18 @@ pub enum Holding {
     /// *`fan-out` finalize*). Another checkout's staged bytes — a task's its unit's record
     /// does not name, the user's own linked worktree — are none of it.
     TheWorktrees(&'static str),
+    /// **The same checkouts, a commit each, then the aggregate** — `squash: false`'s chain:
+    /// *"one commit per code-carrying sub-task in task-id order, then the parent's aggregate
+    /// commit"*, *"Each per-sub-task commit applies **that one worktree's** staged code"*
+    /// (`design/finalize.md` → *`fan-out` finalize*). A checkout at this place carries code
+    /// where its index differs from the tree its own `HEAD` holds; the commits the command
+    /// made are, oldest first, one for each such checkout in the order of the sub-task ids
+    /// they stand at — each holding what that one checkout staged and nothing else — and
+    /// then one more, holding only what the row's lines wrote. *"A sub-task that staged no
+    /// code contributes no commit."* A single commit that folds them all, a chain out of
+    /// order, a sub-task's commit carrying another's code and a chain with no aggregate are
+    /// each git's state moved outside the allowance.
+    TheWorktreesOneByOne(&'static str),
     /// **Only what the row's lines changed, and every change of theirs to a tracked path**
     /// — a path the main checkout's index held before the command: such a change lands in
     /// a commit the command made, and one the working tree keeps with no commit carrying
@@ -1603,8 +1615,34 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 .push(format!("the ref `{name}` is not what it was")),
         }
     }
+    // Under a chain, the commits the command made are held to it whole — how many, in which
+    // order, each holding what — and each path of one to the checkout whose commit it is.
+    let chain = match (holding, commits) {
+        (Some(Holding::TheWorktreesOneByOne(place)), Some(at)) if acted => {
+            let carriers = carriers(before, place, &tally.acting);
+            let id = row.lines[at].id;
+            let moved = matches!(main, (Some(was), Some(is)) if was.head != is.head);
+            if !made.is_empty() {
+                tally.git.extend(chained(&made, &carriers, place, id));
+            } else if !moved {
+                tally.git.push(format!(
+                    "the command made no commit on the checked-out branch, where its line \
+                     `{id}` has {}: {}",
+                    carriers.len() + 1,
+                    the_chain(&carriers, place)
+                ));
+            }
+            // Read link by link where the chain is as long as the line's: else a path of it
+            // is any of the checkouts', and the length is what is wrong.
+            let in_line = made.len() == carriers.len() + 1;
+            Some((carriers, in_line))
+        }
+        _ => None,
+    };
     let mut committed: BTreeSet<&str> = BTreeSet::new();
-    for commit in &made {
+    for (newest, commit) in made.iter().enumerate() {
+        // Its place in the chain, oldest first.
+        let link = made.len() - 1 - newest;
         for (path, entry) in &commit.changed {
             let entry = entry.as_ref();
             if let Some((_, blob)) = entry {
@@ -1624,6 +1662,16 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                             && entry.is_some()
                             && staged(checkout)
                     })
+                }
+                Some(Holding::TheWorktreesOneByOne(_)) => {
+                    let staged_by = |(_, staged): &(String, Staging)| {
+                        staged.get(path.as_str()).map(Option::as_ref) == Some(entry)
+                    };
+                    match &chain {
+                        Some((carriers, true)) => carriers.get(link).is_some_and(staged_by),
+                        Some((carriers, false)) => carriers.iter().any(staged_by),
+                        None => false,
+                    }
                 }
                 _ => false,
             };
@@ -1844,6 +1892,139 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         Vec::new(),
     ));
     Ok(verdict(classification, why, red.collect(), Some(&tally)))
+}
+
+/// What one checkout staged, by path: the mode and blob its index holds there, or nothing
+/// where it staged the path's removal.
+type Staging = BTreeMap<String, Option<(u32, String)>>;
+
+/// **The tree a commit holds**, by path: its first parents' changes laid down from the root
+/// — what a manifest knows of a commit is what it changed against its first parent. Empty
+/// for an unborn `HEAD`.
+fn tree_of(manifest: &Manifest, head: &str) -> BTreeMap<String, (u32, String)> {
+    let mut line: Vec<&Commit> = Vec::new();
+    let mut at = Some(head).filter(|head| !head.is_empty());
+    while let Some(id) = at
+        && let Some(commit) = manifest.commits.get(id)
+        && line.len() <= manifest.commits.len()
+    {
+        line.push(commit);
+        at = commit.parent.as_deref();
+    }
+    let mut tree = BTreeMap::new();
+    for commit in line.iter().rev() {
+        for (path, entry) in &commit.changed {
+            match entry {
+                Some(entry) => tree.insert(path.clone(), entry.clone()),
+                None => tree.remove(path),
+            };
+        }
+    }
+    tree
+}
+
+/// **What a checkout staged**: its index against the tree its own `HEAD` holds — an entry
+/// that differs, and a path the tree holds and the index does not.
+fn staged_in(manifest: &Manifest, checkout: &Checkout) -> Staging {
+    let tree = tree_of(manifest, &checkout.head);
+    let mut staged: Staging = checkout
+        .index
+        .iter()
+        .filter(|(path, entry)| tree.get(path.as_str()) != Some(&(entry.mode, entry.blob.clone())))
+        .map(|(path, entry)| (path.clone(), Some((entry.mode, entry.blob.clone()))))
+        .collect();
+    staged.extend(
+        tree.keys()
+            .filter(|path| !checkout.index.contains_key(*path))
+            .map(|path| (path.clone(), None)),
+    );
+    staged
+}
+
+/// **The checkouts at `place` that staged code**, each with the id it stands at and what it
+/// staged, in the order of those ids — the component of the place that is
+/// [`ITS_SUB_TASKS`], or the checkout's path where the place has none. A checkout that
+/// staged nothing carries nothing.
+fn carriers(before: &Manifest, place: &str, acting: &Acting) -> Vec<(String, Staging)> {
+    let position = place.split('/').position(|part| part == ITS_SUB_TASKS);
+    let mut out: Vec<(String, Staging)> = before
+        .checkouts
+        .iter()
+        .filter(|(at, _)| at.as_str() != REPO)
+        .filter_map(|(at, checkout)| {
+            let rel = in_repo(at)?;
+            if !is_at_for(place, rel, acting) {
+                return None;
+            }
+            let id = position
+                .and_then(|position| rel.split('/').nth(position))
+                .unwrap_or(rel);
+            let staged = staged_in(before, checkout);
+            (!staged.is_empty()).then(|| (id.to_string(), staged))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// The chain a line of [`Holding::TheWorktreesOneByOne`] has, in words.
+fn the_chain(carriers: &[(String, Staging)], place: &str) -> String {
+    let ids: Vec<String> = carriers.iter().map(|(id, _)| format!("`{id}`")).collect();
+    format!(
+        "one for each checkout at `{place}` that staged code, in the order of its sub-task's \
+         id — {} — then the aggregate",
+        if ids.is_empty() {
+            "none".to_string()
+        } else {
+            ids.join(", ")
+        }
+    )
+}
+
+/// **Every way the commits the command made — newest first, as `made` holds them — are not
+/// the chain its line `id` has**: as many as the checkouts that staged code, and one more;
+/// and, link by link, each holding what its checkout staged and nothing else. A path a
+/// checkout staged that its commit does not change is in line where an earlier link landed
+/// the same entry there.
+fn chained(made: &[&Commit], carriers: &[(String, Staging)], place: &str, id: &str) -> Vec<String> {
+    if made.len() != carriers.len() + 1 {
+        return vec![format!(
+            "the command made {} commit{} on the checked-out branch, where its line `{id}` has \
+             {}: {}",
+            made.len(),
+            if made.len() == 1 { "" } else { "s" },
+            carriers.len() + 1,
+            the_chain(carriers, place)
+        )];
+    }
+    let mut out = Vec::new();
+    for (link, ((sub_task, staged), commit)) in carriers.iter().zip(made.iter().rev()).enumerate() {
+        let besides: Vec<&String> = commit
+            .changed
+            .iter()
+            .filter(|(path, entry)| staged.get(path.as_str()) != Some(entry))
+            .map(|(path, _)| path)
+            .collect();
+        let lacks: Vec<&String> = staged
+            .iter()
+            .filter(|(path, entry)| {
+                commit.changed.get(path.as_str()) != Some(entry)
+                    && !carriers[..link]
+                        .iter()
+                        .any(|(_, earlier)| earlier.get(path.as_str()) == Some(entry))
+            })
+            .map(|(path, _)| path)
+            .collect();
+        if !besides.is_empty() || !lacks.is_empty() {
+            out.push(format!(
+                "commit {} of the chain under the line `{id}` is the one of `{sub_task}`, whose \
+                 checkout staged {:?}: it holds besides {besides:?}, and lacks {lacks:?}",
+                link + 1,
+                staged.keys().collect::<Vec<_>>()
+            ));
+        }
+    }
+    out
 }
 
 /// **The docs staged in every work unit**, each with its id: the regular `.md` files under
