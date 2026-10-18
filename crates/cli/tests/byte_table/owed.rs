@@ -41,7 +41,7 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// (`byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`) asks nothing
 /// of such a leaf need by need, and names it the day it also has a scheduled row. `B4`
 /// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
-/// brought the install family's four; `B6` brings the doc family's eight — the six edit
+/// brought the install family's four; `B6` brought the doc family's eight — the six edit
 /// leaves with its second commit, the two minting doors with its third — and `B7` is built
 /// now, by the human's ruling of 2026-10-13. A leaf leaves
 /// this list in the commit that brings its cells — after which every need of its row is a
