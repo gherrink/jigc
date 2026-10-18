@@ -372,7 +372,9 @@ pub enum Kind {
     DirForAFile,
     /// **K** — a file in a directory's place: at the parent of a file the command writes.
     FileForADir,
-    /// **E** — an edit in no commit, before the work unit's first write to the file.
+    /// **E** — an edit in no commit, before the work unit's first write to the file: a line
+    /// added ([`Plant::Edit`]), or the file deleted, the index left as it stands
+    /// ([`Plant::Deleted`]).
     EditBefore,
     /// **E** — the same after that first write; or, where no unit stands between, last
     /// before the command.
@@ -1549,6 +1551,21 @@ pub enum Plant {
     /// **E** — a line added by hand to the tracked file at this path of the repository, in
     /// no commit.
     Edit(&'static str),
+    /// **E**, the file deleted — **a file simply deleted by hand**: the regular file at this
+    /// path of the repository is removed from the working tree, outside jigc, and nothing is
+    /// put in its place. The human's ruling of 2026-10-18 on the review of the task `B6`
+    /// (`DECISIONS.md`). **The index is left as it stands** — the plain `rm` a user does:
+    /// at a path git tracks, git then lists the path *deleted* among the changes not staged
+    /// for commit, beside an edit, and that is what **E** is — *an edit in no commit, in a
+    /// tracked file*. A deletion staged with it (`git rm`) is a staged change, which is
+    /// **S**, and is no plant of this kind. **It carries no bytes**, so the comparison has no
+    /// marker of it to look for and nothing of the user's can be lost by it: what the
+    /// command does at the path is held to its row as any write is — a file made there
+    /// where no line covers it is *written outside its allowance* — and what a cell of it
+    /// is for is its listed outcome. A place that holds no regular file is a fault of the
+    /// cell, and so is a deletion in the place of a file ([`Plant::InPlaceOf`]): it makes
+    /// no entry.
+    Deleted(&'static str),
     /// **W** — the user's own linked worktree, at `outside/own`: detached, holding a
     /// commit only its `HEAD` reaches and a staged file, each with a marker of its own —
     /// and, where `moved_away`, its directory moved to the sandbox's `moved/` afterwards,
@@ -1721,6 +1738,7 @@ impl Plant {
             Plant::Committed(_) => kind == Kind::Committed,
             Plant::LinkToNothing(_) => kind == Kind::LinkToNothing,
             Plant::Edit(_) => matches!(kind, Kind::EditBefore | Kind::EditAfter),
+            Plant::Deleted(_) => matches!(kind, Kind::EditBefore | Kind::EditAfter),
             Plant::Worktree { moved_away } => {
                 kind == if moved_away {
                     Kind::WorktreeMovedAway
@@ -1936,6 +1954,8 @@ impl Plant {
         };
         match self {
             Plant::InPlaceOf(inner) => inner.planted(at, hooks),
+            // A deletion carries no bytes: there is no piece of it to find afterwards.
+            Plant::Deleted(_) => Vec::new(),
             Plant::LinkToAFile { at: path, outside } => vec![
                 piece(format!("{REPO}/{path}"), "only"),
                 piece(
@@ -2050,6 +2070,16 @@ impl Plant {
                 let mut bytes = fs::read(&file).map_err(written(path))?;
                 bytes.extend(format!("\n{}\n", marker(at, "only")).bytes());
                 fs::write(&file, bytes).map_err(written(path))
+            }
+            // The plain `rm`: the file goes from the tree, and the index is not touched.
+            Plant::Deleted(path) => {
+                let file = repo.join(path);
+                if !fs::symlink_metadata(&file).is_ok_and(|entry| entry.is_file()) {
+                    return Err(format!(
+                        "a deletion takes the file at `{path}`, and no regular file stands there"
+                    ));
+                }
+                fs::remove_file(&file).map_err(written(path))
             }
             Plant::Worktree { moved_away } => {
                 let own = sandbox.root().join(OWN_WORKTREE);

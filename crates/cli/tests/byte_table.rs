@@ -6,11 +6,12 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has seven rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 196 cells: the acceptance's
-//! twelve, the task family's sixty-three** (`jigc task finalize`, `jigc task discard`) **and
-//! the install family's hundred and twenty-one** (`setup`, `uninstall`, `ingest`,
+//! discard`'s, and `jigc ingest`'s and `jigc unmanage`'s — and 209 cells: the acceptance's
+//! twelve, the task family's sixty-six** (`jigc task finalize`, `jigc task discard`) **and
+//! the install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`,
 //! `unmanage`), of which thirty-six run on demand. This file is the plan's tasks `B1` to
-//! `B5`, and of `B6` the plant in the place of a file that stands — the arms that hold the
+//! `B5`, and of `B6` the plant in the place of a file that stands and the plant of a file
+//! simply deleted — the arms that hold the
 //! comparison, the reader and the
 //! runner to their rules, the fences, and the rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
@@ -1080,6 +1081,48 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             kind: Kind::Untracked
         })),
         "a file of the user's in the place of a file that stands is a plant of *U*"
+    );
+
+    // A file simply deleted, the index left as it stands, is a plant of **E** — git lists
+    // it among the changes not staged, beside an edit — at either of E's positions, and of
+    // no other kind: not **S**, which a deletion staged with it would be, and not **U**.
+    for kind in Kind::ALL {
+        assert_eq!(
+            Plant::Deleted("a-file").is_of(*kind),
+            matches!(kind, Kind::EditBefore | Kind::EditAfter),
+            "a file deleted is a plant of *{}* only where that is *E*",
+            kind.tag()
+        );
+    }
+    const DELETED: &[Lead] = &[Lead::Plant(Plant::Deleted("a-file"))];
+    assert_eq!(
+        answers(
+            &cell("deleted", FRESH, DELETED, ACTING, at("F1", Kind::EditAfter)),
+            &REMOVES
+        ),
+        Ok(Need::Planted(Aim {
+            line: "F1",
+            kind: Kind::EditAfter
+        })),
+        "a file deleted answers *E* at a line that lets the command rewrite it"
+    );
+    assert_eq!(
+        answers(
+            &cell(
+                "deleted",
+                FRESH,
+                DELETED,
+                ACTING,
+                at("F1", Kind::StagedThere)
+            ),
+            &REMOVES
+        ),
+        Err(
+            "says its plant is of the kind *S, where the command writes*, and puts in none that \
+             is"
+            .to_string()
+        ),
+        "a file deleted, the index left as it stands, is no staged change"
     );
 
     // This tree.
@@ -4299,6 +4342,31 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
         Classification::Lost,
         "the planted `repo/README.md/a-file-of-its-users.txt` is gone",
     ),
+    // --- a file simply deleted (**E**, the file deleted): the committed `README.md` gone
+    // from the tree, nothing in its place, and the index left as it stands — the deletion
+    // is no difference of the command's; a file it puts back is one, which no line of
+    // `NOTHING` covers; and the index's entry is still there for a `git rm` to take ---
+    on_a_stand_in(
+        &["prunes-the-worktrees"],
+        &[Lead::Plant(Plant::Deleted(README))],
+        NOTHING,
+        Classification::Holds,
+        "",
+    ),
+    on_a_stand_in(
+        &["rewrites-the-edited-file"],
+        &[Lead::Plant(Plant::Deleted(README))],
+        NOTHING,
+        Classification::WrittenOutside,
+        "`repo/README.md` was made, and no line covers it",
+    ),
+    on_a_stand_in(
+        &["commits-a-removal"],
+        &[Lead::Plant(Plant::Deleted(README))],
+        COMMITS_THE_INDEX,
+        Classification::GitMoved,
+        "a commit the command made removes `README.md`, which no line declares",
+    ),
     // --- the plants of a family's cells: a link to a file, a directory, what is staged, a
     // hook that rejects — and a lead-in that must refuse ---
     on_a_stand_in(
@@ -4691,7 +4759,8 @@ fn the_stand_in(scratch: &ScratchDir) -> PathBuf {
 /// pointed elsewhere; a stash entry, a branch, an index entry and an index entry's flag, a
 /// link committed, the index committed, a removal committed, an object pruned, the configuration, the hook and
 /// `info/exclude`; a refusal that wrote and one that did not; and a file a lead-in of the
-/// cell wrote, rewritten.
+/// cell wrote, rewritten. And a file simply deleted, the index left as it stands: left
+/// standing, written back, and its deletion committed.
 ///
 /// Then the faults of a cell, which no classification covers: a lead-in that is refused,
 /// a plant where something stands, a state that is not the one handed in, a row of
@@ -4874,6 +4943,38 @@ fn the_reader_reads_what_the_comparison_reads() {
         untracked.before.files.get("repo/README.md"),
         untracked.before.checkouts[REPO].index.get("README.md")
     );
+    // A file simply deleted is gone from the picture the command is held to, nothing in
+    // its place, and the index holds at its path what it held before the plant — the plain
+    // `rm`, which git lists as a change not staged.
+    let deleted = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| {
+            on.cell.argv == ["prunes-the-worktrees"]
+                && matches!(on.cell.leads, [Lead::Plant(Plant::Deleted(_))])
+        })
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .expect("the cell of a file deleted ran");
+    // What the index holds at the path with nothing planted: the cell with no leads.
+    let committed_entry = ON_A_STAND_IN
+        .iter()
+        .zip(&ran)
+        .find(|(on, _)| on.cell.argv == ["refuses"] && on.cell.leads.is_empty())
+        .and_then(|(_, ran)| ran.as_ref().ok())
+        .and_then(|ran| ran.before.checkouts[REPO].index.get("README.md").cloned())
+        .expect("the never-adopted repository's index holds `README.md`");
+    assert!(
+        !deleted
+            .before
+            .files
+            .keys()
+            .any(|path| path == "repo/README.md" || path.starts_with("repo/README.md/"))
+            && deleted.before.checkouts[REPO].index.get("README.md") == Some(&committed_entry),
+        "a file deleted is gone from the tree, and the index holds what it held: the tree has \
+         {:?}, and the index {:?} where {committed_entry:?} stood",
+        deleted.before.files.get("repo/README.md"),
+        deleted.before.checkouts[REPO].index.get("README.md")
+    );
 
     // A hook the user's lines are put into keeps whatever else it held.
     let hooked = ON_A_STAND_IN
@@ -5004,6 +5105,36 @@ fn the_reader_reads_what_the_comparison_reads() {
                 "an-edit-in-the-place-of-a-file",
                 Prepared::Bare,
                 &[Lead::Plant(Plant::InPlaceOf(&Plant::Edit(README)))],
+                &["probe"],
+            ),
+            "one that makes an entry of its own",
+        ),
+        (
+            cell(
+                "a-deletion-of-no-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::Deleted("no-such-file.md"))],
+                &["probe"],
+            ),
+            "a deletion takes the file at `no-such-file.md`, and no regular file stands there",
+        ),
+        (
+            cell(
+                "a-deletion-of-a-directory",
+                Prepared::Bare,
+                &[
+                    Lead::Step(Step::Dir(Place::Repo("a-dir"))),
+                    Lead::Plant(Plant::Deleted("a-dir")),
+                ],
+                &["probe"],
+            ),
+            "a deletion takes the file at `a-dir`, and no regular file stands there",
+        ),
+        (
+            cell(
+                "a-deletion-in-the-place-of-a-file",
+                Prepared::Bare,
+                &[Lead::Plant(Plant::InPlaceOf(&Plant::Deleted(README)))],
                 &["probe"],
             ),
             "one that makes an entry of its own",
@@ -5415,6 +5546,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "setup-at-the-workbench-ignore-a-directory",
             "setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree",
             "setup-head-unborn-at-the-root-ignore-a-directory",
+            "setup-head-unborn-the-staged-root-ignore-deleted",
         ],
     ),
     (
@@ -5436,6 +5568,8 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "uninstall-after-a-task-landed",
             "uninstall-an-edit-to-the-host-file",
             "uninstall-run-as-typed",
+            "uninstall-the-host-file-deleted",
+            "uninstall-the-settings-file-deleted",
             "uninstall-the-users-own-lines-in-the-hook",
             "uninstall-the-users-own-worktree",
             "uninstall-the-users-own-worktree-moved-away",
@@ -5472,7 +5606,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     (
         "r1-task-discard-settles-no-record-and-discards-a-sub-task-whose-record-is-not-on-disk",
         Classification::NotTheListedOutcome,
-        &["task-discard-a-file-in-the-place-of-the-records-directory"],
+        &[
+            "task-discard-a-file-in-the-place-of-the-records-directory",
+            "task-discard-the-milestones-record-deleted",
+        ],
     ),
     (
         "r1-task-discard-a-rejected-record-commit-leaves-its-message-file-in-the-working-area",
@@ -5903,10 +6040,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (196, 160, 36),
+        (209, 173, 36),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         sixty-three — fifty-one in the gate, twelve on demand — and the install family's \
-         are a hundred and twenty-one: ninety-seven in the gate, twenty-four on demand"
+         sixty-six — fifty-four in the gate, twelve on demand — and the install family's \
+         are a hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand"
     );
 }
 

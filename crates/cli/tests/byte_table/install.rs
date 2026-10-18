@@ -1137,6 +1137,99 @@ const SETUP_OVER_ITS_OWN: [Cell; 8] = [
     ),
 ];
 
+/// **The cells of `setup` and `uninstall` over a file of the install simply deleted** — the
+/// human's ruling of 2026-10-18 on the review of the task `B6`, option A: a file the
+/// install committed is deleted by hand, outside jigc, nothing put in its place and the
+/// index left as it stands — the plain `rm` ([`Plant::Deleted`], the plan's plant **E**:
+/// git lists the path *deleted* among the changes not staged, as it lists an edit). A cell
+/// at each line of the two rows that **E** targets, on the lead-ins of the edits'
+/// ([`SETUP_OVER_ITS_OWN`]; `uninstall` in `fresh`, which is installed). Each is listed
+/// from the row's doc:
+///
+/// - **`setup` over a deleted file of its pathspec** (`S1`, `S2`, `S3`, `S5`,
+///   `S6, written`, `S7`): *"A path that was **absent from the working tree before the
+///   run, with nothing in the index that `HEAD` does not hold**, is not the adopter's
+///   uncommitted work: the install restores it and commits it, at every member"* — the
+///   human's ruling of 2026-10-06 on the fix pass's item 1, as
+///   `design/assistant-adapter.md` states it — so each acts;
+/// - **the guide deleted** (`S8`): of the guide's three states *"only two of them are
+///   jigc's: **absent** (the first install) and **owned**"* — `setup` writes it again, and
+///   the cell acts;
+/// - **the user's staged root `.gitignore` deleted from the tree, on an unborn `HEAD`**
+///   (`S9`): *"What still refuses is the path absent from the working tree whose **index**
+///   entry holds bytes of the adopter's (staged, then deleted)"* — refused;
+/// - **`uninstall` over the host file or the settings file deleted** (`U2`, `U3`): no
+///   sentence says the state refuses — as for an edit there, the cells are listed as
+///   acting, and held to `U9`'s *never carries* the user's own uncommitted change, a
+///   deletion included.
+const A_FILE_OF_THE_INSTALL_DELETED: [Cell; 10] = [
+    setup(
+        "setup-its-bootstrap-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".jigc/AGENT.md"))],
+        Listed::Acts,
+        at("S1", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-host-file-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted("CLAUDE.md"))],
+        Listed::Acts,
+        at("S2", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-settings-file-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".claude/settings.json"))],
+        Listed::Acts,
+        at("S3", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-stamp-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".jigc/version"))],
+        Listed::Acts,
+        at("S5", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-settings-record-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".jigc/settings-entries.json"))],
+        Listed::Acts,
+        at("S6, written", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-workbench-ignore-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".jigc/.gitignore"))],
+        Listed::Acts,
+        at("S7", Kind::EditAfter),
+    ),
+    setup(
+        "setup-the-guide-deleted",
+        &[INSTALLED, Lead::Plant(Plant::Deleted(".claude/skills/jigc/SKILL.md"))],
+        Listed::Acts,
+        at("S8", Kind::EditAfter),
+    ),
+    setup(
+        "setup-head-unborn-the-staged-root-ignore-deleted",
+        &[
+            UNBORN,
+            Lead::Step(Step::File(Place::Repo(".gitignore"), "target/\n")),
+            Lead::Step(Step::Git(&["add", "--", ".gitignore"])),
+            Lead::Plant(Plant::Deleted(".gitignore")),
+        ],
+        DIRTY,
+        at("S9", Kind::EditAfter),
+    ),
+    uninstall(
+        "uninstall-the-host-file-deleted",
+        &[Lead::Plant(Plant::Deleted("CLAUDE.md"))],
+        Listed::Acts,
+        at("U2", Kind::EditAfter),
+    ),
+    uninstall(
+        "uninstall-the-settings-file-deleted",
+        &[Lead::Plant(Plant::Deleted(".claude/settings.json"))],
+        Listed::Acts,
+        at("U3", Kind::EditAfter),
+    ),
+];
+
 /// **A task that landed** — `record-a-decision`, created and finalized: the repository a
 /// teardown or a second install meets after somebody worked in it.
 const A_LANDED_TASK: [Lead; 12] = [
@@ -1410,6 +1503,7 @@ pub const CELLS: &[&[Cell]] = &[
     &SETUP_CELLS,
     &SETUP_PLANTED,
     &SETUP_OVER_ITS_OWN,
+    &A_FILE_OF_THE_INSTALL_DELETED,
     &UNINSTALL_CELLS,
     &REGISTER_CELLS,
     &ELSEWHERE,

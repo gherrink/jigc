@@ -1390,6 +1390,68 @@ const DISCARD_AT_THE_RECORD: [Cell; 7] = [
     ),
 ];
 
+/// **The cells of the task family over a file simply deleted** — the human's ruling of
+/// 2026-10-18 on the review of the task `B6`, option A: the file that stands at a line's
+/// place is deleted by hand, outside jigc, nothing put in its place and the index left as
+/// it stands — the plain `rm` ([`Plant::Deleted`], the plan's plant **E**: git lists the
+/// path *deleted* among the changes not staged, as it lists an edit). A cell at each line
+/// of the two rows that **E** targets, after the work unit's first write; before it
+/// (`T1`, **E** before the first write) the task's own first write copies the doc in from
+/// its home, which is gone, so the lead-in is refused — that write's question is the `doc`
+/// family's. Each is listed from the row's doc:
+///
+/// - **the vision deleted after the task's first write to it** (`T1`), in a checkout that
+///   holds its baseline: *"Weak signal — tracked path missing, no content-matching new
+///   file. The tracked file is simply gone (deleted, accidentally removed)"*, blocking at
+///   task scope and routed to restore (`design/reconciliation.md` → *Rename detection*) —
+///   and *"a checkout holding a `file-state` key for the doc blocks first, on
+///   `reconciliation.rename`"* (`design/finalize.md` → *4. Promote managed docs*);
+/// - **jigc's stamp deleted** (`T2`): the stamp is refreshed *"where it is jigc's to
+///   write"*, as an edit to it is — the cell acts;
+/// - **the milestone's record deleted** (`A5`) — the shape the review of `B6` reproduced
+///   at exit 0: there is no record to settle, which the discard does *"before it
+///   destroys"* (`A8`), and the record `HEAD` holds names the sub-task — refused, as with
+///   the record's directory gone, and any refusal names the record.
+const FINALIZE_A_FILE_DELETED: [Cell; 2] = [
+    finalize(
+        "task-finalize-the-vision-deleted-after-the-first-write",
+        SINGLETONS,
+        &[
+            A_TASK_OVER_THE_VISION[0],
+            A_TASK_OVER_THE_VISION[1],
+            A_TASK_OVER_THE_VISION[2],
+            A_TASK_OVER_THE_VISION[3],
+            A_TASK_OVER_THE_VISION[4],
+            A_TASK_OVER_THE_VISION[5],
+            Lead::Plant(Plant::Deleted("VISION.md")),
+        ],
+        FINALIZE_THE_VISION,
+        refuses(3, "reconciliation.rename"),
+        at("T1", Kind::EditAfter),
+    ),
+    finalize(
+        "task-finalize-the-version-stamp-deleted",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::Deleted(THE_STAMP))]),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        at("T2", Kind::EditAfter),
+    ),
+];
+
+/// The record deleted: [`FINALIZE_A_FILE_DELETED`] says how it is listed.
+const DISCARD_A_FILE_DELETED: [Cell; 1] = [discard(
+    "task-discard-the-milestones-record-deleted",
+    &[
+        A_SUB_TASK[0],
+        A_SUB_TASK[1],
+        Lead::Plant(Plant::Deleted(THE_RECORD)),
+    ],
+    DISCARD_THE_SUB_TASK,
+    refuses(1, "docs/milestone-records/ship-it.md"),
+    at("A5", Kind::EditAfter),
+)];
+
 /// One base cell of `jigc task discard` in a prepared state that is not its home.
 const fn discard_in(name: &'static str, state: State) -> Cell {
     Cell {
@@ -1436,8 +1498,10 @@ pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &FINALIZE_CELLS,
     &FINALIZE_AT_THE_STAMP,
+    &FINALIZE_A_FILE_DELETED,
     &FINALIZE_ELSEWHERE,
     &DISCARD_CELLS,
     &DISCARD_AT_THE_RECORD,
+    &DISCARD_A_FILE_DELETED,
     &DISCARD_ELSEWHERE,
 ];
