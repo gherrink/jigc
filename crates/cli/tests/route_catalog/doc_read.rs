@@ -923,7 +923,12 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
                 mints holds a symbolic link",
         state: &[
             SETUP,
-            Step::Jigc(&["start", "--workflow", "report-jigc-feedback", "report a bug"]),
+            Step::Jigc(&[
+                "start",
+                "--workflow",
+                "report-jigc-feedback",
+                "report a bug",
+            ]),
             Step::Dir(Place::Repo("docs/jigc-feedback")),
             Step::LinkTo(Place::Repo(THE_FINDINGS_HOME), "nowhere"),
         ],
@@ -967,7 +972,12 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
                 mints holds a symbolic link",
         state: &[
             SETUP,
-            Step::Jigc(&["start", "--workflow", "report-jigc-feedback", "report a bug"]),
+            Step::Jigc(&[
+                "start",
+                "--workflow",
+                "report-jigc-feedback",
+                "report a bug",
+            ]),
             Step::Dir(Place::Repo("docs/jigc-feedback")),
             Step::LinkTo(Place::Repo(THE_FINDINGS_HOME), "nowhere"),
             Step::File(Place::Outside("finding.yaml"), "title: \"Slow start\"\n"),

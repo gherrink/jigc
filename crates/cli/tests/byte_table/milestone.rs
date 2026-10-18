@@ -14,9 +14,9 @@
 
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, When,
-    Where,
- Unit, Spelling, Mark,};
+    Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row,
+    Spelling, Unit, When, Where,
+};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -52,26 +52,25 @@ pub const FINALIZE: Row = Row {
             on_refusal: true,
             ..line(
                 "M1",
-                Allows::Files(Where::Under(".jigc/milestones/<unit>/merged"), May::WriteWhole),
-                &[
-                    Quote {
-                        doc: "design/finalize.md",
-                        heading: "2. Validate",
-                        words: "`materialize` writes only into the gitignored `.jigc/milestones/<id>/merged/`, which it **clears and rebuilds every call**, so blocking after it still writes nothing durable",
-                    },
-                ],
+                Allows::Files(
+                    Where::Under(".jigc/milestones/<unit>/merged"),
+                    May::WriteWhole,
+                ),
+                &[Quote {
+                    doc: "design/finalize.md",
+                    heading: "2. Validate",
+                    words: "`materialize` writes only into the gitignored `.jigc/milestones/<id>/merged/`, which it **clears and rebuilds every call**, so blocking after it still writes nothing durable",
+                }],
             )
         },
         line(
             "M2",
             Allows::Files(Where::AStagedDocsHome, May::CopyOfAStagedDoc),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "`fan-out` finalize",
-                    words: "The promote plan is one planner for both modes, and it carries the task door's clobber guard: a sub-task's `created` doc never promotes over a file already at its destination, and the refusal is taken before either mode lays down a commit",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "`fan-out` finalize",
+                words: "The promote plan is one planner for both modes, and it carries the task door's clobber guard: a sub-task's `created` doc never promotes over a file already at its destination, and the refusal is taken before either mode lays down a commit",
+            }],
         ),
         line(
             "M3",
@@ -257,13 +256,11 @@ pub const FINALIZE: Row = Row {
         line(
             "M10, the file-state hashes",
             Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "`fan-out` finalize",
-                    words: "4. **Post-commit** runs once for the whole batch.",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "`fan-out` finalize",
+                words: "4. **Post-commit** runs once for the whole batch.",
+            }],
         ),
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
@@ -298,7 +295,15 @@ macro_rules! a_reporters_finding {
         [
             Lead::Step(Step::JigcAt(
                 Place::Repo(concat!(".jigc/worktrees/", $task)),
-                &["doc", "create", "inconsistency", "--title", "Stage", "--task", $task],
+                &[
+                    "doc",
+                    "create",
+                    "inconsistency",
+                    "--title",
+                    "Stage",
+                    "--task",
+                    $task,
+                ],
             )),
             Lead::Step(Step::JigcAt(
                 Place::Repo(concat!(".jigc/worktrees/", $task)),
@@ -464,7 +469,9 @@ const ACCEPTANCE: &[Cell] = &[
         leads: two_reporters_joined!([], [Lead::Plant(Plant::File(THE_NUMBERED_HOME))]),
         argv: &["milestone", "finalize", "stage-reports"],
         listed: refuses(3, "finalize.promote-clobber"),
-        beside: Some("milestone_promote_guards::a_suffix_landing_on_an_occupied_home_blocks_and_its_route_lands_the_milestone"),
+        beside: Some(
+            "milestone_promote_guards::a_suffix_landing_on_an_occupied_home_blocks_and_its_route_lands_the_milestone",
+        ),
         aim: Some(Aim {
             line: "M2",
             kind: Kind::Untracked,
@@ -479,7 +486,9 @@ const ACCEPTANCE: &[Cell] = &[
         leads: two_reporters_joined!([Lead::Plant(Plant::Committed(THE_NUMBERED_HOME))], []),
         argv: &["milestone", "finalize", "stage-reports"],
         listed: refuses(3, "finalize.promote-clobber"),
-        beside: Some("milestone_promote_guards::a_committed_occupant_is_never_routed_at_moving_out"),
+        beside: Some(
+            "milestone_promote_guards::a_committed_occupant_is_never_routed_at_moving_out",
+        ),
         aim: Some(Aim {
             line: "M2",
             kind: Kind::Committed,
@@ -493,8 +502,18 @@ const ACCEPTANCE: &[Cell] = &[
         state: Prepared::Of(State::Fresh),
         leads: &[
             jigc(&["milestone", "create", "Foreign worktree probe"]),
-            jigc(&["milestone", "add-task", "foreign-worktree-probe", "Add alpha file"]),
-            jigc(&["milestone", "add-task", "foreign-worktree-probe", "Add beta file"]),
+            jigc(&[
+                "milestone",
+                "add-task",
+                "foreign-worktree-probe",
+                "Add alpha file",
+            ]),
+            jigc(&[
+                "milestone",
+                "add-task",
+                "foreign-worktree-probe",
+                "Add beta file",
+            ]),
             jigc(&["milestone", "provision", "foreign-worktree-probe"]),
             ALPHAS_CODE[0],
             ALPHAS_CODE[1],
@@ -504,7 +523,9 @@ const ACCEPTANCE: &[Cell] = &[
         ],
         argv: &["milestone", "finalize", "foreign-worktree-probe"],
         listed: Listed::Acts,
-        beside: Some("worktree_registration_reach::every_worktree_door_leaves_a_foreign_registration_exactly_as_it_found_it"),
+        beside: Some(
+            "worktree_registration_reach::every_worktree_door_leaves_a_foreign_registration_exactly_as_it_found_it",
+        ),
         aim: Some(Aim {
             line: "M7",
             kind: Kind::WorktreeMovedAway,

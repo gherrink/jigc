@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, by the fifth of the fixes after the review of the milestone family's task (`B7`), part A (its eleventh finding, and the counts): §16, a lead for whoever fixes the product under §10's and §11's keys — the twenty-four cells whose listed refusal must come to hold the words the human's ruling on entry 14 has the refusal say, *what stands there*, once the product says them; each keeps today's code until then. §15's heading counts what it holds now: none of its cells is red. No key, cell or classification moved.*
+
 *Changed 2026-10-18, by the fourth of the fixes after the review of the milestone family's task (`B7`), part A (its first and third findings): in §15 the key `r1-milestone-finalize-under-squash-false-takes-the-edge-index-away-where-its-line-rebuilds-it` retires — the rows' record's §6, entry 16 is answered by the design docs, the edge index's file may be gone after a finalize, and the three cells hold — and its false premise is corrected; §15 gains three leads for the milestone rows and `B8`; and §1 gains the one sentence of `design/finalize.md` that says other than `design/command-output-contract.md` of the `squash: false` chain and the shared index (entry 17, answered), a doc-only finding.*
 
 *Changed 2026-10-18, by the third of the fixes after the review of the milestone family's task (`B7`), part A: §15 says what `M4` now holds the chain to, gains the plain spelling's cell at `T1` with a link to nothing, and holds `T9`'s owner-artifacts as a lead.*
@@ -613,7 +615,7 @@ $JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, shar
 
 No doc-family cell reaches any sentence of the table but §12's two and the unset's ack, and no row of it but §12's is a finding of the product.
 
-## 15. The two spellings — eight cells in the gate, three red on this tree's binary under one key
+## 15. The two spellings — eight cells in the gate, none red since the fourth of the fixes after part A's review (three were, under one key)
 
 *Read again on 2026-10-18, by the fourth of the fixes after the review of part A: the key retires, its three cells hold — **none of the eight is red**, on this tree or on the previous release. The rest of this section is the record of the day before, and its last subsection says what moved.*
 
@@ -692,3 +694,26 @@ $JIGC milestone finalize $m > /dev/null 2>&1; echo "exit=$?"; ls .jigc/index/   
   - *A change staged before the milestone is minted.* `jigc milestone create` snapshots the shared checkout's staged set for the boundary's aggregate (`design/finalize.md` → *Dirty-tree policy*, the carryover gate: *"`jigc milestone create` for the shared checkout's aggregate index"*), so a change staged **before** `milestone create` meets that gate — a need other than the cells' plant, staged after the join, under both spellings.
   - *`M10` meets a built index.* The plain spelling's cells are the milestone rows'; a cell whose leads build the index before the boundary — as `jigc workflow sub-task` in a worktree does — is what puts `M10`'s *invalidated* to a cell under `squash: true`, as `task-finalize-a-foreign-file-under-the-edge-index` does for `T5`.
 - **A lead, for `B8`.** `jigc rename` invalidates the edge index the same way (`crates/cli/src/rename.rs`, `index::invalidate`); its row's edge-index line is owed the same word, on its own doc's sentences, and a cell whose leads build the index first.
+
+## 16. What ruling 1's *names what stands there* asks of the cells — a lead for the fixer of §10's and §11's keys
+
+*2026-10-19, by the fifth of the fixes after the review of the milestone family's task (`B7`), part A (its eleventh finding). Read off [doc.rs](../../../../../crates/cli/tests/byte_table/doc.rs); no binary run.*
+
+The human's ruling of 2026-10-18 on the rows' record's §6, entry 14 has a `doc` write refuse before its copy-in where the bytes at the doc's home do not parse as its doctype, *"stages and binds nothing, and **names what stands there** — a squatter to adopt, or a file to restore"* ([DECISIONS.md](../../../../../DECISIONS.md) → *The human's three rulings of the day*, ruling 1). A cell holds bytes, and of a refusal only its exit and one run of the words its output holds (`refuses(exit, says)`). **The cells below name today's code**, which a fixed product that refused before the copy-in under the same code, and named nothing, would match: the half of the ruling that is about bytes they hold — the copy-in is not made, nothing is staged or bound — and the half about words they do not. They keep today's codes until the product says the new words, as the records have said since the ruling (*"the listing follows the run that shows it"*).
+
+**So the fixer of `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`, `r1-doc-write-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-copy-staged` and `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound` owes, in the same commit, each of these cells' `says` changed to a run of the words with which the fixed refusal names what stands at the home** — a run no refusal of another cause prints, so that a refusal that names nothing is *not the listed outcome*. Twenty-four cells, eight leaves, three shapes each — the user's own file where the committed doc stood, a link to a file in the repository, a link to a file outside it; every one stands at `W3`, the home a write copies in from:
+
+| leaf | the cells, `doc-<…>-in-the-docs-place` | listed today |
+|---|---|---|
+| `doc add-item` | `doc-add-a-milestone-a-file-of-the-users-…`, `…-a-link-to-a-file-in-the-repository-…`, `…-a-link-to-a-file-outside-…` | `refuses(1, "write.non-reparseable")` — and act today, exit 0 |
+| `doc create` | `doc-create-the-vision-…`, the same three shapes | `refuses(1, "write.non-reparseable")` — and act today, exit 0 |
+| `doc remove-item` | `doc-remove-a-milestone-…`, the same three | `refuses(1, "write.non-reparseable")` |
+| `doc set-slot` | `doc-set-what-a-milestone-proves-…`, the same three | `refuses(1, "write.non-reparseable")` |
+| `doc retitle-item` | `doc-retitle-a-milestone-…`, the same three | `refuses(1, "write.wrong-shape")` |
+| `doc set-field` | `doc-set-a-releases-link-…`, the same three | `refuses(1, "write.wrong-shape")` |
+| `doc rename` | `doc-retitle-a-committed-decision-…`, the same three | ``refuses(1, "carries no `# H1` to retitle")`` |
+| `doc author` | `doc-author-the-vision-…`, the same three | `refuses(1, "write.non-reparseable")` |
+
+- *The twenty-one of `add-item` to `rename`* are the cells the ruling took entry 14's mark off (§10, §11). *`author`'s three* carried no mark — they are red under every reading, by entry 15's answer at that door — but the ruling's words are of every `doc` write and its home, so their refusal is owed the same words.
+- *Which words.* The ruling names two: *a squatter to adopt* (the user's file) *or a file to restore* (the committed doc's bytes gone from its home). Which of them a link to a file is — the bytes it leads to are no doc of the type either way — is the fixer's to say from the product's route, and the cell's `says` follows what the fixed product prints there.
+- *Not in this lane.* No cell's listing moves here: the words do not exist yet, and a listing is what one run shows.

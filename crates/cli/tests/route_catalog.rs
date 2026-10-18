@@ -8,7 +8,7 @@
 //! [`support::route_case`](crate::support::route_case), which says what a case is and what
 //! the runner does; this file is the **expected-red list** ([`EXPECTED_RED`]) and the arms
 //! that hold the frame to its rules. **A command's cases are a file of their own under
-//! `route_catalog/`**, declared here by `#[path]` inside [`tables!`] — `setup.rs`,
+//! `route_catalog/`**, declared here by `#[path]` beside [`tables!`], whose call names it — `setup.rs`,
 //! `uninstall.rs`, `task_finalize.rs`, `milestone.rs`, `doc_write.rs`, `config.rs`,
 //! `start.rs`, `doc_read.rs` and `unassigned.rs`.
 //! They stand there, and not beside this file, because that directory also holds the
@@ -304,26 +304,45 @@ struct Table {
     arm: &'static str,
 }
 
-/// **A command's file is wired in by its declaration inside this macro's one call, and
-/// nowhere else.** The declaration is the `#[path]` line the registration fence reads
-/// (`test_target_registration.rs`), and the macro makes the same line the file's row of
-/// [`TABLES`] — its cases, its reasons and its source — so no arm of this suite names a
-/// command's file a second time. The file exports `CASES`, `REASONS` and `READINGS`.
+#[path = "route_catalog/config.rs"]
+mod config;
+#[path = "route_catalog/doc_read.rs"]
+mod doc_read;
+#[path = "route_catalog/doc_write.rs"]
+mod doc_write;
+#[path = "route_catalog/milestone.rs"]
+mod milestone;
+#[path = "route_catalog/setup.rs"]
+mod setup;
+#[path = "route_catalog/start.rs"]
+mod start;
+#[path = "route_catalog/task_finalize.rs"]
+mod task_finalize;
+#[path = "route_catalog/unassigned.rs"]
+mod unassigned;
+#[path = "route_catalog/uninstall.rs"]
+mod uninstall;
+
+/// **A command's file is wired in by its `#[path]` declaration above and its name in this
+/// macro's one call, and nowhere else.** The declaration is the line the registration
+/// fence reads (`test_target_registration.rs`), and the name makes the file's row of
+/// [`TABLES`] — its cases, its reasons and its source, read from `route_catalog/<name>.rs`,
+/// the file a declaration of that name has
+/// ([`every_file_of_the_catalogs_directory_is_a_table_the_suite_reads`]) — so no arm of
+/// this suite names a command's file a second time. The declaration stands beside the
+/// macro and never inside it: rustfmt reads no item a macro's tokens hold, so a file
+/// declared there is formatted by nothing and the gate's `fmt` step passes over any diff in
+/// it (`tooling-tests/fmt_reach.rs`). The file exports `CASES`, `REASONS` and `READINGS`.
 ///
-/// **And the same line makes the arm that follows the file's cases** — a test of the
+/// **And the same name makes the arm that follows the file's cases** — a test of the
 /// file's own name in the module [`FOLLOWED`] names — so a command's file cannot be wired
 /// in without its arm, and the test a runner puts a limit on is one command's cases.
 macro_rules! tables {
-    ($(#[path = $file:literal] mod $name:ident;)*) => {
-        $(
-            #[path = $file]
-            mod $name;
-        )*
-
-        /// Every command's file, in the order declared.
+    ($($name:ident),* $(,)?) => {
+        /// Every command's file, in the order named.
         const TABLES: &[Table] = &[$(Table {
-            file: $file,
-            source: include_str!($file),
+            file: concat!("route_catalog/", stringify!($name), ".rs"),
+            source: include_str!(concat!("route_catalog/", stringify!($name), ".rs")),
             cases: $name::CASES,
             reasons: $name::REASONS,
             readings: $name::READINGS,
@@ -337,7 +356,11 @@ macro_rules! tables {
             $(
                 #[test]
                 fn $name() {
-                    super::follow_the_cases_of($file);
+                    super::follow_the_cases_of(concat!(
+                        "route_catalog/",
+                        stringify!($name),
+                        ".rs"
+                    ));
                 }
             )*
         }
@@ -348,26 +371,17 @@ macro_rules! tables {
 /// inside this suite.
 const FOLLOWED: &str = "the_cases_are_followed_and_the_expected_red_list_is_exact";
 
-tables! {
-    #[path = "route_catalog/setup.rs"]
-    mod setup;
-    #[path = "route_catalog/uninstall.rs"]
-    mod uninstall;
-    #[path = "route_catalog/task_finalize.rs"]
-    mod task_finalize;
-    #[path = "route_catalog/milestone.rs"]
-    mod milestone;
-    #[path = "route_catalog/doc_write.rs"]
-    mod doc_write;
-    #[path = "route_catalog/config.rs"]
-    mod config;
-    #[path = "route_catalog/start.rs"]
-    mod start;
-    #[path = "route_catalog/doc_read.rs"]
-    mod doc_read;
-    #[path = "route_catalog/unassigned.rs"]
-    mod unassigned;
-}
+tables![
+    setup,
+    uninstall,
+    task_finalize,
+    milestone,
+    doc_write,
+    config,
+    start,
+    doc_read,
+    unassigned,
+];
 
 use setup::{HOOK, HOOK_LINK_SITE};
 
@@ -1298,7 +1312,7 @@ fn every_table_has_its_arm_and_every_arm_its_table() {
     assert!(
         wrong.is_empty(),
         "the tables and the arms that follow their cases disagree:\n\n  {}\n\na command's \
-         file is wired in by its line inside `tables!`, which makes its arm.",
+         file is wired in by its name in `tables!`, which makes its arm.",
         wrong.join("\n  "),
     );
 }
@@ -2697,8 +2711,8 @@ fn unwired(on_disk: &[String], wired: &[&str]) -> Vec<String> {
         .filter(|file| !wired.contains(&file.as_str()))
         .map(|file| {
             format!(
-                "`{file}` is declared by no line inside `tables!`, so the catalog follows \
-                 none of its cases and the fence reads none of its reasons"
+                "`{file}` is named nowhere in `tables!`, so the catalog follows none of \
+                 its cases and the fence reads none of its reasons"
             )
         })
         .collect()
@@ -3387,18 +3401,53 @@ fn a_row_for_a_site_that_is_gone_is_named() {
     );
 }
 
+/// The declarations of `source` whose module is not named for the file under
+/// `route_catalog/` its `#[path]` line gives — the name [`tables!`] reads the file's source
+/// and follows its cases by.
+fn misnamed(source: &str) -> Vec<String> {
+    let mut lines = source.lines().map(str::trim);
+    let mut out = Vec::new();
+    while let Some(line) = lines.next() {
+        let Some(stem) = line
+            .strip_prefix("#[path = \"route_catalog/")
+            .and_then(|rest| rest.strip_suffix(".rs\"]"))
+        else {
+            continue;
+        };
+        let module = lines.next().unwrap_or_default();
+        if module != format!("mod {stem};") {
+            out.push(format!(
+                "`route_catalog/{stem}.rs` is declared as `{module}`, where `tables!` reads the \
+                 file of a name from `route_catalog/<name>.rs`"
+            ));
+        }
+    }
+    out
+}
+
 /// **A command's file that is on disk is one the suite reads.** The registration fence
 /// holds every `.rs` file under `route_catalog/` to a `#[path]` line in this file; this
-/// arm holds it to a line *inside* `tables!`, where its cases are followed and its reasons
-/// are read. A declaration beside the macro satisfies the first and is named here.
+/// arm holds it to its name in `tables!`, where its cases are followed and its reasons
+/// are read. A declaration the macro's call does not name satisfies the first and is named
+/// here. And a declaration's module is named for its file, since `tables!` reads a file's
+/// source by the name it is given.
 #[test]
 fn every_file_of_the_catalogs_directory_is_a_table_the_suite_reads() {
     let wired: Vec<&str> = TABLES.iter().map(|table| table.file).collect();
     let planted = [wired[0].to_string(), "route_catalog/beside.rs".to_string()];
     says(
         &unwired(&planted, &wired),
-        &[("`route_catalog/beside.rs`", "no line inside `tables!`")],
+        &[("`route_catalog/beside.rs`", "named nowhere in `tables!`")],
     );
+    says(
+        &misnamed(
+            "#[path = \"route_catalog/setup.rs\"]\nmod setup;\n\
+             #[path = \"route_catalog/beside.rs\"]\nmod elsewhere;\n",
+        ),
+        &[("`route_catalog/beside.rs`", "declared as `mod elsewhere;`")],
+    );
+    let wrong = misnamed(include_str!("route_catalog.rs"));
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     let on_disk: Vec<String> = rust_source::rust_files(&tests.join("route_catalog"))

@@ -80,8 +80,7 @@ const PROVENANCE_IO: &str =
 const SOURCE_PATH_IO: &str =
     "crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1";
 const WORKING_AREA_IO: &str = "crates/engine/src/state.rs::io_finding::task.working-area-io#1";
-const CLOBBER: &str =
-    "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1";
+const CLOBBER: &str = "crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1";
 const EMPTY_COMMIT: &str =
     "crates/engine/src/finalize.rs::empty_commit_finding::finalize.empty-commit#1";
 
@@ -199,7 +198,11 @@ const FINALIZE: Case = Case {
 macro_rules! nothing_staged {
     ($name:literal, $cause:literal, $dirt:expr, $changed:literal) => {
         [Case {
-            name: concat!("finalize-nothing-staged-", $name, "-added-and-finalized-as-printed"),
+            name: concat!(
+                "finalize-nothing-staged-",
+                $name,
+                "-added-and-finalized-as-printed"
+            ),
             site: NOTHING_STAGED,
             cause: $cause,
             state: ready![$dirt],
@@ -592,8 +595,10 @@ const THE_PINNED_COMMIT_REWRITTEN: [Case; 1] = head_moved!(
 
 /// A linked worktree of the user's own, beside the repository, on a branch of its own —
 /// and the same with its `HEAD` detached.
-const A_LINKED_WORKTREE: Step = Step::Git(&["worktree", "add", "-q", "../outside/wt", "-b", "side"]);
-const A_DETACHED_WORKTREE: Step = Step::Git(&["worktree", "add", "-q", "--detach", "../outside/wt"]);
+const A_LINKED_WORKTREE: Step =
+    Step::Git(&["worktree", "add", "-q", "../outside/wt", "-b", "side"]);
+const A_DETACHED_WORKTREE: Step =
+    Step::Git(&["worktree", "add", "-q", "--detach", "../outside/wt"]);
 /// Where a case stands that is asked from that worktree.
 const THERE: Place = Place::Outside("wt");
 /// Code staged in that worktree.
@@ -654,7 +659,11 @@ const A_WRITE_FROM_A_LINKED_WORKTREE_WITH_CODE_STAGED: [Case; 3] = [
         name: "linked-doc-write-refused-beside-staged-code-the-front-door-there-as-printed",
         site: LINKED_DOC,
         cause: A_WRITE_BESIDE_STAGED_CODE,
-        state: decided![A_LINKED_WORKTREE, CODE_STAGED_THERE[0], CODE_STAGED_THERE[1]],
+        state: decided![
+            A_LINKED_WORKTREE,
+            CODE_STAGED_THERE[0],
+            CODE_STAGED_THERE[1]
+        ],
         refusing: THE_CREATE,
         from: THERE,
         acts: &[Act::Cd(0), Act::Run(1)],
@@ -664,7 +673,11 @@ const A_WRITE_FROM_A_LINKED_WORKTREE_WITH_CODE_STAGED: [Case; 3] = [
         name: "linked-doc-write-refused-beside-staged-code-task-finalized-there-for-its-code",
         site: LINKED_DOC,
         cause: A_WRITE_BESIDE_STAGED_CODE,
-        state: decided![A_LINKED_WORKTREE, CODE_STAGED_THERE[0], CODE_STAGED_THERE[1]],
+        state: decided![
+            A_LINKED_WORKTREE,
+            CODE_STAGED_THERE[0],
+            CODE_STAGED_THERE[1]
+        ],
         refusing: THE_CREATE,
         from: THERE,
         acts: &[Act::Run(3)],
@@ -678,7 +691,11 @@ const A_WRITE_FROM_A_LINKED_WORKTREE_WITH_CODE_STAGED: [Case; 3] = [
         name: "linked-doc-write-refused-beside-staged-code-change-moved-to-the-main-checkout",
         site: LINKED_DOC,
         cause: A_WRITE_BESIDE_STAGED_CODE,
-        state: decided![A_LINKED_WORKTREE, CODE_STAGED_THERE[0], CODE_STAGED_THERE[1]],
+        state: decided![
+            A_LINKED_WORKTREE,
+            CODE_STAGED_THERE[0],
+            CODE_STAGED_THERE[1]
+        ],
         refusing: THE_CREATE,
         from: THERE,
         acts: &[
@@ -804,7 +821,11 @@ const A_WRITE_BESIDE_STAGED_CODE_IN_THE_OTHER_STANDINGS: [Case; 2] = [
         site: LINKED_DOC,
         cause: "a `jigc doc` write of a doc that promotes is asked from a linked worktree \
                 whose `HEAD` is detached and whose index holds staged code",
-        state: decided![A_DETACHED_WORKTREE, CODE_STAGED_THERE[0], CODE_STAGED_THERE[1]],
+        state: decided![
+            A_DETACHED_WORKTREE,
+            CODE_STAGED_THERE[0],
+            CODE_STAGED_THERE[1]
+        ],
         refusing: THE_CREATE,
         from: THERE,
         acts: &[Act::Cd(0), Act::Run(1)],
@@ -926,7 +947,12 @@ const A_FOREIGN_FILE_COMMITTED: [Step; 3] = [
 ];
 const A_MIGRATION: &[&str] = &["migrate", "NOTES.md", "--as", "research"];
 /// A workflow whose finalize commits its docs and nothing else.
-const A_DOC_ONLY_MINT: &[&str] = &["start", "--workflow", "report-inconsistency", "note a thing"];
+const A_DOC_ONLY_MINT: &[&str] = &[
+    "start",
+    "--workflow",
+    "report-inconsistency",
+    "note a thing",
+];
 
 const A_MINT_FROM_A_LINKED_WORKTREE: [Case; 2] = [
     Case {
@@ -1183,7 +1209,10 @@ const A_MIGRATION_SOURCE_EDITED_AFTER_THE_MINT: [Case; 1] = [Case {
             mint",
     state: &[
         Step::Jigc(&["setup"]),
-        Step::File(Place::Repo("notes/old-log.md"), "# Old decisions\n\n- We use tabs.\n"),
+        Step::File(
+            Place::Repo("notes/old-log.md"),
+            "# Old decisions\n\n- We use tabs.\n",
+        ),
         Step::Git(&["add", "notes/old-log.md"]),
         Step::Git(&["commit", "-q", "-m", "an old log"]),
         Step::Jigc(&["migrate", "notes/old-log.md", "--as", "decisions-log"]),
@@ -1285,7 +1314,10 @@ const GIT_CANNOT_COMPARE_THE_RECORD: [Case; 1] = [Case {
         ]),
     ],
     refusing: &["milestone", "add-task", "fan-out", "do a thing"],
-    acts: &[Act::Remove(Operand::Unprinted(".gitattributes")), Act::Rerun],
+    acts: &[
+        Act::Remove(Operand::Unprinted(".gitattributes")),
+        Act::Rerun,
+    ],
     holds: &[Check::Absent(Place::Repo(".gitattributes"))],
     untouched: &[],
     ..FINALIZE
@@ -1627,25 +1659,23 @@ const A_TASKS_DOC_OVER_A_FILE: [Case; 2] = [
         refusing: THE_ADR_TASKS_FINALIZE,
         // The reader's own title and slug are named; `<doctype>` and `<id>` are the
         // product's, listed nowhere, and stay.
-        acts: &[
-            Act::RunChosen(Chosen {
-                line: 2,
-                own: &[
-                    Own {
-                        placeholder: "<title>",
-                        value: "Use tabs",
-                        why: "the doc's own title, kept: the route says to re-create it \
+        acts: &[Act::RunChosen(Chosen {
+            line: 2,
+            own: &[
+                Own {
+                    placeholder: "<title>",
+                    value: "Use tabs",
+                    why: "the doc's own title, kept: the route says to re-create it \
                               with an explicit `--slug`, and asks nothing of the title",
-                    },
-                    Own {
-                        placeholder: "<slug>",
-                        value: "tabs",
-                        why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
-                    },
-                ],
-                promised: &[],
-            }),
-        ],
+                },
+                Own {
+                    placeholder: "<slug>",
+                    value: "tabs",
+                    why: A_SLUG_THAT_SLUGS_DIFFERENTLY,
+                },
+            ],
+            promised: &[],
+        })],
         holds: &[Check::Absent(Place::Repo(ADR_AREA))],
         untouched: &[THE_ADRS_HOME],
         ..FINALIZE
@@ -2000,7 +2030,9 @@ macro_rules! a_migrations_doc_held {
         [
             Case {
                 name: concat!(
-                    "clobber-held-in-", $holder, "-migration-doc-renamed-reviewed-and-approved-as-printed"
+                    "clobber-held-in-",
+                    $holder,
+                    "-migration-doc-renamed-reviewed-and-approved-as-printed"
                 ),
                 site: CLOBBER,
                 cause: $cause,
@@ -2023,7 +2055,9 @@ macro_rules! a_migrations_doc_held {
             },
             Case {
                 name: concat!(
-                    "clobber-held-in-", $holder, "-migration-doc-renamed-and-approved-as-printed"
+                    "clobber-held-in-",
+                    $holder,
+                    "-migration-doc-renamed-and-approved-as-printed"
                 ),
                 site: CLOBBER,
                 cause: $cause,
@@ -2066,7 +2100,10 @@ const A_MIGRATIONS_DOC_OVER_A_FILE_IN_THE_INDEX: [Case; 2] = a_migrations_doc_he
 /// A foreign log elsewhere, a migration of it to the decisions log, and its rewrite
 /// authored — the log's home is one fixed path, which is not the migration's source.
 const A_FOREIGN_LOG_COMMITTED: [Step; 3] = [
-    Step::File(Place::Repo("notes/old-log.md"), "# Old decisions\n\n- We use tabs.\n"),
+    Step::File(
+        Place::Repo("notes/old-log.md"),
+        "# Old decisions\n\n- We use tabs.\n",
+    ),
     Step::Git(&["add", "notes/old-log.md"]),
     Step::Git(&["commit", "-q", "-m", "an old log"]),
 ];
@@ -2128,12 +2165,7 @@ const A_MIGRATED_LOG_OVER_A_FILE_GIT_HOLDS: [Case; 2] = [
         cause: "a file was staged and taken out of the working tree, and a migration's doc \
                 promotes to that path — the decisions log's one fixed home, which is not \
                 the migration's source",
-        state: a_log_migration_after!(
-            [],
-            by_hand_at!(LOG),
-            staged_at!(LOG),
-            THE_LOGS_HOME_EMPTIED,
-        ),
+        state: a_log_migration_after!([], by_hand_at!(LOG), staged_at!(LOG), THE_LOGS_HOME_EMPTIED,),
         refusing: &["task", "finalize", THE_NOTES_MIGRATION],
         acts: &[Act::Run(1), Act::Run(0), Act::Run(3)],
         holds: &[

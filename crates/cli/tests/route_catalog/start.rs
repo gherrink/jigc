@@ -51,7 +51,14 @@ const AN_ORDINARY_TASK_FROM_A_LINKED_WORKTREE: [Case; 1] = [Case {
     state: &[
         SETUP,
         A_DECISION_TASK,
-        Step::Git(&["worktree", "add", "-q", "../outside/elsewhere", "-b", "side"]),
+        Step::Git(&[
+            "worktree",
+            "add",
+            "-q",
+            "../outside/elsewhere",
+            "-b",
+            "side",
+        ]),
     ],
     from: Place::Outside("elsewhere"),
     ..S

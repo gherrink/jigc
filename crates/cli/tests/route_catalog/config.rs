@@ -30,7 +30,9 @@
 //! itself put in the link's place, committed, and the refused command again.
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word,
+};
 
 // The sites, as the committed list of refusal sites names them.
 const REPOINT_FAILED: &str = "crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1";

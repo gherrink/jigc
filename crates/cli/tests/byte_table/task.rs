@@ -17,8 +17,8 @@
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
-    Quote, Row, When, Where,
- Unit, Spelling,};
+    Quote, Row, Spelling, Unit, When, Where,
+};
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
@@ -69,13 +69,11 @@ pub const FINALIZE: Row = Row {
         line(
             "T2",
             Allows::Files(Where::Path(".jigc/version"), May::WriteWhole),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "5. Stage",
-                    words: "the `.jigc/version` stamp, refreshed to the running build first — **where it is jigc's to write**",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "5. Stage",
+                words: "the `.jigc/version` stamp, refreshed to the running build first — **where it is jigc's to write**",
+            }],
         ),
         line(
             "T3",
@@ -129,24 +127,20 @@ pub const FINALIZE: Row = Row {
         line(
             "T5, the file-state hashes",
             Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "7. Post-commit (best-effort)",
-                    words: "- **Update `file-state` hashes** for every committed managed doc.",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "7. Post-commit (best-effort)",
+                words: "- **Update `file-state` hashes** for every committed managed doc.",
+            }],
         ),
         line(
             "T6",
             Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Removed),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "7. Post-commit (best-effort)",
-                    words: "- **Keep what jigc did not write, then remove `.jigc/tasks/<task-id>/`.**",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "7. Post-commit (best-effort)",
+                words: "- **Keep what jigc did not write, then remove `.jigc/tasks/<task-id>/`.**",
+            }],
         ),
         line(
             "T6, moved aside",
@@ -154,13 +148,11 @@ pub const FINALIZE: Row = Row {
                 Where::Under(".jigc/tasks/<unit>"),
                 May::MovedAsideTo(".jigc/displaced"),
             ),
-            &[
-                Quote {
-                    doc: "design/finalize.md",
-                    heading: "7. Post-commit (best-effort)",
-                    words: "The removal's subject is jigc's own files only: the area's **complement** ([team-ready-state.md](team-ready-state.md) → The working area's two populations) is moved aside first, to `.jigc/displaced/<task-id>/` with its relative paths intact",
-                },
-            ],
+            &[Quote {
+                doc: "design/finalize.md",
+                heading: "7. Post-commit (best-effort)",
+                words: "The removal's subject is jigc's own files only: the area's **complement** ([team-ready-state.md](team-ready-state.md) → The working area's two populations) is moved aside first, to `.jigc/displaced/<task-id>/` with its relative paths intact",
+            }],
         ),
         // The doc-only arm's commit (the record's `T9`): a task whose workflow includes
         // `step:finalize-doc-only` commits its own paths alone and never the index, and
@@ -315,7 +307,12 @@ const fn payload(name: &'static str, body: &'static str) -> Lead {
 /// — its id slugs from the intent, `sharpen-the-open-questions`. The first write copies
 /// the committed `VISION.md` into the task; the commit doc has its type and its summary.
 const A_TASK_OVER_THE_VISION: [Lead; 6] = [
-    jigc(&["start", "--workflow", "single-task", "sharpen the open questions"]),
+    jigc(&[
+        "start",
+        "--workflow",
+        "single-task",
+        "sharpen the open questions",
+    ]),
     payload("open-questions", "What is still open, sharpened.\n"),
     jigc(&[
         "doc",
@@ -356,7 +353,12 @@ const A_HAND_EDIT: Lead = Lead::Plant(Plant::Edit("VISION.md"));
 /// Its workflow, `report-inconsistency`, includes `step:finalize-doc-only`: its finalize is
 /// the leaf's spelling `doc-only` (`T9`), and a cell of it names that spelling.
 const A_TASK_WITH_A_CREATED_DOC: [Lead; 13] = [
-    jigc(&["start", "--workflow", "report-inconsistency", "file a finding"]),
+    jigc(&[
+        "start",
+        "--workflow",
+        "report-inconsistency",
+        "file a finding",
+    ]),
     jigc(&[
         "doc",
         "create",
@@ -451,7 +453,8 @@ const A_TASK_WITH_A_CREATED_DOC: [Lead; 13] = [
 /// with and without a file-state baseline.
 const THE_COPY_IN_SUITE_IN_A_CLONE: &str =
     "copy_in_baseline::a_second_clones_first_task_does_not_overwrite_a_hand_edit";
-const THE_COPY_IN_SUITE: &str = "copy_in_baseline::a_hand_edit_after_the_first_write_blocks_both_committing_doors_and_survives";
+const THE_COPY_IN_SUITE: &str =
+    "copy_in_baseline::a_hand_edit_after_the_first_write_blocks_both_committing_doors_and_survives";
 
 /// **The acceptance cells of `jigc task finalize`** (the plan's §5): the blocking rows
 /// `(R3, F7)` and `(R6, D-7)` of the review of `1.0.0-rc.24`. `(R3, F7)` is run on both
@@ -534,7 +537,9 @@ const ACCEPTANCE: &[Cell] = &[
         ],
         argv: &["task", "finalize", "file-a-finding"],
         listed: refuses(3, "store.home-not-regular-file"),
-        beside: Some("promote_destination_shape::a_fresh_doc_never_promotes_onto_an_entry_that_is_not_a_regular_file"),
+        beside: Some(
+            "promote_destination_shape::a_fresh_doc_never_promotes_onto_an_entry_that_is_not_a_regular_file",
+        ),
         aim: Some(Aim {
             line: "T1",
             kind: Kind::LinkToNothing,
@@ -846,10 +851,7 @@ const FINALIZE_CELLS: [Cell; 25] = [
     finalize(
         "task-finalize-a-link-to-nothing-at-the-created-decisions-home",
         FRESH,
-        a_decision!(
-            [],
-            [Lead::Plant(Plant::LinkToNothing(THE_DECISIONS_HOME))]
-        ),
+        a_decision!([], [Lead::Plant(Plant::LinkToNothing(THE_DECISIONS_HOME))]),
         FINALIZE_THE_DECISION,
         refuses(3, "store.home-not-regular-file"),
         at("T1", Kind::LinkToNothing),
@@ -1098,7 +1100,10 @@ const FINALIZE_AT_THE_STAMP: [Cell; 6] = [
     finalize(
         "task-finalize-a-file-the-user-committed-in-the-stamps-place",
         FRESH,
-        a_decision!([Lead::Plant(Plant::InPlaceOf(&Plant::Committed(THE_STAMP)))], []),
+        a_decision!(
+            [Lead::Plant(Plant::InPlaceOf(&Plant::Committed(THE_STAMP)))],
+            []
+        ),
         FINALIZE_THE_DECISION,
         Listed::Acts,
         at("T2", Kind::Committed),
@@ -1106,7 +1111,12 @@ const FINALIZE_AT_THE_STAMP: [Cell; 6] = [
     finalize(
         "task-finalize-a-link-to-nothing-in-the-stamps-place",
         FRESH,
-        a_decision!([], [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(THE_STAMP)))]),
+        a_decision!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+                THE_STAMP
+            )))]
+        ),
         FINALIZE_THE_DECISION,
         Listed::Acts,
         at("T2", Kind::LinkToNothing),

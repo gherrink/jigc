@@ -26,7 +26,9 @@
 //! the way has its reason in [`READINGS`].
 
 use super::{Reading, Reason, Why};
-use crate::support::route_case::{Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word};
+use crate::support::route_case::{
+    Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word,
+};
 
 // The sites, as the committed list of refusal sites names them.
 const COLLISION: &str = "crates/cli/src/combine.rs::collision_finding::combine.code-collision#1";
@@ -82,7 +84,10 @@ const WORK: Step = Step::File(Place::Repo(".jigc/worktrees/do-a-thing/work.txt")
 const STAGED: Step = Step::Git(&["-C", WT, "add", "work.txt"]);
 const COMMITTED: Step = Step::Git(&["-C", WT, "commit", "-q", "-m", "the sub-task's work"]);
 /// A file written in the first worktree and left alone.
-const LOOSE: Step = Step::File(Place::Repo(".jigc/worktrees/do-a-thing/loose.txt"), "loose\n");
+const LOOSE: Step = Step::File(
+    Place::Repo(".jigc/worktrees/do-a-thing/loose.txt"),
+    "loose\n",
+);
 /// A shell line a `git` alias runs at the repository's root — a state has no step that
 /// removes or moves.
 macro_rules! sh {
@@ -96,10 +101,8 @@ const THE_WORKTREE_GONE: Step = sh!("rm -rf .jigc/worktrees/do-a-thing");
 const THE_WORKTREE_MOVED_AWAY: Step = sh!("mv .jigc/worktrees/do-a-thing ../outside/moved-wt");
 /// The index of git's registration of the first worktree, overwritten with bytes that are
 /// no index.
-const ITS_INDEX_GARBAGE: Step = Step::File(
-    Place::Repo(".git/worktrees/do-a-thing/index"),
-    "garbage\n",
-);
+const ITS_INDEX_GARBAGE: Step =
+    Step::File(Place::Repo(".git/worktrees/do-a-thing/index"), "garbage\n");
 
 /// A sub-task's commit doc, composed and authored through the binary under test: the
 /// sub-task re-entered — from its own worktree, the one place the product re-enters it
@@ -398,9 +401,15 @@ const ONLY_A_TRANSIENT_DOC_WHERE_NO_RECORD_FLIPS: [Case; 1] = [Case {
 
 /// The same path staged in both sub-tasks' worktrees, with bytes of each one's own.
 const ONE_PATH_STAGED_TWICE: [Step; 4] = [
-    Step::File(Place::Repo(".jigc/worktrees/do-a-thing/shared.txt"), "one\n"),
+    Step::File(
+        Place::Repo(".jigc/worktrees/do-a-thing/shared.txt"),
+        "one\n",
+    ),
     Step::Git(&["-C", WT, "add", "shared.txt"]),
-    Step::File(Place::Repo(".jigc/worktrees/second-thing/shared.txt"), "two\n"),
+    Step::File(
+        Place::Repo(".jigc/worktrees/second-thing/shared.txt"),
+        "two\n",
+    ),
     Step::Git(&["-C", WT2, "add", "shared.txt"]),
 ];
 
@@ -496,7 +505,10 @@ const GITS_WORKTREES_DIRECTORY_IS_A_FILE: [Case; 1] = [Case {
         Step::File(Place::Repo(".git/worktrees"), "x\n"),
     ],
     refusing: PROVISION,
-    acts: &[Act::MoveOut(Operand::Unprinted(".git/worktrees")), Act::Run(0)],
+    acts: &[
+        Act::MoveOut(Operand::Unprinted(".git/worktrees")),
+        Act::Run(0),
+    ],
     holds: &[
         Check::Directory(Place::Repo(WT)),
         Check::Directory(Place::Repo(WT2)),
@@ -546,7 +558,10 @@ const A_HOOK_OF_GITS_FAILS_BEHIND_THE_CHECKOUT: [Case; 2] = [
             SETUP,
             A_MILESTONE,
             FIRST,
-            Step::Script(Place::Repo(".git/hooks/post-checkout"), "#!/bin/sh\nexit 1\n"),
+            Step::Script(
+                Place::Repo(".git/hooks/post-checkout"),
+                "#!/bin/sh\nexit 1\n",
+            ),
         ],
         refusing: PROVISION,
         acts: &[
@@ -565,7 +580,10 @@ const A_HOOK_OF_GITS_FAILS_BEHIND_THE_CHECKOUT: [Case; 2] = [
             SETUP,
             A_MILESTONE,
             FIRST,
-            Step::Script(Place::Repo(".git/hooks/post-checkout"), "#!/bin/sh\nexit 1\n"),
+            Step::Script(
+                Place::Repo(".git/hooks/post-checkout"),
+                "#!/bin/sh\nexit 1\n",
+            ),
         ],
         refusing: PROVISION,
         acts: &[Act::Run(0)],
@@ -1027,7 +1045,9 @@ const DISCARD_IN_A_COPY: [Case; 2] = [
             Act::MoveOut(Operand::Unprinted(".jigc/worktrees/do-a-thing/loose.txt")),
             Act::Run(0),
         ],
-        holds: &[Check::Absent(Place::Outside("copy/.jigc/milestones/fan-out"))],
+        holds: &[Check::Absent(Place::Outside(
+            "copy/.jigc/milestones/fan-out",
+        ))],
         ..M
     },
     Case {
@@ -1133,7 +1153,9 @@ const PROVISION_OVER_A_REGISTRATION_WITH_STAGED_PATHS: [Case; 1] = [Case {
     state: fan![WORK, STAGED, THE_WORKTREE_GONE],
     refusing: PROVISION,
     acts: &[Act::Run(0)],
-    holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/worktrees/do-a-thing/README.md",
+    ))],
     ..M
 }];
 const A_REGISTRATION_WITH_A_COMMIT: &str = "a sub-task's worktree directory is gone and \
@@ -1147,7 +1169,9 @@ const PROVISION_OVER_A_REGISTRATION_WITH_A_COMMIT: [Case; 2] = [
         state: fan![WORK, STAGED, COMMITTED, THE_WORKTREE_GONE],
         refusing: PROVISION,
         acts: &[Act::RunListed(0), Act::Run(0)],
-        holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+        holds: &[Check::RegularFile(Place::Repo(
+            ".jigc/worktrees/do-a-thing/README.md",
+        ))],
         ..M
     },
     Case {
@@ -1157,7 +1181,9 @@ const PROVISION_OVER_A_REGISTRATION_WITH_A_COMMIT: [Case; 2] = [
         state: fan![WORK, STAGED, COMMITTED, THE_WORKTREE_GONE],
         refusing: PROVISION,
         acts: &[Act::Run(0)],
-        holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+        holds: &[Check::RegularFile(Place::Repo(
+            ".jigc/worktrees/do-a-thing/README.md",
+        ))],
         ..M
     },
 ];
@@ -1169,7 +1195,9 @@ const PROVISION_OVER_AN_UNREADABLE_REGISTRATION: [Case; 1] = [Case {
     state: fan![WORK, STAGED, THE_WORKTREE_GONE, ITS_INDEX_GARBAGE],
     refusing: PROVISION,
     acts: &[Act::Run(0)],
-    holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/worktrees/do-a-thing/README.md",
+    ))],
     ..M
 }];
 const PROVISION_OVER_AN_EMPTY_DIRECTORY_BESIDE_A_REGISTRATION: [Case; 1] = [Case {
@@ -1185,7 +1213,9 @@ const PROVISION_OVER_AN_EMPTY_DIRECTORY_BESIDE_A_REGISTRATION: [Case; 1] = [Case
     ],
     refusing: PROVISION,
     acts: &[Act::Run(0)],
-    holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/worktrees/do-a-thing/README.md",
+    ))],
     ..M
 }];
 
@@ -1200,7 +1230,7 @@ const PROVISION_IN_A_COPY: [Case; 1] = [Case {
     from: THE_COPY,
     acts: &[Act::Run(0)],
     holds: &[Check::Absent(Place::Outside(
-        "copy/.jigc/worktrees/do-a-thing/loose.txt"
+        "copy/.jigc/worktrees/do-a-thing/loose.txt",
     ))],
     ..M
 }];
@@ -1218,7 +1248,7 @@ const PROVISION_IN_A_COPY_MID_OPERATION: [Case; 1] = [Case {
     from: THE_COPY,
     acts: &[Act::RunListed(0), Act::Run(0)],
     holds: &[Check::RegularFile(Place::Outside(
-        "copy/.jigc/worktrees/do-a-thing/README.md"
+        "copy/.jigc/worktrees/do-a-thing/README.md",
     ))],
     ..M
 }];
@@ -1235,7 +1265,9 @@ const PROVISION_OVER_AN_UNLINKED_CHECKOUT: [Case; 1] = [Case {
     ],
     refusing: PROVISION,
     acts: &[Act::Run(0)],
-    holds: &[Check::RegularFile(Place::Repo(".jigc/worktrees/do-a-thing/README.md"))],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/worktrees/do-a-thing/README.md",
+    ))],
     ..M
 }];
 
@@ -1279,7 +1311,10 @@ const FINALIZE_OVER_A_COMMIT: [Case; 3] = [
         site: UNLANDED,
         cause: A_COMMIT_WHERE_STAGED_PATHS_WERE_WANTED,
         state: fan2![
-            Step::File(Place::Repo(".jigc/worktrees/second-thing/other.txt"), "other\n"),
+            Step::File(
+                Place::Repo(".jigc/worktrees/second-thing/other.txt"),
+                "other\n"
+            ),
             Step::Git(&["-C", WT2, "add", "other.txt"]),
             WORK,
             STAGED,
@@ -1329,7 +1364,10 @@ const FINALIZE_OVER_A_REGISTRATION_WITH_A_COMMIT: [Case; 1] = [Case {
     cause: "a sub-task's worktree directory is gone and git's registration of it still \
             holds a commit no ref reaches",
     state: fan2![
-        Step::File(Place::Repo(".jigc/worktrees/second-thing/other.txt"), "other\n"),
+        Step::File(
+            Place::Repo(".jigc/worktrees/second-thing/other.txt"),
+            "other\n"
+        ),
         Step::Git(&["-C", WT2, "add", "other.txt"]),
         WORK,
         STAGED,
@@ -1355,7 +1393,14 @@ macro_rules! settled {
 const IN_THE_SECOND: [Step; 3] = [
     Step::File(Place::Repo(".jigc/worktrees/second-thing/s.txt"), "s\n"),
     Step::Git(&["-C", WT2, "add", "s.txt"]),
-    Step::Git(&["-C", WT2, "commit", "-q", "-m", "the settled sub-task's work"]),
+    Step::Git(&[
+        "-C",
+        WT2,
+        "commit",
+        "-q",
+        "-m",
+        "the settled sub-task's work",
+    ]),
 ];
 const FINALIZE_OVER_A_SETTLED_SUB_TASKS_STAGED_PATHS: [Case; 1] = [Case {
     name: "unlanded-settled-sub-task-staged-paths-stashed-and-finalized-as-printed",
@@ -1470,7 +1515,10 @@ const FINALIZE_IN_A_COPY: [Case; 1] = [Case {
     cause: "the repository is a copy of another: a sub-task's worktree in the copy holds a \
             commit no ref reaches, and this repository has not registered that worktree",
     state: fan2![
-        Step::File(Place::Repo(".jigc/worktrees/second-thing/other.txt"), "other\n"),
+        Step::File(
+            Place::Repo(".jigc/worktrees/second-thing/other.txt"),
+            "other\n"
+        ),
         Step::Git(&["-C", WT2, "add", "other.txt"]),
         WORK,
         STAGED,

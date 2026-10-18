@@ -31,8 +31,7 @@ const RENAME_DESTINATION_TAKEN: &str =
     "crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1";
 const RELOCATE_DESTINATION_MANAGED: &str =
     "crates/cli/src/relocate.rs::refuse::write.already-present#dynamic-1";
-const CORPUS_DESTINATION_COLLISION: &str =
-    "crates/cli/src/migrate_corpus.rs::blocked_finding::migrate-corpus.destination-collision#dynamic-1";
+const CORPUS_DESTINATION_COLLISION: &str = "crates/cli/src/migrate_corpus.rs::blocked_finding::migrate-corpus.destination-collision#dynamic-1";
 
 const SETUP: Step = Step::Jigc(&["setup"]);
 

@@ -129,19 +129,27 @@ struct Family {
     cells: &'static [&'static [byte_cell::Cell]],
 }
 
-/// **A family's file is wired in by its declaration inside this macro's one call, and
-/// nowhere else** — the `#[path]` line the registration fence reads
-/// (`test_target_registration.rs`), which the macro makes the file's row of [`FAMILIES`].
-/// The file exports `ROWS` and `CELLS`. It makes no arm of its own: a cell runs in the arm
-/// of its prepared state ([`ARMS`]).
-macro_rules! families {
-    ($(#[path = $file:literal] mod $name:ident;)*) => {
-        $(
-            #[path = $file]
-            mod $name;
-        )*
+#[path = "byte_table/doc.rs"]
+mod doc;
+#[path = "byte_table/install.rs"]
+mod install;
+#[path = "byte_table/milestone.rs"]
+mod milestone;
+#[path = "byte_table/task.rs"]
+mod task;
 
-        /// Every family's file, in the order declared.
+/// **A family's file is wired in by its `#[path]` declaration above and its name in this
+/// macro's one call, and nowhere else** — the declaration is the line the registration
+/// fence reads (`test_target_registration.rs`), and the name makes the file's row of
+/// [`FAMILIES`]; a file declared and not named is dead code, which the gate's `clippy` step
+/// refuses. The declaration stands beside the macro and never inside it: rustfmt reads
+/// no item a macro's tokens hold, so a file declared there is formatted by nothing and the
+/// gate's `fmt` step passes over any diff in it (`tooling-tests/fmt_reach.rs`). The file
+/// exports `ROWS` and `CELLS`. It makes no arm of its own: a cell runs in the arm of its
+/// prepared state ([`ARMS`]).
+macro_rules! families {
+    ($($name:ident),* $(,)?) => {
+        /// Every family's file, in the order named.
         const FAMILIES: &[Family] = &[$(Family {
             rows: $name::ROWS,
             cells: $name::CELLS,
@@ -149,16 +157,7 @@ macro_rules! families {
     };
 }
 
-families! {
-    #[path = "byte_table/install.rs"]
-    mod install;
-    #[path = "byte_table/task.rs"]
-    mod task;
-    #[path = "byte_table/milestone.rs"]
-    mod milestone;
-    #[path = "byte_table/doc.rs"]
-    mod doc;
-}
+families![install, task, milestone, doc];
 
 use owed::{CELLS_OWED, OWED, OWING};
 
@@ -4815,6 +4814,37 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
             .expect_err("a cell that answers no need of its spelling");
         assert!(fault.contains(why), "{spelling:?} at `{line}`: {fault}");
     }
+    // A spelling's base cell stands in its row's home state, so a spelled cell with no
+    // plant in another state, or in the refusing layer, answers nothing — the review of the
+    // task `B7`'s first part, its tenth finding: each seen as a fault on its own.
+    for (layer, spelled) in [
+        (
+            Layer::BaseElsewhere,
+            byte_cell::Cell {
+                state: Prepared::Of(State::Fresh),
+                ..cell(Some("path-scoped"), None, &[])
+            },
+        ),
+        (
+            Layer::Refusing,
+            byte_cell::Cell {
+                state: Prepared::Of(State::Fresh),
+                leaf: &["start"],
+                argv: &["start"],
+                ..cell(Some("path-scoped"), None, &[])
+            },
+        ),
+    ] {
+        assert_eq!(spelled.layer(&SPELLED), layer, "the fixture's layer");
+        let fault = answers(&spelled, &SPELLED);
+        assert!(
+            fault.as_ref().is_err_and(|fault| fault.contains(
+                "names the spelling `path-scoped` where a spelling's base cell stands in its \
+                 row's home state"
+            )),
+            "a spelled cell in the layer {layer:?}: {fault:?}"
+        );
+    }
 
     // A need is keyed by the spelling as well as the line — the review of the task `B7`'s
     // first part, its ninth finding: a cell of a spelling aimed at a line of every spelling
@@ -6384,7 +6414,7 @@ fn the_stand_in(scratch: &ScratchDir) -> PathBuf {
 ///
 /// Then the faults of a cell, which no classification covers: a lead-in that is refused,
 /// a plant where something stands, a state that is not the one handed in, a row of
-/// another leaf.
+/// another leaf, a spelling its row does not have.
 #[test]
 fn the_reader_reads_what_the_comparison_reads() {
     let scratch = ScratchDir::new("byte-table-stand-in");
@@ -6774,6 +6804,13 @@ fn the_reader_reads_what_the_comparison_reads() {
                 &["probe"],
             ),
             "what stands there is no regular file",
+        ),
+        (
+            byte_cell::Cell {
+                spelling: Some("absent"),
+                ..cell("a-spelling-its-row-lacks", Prepared::Bare, &[], &["probe"])
+            },
+            "the cell names the spelling `absent`, which the row of `jigc probe` does not have",
         ),
     ] {
         let fault = byte_cell::run(&built, &NOTHING, &cell).err();

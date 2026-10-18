@@ -67,8 +67,10 @@ const STAGED_PROSE: &str =
     "crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1";
 const UNVERIFIED_PROSE: &str =
     "crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1";
-const UNTRACKED_WORKBENCH: &str = "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1";
-const UNVERIFIED_WORKBENCH: &str = "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1";
+const UNTRACKED_WORKBENCH: &str =
+    "crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1";
+const UNVERIFIED_WORKBENCH: &str =
+    "crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1";
 
 // The files the install is merged into or adds, from the repository root.
 const CLAUDE_MD: &str = "CLAUDE.md";
@@ -1044,12 +1046,10 @@ const GITS_LISTING_UNDECODABLE: [Case; 2] = unasked_ways!(
 
 const REMOVE_JIGC: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1";
 const UNWIRE: &str = "crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1";
-const REMOVE_ALLOWLIST: &str =
-    "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1";
+const REMOVE_ALLOWLIST: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1";
 const REMOVE_HOOK: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1";
 const REMOVE_DENY: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1";
-const REMOVE_PRECOMMIT: &str =
-    "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1";
+const REMOVE_PRECOMMIT: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1";
 const REMOVE_GUIDE: &str = "crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1";
 
 /// **A step of the teardown that refuses, followed the one way its route offers**: the
@@ -1355,7 +1355,10 @@ const HOOK_A_LINK_OUT: [Case; 1] = [Case {
          \"$PWD/../outside/pre-commit\" .git/hooks/pre-commit && chmod 444 \
          ../outside/pre-commit"
     )],
-    acts: &[Act::MakeWritable(Operand::Unprinted(".git/hooks")), Act::Run(0)],
+    acts: &[
+        Act::MakeWritable(Operand::Unprinted(".git/hooks")),
+        Act::Run(0),
+    ],
     holds: torn_down![],
     witnesses: &["theirs", "pre-commit"],
     over: THE_BIT_NOT_THE_LINK,
@@ -1370,7 +1373,10 @@ const A_HOOK_OF_JIGCS_IN_A_READ_ONLY_HOOKS_DIRECTORY: [Case; 1] = [Case {
     cause: "the hook is jigc's whole, so the step removes the file, and the hooks \
             directory may not be written",
     state: &[Step::Jigc(&["setup"]), shut!("555", ".git/hooks")],
-    acts: &[Act::MakeWritable(Operand::Unprinted(".git/hooks")), Act::Run(0)],
+    acts: &[
+        Act::MakeWritable(Operand::Unprinted(".git/hooks")),
+        Act::Run(0),
+    ],
     holds: &[
         Check::Absent(Place::Repo(WORKBENCH)),
         Check::Absent(Place::Repo(HOOK)),

@@ -228,7 +228,8 @@ const AN_ITEM_THE_RECORD_DOES_NOT_HOLD: [Case; 2] = retitle!(
 // ---------------------------------------------------------------------------
 
 /// A task that may create an ADR — its id slugs from the intent, `decide-tabs`.
-const A_DECISION_TASK: Step = Step::Jigc(&["start", "--workflow", "record-decision", "decide tabs"]);
+const A_DECISION_TASK: Step =
+    Step::Jigc(&["start", "--workflow", "record-decision", "decide tabs"]);
 /// The staged ADR of that task, titled *Use tabs*, and the same under the slug `tabs`.
 const THE_STAGED_ADR: &str = ".jigc/tasks/decide-tabs/docs/adr:use-tabs.md";
 const THE_STAGED_ADR_UNDER_A_SLUG: &str = ".jigc/tasks/decide-tabs/docs/adr:tabs.md";
@@ -292,9 +293,25 @@ const STAGED_BY_A_CREATE: [Case; 1] = [Case {
     state: &[
         SETUP,
         A_DECISION_TASK,
-        Step::Jigc(&["doc", "create", "adr", "--title", "Use tabs", "--task", "decide-tabs"]),
+        Step::Jigc(&[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Use tabs",
+            "--task",
+            "decide-tabs",
+        ]),
     ],
-    refusing: &["doc", "create", "adr", "--title", "Use Tabs!", "--task", "decide-tabs"],
+    refusing: &[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Use Tabs!",
+        "--task",
+        "decide-tabs",
+    ],
     acts: &[Act::Run(0)],
     holds: &[Check::Contains(Place::Repo(THE_STAGED_ADR), "# Use Tabs!")],
     ..W
@@ -469,7 +486,15 @@ const COMMITTED_AND_A_CREATE: [Case; 1] = [Case {
     cause: "a committed doc answers to the id a `jigc doc create` mints from its title, and \
             the title differs from the doc's",
     state: a_committed_adr![A_SECOND_TASK],
-    refusing: &["doc", "create", "adr", "--title", "Use Tabs!", "--task", "again"],
+    refusing: &[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Use Tabs!",
+        "--task",
+        "again",
+    ],
     acts: &[Act::RunChosen(Chosen {
         line: 2,
         own: &[
@@ -500,15 +525,7 @@ const COMMITTED_AND_A_CREATE_UNDER_A_SLUG: [Case; 1] = [Case {
             title differs from the doc's",
     state: a_committed_adr![A_SECOND_TASK],
     refusing: &[
-        "doc",
-        "create",
-        "adr",
-        "--title",
-        "Other",
-        "--slug",
-        "use-tabs",
-        "--task",
-        "again",
+        "doc", "create", "adr", "--title", "Other", "--slug", "use-tabs", "--task", "again",
     ],
     acts: &[Act::RunChosen(Chosen {
         line: 2,
@@ -583,7 +600,14 @@ const COMMITTED_AND_AN_AUTHOR_UNDER_A_MIGRATIONS_SLUG: [Case; 1] = [Case {
         A_FOREIGN_NOTE_COMMITTED[0],
         A_FOREIGN_NOTE_COMMITTED[1],
         A_FOREIGN_NOTE_COMMITTED[2],
-        Step::Jigc(&["migrate", "notes/old.md", "--as", "adr", "--slug", "use-tabs"]),
+        Step::Jigc(&[
+            "migrate",
+            "notes/old.md",
+            "--as",
+            "adr",
+            "--slug",
+            "use-tabs"
+        ]),
         ANOTHER_TITLE,
     ],
     refusing: &[
@@ -626,8 +650,12 @@ const COMMITTED_AND_AN_AUTHOR_UNDER_A_MIGRATIONS_SLUG: [Case; 1] = [Case {
 /// A task of the workflow whose `allows-create` entry carries `new: true` — its id slugs
 /// from the intent, `report-a-bug` — and a file somebody wrote at the home of the finding
 /// *Slow start*, in no commit.
-const A_REPORT_TASK: Step =
-    Step::Jigc(&["start", "--workflow", "report-jigc-feedback", "report a bug"]);
+const A_REPORT_TASK: Step = Step::Jigc(&[
+    "start",
+    "--workflow",
+    "report-jigc-feedback",
+    "report a bug",
+]);
 const THE_TAKEN_HOME: &str = "docs/jigc-feedback/slow-start.md";
 const A_FILE_AT_THE_HOME: Step = Step::File(Place::Repo(THE_TAKEN_HOME), "# Slow start\n");
 const REPORT_AREA: &str = ".jigc/tasks/report-a-bug";

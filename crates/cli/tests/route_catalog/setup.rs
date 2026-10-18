@@ -55,8 +55,7 @@ pub const HOOK_LINK_SITE: &str = "crates/cli/src/setup.rs::hook_link_refusal::se
 // replaces what it finds, in the order the install writes them.
 const BOOTSTRAP: &str =
     "crates/cli/src/setup.rs::replaced_path_refusal::setup.write-bootstrap#dynamic-1";
-const STAMP: &str =
-    "crates/cli/src/setup.rs::replaced_path_refusal::setup.version-stamp#dynamic-1";
+const STAMP: &str = "crates/cli/src/setup.rs::replaced_path_refusal::setup.version-stamp#dynamic-1";
 const LAYER: &str =
     "crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1";
 const MARKER: &str =
@@ -787,7 +786,9 @@ const RECORD_A_FIFO: [Case; 1] = [Case {
     cause: "`.jigc/settings-entries.json` is a FIFO",
     state: &[Step::Fifo(Place::Repo(".jigc/settings-entries.json"))],
     acts: REMOVE,
-    holds: &[Check::RegularFile(Place::Repo(".jigc/settings-entries.json"))],
+    holds: &[Check::RegularFile(Place::Repo(
+        ".jigc/settings-entries.json",
+    ))],
     ..SETUP
 }];
 
@@ -1309,7 +1310,10 @@ const TEMPLATE_WITHOUT_THE_INVOCATION: [Case; 1] = [Case {
     name: "setup-launch-template-without-the-invocation",
     site: LAUNCH_TEMPLATE,
     cause: "the launch template holds no `jigc workflow … --task …` line",
-    state: &[Step::File(PROFILE, template!("\"Use `{{workflow}} {{task_id}}`\""))],
+    state: &[Step::File(
+        PROFILE,
+        template!("\"Use `{{workflow}} {{task_id}}`\""),
+    )],
     env: ADAPTERS,
     acts: &[Act::Run(0)],
     holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
@@ -1657,17 +1661,13 @@ const BOOTSTRAP_WRITE: &str =
     "crates/cli/src/setup.rs::write_install_span::setup.write-bootstrap#1";
 const REFERENCE_WRITE: &str =
     "crates/cli/src/setup.rs::write_install_span::setup.inject-reference#1";
-const LAYER_WRITE: &str =
-    "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1";
+const LAYER_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1";
 const STAMP_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.version-stamp#1";
-const SEED_WRITE: &str =
-    "crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1";
-const RECORD_ASKED: &str =
-    "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1";
+const SEED_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1";
+const RECORD_ASKED: &str = "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1";
 const ALLOWLIST_MERGE: &str =
     "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2";
-const RECORD_WRITE: &str =
-    "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3";
+const RECORD_WRITE: &str = "crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3";
 
 const WORKBENCH_IGNORE: &str = ".jigc/.gitignore";
 const LAYER_KEEP: &str = ".jigc/config/.gitkeep";
@@ -2022,8 +2022,7 @@ const NO_SEED_UNDER_A_SHUT_ROOT: [Case; 1] = [Case {
 
 /// The settings file as a link to the reference host — a regular file inside the
 /// repository, so the install follows it.
-const SETTINGS_ARE_THE_HOST: Step =
-    Step::LinkTo(Place::Repo(SETTINGS_JSON), "../CLAUDE.md");
+const SETTINGS_ARE_THE_HOST: Step = Step::LinkTo(Place::Repo(SETTINGS_JSON), "../CLAUDE.md");
 
 /// **The one state that fails a read of the settings file inside the span**: the file was
 /// asked before the first write and could take the merge; since then the install has
@@ -2237,7 +2236,9 @@ const IN_A_WORKTREE_OF_A_BARE_REPOSITORY: [Case; 1] = [Case {
         Act::MakeWritable(Operand::Unprinted("../bare.git/hooks")),
         Act::Run(0),
     ],
-    holds: &[Check::RegularFile(Place::Outside("bare.git/hooks/pre-commit"))],
+    holds: &[Check::RegularFile(Place::Outside(
+        "bare.git/hooks/pre-commit",
+    ))],
     ..SETUP
 }];
 const HOOKS_PATH_A_FILE: [Case; 1] = hook_refused!(
@@ -2773,7 +2774,8 @@ const STAGED_AND_GONE_ON_AN_UNBORN_HEAD: [Case; 3] = [
 // ---------------------------------------------------------------------------
 
 /// git could not answer the question the install asks before its first write.
-const UNVERIFIED: &str = "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1";
+const UNVERIFIED: &str =
+    "crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1";
 
 /// **git cannot answer, followed with the question asked as the route prints it, and
 /// without.** *Run `git …` to see what git reports* cites the line for what it prints, and
@@ -3752,10 +3754,7 @@ pub const READINGS: &[Reading] = &[
                      this code at its own site — the cases `setup-workbench-ignore-a-link-…`",
                 ),
             ),
-            (
-                "`.jigc/.gitignore` is a FIFO",
-                GIT_READS_AN_IGNORE_FILE,
-            ),
+            ("`.jigc/.gitignore` is a FIFO", GIT_READS_AN_IGNORE_FILE),
             (
                 "`.jigc/.gitignore` cannot be asked about, or may not be read",
                 Why::NotConstructible(
