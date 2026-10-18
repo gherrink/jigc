@@ -77,6 +77,9 @@
 //!   one argument object the line names, and nothing a shell reads; each act's count; the
 //!   tool that wrote the opening, by its hash
 //!   ([`a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads`]);
+//!   and every one says that the Workflow tool answers at once, and that the return is the
+//!   result of the task notification that comes when the Workflow ends
+//!   ([`every_prompt_file_says_that_the_return_is_its_task_notifications_result`]);
 //! - **the acts, run in order through the clone's own harness, each as its prompt file says**
 //!   — the first stage ever run on that opening: part 1 to its stop, part 2 to its return,
 //!   the order ruled, part 3 to its second record, the budget raised, a wave that dies after
@@ -3928,6 +3931,54 @@ fn a_prompt_file_holds_the_arguments_its_line_names_and_nothing_a_shell_reads() 
         "{line}"
     );
     assert!(!small.root("canary").join("prompts").exists());
+}
+
+/// **Every prompt file says that the return is its task notification's result** (DECISIONS.md
+/// → *2026-10-18 — A stage's return is read from its notification only*). The fifth root's
+/// part 4 act 1: the Workflow tool answered at once that it had launched in the background,
+/// and seven seconds later the act's session wrote an invented return to the act's return
+/// file; the real result came as a task notification 23 minutes later. So every prompt file
+/// the setup writes — each act's, each ruling's off the main line and the write guard's
+/// probe's — says what the tool's first answer is, that the return is the notification's
+/// result, that the return file is written from that result alone, and that nothing is said
+/// before it; and none tells the session to write the file once the tool has returned.
+#[test]
+fn every_prompt_file_says_that_the_return_is_its_task_notifications_result() {
+    let canary = Canary::parts("parts-notification");
+    let line = canary.ready("canary", &[PARTS]);
+    let mut prompts: Vec<&str> = line["acts"]
+        .as_array()
+        .expect("the acts")
+        .iter()
+        .chain(line["rulings"].as_array().expect("the rulings"))
+        .chain([&line["guard"]])
+        .map(|act| act["prompt"].as_str().expect("a prompt file"))
+        .collect();
+    prompts.sort_unstable();
+    assert_eq!(
+        prompts.len(),
+        ACTS.len() + 3,
+        "every act, the two rulings off the main line and part 0"
+    );
+    for path in prompts {
+        let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        for said in [
+            "The Workflow tool answers at once that it launched in the background, and that answer is not its return",
+            "its return is the result of its task notification, which comes when the Workflow ends",
+            "the return file is written from that result and nothing else",
+            "nothing is said of what it did before that notification arrives",
+            "When that notification has come, write its result to the file named on the next line",
+        ] {
+            assert!(
+                text.contains(said),
+                "the prompt file {path} says: {said}\n{text}"
+            );
+        }
+        assert!(
+            !text.contains("When the Workflow tool has returned"),
+            "the prompt file {path} has the file written once the tool has answered:\n{text}"
+        );
+    }
 }
 
 /// **No planted row says which way its claim falls, nor that it was planted** (what the

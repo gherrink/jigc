@@ -1180,7 +1180,11 @@ ANY_ROOT = ("part-4-act-3", "part-4-act-5")
 # WHAT AN ACT'S PROMPT FILE SAYS — the text the human pastes as the one message of a session
 # that stands in the clone. It says one thing, and HOLDS NOTHING A SHELL READS: the three
 # things it names stand each on a line of its own, the argument object as ONE line of JSON
-# with no escape in it (a root is of plain segments, and no word of an act needs one).
+# with no escape in it (a root is of plain segments, and no word of an act needs one). AND
+# IT SAYS WHERE THE RETURN COMES FROM (DECISIONS.md -> 2026-10-18, "A stage's return is read
+# from its notification only"): the tool answers at once that it launched in the background,
+# and the return is the result of the task notification that comes when the Workflow ends -
+# in the fifth root a session wrote an invented return seven seconds after the launch.
 PROMPT = """Invoke the Workflow tool ONCE, by the path of its script, with the arguments below - and do nothing else.
 
 scriptPath - the next line, whole:
@@ -1189,7 +1193,9 @@ scriptPath - the next line, whole:
 args - the JSON object on the next line, as it stands:
 %(args)s
 
-When the Workflow tool has returned, write what it returned to the file named on the next line, with the file tool: the whole return, as JSON, unchanged.
+The Workflow tool answers at once that it launched in the background, and that answer is not its return: its return is the result of its task notification, which comes when the Workflow ends - the return file is written from that result and nothing else, and nothing is said of what it did before that notification arrives.
+
+When that notification has come, write its result to the file named on the next line, with the file tool: the whole return, as JSON, unchanged.
 %(returns)s
 
 Then say that the return is written, and stop. Whatever the return says - stopped, refused, halted - it is the result of this act: invoke nothing a second time, run no command, read no file of the repository, and repair nothing.
