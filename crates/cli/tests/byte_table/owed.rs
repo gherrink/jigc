@@ -46,8 +46,4 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// now, by the human's ruling of 2026-10-13. A leaf leaves
 /// this list in the commit that brings its cells — after which every need of its row is a
 /// cell or a line of `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[
-    (&["doc", "create"], "B6"),
-    (&["doc", "author"], "B6"),
-    (&["milestone", "finalize"], "B7"),
-];
+pub const CELLS_OWED: &[(&[&str], &str)] = &[(&["milestone", "finalize"], "B7")];

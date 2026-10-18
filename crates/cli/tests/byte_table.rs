@@ -6,12 +6,12 @@
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has fifteen rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight, whose
-//! cells are owed but for its six edit leaves' — and 310 cells: the acceptance's
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, and the doc family's eight — and 344
+//! cells: the acceptance's
 //! twelve, the task family's sixty-five** (`jigc task finalize`, `jigc task discard`), **the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
-//! **and the doc family's hundred and two** (its six edit leaves), of which seventy-two run
-//! on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! **and the doc family's hundred and thirty-six** (its eight leaves), of which eighty-four
+//! run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family —
 //! the arms that hold the
 //! comparison, the reader and the
@@ -1507,6 +1507,26 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         "W2",
         &[Prepared::Of(State::CommittedSingletons)],
     ),
+    (
+        &["doc", "create"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "create"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "author"],
+        "W1",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
+    (
+        &["doc", "author"],
+        "W2",
+        &[Prepared::Of(State::CommittedSingletons)],
+    ),
 ];
 
 /// Why the doc family's `W3` excuses nothing, and never will: it lets nothing change at
@@ -1670,9 +1690,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "create"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "create"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "create"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "create"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "create"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "create"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "create"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -1681,9 +1699,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
-    (&["doc", "author"], "W1", ITS_FAMILYS_CELLS),
-    (&["doc", "author"], "W2", ITS_FAMILYS_CELLS),
-    (&["doc", "author"], "W3", ITS_FAMILYS_CELLS),
+    (&["doc", "author"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "author"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "author"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "author"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -5918,6 +5934,18 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "doc-add-a-milestone-a-file-of-the-users-in-the-docs-place",
             "doc-add-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place",
             "doc-add-a-milestone-a-link-to-a-file-outside-in-the-docs-place",
+            "doc-create-the-vision-a-file-of-the-users-in-the-docs-place",
+            "doc-create-the-vision-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-create-the-vision-a-link-to-a-file-outside-in-the-docs-place",
+        ],
+    ),
+    (
+        "r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound",
+        Classification::RefusedAndChanged,
+        &[
+            "doc-author-the-vision-a-file-of-the-users-in-the-docs-place",
+            "doc-author-the-vision-a-link-to-a-file-in-the-repository-in-the-docs-place",
+            "doc-author-the-vision-a-link-to-a-file-outside-in-the-docs-place",
         ],
     ),
     (
@@ -6370,12 +6398,12 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (310, 238, 72),
+        (344, 260, 84),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          sixty-five — fifty-three in the gate, twelve on demand — the install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — and \
-         the doc family's six edit leaves' a hundred and two: sixty-six in the gate, \
-         thirty-six on demand"
+         the doc family's a hundred and thirty-six: eighty-eight in the gate, forty-eight \
+         on demand"
     );
 }
 

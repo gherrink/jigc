@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-18, with the third commit of the doc family's task (`B6`): §11, the two minting doors' cells — three more cells under one of §10's keys, and one key of its own.*
+
 *Changed 2026-10-18, with the second commit of the doc family's task (`B6`): §10, the six edit leaves' cells — two keys, eighteen cells, each at the home a write copies in from.*
 
 *Changed 2026-10-18, by the fourth of the fixes after the review of the task `B6`'s first two commits: in §7 the cell of `T2` with a file in the workbench's place leaves the table for a scheduled row, since it never reached `T2`; §6's ruling on entry 10 reads in the human's words; and §9 records what `task finalize` prints at the stamp when the user's index holds a change there — a key of its own.*
@@ -391,3 +393,20 @@ git show --stat --format=%s HEAD                       # .jigc/version | 1 -
 ### Seen, and held by no cell
 
 Where the home holds no doc body at all — a link to nothing, a directory, or the committed doc's file deleted from the tree — each of the six refuses with *"no staged instance for `<address>`"*, and two of its forms route at the create: *"create `roadmap` from a task minted on a workflow that grants it"*, and at `set-field` and `rename` *"provision it first (`jigc start` / `jigc doc create <type> --title 'X'`)"* — over a doc the committed store holds, whose file the user has only to bring back. A cell holds bytes and not words, and these cells hold; what the route says is the surface contract's to judge (law 1), for the run's ledger.
+
+## 11. The doc family's two minting doors — 22 cells in the gate and 12 on demand, six red on this tree's binary under two keys
+
+*2026-10-18, this tree's debug build, macOS arm64; the third commit of the doc family's task (`B6`). The leaves are `jigc doc create` and `jigc doc author`, each over the vision `committed-singletons` holds at `VISION.md`, in a task on `form-vision`, whose create-gate admits it. Eleven cells a leaf in the gate, as at the edit leaves (§10), and six on demand, none red there. **Sixteen hold or refuse having changed nothing**: the base cells, which copy the vision in for update; a file of the user's in the task's area and beside the file-state record; a link to nothing, a directory and the doc's file deleted, where each door mints a fresh vision at exit 0, as `design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4) has it — *"still mints fresh and is refused at the committing door, not at the create"*; and the file deleted after the task's first write. The six below stand at the home with a file there that is no doc of its type, carry the mark of the rows' record's §6, entry 14, and lose no byte.*
+
+### `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type` — three more cells
+
+- *The cells.* `doc-create-the-vision-a-file-of-the-users-in-the-docs-place`, `…-a-link-to-a-file-in-the-repository-in-the-docs-place`, `…-a-link-to-a-file-outside-in-the-docs-place`.
+- *What they came to.* **Not the listed outcome**: exit 0, *"already existed — copied in for update"* — the user's file, or the file the link leads to, staged as the vision. The key is §10's; it holds six cells now.
+
+### `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound`
+
+- *The cells.* `doc-author-the-vision-a-file-of-the-users-in-the-docs-place`, `…-a-link-to-a-file-in-the-repository-in-the-docs-place`, `…-a-link-to-a-file-outside-in-the-docs-place`.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, `write.non-reparseable`, routed *"nothing was persisted"* — the staged copy rolled back, and the task's `roles.json` made, binding the role to the vision, and its `docs/provenance.json` written for it.
+- *Held against.* `W5`, and `design/write-commands.md` → *The verbs*, its own words for this door: the whole payload *"rejected with nothing staged and nothing to roll back"*, *"a corrupt payload is rejected whole (atomic), never half-applied"*, and *"the `create_gated` pre-image is rolled back too"*. Under entry 14's other reading the cells stay red. **No byte is lost.**
+
+*The previous release, for §10 and §11 alike*: the family's 136 cells come out there as they come out here, cell for cell (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked; the arm on a named binary). Its committed print of the whole table is the family's numbers commit's.

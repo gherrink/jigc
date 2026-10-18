@@ -2,6 +2,7 @@
 # Printed on 2026-10-15 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 11 at its start and 9 at its end: thirty-six cells — the task family's twelve and the install family's twenty-four — four red, each `jigc uninstall` that acts, by its line `U9`. The block below is the arm's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the fourth of the fixes after the review of the task `B6`, at a load average of 11 at its start and 9 at its end: the same block, byte for byte.
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's six edit leaves (the task `B6`'s second commit of that family), at a load average of 10 to 18: seventy-two cells — the thirty-six above, the same lines byte for byte, and the six edit leaves' thirty-six, none red. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's two minting doors (the task `B6`'s third commit of that family), at a load average of 8 to 24: eighty-four cells — the seventy-two above, the same lines byte for byte, and the minting doors' twelve, none red. The block below is that run's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -75,3 +76,15 @@ doc-rename-a-decision-the-task-made-in-migrated	jigc doc rename adr:two-ways --t
 doc-rename-a-decision-the-task-made-in-refs-post-hoc	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	refs-post-hoc	acts	holds	exit 0
 doc-rename-a-decision-the-task-made-in-chatty-hooks	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	chatty-hooks	acts	holds	exit 0
 doc-rename-a-decision-the-task-made-in-vendored	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	vendored	acts	holds	exit 0
+doc-create-the-vision-in-bare	jigc doc create vision --title Vision --task form-the-project-vision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-create-the-vision-in-fresh	jigc doc create vision --title Vision --task form-the-project-vision	fresh	acts	holds	exit 0
+doc-create-the-vision-in-migrated	jigc doc create vision --title Vision --task form-the-project-vision	migrated	acts	holds	exit 0
+doc-create-the-vision-in-refs-post-hoc	jigc doc create vision --title Vision --task form-the-project-vision	refs-post-hoc	acts	holds	exit 0
+doc-create-the-vision-in-chatty-hooks	jigc doc create vision --title Vision --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
+doc-create-the-vision-in-vendored	jigc doc create vision --title Vision --task form-the-project-vision	vendored	acts	holds	exit 0
+doc-author-the-vision-in-bare	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-author-the-vision-in-fresh	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	fresh	acts	holds	exit 0
+doc-author-the-vision-in-migrated	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	migrated	acts	holds	exit 0
+doc-author-the-vision-in-refs-post-hoc	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	refs-post-hoc	acts	holds	exit 0
+doc-author-the-vision-in-chatty-hooks	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
+doc-author-the-vision-in-vendored	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	vendored	acts	holds	exit 0

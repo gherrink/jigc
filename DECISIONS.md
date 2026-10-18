@@ -2,6 +2,31 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-18 — The doc family's two minting doors have their cells — 22 in the gate and 12 on demand — and six are red on this tree, each at a home that holds a file that is no doc of its type: `doc create` takes it as the doc it updates, and `doc author` refuses and leaves its task's role bound, where its doc has the payload rejected with nothing to roll back (the byte table, task `B6`, the doc family's third commit)
+
+**What.** The cells of `jigc doc create` and `jigc doc author` ([doc.rs](crates/cli/tests/byte_table/doc.rs)), the family's second part, each over the vision `committed-singletons` holds at `VISION.md`, in a task on `form-vision`; the lists. No row and no frame changes, and no product source. The two leave the list of leaves whose cells are owed: **every leaf of the doc family has its cells**, and the list holds `milestone finalize` alone again.
+
+### The cells, on this tree's binary
+
+Eleven a leaf in the gate, built as the edit leaves' are (the entry below): the refusing cell (*"no active task"*), the base cell — the committed vision copied in for update — `W1` × U, `W2` × U with the baseline taken away, and `W3`'s seven. **Over a home with no doc body each door mints a fresh vision at exit 0** — a link to nothing, a directory, the file deleted — as `design/finalize.md` → *4. Promote managed docs*, *Declared bounds*, (4) has it of the create (*"still mints fresh and is refused at the committing door, not at the create"*), and `doc author` shares its `create_gated` path; those cells hold. **Sixteen hold**, and all twelve on demand. **Six are red** ([byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §11), each marked with the rows' record's §6, entry 14:
+
+| key | cells | came to |
+|---|---:|---|
+| `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type` | 3 more, 6 in all | *not the listed outcome* — `create` stages the file as the vision, *"already existed — copied in for update"* |
+| `r1-doc-author-refuses-over-a-home-that-is-no-doc-of-its-type-and-leaves-its-role-bound` | 3 | *refused, and changed what a refusal may not* — the copy rolled back, the task's `roles.json` made and its provenance written, under *"nothing was persisted"* |
+
+The second is held against the door's own sentences as well as `W5`: the payload *"rejected with nothing staged and nothing to roll back"*, *"the `create_gated` pre-image is rolled back too"*. **No byte of the user's is lost**, and the same 34 cells come out on the previous release (`1.0.0-rc.24`, sha256 `accf3996…ab5d`, checked; the arm on a named binary) as here, cell for cell.
+
+**Entry 14 is extended, not added to**: [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6 and [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) → §13 say what the two doors met; the robust answer — refuse before the copy-in, staging nothing — is one rule at all eight leaves.
+
+### The lists
+
+344 cells — 260 in the gate, 84 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 72 that stood, byte for byte, and the minting doors' 12). The doc family: 136 cells, 88 in the gate, **24 red under three keys**. The expected-red list: **68 cells under sixteen keys**. Marked cells: twenty-six. Scheduled needs: six, as they were. The owed list of leaves holds the fifteen of `B7` to `B9`.
+
+### Not established
+
+- **Whether `doc author` over a committed doc that does parse leaves anything behind on a refusal** — a payload item that collides (`write.already-present`): the doors' sweep `crates/cli/tests/write_miss_shape_axis.rs` holds the staged bytes, not `roles.json`.
+
 ## 2026-10-18 — The doc family's six edit leaves have their cells — 66 in the gate and 36 on demand — and eighteen are red on this tree under two keys, each at the home a write copies in from and each marked with one new silence: a file there that is no doc of its type is copied in, spliced into by `add-item` and left staged by the five that refuse; and a staged doc re-slugged inside a task that stands is no staged doc lost (the byte table, task `B6`, the doc family's second commit)
 
 **What.** The cells of `jigc doc add-item`, `remove-item`, `retitle-item`, `set-field`, `set-slot` and `rename` ([doc.rs](crates/cli/tests/byte_table/doc.rs)) on the rows of the family's first commit; one correction of the frame a cell of `doc rename` needed, red first; the lists. No row was touched, and no product source changes. The six leave the list of leaves whose cells are owed; `create` and `author`, the second part, stay on it for the next commit.
