@@ -2010,6 +2010,13 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 — `design/corpus-migration.md` → *The corpus walk — the placement branches become a union (M42)*
 
+- *Searched* — every design doc, `DECISIONS.md` and the fix pass's record — *two docs saying two things*, and one decision of the builder's that names the move for what it is and keeps it:
+
+> **The genuine hole was `relocate`'s foreign-squatter displacement.** It `git rm --cached`s a user's committed-but-unmanaged file at the destination and renames it into the **gitignored** `.jigc/` workbench — F3's shape exactly one door over, except that here the bytes survive. Which is what makes **the ack naming it the entire safety property**: a move into a gitignored tree is indistinguishable from a deletion to anyone who does not read the output
+
+— `DECISIONS.md` → *2026-08-13 — The latent-surface sweep: one arm, and the honest reason there is only one*
+
+  — a fence of what the ack prints, not a ruling that the move is right; the fix pass's ledger holds the parking's other faults, fixed (`CPL-4`, a basename overwritten; `CPL-8`, a refused `placement-root` re-point that leaves its squatter parked), and none of the question.
 - *What the product does* — driven by the cells: `relocate` parks the committed file under `.jigc/displaced/`, frees its index entry and stages the move over it, exit 0, the file named *displaced*; `config set docs-root` refuses there, `fatal: destination exists`, as it refuses every squatter (§23 of the findings).
 - *What the product should do — robust; which side is wrong.* **Block that doc**, as `migrate-corpus` does: a file the user committed is the user's content in the tree, and a move that stages it out — into a workbench no commit carries and no clone sees — takes it out of the repository at the user's next commit, where they asked for a doc to move and nothing to leave. **What is wrong**: `design/reconciliation.md`'s committed-squatter sentence, and `relocate`'s product that follows it. The untracked squatter parked stays as it is: it was never in a commit, and the workbench keeps it.
 - *The other answer*: park it, at all three doors, and say so in `design/corpus-migration.md`.

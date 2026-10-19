@@ -1288,7 +1288,7 @@ find notes -print                                                    # notes · 
 - *The cells.* Five: a file of the user's, a link to nothing, a link to a file in the repository, a link to a file outside, a directory, at the decision's new home.
 - *What they came to.* **Not the listed outcome**: exit 1, `config.repoint-failed` — *"`git mv … ` failed: fatal: destination exists"*, or a write through the entry refused — the re-point undone, nothing changed.
 - *Held against.* *"delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"* (`design/storage.md` → *Placement*) — `CS3` — and `relocate`'s cells, which park every one of them.
-- *Which is wrong, and why.* **The code.** Nothing is lost, and a refusal is safe — but the doc and the sibling door park, and a user who meets *"fatal: destination exists"* in git's words has no route but to move the file by hand. *Robust*: park it, as `relocate` does, and name it.
+- *Which is wrong, and why.* **The code.** Nothing is lost, and a refusal is safe — but the doc and the sibling door park, and a user who meets *"fatal: destination exists"* in git's words has no route but to move the file by hand. *Robust*: park it, as `relocate` does, and name it. *And the product parks it at the other root knob*: `config set placement-root notes` over a file of the user's at `notes/roadmap.md` parks it under `.jigc/displaced/` and names it, exit 0 (driven on this tree's binary, `committed-singletons`) — one mover, two answers by knob.
 
 ```zsh
 # the corpus of the key above, up to its commit; then:
