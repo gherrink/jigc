@@ -2,6 +2,38 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The movers family's movers get their cells — `relocate`'s twenty-three and `config set`'s thirty-four, twenty red under eight keys; a file the user committed at a mover's new home is entry 23, where two docs say two things; what squats a mover's new home is a place the plants aim at, and a directory parked there carries its files, each red first (the byte table, task B8, the fourth of its commits)
+
+**What.** The cells of the movers family's two movers, built from the rows of the task's second commit ([movers.rs](crates/cli/tests/byte_table/movers.rs); what they came to, [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §25). Fifty-seven cells: forty-five in the gate, in `fresh`, and twelve on demand. **No product source changes.** The list of leaves whose cells are owed is empty again ([owed.rs](crates/cli/tests/byte_table/owed.rs)): every need of the family's four rows is a cell.
+
+### The cells
+
+- **`relocate`** — over a note pack listed from the repository's root and a note committed at its old home: the move; every kind of plant at the stranded note's place and at its new home; a file of the user's beside the baseline. **Five red, under two keys**: a link or a directory in the note's place is refused — and the command exits 0 (`r1-relocate-refuses-a-doc-and-exits-0`; the code is wrong: the sibling's settled rule is that a refusal is the exit code); a file the user committed at the new home is parked (`r1-relocate-parks-a-file-the-user-committed-at-a-new-home`, marked with entry 23).
+- **`config set`** — `docs-root` re-pointed over a committed decision, a knob that moves nothing, and the manifest in every shape. **Fifteen red, under six keys**, each the code's: the user's comment dropped from the manifest; a manifest that holds no mapping of knobs replaced (*lost*); the knob written through a link at the manifest (*lost*); a re-point past a link to nothing or a directory at a doc it strands, at exit 0; a refusal that leaves the directories its re-point made; every squatter at a new home refused where its doc and the sibling door park it.
+- **Relisted by the run, where no doc gives the code**: at the manifest, a directory and an edit that breaks the YAML refuse `config.repoint-failed`, and a manifest of the user's that is no YAML mapping is listed as refusing the same way — the run's own answer to what it cannot read; a file in the place of the config layer's directory is a project not set up; `relocate` in a state with no `note` doctype refuses `store.unknown-type`.
+
+### Entry 23 — two docs, two answers
+
+A file the user committed at a mover's new home: `design/reconciliation.md` frees its index entry and parks it; `design/corpus-migration.md` blocks a relocation whose destination holds *"anything else"*. *Robust*: block that doc — a file the user committed is their content in the tree, and a move that stages it out takes it out of the repository at their next commit; the reconciliation doc and `relocate` are wrong. *Until ruled*: blocked; the two cells marked ([the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, entry 23; [the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) → §22).
+
+### The frame, red first
+
+- **What squats a mover's new home is a place the plants aim at** (`byte_cell::aimed`): a file of the user's, one committed, a link, a directory go to one file's place a line moves aside (`RL3`, `CS3`) — the occupant is what the line is for. *Red first*: with the leaves' cells no longer owed, the cell fence named the twelve needs `RL3 × U`, `T`, `L` and `K` and `CS3`'s, beside every other need of the two rows.
+- **A directory parked whole carries the files in it**: a plant in a directory that stood at a place a line moves aside stands where the directory went. *Red first*: a case of [`a_moved_doc_lands_at_its_doctypes_home`](crates/cli/tests/byte_table.rs) came out *written outside its allowance* — the file under `.jigc/displaced/` made, and no line covering it.
+
+### The lists
+
+Six hundred and fifty-seven cells: five hundred and one in the gate, a hundred and fifty-six on demand; the expected-red list a hundred and thirty-nine cells under thirty-six keys; five marked cells. `RL1`, `RL3`, `RL4`, `CS1`, `CS2`, `CS4` excuse in `fresh`; `RL2` and `CS5` excuse nothing by themselves (a staged entry is excused under the line that wrote it); `CS3` excuses nothing on this tree, which refuses every squatter; the two leaves' refusals rebuild no cache (`C1`, `C2`), and they read no milestone's (`C3`). `THE_FAMILYS_CELLS_ARE_OWED`, the reason no line needs any more, is gone. The cells on demand reprinted: the hundred and forty-four lines before them the same, byte for byte.
+
+### What moved — on both binaries
+
+The whole table run on both binaries (the previous release's rebuild `accf3996…ab5d`, checked; 382 s): **no cell of the six hundred before moved** on either binary, and the fifty-seven new ones come out alike on both but two — `config set` over a link to a file at the decision's home moves the link and exits 0 on the previous release (*not the listed outcome*), where this tree refuses it and leaves the directories its re-point made (*refused, and changed*): the fix pass's store doors, and a key of this tree's. Every other key is red on both — not a regression. On the previous release 241 of the 657 cells are red, on this tree 153 (139 in the gate, fourteen on demand).
+
+### Decided here — as a builder, and open to being overturned
+
+- **The note pack is listed from the repository's root** (`note-pack/`), not from under `.jigc/`, which git ignores: a pack a project composes is a file of the project's.
+- **A manifest that holds no mapping of knobs is listed as refusing**, as the run refuses YAML it cannot parse; no doc says either.
+
 ## 2026-10-19 — The movers family's doors that commit get their cells — `rename`'s thirty-one, none red, and `migrate-corpus`'s thirty-nine, seventeen red under four keys, each saying which of the doc and the code it judges wrong; a migration from a prior home carries what was planted in its doc, and its commit is read against what `HEAD` held there, each red first (the byte table, task B8, the third of its commits)
 
 **What.** The cells of the movers family's two doors that commit, built from the rows the commit before wrote ([movers.rs](crates/cli/tests/byte_table/movers.rs); the record of what they came to, [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §24). Seventy cells: fifty-eight in the gate, in `fresh`, and twelve on demand, the base cell of each leaf in every other prepared state. **No product source changes.** `rename` and `migrate-corpus` leave the list of leaves whose cells are owed ([owed.rs](crates/cli/tests/byte_table/owed.rs)); `relocate` and `config set` stay on it, the task's next commit.

@@ -1994,6 +1994,27 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *The other answer*: the bound stands, the human's to declare, with its reach.
 - *Until ruled*, the reading under which more is red: the refusal changes nothing. MG1, `MG1, from a prior home`, MG2 and MG3 hold on a refusal **where the run committed** — *"the run's other docs still migrate and commit"* — and on no other (§7, *it committed*); the cell of a hook that rejects is red where the migration stays written, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §21).
 
+**23. A file the user committed at a mover's new home — is it parked in the workbench, or is the move blocked? Two docs say two things of the family's two kinds of relocation. Open.**
+
+*Recorded 2026-10-19, with the movers family's cells (the task `B8`, its fourth commit).*
+
+- *The words for parking it* — the freeze-exempt relocation and a root knob's re-point:
+
+> The foreign bytes are preserved verbatim in the workbench; a committed-but-unmanaged squatter's tracked-path index slot is freed so the managed `git mv` into the vacated destination succeeds.
+
+— `design/reconciliation.md` → *Relocation collisions — two resolutions for one collision (M39)*
+
+- *The words for blocking it* — the version-gated relocation, `migrate-corpus`'s, of the same act:
+
+> the destination holds **anything else** ⇒ a genuine collision. The doc is **blocked with a route**; nothing is written, nothing is removed.
+
+— `design/corpus-migration.md` → *The corpus walk — the placement branches become a union (M42)*
+
+- *What the product does* — driven by the cells: `relocate` parks the committed file under `.jigc/displaced/`, frees its index entry and stages the move over it, exit 0, the file named *displaced*; `config set docs-root` refuses there, `fatal: destination exists`, as it refuses every squatter (§23 of the findings).
+- *What the product should do — robust; which side is wrong.* **Block that doc**, as `migrate-corpus` does: a file the user committed is the user's content in the tree, and a move that stages it out — into a workbench no commit carries and no clone sees — takes it out of the repository at the user's next commit, where they asked for a doc to move and nothing to leave. **What is wrong**: `design/reconciliation.md`'s committed-squatter sentence, and `relocate`'s product that follows it. The untracked squatter parked stays as it is: it was never in a commit, and the workbench keeps it.
+- *The other answer*: park it, at all three doors, and say so in `design/corpus-migration.md`.
+- *Until ruled*, the reading under which more is red: the move is blocked. The cells of a file the user committed at the new home, `relocate`'s and `config set`'s, are listed as refusing, naming the new home, and carry this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §22).
+
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.

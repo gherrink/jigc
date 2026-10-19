@@ -838,6 +838,13 @@ impl Kind {
 /// command writes, as to a tracked file it rewrites; **M** to the knob's manifest, which
 /// the command merges a line into. **T** does not: a committed file at the place is the
 /// doc itself.
+///
+/// **And one file's place whose occupant a move parks** ([`May::MovedAsideTo`] at a path —
+/// a mover's destination, `RL3`, `CS3`): what squats a new home is what the line is for,
+/// so **U**, **T**, **L** and **K**, *a directory in a file's place*, go there — a file of
+/// the user's, one committed, a link, a directory (`design/reconciliation.md` →
+/// *Relocation collisions*). A place under a directory that is moved aside whole is no one
+/// file's, and none goes there.
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -866,17 +873,25 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
             May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
         )
     };
+    // One file's place whose occupant a move parks: a mover's destination.
+    let parks = |place: Where, may: May| one_file(place) && matches!(may, May::MovedAsideTo(_));
     let aimed = match (kind, line.allows) {
-        (Kind::Untracked, Allows::Files(_, may)) => lands(may) || read(may) || rewrites(may),
+        (Kind::Untracked, Allows::Files(place, may)) => {
+            lands(may) || read(may) || rewrites(may) || parks(place, may)
+        }
         (Kind::Committed, Allows::Files(place, may)) => {
-            lands(may) && one_file(place) && !matches!(place, Where::Hook)
+            (lands(may) && one_file(place) && !matches!(place, Where::Hook)) || parks(place, may)
         }
         (
             Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside | Kind::DirForAFile,
             Allows::Files(place, may),
         ) => {
             one_file(place)
-                && (lands(may) || read(may) || rewrites(may) || matches!(may, May::MergeInto))
+                && (lands(may)
+                    || read(may)
+                    || rewrites(may)
+                    || parks(place, may)
+                    || matches!(may, May::MergeInto))
         }
         (Kind::FileForADir, Allows::Files(place, may)) => {
             one_file(place) && (lands(may) || rewrites(may) || matches!(may, May::MergeInto))
@@ -2723,8 +2738,16 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             continue;
         }
         judged.insert(&plant.at);
+        // A plant at a place a line moves aside, or in a directory standing there, which is
+        // parked whole.
+        let in_a_parked_place = |place: Where| {
+            std::iter::successors(Some(plant.at.as_str()), |at| {
+                at.rsplit_once('/').map(|(up, _)| up)
+            })
+            .any(|at| tally.placed(place, at))
+        };
         let aside = tally.in_force().find_map(|(at, line)| match line.allows {
-            Allows::Files(place, May::MovedAsideTo(dir)) if tally.placed(place, &plant.at) => {
+            Allows::Files(place, May::MovedAsideTo(dir)) if in_a_parked_place(place) => {
                 let to = stands
                     .files
                     .iter()

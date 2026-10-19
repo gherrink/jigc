@@ -158,6 +158,15 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *Robust*: roll back what the run wrote; the re-run migrates again.
 - *Until ruled*: the refusal changes nothing — the lines that write hold on a refusal where the run committed, and on no other. *The cells* — the hook that rejects the family's commit, marked. *[2026-10-19, the task's third commit: `migrate-corpus-a-hook-that-rejects` is refused, and changed what a refusal may not, on both binaries — the migration left written and staged — under `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged` ([the findings](byte-table-findings.md) → §24), marked; `rename-a-hook-that-rejects` refuses having changed nothing.]*
 
+## 22. Whether a file the user committed at a mover's new home is parked or blocks the move (the record's entry 23) — open: two docs say two things
+
+*2026-10-19, the movers family's cells (the task `B8`, its fourth commit).*
+
+- *The words* — quoted in [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 23: `design/reconciliation.md` frees a committed squatter's index slot and parks the file; `design/corpus-migration.md` blocks a relocation whose destination holds *"anything else"*.
+- *What the product does.* `relocate` parks it, at exit 0; `config set docs-root` refuses, as it refuses every squatter.
+- *Robust*: block that doc — the user's committed file stays in the tree; the reconciliation doc and `relocate` change.
+- *Until ruled*: the stricter reading — the move is blocked. *The cells* — `relocate-a-file-the-user-committed-at-the-notes-new-home`, red on both binaries, and `config-set-a-file-the-user-committed-at-the-decisions-new-home`, which refuses having changed nothing; each marked.
+
 ## The marked cells
 
 A line a mark of a cell, as the suite prints it. A cell with two marks has two lines.
@@ -167,3 +176,5 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
 | silence 21 | `migrate-corpus-no-commit-a-decision-below-its-version` |
 | silence 22 | `migrate-corpus-a-hook-that-rejects` |
+| silence 23 | `relocate-a-file-the-user-committed-at-the-notes-new-home` |
+| silence 23 | `config-set-a-file-the-user-committed-at-the-decisions-new-home` |

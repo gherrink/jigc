@@ -38,7 +38,7 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// the rows of the family's seven other leaves, and their cells and `milestone finalize`'s
 /// in three parts after. The list was empty from then until `B8`'s rows came, a commit
 /// before their cells — the movers family's four, and with them their spellings' needs, owed
-/// until a cell of a spelling comes. A leaf leaves this list in the commit that
-/// brings its cells — after which every need of its row is a cell or a line of
-/// `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[(&["relocate"], "B8"), (&["config", "set"], "B8")];
+/// until a cell of a spelling comes — and is empty again since `B8`'s fourth commit brought
+/// the last of them. A leaf leaves this list in the commit that brings its cells — after
+/// which every need of its row is a cell or a line of `scheduled-cells.tsv` with its reason.
+pub const CELLS_OWED: &[(&[&str], &str)] = &[];

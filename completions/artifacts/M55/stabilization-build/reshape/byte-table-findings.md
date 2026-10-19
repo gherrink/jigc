@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, with the fourth commit of the movers family's task (`B8`), which brings the cells of its movers: §25, `relocate`'s twenty-three cells and `config set`'s thirty-four, twenty red under eight keys, each saying which of the doc and the code it judges wrong; one of them marked with the rows' record's §6, entry 23, a question of two docs; §14's lead for `relocate`'s store door answered.*
+
 *Changed 2026-10-19, with the third commit of the movers family's task (`B8`), which brings the cells of its doors that commit: §24, `rename`'s thirty-one cells, none red, and `migrate-corpus`'s thirty-nine, seventeen red under four keys — the same on both binaries, each key saying which of the doc and the code it judges wrong; §14's two leads for `B8` answered at these doors.*
 
 *Changed 2026-10-19, with the second commit of the movers family's task (`B8`), which writes the family's rows: §23, two keys where the docs agree on what makes no sense for a user — a root knob's moves staged and the knob they follow left unstaged, and `config set`'s *"commit it with your next commit"* under the ruling on entry 19 — each driven on both binaries.*
@@ -669,7 +671,7 @@ $JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, shar
 | `cli/src/task.rs`, `git_home_claims` (*"nothing was written: `git …` failed"*) | the committing doors, `task finalize` and `milestone finalize`, and `milestone create`'s guard of a record's home | **a lead for `B7`** — `design/finalize.md` → *4. Promote managed docs*, *"a git that cannot answer fails the door **before anything is written**"*; the task family's cells make no git fail |
 | `engine/src/file_state.rs`, a pin git cannot answer (*"nothing was written and nothing was adopted"*) | `reconcile_committed`, the finalize preflight | **a lead for `B7`**, as above: no cell makes git fail |
 | `cli/src/milestone.rs`, the record whose home is no regular file; `engine/src/milestone.rs`, a record's home taken, and a record missing from the worktree (*"nothing was written"*); and a settled sub-task's leftover (*"nothing was changed"*) | the `milestone` doors | **a lead for `B7`** — four sentences |
-| `engine/src/finalize.rs`, the store door's shape arm (*"nothing was written through `<destination>`"*) | `rename`, `relocate`, `migrate-corpus` | **a lead for `B8`** — *[answered at `rename` on 2026-10-19 by the task's third commit: the four cells of a link or a directory at the decision's home print it, and refuse having changed nothing, on both binaries (§24); `migrate-corpus` never reaches it there — it reads past the entry, §24's first key; `relocate`'s is the task's fourth commit's]* |
+| `engine/src/finalize.rs`, the store door's shape arm (*"nothing was written through `<destination>`"*) | `rename`, `relocate`, `migrate-corpus` | **a lead for `B8`** — *[answered at `rename` on 2026-10-19 by the task's third commit: the four cells of a link or a directory at the decision's home print it, and refuse having changed nothing, on both binaries (§24); `migrate-corpus` never reaches it there — it reads past the entry, §24's first key; `relocate` prints it at a link or a directory in a stranded doc's place, and exits 0, the task's fourth commit (§25)]* |
 | `cli/src/render.rs`, the dry run's header and its tail (*"dry run — nothing written"*, *"nothing was written"*) | `migrate-corpus --dry-run` | **a lead for `B8`** — two sentences — *[answered on 2026-10-19 by the task's third commit: the spelling's eight cells print the header, the two that would migrate the tail as well, and none writes a byte, on both binaries (§24); the header's one exception, the invocation log, is a knob no prepared state sets]* |
 
 No doc-family cell reaches any sentence of the table but §12's two and the unset's ack, and no row of it but §12's is a finding of the product.
@@ -1158,3 +1160,147 @@ git status --porcelain                                                    # M  d
 - **`migrate-corpus` without a task's baseline adopts none.** A doc the user committed by hand is migrated and committed, and the file-state baseline is not written — *"an untracked doc adopts nothing"* (`migrate_corpus.rs`); `MG2` is held by the cells over a decision a task landed.
 - **`rename` answers a doc gone from the worktree with *"check the id you typed"*.** Over a file in the place of the decisions' directory — the decision committed, git holding it — `rename` refuses `store.not-found`, *"no managed doc `adr:one-way` to rename"*, routed to *"`jigc describe` lists the doctype surface — check the id you typed against it"*: the id is right, and the doc is missing from the worktree, not from the store. Law 2 of `design/surface-contract.md`, a key of words: `r1-rename-answers-a-doc-gone-from-the-worktree-with-check-the-id-you-typed`. *Which is wrong*: the code — the route should name the home and that git holds the doc there, as `milestone create`'s *"missing from the worktree but not from git"* does. The cell holds bytes.
 - **The store door's route offers a link's way out at a directory.** `rename` over a directory at the decision's home routes *"put the doc itself … as a regular file — for a link, a copy of the file it points at, in the link's place"*; harmless, and the same sentence at every store door — words, no key.
+
+## 25. The movers family's movers — `relocate` and `config set`: 57 cells, 45 in the gate and 12 on demand, twenty red under eight keys
+
+*2026-10-19, this tree's debug build, macOS arm64; the fourth commit of the movers family's task (`B8`), on the rows of [the rows' record](byte-table-acceptance-rows.md) → §4c ([movers.rs](../../../../../crates/cli/tests/byte_table/movers.rs)). Every key below is the same on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each repro run as printed on both binaries — not a regression; two keys say what the previous release did instead. Read under the human's rule of 2026-10-19: neither the docs nor the code is the oracle, and each key says which of the two it judges wrong.*
+
+### `r1-relocate-refuses-a-doc-and-exits-0`
+
+- *The cells.* Four: a link to nothing, a link to a file in the repository, a link to a file outside, a directory, each in the place of the stranded note.
+- *What they came to.* **Not the listed outcome**: the doc is refused — *"1 blocked"*, `store.home-not-regular-file`, keyed at the source, nothing written — and the command exits **0**.
+- *Held against.* *"A relocation lands a regular file or refuses, keyed at the source"* (`design/finalize.md` → *4. Promote managed docs*), and the sibling's settled rule of what a refusal is: *"*Loud* is not a property of the prose in a route — it is the **exit code** and a **machine-readable finding**"*, *"a run that refuses any doc **exits non-zero**"* (`design/corpus-migration.md` → *What "loudly" costs, and where it is paid*).
+- *Which is wrong, and why.* **The code.** A script that relocates and checks the exit code reads success while a doc stays stranded — the infinite loop the sibling's audit named. *Robust*: exit non-zero when any doc is blocked, the other docs still moved. *On the previous release* the refusal is a bare read error through the link — *"reading the stranded doc …: No such file or directory"* — and exit 0 the same.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p note-pack/schemas docs/legacy-notes
+printf 'type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: "The note." }\n' > note-pack/schemas/note.yaml
+printf 'packs:\n  - note-pack\ncompose-embedded-methodology: true\n' > .jigc/config/packs.yaml
+printf '# Cache benchmarks\n\n## Body\n\nA single node caps throughput.\n' > docs/legacy-notes/cache-benchmarks.md
+git add note-pack .jigc/config/packs.yaml docs && git commit -qm "a note pack, and a note at its old home"
+rm docs/legacy-notes/cache-benchmarks.md && ln -s nowhere docs/legacy-notes/cache-benchmarks.md
+$JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 blocked, store.home-not-regular-file · exit=0
+```
+
+### `r1-relocate-parks-a-file-the-user-committed-at-a-new-home`
+
+- *The cell.* `relocate-a-file-the-user-committed-at-the-notes-new-home`, marked with the rows' record's §6, entry 23.
+- *What it came to.* **Not the listed outcome**: exit 0, the user's committed file moved to `.jigc/displaced/`, its index entry replaced by the note's — the next commit takes the user's file out of the tree.
+- *Held against.* The reading until entry 23 is ruled: the move is blocked, as `migrate-corpus` blocks a destination that holds *"anything else"* (`design/corpus-migration.md`); against it, `design/reconciliation.md`'s *"a committed-but-unmanaged squatter's tracked-path index slot is freed"*.
+- *Which is wrong, and why.* **The reconciliation doc's sentence, and the product that follows it** — the human's to rule (entry 23): a file the user committed is the user's content in the tree, and a move that stages it out into a workbench no commit carries is a change the user did not ask for. No byte is lost — the file stands in `.jigc/displaced/` and in history.
+
+```zsh
+# the corpus of the key above, up to its commit; then:
+mkdir -p docs/notes && echo "the user's own notes" > docs/notes/cache-benchmarks.md
+git add docs/notes && git commit -qm "notes of the user's"
+$JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 moved, 1 displaced · exit=0
+git status --porcelain                                            # D  docs/legacy-notes/… · M  docs/notes/cache-benchmarks.md
+```
+
+### `r1-config-set-drops-a-comment-of-the-users-from-the-manifest`
+
+- *The cell.* `config-set-over-a-manifest-that-holds-the-users-comment`.
+- *What it came to.* **Written outside its allowance**: exit 0, the knob set — and the manifest rewritten from what it parsed, the user's comment line gone. The manifest is in no commit in `fresh`, so its bytes stand nowhere after.
+- *Held against.* `CS1`, *its knob set* — every other line kept; and *"Deltas may be authored two co-equal ways: **by hand** (edit `manifest.yaml` …) or through the **`jigc config` verb family**"* (`design/overrides.md` → *Authoring deltas — the `jigc config` verbs*): a verb that destroys what the hand wrote makes the two ways one.
+- *Which is wrong, and why.* **The code; the doc is silent.** *Robust*: set the knob's line in the file as it stands — the edit a person would make — and keep every other byte; and say so in the doc.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+printf "# the user's own note on the knobs below\nscalar:\n  finalize.fan-out.squash: true\n" > .jigc/config/manifest.yaml
+$JIGC config set finalize.fan-out.squash false > /dev/null; echo "exit=$?"   # exit=0
+grep -c "the user's own note" .jigc/config/manifest.yaml                      # 0
+```
+
+### `r1-config-set-replaces-a-manifest-it-cannot-read-as-knobs`
+
+- *The cells.* `config-set-a-file-of-the-users-in-the-manifests-place`, `config-set-a-line-of-the-users-in-the-manifest` — a manifest that holds a line of the user's that is no knob.
+- *What they came to.* **Lost**: exit 0, the manifest replaced by one holding the knob alone; the user's bytes stand nowhere.
+- *Held against.* The run's own refusal of a manifest it cannot read — an edit that breaks the YAML is refused, *"is not valid YAML … the re-point was undone"*, nothing changed (`config-set-an-edit-to-the-committed-manifest`, which holds) — and the exit rule's first clause.
+- *Which is wrong, and why.* **The code.** A manifest that parses as YAML but is no mapping of knobs is read as empty and written over. *Robust*: refuse it, as the run refuses YAML it cannot parse.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+printf "a line of the user's\n" > .jigc/config/manifest.yaml
+$JIGC config set finalize.fan-out.squash false > /dev/null; echo "exit=$?"   # exit=0
+grep -c "a line of the user" .jigc/config/manifest.yaml                       # 0
+```
+
+### `r1-config-set-writes-the-knob-through-a-link-at-the-manifest`
+
+- *The cells.* `config-set-a-link-to-a-file-in-the-repository-in-the-manifests-place`, `config-set-a-link-to-a-file-outside-in-the-manifests-place` — **lost** — and `config-set-a-link-to-nothing-in-the-manifests-place`, *git's state moved*, a file made at the link's target.
+- *What they came to.* Exit 0: the knob written **through** the link, over the file it points at — a file of the user's, in the repository or outside it.
+- *Held against.* Every write of jigc's lands a regular file at exactly its path, and never through a link (`design/finalize.md` → *4. Promote managed docs*; `design/assistant-adapter.md`, of the install's files: *"never through a link"*).
+- *Which is wrong, and why.* **The code; the config layer's own doc is silent.** *Robust*: refuse a manifest that is no regular file, naming it, as every other door refuses a link at what it writes.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+printf "the user's own file\n" > mine.txt
+ln -s ../../mine.txt .jigc/config/manifest.yaml
+$JIGC config set finalize.fan-out.squash false > /dev/null; echo "exit=$?"   # exit=0
+cat mine.txt                                                                  # scalar: … — the user's file is gone
+```
+
+### `r1-config-set-re-points-past-a-link-to-nothing-or-a-directory-at-a-doc-it-strands`
+
+- *The cells.* `config-set-a-link-to-nothing-in-the-decisions-place`, `config-set-a-directory-in-the-decisions-place`.
+- *What they came to.* **Not the listed outcome**: exit 0, *"relocating 1 committed doc(s) stranded by the `docs-root` re-point"* — and no move follows; the knob is set, and the committed decision stays at its old home, stranded, named nowhere.
+- *Held against.* *"A relocation lands a regular file or refuses, keyed at the source"* (`design/finalize.md`), and `rename`'s and `relocate`'s cells, which refuse the same plants.
+- *Which is wrong, and why.* **The code.** *Robust*: refuse the re-point, naming the entry — the knob unchanged, as a link to a file there is refused today.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Options\n\n\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision"
+rm docs/decisions/one-way.md && ln -s nowhere docs/decisions/one-way.md
+$JIGC config set docs-root notes > /dev/null; echo "exit=$?"     # exit=0
+cat .jigc/config/manifest.yaml; ls notes 2>&1                     # docs-root: notes · no notes/ — the decision stranded
+```
+
+### `r1-config-set-refuses-and-leaves-the-directories-its-re-point-made`
+
+- *The cells.* `config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place`, `config-set-a-link-to-a-file-outside-in-the-decisions-place`.
+- *What they came to.* **Refused, and changed what a refusal may not**: exit 1, `store.home-not-regular-file` under `config.repoint-failed`, *"the re-point was undone"* — and `notes/` and `notes/decisions/`, made on the way, left standing, empty.
+- *Held against.* The route's own *"`docs-root` is unchanged and every doc this re-point moved is back at its prior home"*, and the plan's rule that a refusal changes only what a line holding on a refusal covers. The class of §17's `r1-milestone-record-doors-refuse-and-leave-the-directories-they-made`.
+- *Which is wrong, and why.* **The code.** *Robust*: the rollback removes the directories the re-point made. *On the previous release* the re-point moves the link and exits 0 — the fix pass's store doors made it refuse; the directories it leaves are this tree's alone.
+
+```zsh
+# the corpus of the key above, up to its commit; then:
+printf "the user's own file\n" > mine.md
+rm docs/decisions/one-way.md && ln -s ../../mine.md docs/decisions/one-way.md
+$JIGC config set docs-root notes > /dev/null 2>&1; echo "exit=$?"   # exit=1
+find notes -print                                                    # notes · notes/decisions — made, and left
+```
+
+### `r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks`
+
+- *The cells.* Five: a file of the user's, a link to nothing, a link to a file in the repository, a link to a file outside, a directory, at the decision's new home.
+- *What they came to.* **Not the listed outcome**: exit 1, `config.repoint-failed` — *"`git mv … ` failed: fatal: destination exists"*, or a write through the entry refused — the re-point undone, nothing changed.
+- *Held against.* *"delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"* (`design/storage.md` → *Placement*) — `CS3` — and `relocate`'s cells, which park every one of them.
+- *Which is wrong, and why.* **The code.** Nothing is lost, and a refusal is safe — but the doc and the sibling door park, and a user who meets *"fatal: destination exists"* in git's words has no route but to move the file by hand. *Robust*: park it, as `relocate` does, and name it.
+
+```zsh
+# the corpus of the key above, up to its commit; then:
+mkdir -p notes/decisions && echo "the user's own notes" > notes/decisions/one-way.md
+$JIGC config set docs-root notes 2>&1 | grep -o "fatal: destination exists"   # fatal: destination exists
+```
+
+### What the other cells show
+
+- **`relocate`, twenty-three cells, eighteen that hold or refuse having changed nothing.** The stranded note moved into its home with a staged `git mv`, the baseline re-keyed; an edit and a change staged at it moved with it; a file of the user's in its place, or in the place of its directory, left alone; every squatter at the new home but a committed file parked under `.jigc/displaced/` — a directory with its files; the frozen doctype the catalog names refused (`relocate.frozen-doctype`); in every other prepared state no `note` doctype (`store.unknown-type`), or no project.
+- **`config set`, thirty-four cells, nineteen that hold or refuse having changed nothing.** `docs-root` re-pointed over a committed decision — the knob set, the decision moved with a staged `git mv` — a knob that moves nothing, the catalog's re-point to the default; a change staged at the manifest kept; an edit that breaks the YAML, a directory at the manifest, and a file in the place of the config layer's directory each refused having changed nothing; an edit and a change staged at the decision moved with it; a file the user committed at the new home refused, marked (entry 23); in every other prepared state the re-point acts, or `bare` refuses.
+
+### Seen, and held by no cell
+
+- **The re-point's ack counts a doc it does not move.** Over a link to nothing or a directory at the decision's home, *"relocating 1 committed doc(s) stranded by the `docs-root` re-point"* is followed by no move line — the number is the docs found, not the docs moved. Under the key above; law 1 of `design/surface-contract.md`.

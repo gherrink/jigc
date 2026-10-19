@@ -8,8 +8,7 @@
 //! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, and the movers family's four (`rename`,
-//! `relocate`, `migrate-corpus`, `config set`), the cells of two of which are owed — and 600
-//! cells: the acceptance's
+//! `relocate`, `migrate-corpus`, `config set`) — and 657 cells: the acceptance's
 //! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -18,9 +17,9 @@
 //! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), **its
 //! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
 //! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
-//! carryover gate's cell under `squash: false`), **and the movers family's doors that
-//! commit, seventy** (`rename`, `migrate-corpus`), of which a hundred and forty-four run on
-//! demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! carryover gate's cell under `squash: false`), **and the movers family's fifty-seven
+//! and seventy** (`relocate`, `config set`; `rename`, `migrate-corpus`), of which a hundred
+//! and fifty-six run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
 //! rows —
@@ -1912,6 +1911,12 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     ),
     (&["migrate-corpus"], "MG2", &[Prepared::Of(State::Fresh)]),
     (&["migrate-corpus"], "MG3", &[Prepared::Of(State::Fresh)]),
+    (&["relocate"], "RL1", &[Prepared::Of(State::Fresh)]),
+    (&["relocate"], "RL3", &[Prepared::Of(State::Fresh)]),
+    (&["relocate"], "RL4", &[Prepared::Of(State::Fresh)]),
+    (&["config", "set"], "CS1", &[Prepared::Of(State::Fresh)]),
+    (&["config", "set"], "CS2", &[Prepared::Of(State::Fresh)]),
+    (&["config", "set"], "CS4", &[Prepared::Of(State::Fresh)]),
 ];
 
 /// Why the doc family's `W3` excuses nothing, and never will: it lets nothing change at
@@ -1927,23 +1932,26 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["rename"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
-    (&["relocate"], "RL1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["relocate"], "RL2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["relocate"], "RL3", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["relocate"], "RL4", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["relocate"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["relocate"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["relocate"],
-        "C3, the base pin",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (
-        &["relocate"],
-        "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
     (&["migrate-corpus"], "MG5", A_DRY_RUN_WRITES_NOTHING),
+    (&["relocate"], "RL2", STAGED_UNDER_ANOTHER_LINE),
+    (&["relocate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["relocate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["relocate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["relocate"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (
+        &["config", "set"],
+        "CS3",
+        NOT_UNTIL_A_RE_POINT_PARKS_A_SQUATTER,
+    ),
+    (&["config", "set"], "CS5", STAGED_UNDER_ANOTHER_LINE),
+    (&["config", "set"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["config", "set"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["config", "set"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (
+        &["config", "set"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
     (&["migrate-corpus"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["migrate-corpus"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -1955,23 +1963,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         &["migrate-corpus"],
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
-    ),
-    (&["config", "set"], "CS1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "CS2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "CS3", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "CS4", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "CS5", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["config", "set"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["config", "set"],
-        "C3, the base pin",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (
-        &["config", "set"],
-        "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
     ),
     (
         &["setup"],
@@ -2345,10 +2336,11 @@ const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed bou
      worktree into `.jigc/displaced/<sub-task-id>/`, as the human's ruling on entry 18 has it: on \
      this tree it takes the file with the checkout, and the cell of it is lost under its key";
 
-/// What would use a line of the movers family's rows: the family's cells, owed by the task
-/// `B8` until the commits after its rows (`owed.rs` → `CELLS_OWED`).
-const THE_FAMILYS_CELLS_ARE_OWED: &str = "the family's cells, owed by the task `B8` (`CELLS_OWED`): its rows are written from \
-     their docs a commit before any cell of them runs";
+/// What would use `config set`'s `CS3`: a re-point that parks what squats a doc's new home,
+/// as its doc has it.
+const NOT_UNTIL_A_RE_POINT_PARKS_A_SQUATTER: &str = "a root knob's re-point that parks what squats a doc's new home under `.jigc/displaced/`, \
+     as `design/storage.md` has it: on this tree it refuses every squatter, and its cells are \
+     red under their key";
 
 /// What would use `migrate-corpus`'s `MG5`: nothing — the dry run's line names the docs it
 /// reads, which is what the plants of its spelling's cells are aimed at, and lets no
@@ -3910,6 +3902,47 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     );
     let (class, why) = over(&landed);
     assert_eq!(class, Classification::Lost, "the squatter taken: {why:#?}");
+    // A directory of the user's at the destination, a file of theirs in it: parked whole,
+    // the file with it, the move holds (the task `B8`'s fourth commit, red first: the file
+    // came out *written outside its allowance*).
+    let squatted = then(&before, |m| {
+        written(
+            m,
+            "docs/notes/cache-benchmarks.md/notes.txt",
+            "the user's own notes\n",
+        );
+    });
+    let parked = then(&squatted, |m| {
+        m.files
+            .remove(&format!("{REPO}/docs/notes/cache-benchmarks.md/notes.txt"));
+        m.files
+            .remove(&format!("{REPO}/docs/notes/cache-benchmarks.md"));
+        git_mv(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "docs/notes/cache-benchmarks.md",
+            NOTE,
+        );
+        written(
+            m,
+            ".jigc/displaced/cache-benchmarks.md/notes.txt",
+            "the user's own notes\n",
+        );
+    });
+    let (class, why) = Cell {
+        argv,
+        planted: &[(
+            "repo/docs/notes/cache-benchmarks.md/notes.txt",
+            "the user's own notes",
+        )],
+        ..Cell::of(movers::RELOCATE, &squatted, &parked)
+    }
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the squatting directory parked: {why:#?}"
+    );
 
     // A root knob's re-point: the roadmap under the new root, and the knob set.
     const ROADMAP: &str = "---\nschema-version: 1\n---\n\n# Roadmap\n";
@@ -9815,6 +9848,80 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::RefusedAndChanged,
         &["migrate-corpus-a-hook-that-rejects"],
     ),
+    // The movers (the task `B8`, its fourth commit): `relocate`'s two keys and `config
+    // set`'s six.
+    (
+        "r1-relocate-refuses-a-doc-and-exits-0",
+        Classification::NotTheListedOutcome,
+        &[
+            "relocate-a-link-to-nothing-in-the-stranded-notes-place",
+            "relocate-a-link-to-a-file-in-the-repository-in-the-stranded-notes-place",
+            "relocate-a-link-to-a-file-outside-in-the-stranded-notes-place",
+            "relocate-a-directory-in-the-stranded-notes-place",
+        ],
+    ),
+    // The rows' record's §6, entry 23 — the cell marked.
+    (
+        "r1-relocate-parks-a-file-the-user-committed-at-a-new-home",
+        Classification::NotTheListedOutcome,
+        &["relocate-a-file-the-user-committed-at-the-notes-new-home"],
+    ),
+    (
+        "r1-config-set-drops-a-comment-of-the-users-from-the-manifest",
+        Classification::WrittenOutside,
+        &["config-set-over-a-manifest-that-holds-the-users-comment"],
+    ),
+    (
+        "r1-config-set-replaces-a-manifest-it-cannot-read-as-knobs",
+        Classification::Lost,
+        &[
+            "config-set-a-file-of-the-users-in-the-manifests-place",
+            "config-set-a-line-of-the-users-in-the-manifest",
+        ],
+    ),
+    (
+        "r1-config-set-writes-the-knob-through-a-link-at-the-manifest",
+        Classification::Lost,
+        &[
+            "config-set-a-link-to-a-file-in-the-repository-in-the-manifests-place",
+            "config-set-a-link-to-a-file-outside-in-the-manifests-place",
+        ],
+    ),
+    // The same mechanism through a link to nothing: what it writes lands at the link's
+    // target, a file of nobody's — no byte lost, and the re-point's moves under a knob the
+    // frame cannot read through the link.
+    (
+        "r1-config-set-writes-the-knob-through-a-link-at-the-manifest",
+        Classification::GitMoved,
+        &["config-set-a-link-to-nothing-in-the-manifests-place"],
+    ),
+    (
+        "r1-config-set-re-points-past-a-link-to-nothing-or-a-directory-at-a-doc-it-strands",
+        Classification::NotTheListedOutcome,
+        &[
+            "config-set-a-link-to-nothing-in-the-decisions-place",
+            "config-set-a-directory-in-the-decisions-place",
+        ],
+    ),
+    (
+        "r1-config-set-refuses-and-leaves-the-directories-its-re-point-made",
+        Classification::RefusedAndChanged,
+        &[
+            "config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+            "config-set-a-link-to-a-file-outside-in-the-decisions-place",
+        ],
+    ),
+    (
+        "r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks",
+        Classification::NotTheListedOutcome,
+        &[
+            "config-set-a-file-of-the-users-at-the-decisions-new-home",
+            "config-set-a-link-to-nothing-at-the-decisions-new-home",
+            "config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home",
+            "config-set-a-link-to-a-file-outside-at-the-decisions-new-home",
+            "config-set-a-directory-at-the-decisions-new-home",
+        ],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -10240,7 +10347,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (600, 456, 144),
+        (657, 501, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -10252,7 +10359,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy, `rename`'s thirty-one and \
-         `migrate-corpus`'s thirty-nine: fifty-eight in the gate, twelve on demand"
+         `migrate-corpus`'s thirty-nine: fifty-eight in the gate, twelve on demand — and its \
+         movers fifty-seven, `relocate`'s twenty-three and `config set`'s thirty-four: \
+         forty-five in the gate, twelve on demand"
     );
 }
 

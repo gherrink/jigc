@@ -1249,7 +1249,601 @@ const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
     ),
 ];
 
-/// The family's cells: the doors that commit — `rename`, `migrate-corpus` — the first of
-/// the two parts the docs split the family in; the movers' are owed (`owed.rs` →
-/// `CELLS_OWED`).
-pub const CELLS: &[&[Cell]] = &[&RENAME_CELLS, &MIGRATE_CORPUS_CELLS];
+/// The family's cells: the doors that commit — `rename`, `migrate-corpus` — and the
+/// movers, `relocate` and `config set`, the two parts the docs split the family in.
+pub const CELLS: &[&[Cell]] = &[
+    &RENAME_CELLS,
+    &MIGRATE_CORPUS_CELLS,
+    &RELOCATE_CELLS,
+    &CONFIG_SET_CELLS,
+];
+
+// --- `jigc relocate` ---------------------------------------------------------------
+
+/// The listed pack's `note` doctype — freeze-exempt, homed at `notes/` under the docs root
+/// — the door's domain: no manifest governs it.
+const A_NOTE_SCHEMA: &str = "type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The note.\" }\n";
+/// The packs the project composes: the note pack, from the repository's root, beside the
+/// methodology pack `fresh` composes.
+const PACKS_WITH_THE_NOTE_PACK: &str =
+    "packs:\n  - note-pack\ncompose-embedded-methodology: true\n";
+const A_NOTE: &str = "# Cache benchmarks\n\n## Body\n\nA single node caps throughput.\n";
+/// The note where it stood before its doctype's home moved, and its home now.
+const STRANDED: &str = "docs/legacy-notes/cache-benchmarks.md";
+const THE_NOTES_HOME: &str = "docs/notes/cache-benchmarks.md";
+
+/// **A note stranded at a prior home, committed** — the note pack and its listing, and a
+/// note under `docs/legacy-notes/`, committed by the user: `relocate`'s subject.
+macro_rules! a_stranded_note {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file("note-pack/schemas/note.yaml", A_NOTE_SCHEMA),
+            file(".jigc/config/packs.yaml", PACKS_WITH_THE_NOTE_PACK),
+            file(STRANDED, A_NOTE),
+            git(&["add", "--", "note-pack", ".jigc/config/packs.yaml", "docs"]),
+            git(&["commit", "-q", "-m", "a note pack, and a note at its old home"]),
+            $($after,)*
+        ]
+    };
+}
+
+const RELOCATE_IT: &[&str] = &["relocate", "note", "--from", "docs/legacy-notes/"];
+
+/// One cell of `jigc relocate`.
+const fn relocates(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(name, &["relocate"], FRESH, leads, RELOCATE_IT, listed, aim)
+}
+
+/// **The cells of `jigc relocate`**, each listed from the row's doc:
+///
+/// - **the base cell** moves the stranded note into its home with a staged `git mv`
+///   (`RL1`, `RL2`) and re-keys the baseline (`RL4`); the leaf as the catalog types it
+///   names a frozen doctype, and is refused;
+/// - **at the stranded note's place**: a link or a directory is refused —
+///   *"A relocation lands a regular file or refuses, keyed at the source"*
+///   (`design/finalize.md` → *4. Promote managed docs*); a file of the user's, an edit, a
+///   change staged move with the doc, and a file in the place of its directory leaves no
+///   doc to move;
+/// - **at the note's new home**, what squats it is parked under `.jigc/displaced/` (`RL3`):
+///   a file of the user's, a link, a directory, its files with it; **a file the user
+///   committed** there blocks the move, naming the home — the reading of the record's §6,
+///   entry 23, marked, where `design/reconciliation.md` parks it and
+///   `design/corpus-migration.md` blocks it;
+/// - **a file of the user's beside the baseline** stays.
+const RELOCATE_CELLS: [Cell; 23] = [
+    cell(
+        "relocate-the-changelog-the-catalog-names",
+        &["relocate"],
+        FRESH,
+        &[],
+        &["relocate", "changelog", "--from", "docs"],
+        refuses(1, "relocate.frozen-doctype"),
+        None,
+    ),
+    relocates(
+        "relocate-a-stranded-note",
+        a_stranded_note!(),
+        Listed::Acts,
+        None,
+    ),
+    // `RL1`, at the stranded note's place.
+    relocates(
+        "relocate-a-file-of-the-users-in-the-stranded-notes-place",
+        a_stranded_note!(Lead::Plant(Plant::InPlaceOf(&Plant::File(STRANDED)))),
+        Listed::Acts,
+        at("RL1", Kind::Untracked),
+    ),
+    relocates(
+        "relocate-a-link-to-nothing-in-the-stranded-notes-place",
+        a_stranded_note!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            STRANDED
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RL1", Kind::LinkToNothing),
+    ),
+    relocates(
+        "relocate-a-link-to-a-file-in-the-repository-in-the-stranded-notes-place",
+        a_stranded_note!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: STRANDED,
+            outside: false
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RL1", Kind::LinkInside),
+    ),
+    relocates(
+        "relocate-a-link-to-a-file-outside-in-the-stranded-notes-place",
+        a_stranded_note!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: STRANDED,
+            outside: true
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RL1", Kind::LinkOutside),
+    ),
+    relocates(
+        "relocate-a-directory-in-the-stranded-notes-place",
+        a_stranded_note!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(STRANDED)))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RL1", Kind::DirForAFile),
+    ),
+    relocates(
+        "relocate-a-file-in-the-place-of-the-legacy-notes-directory",
+        a_stranded_note!(
+            Lead::MovedAway("repo/docs/legacy-notes"),
+            Lead::Plant(Plant::File("docs/legacy-notes"))
+        ),
+        Listed::Acts,
+        at("RL1", Kind::FileForADir),
+    ),
+    relocates(
+        "relocate-an-edit-to-the-stranded-note",
+        a_stranded_note!(Lead::Plant(Plant::Edit(STRANDED))),
+        Listed::Acts,
+        at("RL1", Kind::EditAfter),
+    ),
+    relocates(
+        "relocate-a-change-staged-at-the-stranded-note",
+        a_stranded_note!(Lead::Plant(Plant::Staged {
+            at: STRANDED,
+            kept: false
+        })),
+        Listed::Acts,
+        at("RL1", Kind::StagedThere),
+    ),
+    // `RL3`, at the note's new home: what squats the new home is parked.
+    relocates(
+        "relocate-a-file-of-the-users-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::File(THE_NOTES_HOME))),
+        Listed::Acts,
+        at("RL3", Kind::Untracked),
+    ),
+    Cell {
+        marks: &[Mark::Silence(23)],
+        ..relocates(
+            "relocate-a-file-the-user-committed-at-the-notes-new-home",
+            a_stranded_note!(Lead::Plant(Plant::Committed(THE_NOTES_HOME))),
+            refuses(1, "docs/notes/cache-benchmarks.md"),
+            at("RL3", Kind::Committed),
+        )
+    },
+    relocates(
+        "relocate-a-link-to-nothing-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::LinkToNothing(THE_NOTES_HOME))),
+        Listed::Acts,
+        at("RL3", Kind::LinkToNothing),
+    ),
+    relocates(
+        "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_NOTES_HOME,
+            outside: false
+        })),
+        Listed::Acts,
+        at("RL3", Kind::LinkInside),
+    ),
+    relocates(
+        "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_NOTES_HOME,
+            outside: true
+        })),
+        Listed::Acts,
+        at("RL3", Kind::LinkOutside),
+    ),
+    relocates(
+        "relocate-a-directory-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::Dir(THE_NOTES_HOME))),
+        Listed::Acts,
+        at("RL3", Kind::DirForAFile),
+    ),
+    // `RL4`, the baseline.
+    relocates(
+        "relocate-a-file-of-the-users-beside-the-baseline",
+        a_stranded_note!(Lead::Plant(Plant::File(".jigc/state/notes.md"))),
+        Listed::Acts,
+        at("RL4", Kind::Untracked),
+    ),
+    // The base cell in each other prepared state: the command as typed, with no lead.
+    cell(
+        "relocate-a-note-in-bare",
+        &["relocate"],
+        Prepared::Bare,
+        &[],
+        RELOCATE_IT,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "relocate-a-note-in-committed-singletons",
+        &["relocate"],
+        Prepared::Of(State::CommittedSingletons),
+        &[],
+        RELOCATE_IT,
+        refuses(1, "store.unknown-type"),
+        None,
+    ),
+    cell(
+        "relocate-a-note-in-migrated",
+        &["relocate"],
+        Prepared::Of(State::Migrated),
+        &[],
+        RELOCATE_IT,
+        refuses(1, "store.unknown-type"),
+        None,
+    ),
+    cell(
+        "relocate-a-note-in-refs-post-hoc",
+        &["relocate"],
+        Prepared::Of(State::RefsPostHoc),
+        &[],
+        RELOCATE_IT,
+        refuses(1, "store.unknown-type"),
+        None,
+    ),
+    cell(
+        "relocate-a-note-in-chatty-hooks",
+        &["relocate"],
+        Prepared::Of(State::ChattyHooks),
+        &[],
+        RELOCATE_IT,
+        refuses(1, "store.unknown-type"),
+        None,
+    ),
+    cell(
+        "relocate-a-note-in-vendored",
+        &["relocate"],
+        Prepared::Of(State::Vendored),
+        &[],
+        RELOCATE_IT,
+        refuses(1, "store.unknown-type"),
+        None,
+    ),
+];
+
+// --- `jigc config set` -------------------------------------------------------------
+
+/// The project manifest, where `config set` records a knob.
+const THE_MANIFEST: &str = ".jigc/config/manifest.yaml";
+const A_MANIFEST: &str = "scalar:\n  finalize.fan-out.squash: true\n";
+/// A manifest the user wrote, a comment of their own in it.
+const A_MANIFEST_WITH_A_COMMENT: &str =
+    "# the user's own note on the knobs below\nscalar:\n  finalize.fan-out.squash: true\n";
+/// The decision's home once `docs-root` is `notes`.
+const THE_DECISIONS_NEW_HOME: &str = "notes/decisions/one-way.md";
+
+/// **A decision, committed** — written by hand and committed by the user: the doc a
+/// `docs-root` re-point strands, and moves.
+macro_rules! a_committed_decision {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(ONE_WAY, A_DECISION),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a decision"]),
+            $($after,)*
+        ]
+    };
+}
+
+const SET_DOCS_ROOT: &[&str] = &["config", "set", "docs-root", "notes"];
+
+/// One cell of `jigc config set`.
+const fn sets(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(
+        name,
+        &["config", "set"],
+        FRESH,
+        leads,
+        SET_DOCS_ROOT,
+        listed,
+        aim,
+    )
+}
+
+/// **The cells of `jigc config set`**, each listed from the row's doc:
+///
+/// - **the base cell** re-points `docs-root` over a committed decision: the knob set in
+///   the manifest (`CS1`), the decision moved into its new home with a staged `git mv`
+///   (`CS2`, `CS5`), the baseline re-keyed (`CS4`); a knob that moves nothing; and the knob
+///   set over a manifest that holds a comment of the user's — the doc's two *"co-equal"*
+///   ways to author a delta, **by hand** and through the verbs (`design/overrides.md` →
+///   *Authoring deltas*), ask the verb to keep what the hand wrote; the leaf as the catalog
+///   types it sets `docs-root` to its default;
+/// - **at the manifest**: a change staged is kept, the knob's line beside it; what does not
+///   read as knobs — a file of the user's, a line of theirs, an edit that breaks the YAML —
+///   the verb refuses, as the run refuses the edit, *"not valid YAML"*, and so a link or a
+///   directory, no file to set a knob in (no doc says so: the sensible reading, and a
+///   finding where the run says otherwise); a file in the place of the config layer's
+///   directory leaves no project set up;
+/// - **at the decision's home**, as `relocate`'s at the stranded note's; **at its new
+///   home**, what squats it parked (`CS3`) — *"so a foreign file squatting the new home is
+///   parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"*
+///   (`design/storage.md` → *Placement*) — and a file the user committed blocks it, as
+///   `relocate`'s;
+/// - **a file of the user's beside the baseline** stays.
+const CONFIG_SET_CELLS: [Cell; 34] = [
+    cell(
+        "config-set-docs-root-the-catalog-names",
+        &["config", "set"],
+        FRESH,
+        &[],
+        &["config", "set", "docs-root", "docs"],
+        Listed::Acts,
+        None,
+    ),
+    sets(
+        "config-set-docs-root-to-notes",
+        a_committed_decision!(),
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-a-knob-that-moves-nothing",
+        &["config", "set"],
+        FRESH,
+        a_committed_decision!(),
+        &["config", "set", "finalize.fan-out.squash", "false"],
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-over-a-manifest-that-holds-the-users-comment",
+        &["config", "set"],
+        FRESH,
+        a_committed_decision!(file(THE_MANIFEST, A_MANIFEST_WITH_A_COMMENT)),
+        &["config", "set", "finalize.fan-out.squash", "false"],
+        Listed::Acts,
+        None,
+    ),
+    // `CS1`, at the project manifest.
+    sets(
+        "config-set-a-file-of-the-users-in-the-manifests-place",
+        a_committed_decision!(Lead::Plant(Plant::File(THE_MANIFEST))),
+        refuses(1, "config.repoint-failed"),
+        at("CS1", Kind::Untracked),
+    ),
+    sets(
+        "config-set-a-link-to-nothing-in-the-manifests-place",
+        a_committed_decision!(Lead::Plant(Plant::LinkToNothing(THE_MANIFEST))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS1", Kind::LinkToNothing),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-in-the-repository-in-the-manifests-place",
+        a_committed_decision!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_MANIFEST,
+            outside: false
+        })),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS1", Kind::LinkInside),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-outside-in-the-manifests-place",
+        a_committed_decision!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_MANIFEST,
+            outside: true
+        })),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS1", Kind::LinkOutside),
+    ),
+    sets(
+        "config-set-a-directory-in-the-manifests-place",
+        a_committed_decision!(Lead::Plant(Plant::Dir(THE_MANIFEST))),
+        refuses(1, "config.repoint-failed"),
+        at("CS1", Kind::DirForAFile),
+    ),
+    sets(
+        "config-set-a-file-in-the-place-of-the-config-layers-directory",
+        a_committed_decision!(
+            Lead::MovedAway("repo/.jigc/config"),
+            Lead::Plant(Plant::File(".jigc/config"))
+        ),
+        NOT_SET_UP,
+        at("CS1", Kind::FileForADir),
+    ),
+    sets(
+        "config-set-a-line-of-the-users-in-the-manifest",
+        a_committed_decision!(Lead::Plant(Plant::UsersLine(THE_MANIFEST))),
+        refuses(1, "config.repoint-failed"),
+        at("CS1", Kind::UsersLine),
+    ),
+    sets(
+        "config-set-an-edit-to-the-committed-manifest",
+        a_committed_decision!(
+            file(THE_MANIFEST, A_MANIFEST),
+            git(&["add", "--", ".jigc/config"]),
+            git(&["commit", "-q", "-m", "a manifest"]),
+            Lead::Plant(Plant::Edit(THE_MANIFEST))
+        ),
+        refuses(1, "config.repoint-failed"),
+        at("CS1", Kind::EditAfter),
+    ),
+    sets(
+        "config-set-a-change-staged-at-the-manifest",
+        a_committed_decision!(Lead::Plant(Plant::Staged {
+            at: THE_MANIFEST,
+            kept: false
+        })),
+        Listed::Acts,
+        at("CS1", Kind::StagedThere),
+    ),
+    // `CS2`, at the decision's home.
+    sets(
+        "config-set-a-file-of-the-users-in-the-decisions-place",
+        a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::File(ONE_WAY)))),
+        Listed::Acts,
+        at("CS2", Kind::Untracked),
+    ),
+    sets(
+        "config-set-a-link-to-nothing-in-the-decisions-place",
+        a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            ONE_WAY
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkToNothing),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+        a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: false
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkInside),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-outside-in-the-decisions-place",
+        a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: true
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkOutside),
+    ),
+    sets(
+        "config-set-a-directory-in-the-decisions-place",
+        a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::DirForAFile),
+    ),
+    sets(
+        "config-set-a-file-in-the-place-of-the-decisions-directory",
+        a_committed_decision!(
+            Lead::MovedAway("repo/docs/decisions"),
+            Lead::Plant(Plant::File("docs/decisions"))
+        ),
+        Listed::Acts,
+        at("CS2", Kind::FileForADir),
+    ),
+    sets(
+        "config-set-an-edit-to-the-decision",
+        a_committed_decision!(Lead::Plant(Plant::Edit(ONE_WAY))),
+        Listed::Acts,
+        at("CS2", Kind::EditAfter),
+    ),
+    sets(
+        "config-set-a-change-staged-at-the-decision",
+        a_committed_decision!(Lead::Plant(Plant::Staged {
+            at: ONE_WAY,
+            kept: false
+        })),
+        Listed::Acts,
+        at("CS2", Kind::StagedThere),
+    ),
+    // `CS3`, at the decision's new home: what squats the new home is parked.
+    sets(
+        "config-set-a-file-of-the-users-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::File(THE_DECISIONS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::Untracked),
+    ),
+    Cell {
+        marks: &[Mark::Silence(23)],
+        ..sets(
+            "config-set-a-file-the-user-committed-at-the-decisions-new-home",
+            a_committed_decision!(Lead::Plant(Plant::Committed(THE_DECISIONS_NEW_HOME))),
+            refuses(1, "notes/decisions/one-way.md"),
+            at("CS3", Kind::Committed),
+        )
+    },
+    sets(
+        "config-set-a-link-to-nothing-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::LinkToNothing(THE_DECISIONS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::LinkToNothing),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_DECISIONS_NEW_HOME,
+            outside: false
+        })),
+        Listed::Acts,
+        at("CS3", Kind::LinkInside),
+    ),
+    sets(
+        "config-set-a-link-to-a-file-outside-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_DECISIONS_NEW_HOME,
+            outside: true
+        })),
+        Listed::Acts,
+        at("CS3", Kind::LinkOutside),
+    ),
+    sets(
+        "config-set-a-directory-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::Dir(THE_DECISIONS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::DirForAFile),
+    ),
+    // `CS4`, the baseline.
+    sets(
+        "config-set-a-file-of-the-users-beside-the-baseline",
+        a_committed_decision!(Lead::Plant(Plant::File(".jigc/state/notes.md"))),
+        Listed::Acts,
+        at("CS4", Kind::Untracked),
+    ),
+    // The base cell in each other prepared state: the command as typed, with no lead.
+    cell(
+        "config-set-docs-root-to-notes-in-bare",
+        &["config", "set"],
+        Prepared::Bare,
+        &[],
+        SET_DOCS_ROOT,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "config-set-docs-root-to-notes-in-committed-singletons",
+        &["config", "set"],
+        Prepared::Of(State::CommittedSingletons),
+        &[],
+        SET_DOCS_ROOT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-docs-root-to-notes-in-migrated",
+        &["config", "set"],
+        Prepared::Of(State::Migrated),
+        &[],
+        SET_DOCS_ROOT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-docs-root-to-notes-in-refs-post-hoc",
+        &["config", "set"],
+        Prepared::Of(State::RefsPostHoc),
+        &[],
+        SET_DOCS_ROOT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-docs-root-to-notes-in-chatty-hooks",
+        &["config", "set"],
+        Prepared::Of(State::ChattyHooks),
+        &[],
+        SET_DOCS_ROOT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "config-set-docs-root-to-notes-in-vendored",
+        &["config", "set"],
+        Prepared::Of(State::Vendored),
+        &[],
+        SET_DOCS_ROOT,
+        Listed::Acts,
+        None,
+    ),
+];
