@@ -38,25 +38,21 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
 /// code from, and no other checkout's: each quotes the sentence that names it.
 const SUB_TASK_WORKTREES: &str = ".jigc/worktrees/<sub-task>";
 
-/// **The project config layer, a pending delta of which the aggregate carries** —
-/// `M3, the config`: its own sentence, the layer `T3` names, and the doc-only arm's
-/// sentence that an ordinary finalize commits a pending delta.
-const THE_CONFIG_CARRIED: [Quote; 3] = [
+/// **The project config layer the aggregate carries on its first commit** —
+/// `M3, the config`: its own sentence, and the layer `T3, the config` names, under the
+/// same condition. **Narrowed 2026-10-19**, after the review of the task `B7`'s second
+/// part (its first finding): the line had quoted beside these the doc-only arm's sentence
+/// that an ordinary finalize commits a pending delta, and held under any `HEAD` — so a file
+/// of the user's nobody staged under `.jigc/config`, swept into a landed boundary, held.
+/// Whether a pending delta rides is the rows' record's §6, entry 19: two docs say two
+/// things.
+const THE_CONFIG_CARRIED: [Quote; 2] = [
     Quote {
         doc: "design/finalize.md",
         heading: "`fan-out` finalize",
         words: "overlays the promoted docs + first-commit config",
     },
-    Quote {
-        doc: "design/finalize.md",
-        heading: "5. Stage",
-        words: "on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),",
-    },
-    Quote {
-        doc: "design/finalize.md",
-        heading: "The doc-only arm",
-        words: "**Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh",
-    },
+    super::THE_CONFIG_LAYERS_FIRST_COMMIT,
 ];
 
 /// **`jigc milestone finalize`** — the record's §4. The record names no consent.
@@ -144,19 +140,25 @@ pub const FINALIZE: Row = Row {
                 ],
             )
         },
-        // The project config layer, carried into the aggregate as it stands: `M3`'s own
-        // *"overlays the promoted docs + first-commit config"*, under both spellings —
-        // `squash: false` replaces `M3` and not these.
-        line(
-            "M3, the config",
-            Allows::Files(Where::Under(".jigc/config"), May::Carried),
-            &THE_CONFIG_CARRIED,
-        ),
-        line(
-            "M3, the config's ignore file",
-            Allows::Files(Where::Path(".jigc/.gitignore"), May::Carried),
-            &THE_CONFIG_CARRIED,
-        ),
+        // The project config layer, carried into the aggregate as it stands on the layer's
+        // first commit: `M3`'s own *"overlays the promoted docs + first-commit config"*,
+        // under both spellings — `squash: false` replaces `M3` and not these.
+        Line {
+            when: When::FirstCommitOfItsPlace,
+            ..line(
+                "M3, the config",
+                Allows::Files(Where::Under(".jigc/config"), May::Carried),
+                &THE_CONFIG_CARRIED,
+            )
+        },
+        Line {
+            when: When::FirstCommitOfItsPlace,
+            ..line(
+                "M3, the config's ignore file",
+                Allows::Files(Where::Path(".jigc/.gitignore"), May::Carried),
+                &THE_CONFIG_CARRIED,
+            )
+        },
         // The record's home is the second sentence's — one file a milestone — under the
         // docs root the cascade resolves, the third's; and the record is the milestone's
         // own, the first's.
@@ -2649,8 +2651,9 @@ const fn finalizes(
 ///   boundary commit"*), a hook that rejects tears nothing down (`M8`); **a change staged
 ///   before the milestone was created** meets the carryover gate, *"`jigc milestone
 ///   create` for the shared checkout's aggregate index"* — the boundary refuses over it
-///   (`finalize.carried-staged`); and **a pending config delta** rides the aggregate
-///   (`M3, the config`);
+///   (`finalize.carried-staged`); and **a pending config delta** rides the aggregate,
+///   which `M3, the config` carries on the layer's first commit alone — whether it may
+///   ride a later one is the rows' record's §6, entry 19, and until ruled it may not;
 /// - **at the record** (`M5`), what stands in its place and an edit or a change staged at
 ///   it are refused as at the other record doors;
 /// - **a file jigc did not write in a sub-task's area or the milestone's** is moved aside
@@ -2687,17 +2690,22 @@ const FINALIZE_CELLS: [Cell; 30] = [
         Listed::Acts,
         None,
     ),
-    finalizes(
-        "milestone-finalize-a-pending-config-delta",
-        FRESH,
-        two_sub_tasks_joined!(
-            [],
-            [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
-        ),
-        FINALIZE_IT,
-        Listed::Acts,
-        None,
-    ),
+    // The record's §6, entry 19: the docs say two things of a pending config delta at a
+    // commit that is not the layer's first; until ruled, it may not ride.
+    Cell {
+        marks: &[Mark::Silence(19)],
+        ..finalizes(
+            "milestone-finalize-a-pending-config-delta",
+            FRESH,
+            two_sub_tasks_joined!(
+                [],
+                [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
+            ),
+            FINALIZE_IT,
+            Listed::Acts,
+            None,
+        )
+    },
     finalizes(
         "milestone-finalize-a-file-of-the-users-in-the-merged-set",
         FRESH,

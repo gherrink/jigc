@@ -370,10 +370,13 @@ pub enum May {
     CopiedFrom,
     /// **Carried as it stands** — a place whose bytes a commit the command makes may hold,
     /// **the bytes the working tree holds there**, and which the command writes nothing at:
-    /// a pending `.jigc/config` delta the milestone boundary's aggregate commit carries,
-    /// *"overlays the promoted docs + first-commit config"* (`design/finalize.md` →
-    /// *`fan-out` finalize*). It lets no difference happen at the file layer, and lets a
-    /// commit or the index hold only what stands there in the working tree.
+    /// the project config layer a finalize lands on its first commit, *"on a first commit,
+    /// the project config layer"* (`design/finalize.md` → *5. Stage*) and the milestone
+    /// boundary's *"overlays the promoted docs + first-commit config"* (→ *`fan-out`
+    /// finalize*). It lets no difference happen at the file layer, and lets a commit or the
+    /// index hold only what stands there in the working tree. Its lines stand under
+    /// [`When::FirstCommitOfItsPlace`]: the word says what a commit may hold, and the
+    /// condition which commit.
     Carried,
     /// Gone from its place and standing, the same entry, under this directory of the
     /// repository.
@@ -463,6 +466,17 @@ pub enum When {
     Always,
     /// The repository has no commit: its `HEAD` is unborn.
     NoCommitYet,
+    /// **The place's first commit**: the tree the main checkout's `HEAD` holds before the
+    /// command has nothing at the line's place — an unborn `HEAD` included — so the commit
+    /// the command makes is the first to land what stands there. *"on a first commit, the
+    /// project config layer (`.jigc/config`, `.jigc/.gitignore`)"* (`design/finalize.md` →
+    /// *5. Stage*): the layer `setup` wrote and, until M48, never committed, which the
+    /// first finalize landed. A line under it of any other place than the file layer's is
+    /// in force nowhere. Added 2026-10-19, after the review of the task `B7`'s second
+    /// part, its first finding: [`May::Carried`] had held under any `HEAD`, so a pending
+    /// delta, and a file of the user's nobody staged under the place, rode a commit that
+    /// was not the layer's first and held.
+    FirstCommitOfItsPlace,
     /// The command refused. A line under it holds on a refusal and **only** then: what
     /// the command may do where it exits 0 is another line's to say.
     Refused,
@@ -1165,12 +1179,25 @@ impl<'a> Tally<'a> {
     /// The lines in force: their condition holds, and the command acted or the line holds
     /// on a refusal.
     fn in_force(&self) -> impl Iterator<Item = (usize, &'a Line)> + '_ {
-        let unborn = self
+        let head = self
             .seen
             .before
             .checkouts
             .get(REPO)
-            .is_none_or(|main| main.head.is_empty());
+            .map(|main| main.head.as_str())
+            .unwrap_or_default();
+        let unborn = head.is_empty();
+        // What `HEAD` held before the command, read once and only for a line that asks.
+        let committed = std::cell::OnceCell::new();
+        let first_commit_of = move |allows: Allows| {
+            let Allows::Files(place, _) = allows else {
+                return false;
+            };
+            !committed
+                .get_or_init(|| tree_of(self.seen.before, head))
+                .keys()
+                .any(|path| self.placed(place, &format!("{REPO}/{path}")))
+        };
         // Under the spelling the cell names: its own lines, and every line of no spelling
         // but those it replaces.
         let spelled = |line: &Line| match line.spelling {
@@ -1185,6 +1212,7 @@ impl<'a> Tally<'a> {
                 && match line.when {
                     When::Always => true,
                     When::NoCommitYet => unborn,
+                    When::FirstCommitOfItsPlace => first_commit_of(line.allows),
                     When::Refused => !self.acted,
                 }
         })

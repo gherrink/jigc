@@ -7,8 +7,8 @@
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
-//! other leaves of the `milestone` family — and 519 cells: the acceptance's
-//! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
+//! other leaves of the `milestone` family — and 520 cells: the acceptance's
+//! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
@@ -298,6 +298,17 @@ const THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ: [Quote; 3] = [
         words: "only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes \"delete `.jigc/`'s gitignored caches, rebuild from `.md`s, nothing lost\" hold for the index too",
     },
 ];
+
+/// **The project config layer, on its first commit** — the sentence both finalize rows
+/// rest their config lines on, `T3, the config` and `M3, the config`, each under
+/// [`When::FirstCommitOfItsPlace`], so that the two rows read it one way. The review of
+/// the task `B7`'s second part, its first finding: the milestone's row had carried the
+/// layer into any commit, and the task's into none.
+const THE_CONFIG_LAYERS_FIRST_COMMIT: Quote = Quote {
+    doc: "design/finalize.md",
+    heading: "5. Stage",
+    words: "on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),",
+};
 
 /// **The scheduled list** — the write leaves the pilot leaves for before the port: one
 /// file of data, a line a leaf with its reason.
@@ -1657,11 +1668,6 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     ),
     (
         &["milestone", "finalize"],
-        "M3, the config",
-        &[Prepared::Of(State::Fresh)],
-    ),
-    (
-        &["milestone", "finalize"],
         "M6, the milestone's area moved aside",
         &[Prepared::Of(State::Fresh)],
     ),
@@ -1829,6 +1835,16 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["task", "finalize"], "T3", STAGED_UNDER_ANOTHER_LINE),
+    (
+        &["task", "finalize"],
+        "T3, the config",
+        NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
+    ),
+    (
+        &["task", "finalize"],
+        "T3, the config's ignore file",
+        NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
+    ),
     (&["task", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["task", "finalize"],
@@ -1973,8 +1989,13 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (
         &["milestone", "finalize"],
+        "M3, the config",
+        NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
+    ),
+    (
+        &["milestone", "finalize"],
         "M3, the config's ignore file",
-        NO_PENDING_IGNORE_FILE,
+        NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
     ),
     (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
@@ -2111,10 +2132,11 @@ const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names a
 const NO_CACHE_TO_RE_DERIVE: &str = "the milestone's cache absent or stale before the command — a fresh clone, or the cache \
      taken away by hand — which no cell of the family constructs: before the port";
 
-/// What would use the half of `M3, the config` at the config's ignore file: a pending change
-/// to it.
-const NO_PENDING_IGNORE_FILE: &str = "a change to `.jigc/.gitignore` nobody committed before the boundary: no cell makes one — the \
-     pending config delta's cell sets a knob";
+/// What would use a line of the config layer a finalize carries, `T3, the config` and
+/// `M3, the config`, each with its ignore file's half: the layer's first commit.
+const NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER: &str = "a commit that is the config layer's first — `HEAD` holding nothing under `.jigc/config`, or no \
+     `.jigc/.gitignore`, before the command — which no prepared state is: `setup`'s install \
+     commit lands the layer, and a repository set up before it did is before the port";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -5047,21 +5069,32 @@ fn a_registration_a_command_adds_is_at_the_place_its_line_names() {
     }
 }
 
-/// **A commit carries a config delta as it stands** — [`May::Carried`], the milestone
-/// boundary's *"overlays the promoted docs + first-commit config"* (`design/finalize.md` →
-/// *`fan-out` finalize*), the task `B7`'s second part. A `.jigc/config` change in the working
-/// tree that a commit the command made holds, byte for byte, holds; a commit that holds
-/// other bytes there is git's state moved, the command's own rewrite of the place included;
-/// and the place rewritten while the commit holds what stood is written outside the
-/// allowance — the word lets the commit carry what stood before the command, and the
-/// command write nothing there.
+/// **A commit carries the config layer as it stands, on the layer's first commit and on no
+/// other** — [`May::Carried`] under [`When::FirstCommitOfItsPlace`]: *"on a first commit,
+/// the project config layer (`.jigc/config`, `.jigc/.gitignore`)"* (`design/finalize.md` →
+/// *5. Stage*), the milestone boundary's *"overlays the promoted docs + first-commit
+/// config"* (→ *`fan-out` finalize*). Where `HEAD` holds nothing under the place, a
+/// `.jigc/config` file in the working tree that a commit the command made holds, byte for
+/// byte, holds; a commit that holds other bytes there is git's state moved, the command's
+/// own rewrite of the place included; and the place rewritten while the commit holds what
+/// stood is written outside the allowance — the word lets the commit carry what stood
+/// before the command, and the command write nothing there. **Where `HEAD` holds the
+/// layer** — every prepared state, since `setup`'s install commit lands it — the line is
+/// out of force: a pending delta, or a file of the user's nobody staged under the place,
+/// that a finalize commits is git's state moved, at both rows that quote the sentence, the
+/// same way. The task `B7`'s second part; narrowed after its review (the first finding),
+/// where the word held under any `HEAD` and a user's untracked file swept into a landed
+/// boundary held.
 #[test]
 fn a_commit_carries_a_config_delta_as_it_stands() {
     const CARRIES: Row = row(&[
-        line(
-            "K1",
-            Allows::Files(Where::Under(".jigc/config"), May::Carried),
-        ),
+        Line {
+            when: When::FirstCommitOfItsPlace,
+            ..line(
+                "K1",
+                Allows::Files(Where::Under(".jigc/config"), May::Carried),
+            )
+        },
         line("K2", Allows::Commit(Holding::OnlyTheLines)),
     ]);
     const KNOBS: &str = ".jigc/config/manifest.yaml";
@@ -5069,16 +5102,14 @@ fn a_commit_carries_a_config_delta_as_it_stands() {
     let before = then(&sandbox(), |m| {
         dir(m, "repo/.jigc");
         dir(m, "repo/.jigc/config");
-        put(m, &at, "scalar: {}\n");
-        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {}\n")))]);
         put(m, &at, "scalar: {a: 1}\n");
     });
     let carried = then(&before, |m| {
-        commit(m, "c2", &[(KNOBS, Some((0o100_644, "scalar: {a: 1}\n")))]);
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {a: 1}\n")))]);
     });
     comes_out(&Cell::of(CARRIES, &before, &carried), Classification::Holds);
     let other = then(&before, |m| {
-        commit(m, "c2", &[(KNOBS, Some((0o100_644, "scalar: {a: 2}\n")))]);
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {a: 2}\n")))]);
     });
     let (class, why) = Cell::of(CARRIES, &before, &other).came_to();
     assert!(
@@ -5099,13 +5130,96 @@ fn a_commit_carries_a_config_delta_as_it_stands() {
     ] {
         let after = then(&before, |m| {
             put(m, &at, "scalar: {a: 2}\n");
-            commit(m, "c2", &[(KNOBS, Some((0o100_644, written)))]);
+            commit(m, "c1", &[(KNOBS, Some((0o100_644, written)))]);
         });
         let (class, why) = Cell::of(CARRIES, &before, &after).came_to();
         assert!(
             class == expected && why.iter().any(|why| why.contains(KNOBS)),
             "{what}: {class}, {why:#?}"
         );
+    }
+    // The same delta where `HEAD` holds the layer: the line is out of force.
+    let layer = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/config");
+        put(m, &at, "scalar: {}\n");
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {}\n")))]);
+    });
+    let pending = then(&layer, |m| put(m, &at, "scalar: {a: 1}\n"));
+    let swept = then(&pending, |m| {
+        commit(m, "c2", &[(KNOBS, Some((0o100_644, "scalar: {a: 1}\n")))]);
+    });
+    let (class, why) = Cell::of(CARRIES, &pending, &swept).came_to();
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains(KNOBS)),
+        "a pending delta where `HEAD` holds the layer: {class}, {why:#?}"
+    );
+    the_config_layer_committed_is_carried_by_no_line_of_a_finalize();
+}
+
+/// The two rows that quote *"on a first commit, the project config layer"* read it one way:
+/// the layer's first commit holds at each; where `HEAD` holds the layer, a pending delta, or
+/// a file of the user's nobody staged under the place, that a finalize commits is git's
+/// state moved at each — the exclusion.
+fn the_config_layer_committed_is_carried_by_no_line_of_a_finalize() {
+    const KNOBS: &str = ".jigc/config/manifest.yaml";
+    const NOTES: &str = ".jigc/config/notes-of-the-user.txt";
+    const FINALIZES: [(Row, &[&str]); 2] = [
+        (task::FINALIZE, &["task", "finalize", "t1"]),
+        (milestone::FINALIZE, &["milestone", "finalize", "m"]),
+    ];
+    let first = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/config");
+        put(m, &format!("{REPO}/{KNOBS}"), "scalar: {}\n");
+    });
+    let landed = then(&first, |m| {
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {}\n")))]);
+    });
+    for (row, argv) in FINALIZES {
+        let (class, why) = Cell {
+            argv,
+            code: Some(0),
+            ..Cell::of(row, &first, &landed)
+        }
+        .came_to();
+        assert!(
+            class == Classification::Holds,
+            "`jigc {}`, the layer on its first commit: {class}, {why:#?}",
+            row.leaf.join(" ")
+        );
+    }
+    let committed = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/config");
+        put(m, &format!("{REPO}/{KNOBS}"), "scalar: {}\n");
+        commit(m, "c1", &[(KNOBS, Some((0o100_644, "scalar: {}\n")))]);
+    });
+    for (what, path, bytes) in [
+        ("a pending delta", KNOBS, "scalar: {a: 1}\n"),
+        (
+            "a file of the user's nobody staged",
+            NOTES,
+            "a note of the user\n",
+        ),
+    ] {
+        let before = then(&committed, |m| put(m, &format!("{REPO}/{path}"), bytes));
+        let after = then(&before, |m| {
+            commit(m, "c2", &[(path, Some((0o100_644, bytes)))]);
+        });
+        for (row, argv) in FINALIZES {
+            let (class, why) = Cell {
+                argv,
+                code: Some(0),
+                ..Cell::of(row, &before, &after)
+            }
+            .came_to();
+            assert!(
+                class == Classification::GitMoved && why.iter().any(|why| why.contains(path)),
+                "`jigc {}`, {what} committed where `HEAD` holds the layer: {class}, {why:#?}",
+                row.leaf.join(" ")
+            );
+        }
     }
 }
 
@@ -7877,6 +7991,18 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::Lost,
         &["milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree"],
     ),
+    // The rows' record's §6, entry 19 — one mechanism at two doors, the stage's `git add
+    // -- .jigc/config .jigc/.gitignore`; each cell marked.
+    (
+        "r1-task-finalize-commits-a-change-under-the-config-layer-nobody-staged",
+        Classification::GitMoved,
+        &["task-finalize-a-pending-config-delta"],
+    ),
+    (
+        "r1-milestone-finalize-commits-a-change-under-the-config-layer-nobody-staged",
+        Classification::GitMoved,
+        &["milestone-finalize-a-pending-config-delta"],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -8302,9 +8428,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (519, 387, 132),
+        (520, 388, 132),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         seventy — fifty-eight in the gate, four of them its spelling `doc-only`, twelve \
+         seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \

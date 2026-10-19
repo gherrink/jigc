@@ -34,13 +34,31 @@ const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Lin
     }
 }
 
+/// **The project config layer a finalize lands on its first commit** — `T3, the config`:
+/// the stage's sentence, which `M3, the config` quotes too, and the per-task commit set's
+/// two stages.
+const THE_CONFIG_CARRIED: [Quote; 2] = [
+    super::THE_CONFIG_LAYERS_FIRST_COMMIT,
+    Quote {
+        doc: "design/storage.md",
+        heading: "The per-task working area (staging)",
+        words: "jigc's promotion (docs + first-commit config) — and finalize unions exactly those, never sweeping unstaged/untracked working-tree WIP",
+    },
+];
+
 /// **`jigc task finalize`** — the record's §3. The record names no consent of its own.
 pub const FINALIZE: Row = Row {
     leaf: &["task", "finalize"],
     unit: Unit::TheWordAfterTheLeaf,
     spellings: &[Spelling {
         name: "doc-only",
-        replaces: &["T2", "T3", "T4"],
+        replaces: &[
+            "T2",
+            "T3",
+            "T3, the config",
+            "T3, the config's ignore file",
+            "T4",
+        ],
     }],
     consent: None,
     home: Prepared::Of(State::Fresh),
@@ -91,6 +109,28 @@ pub const FINALIZE: Row = Row {
                 },
             ],
         ),
+        // The project config layer, carried into the commit as it stands on the layer's
+        // first commit — `T3`'s second sentence, read as `M3, the config` reads it, and
+        // the per-task commit set's *"docs + first-commit config"*. Added 2026-10-19, after
+        // the review of the task `B7`'s second part (its first finding): the two rows read
+        // one sentence two ways. Whether a pending delta rides a later commit is the rows'
+        // record's §6, entry 19.
+        Line {
+            when: When::FirstCommitOfItsPlace,
+            ..line(
+                "T3, the config",
+                Allows::Files(Where::Under(".jigc/config"), May::Carried),
+                &THE_CONFIG_CARRIED,
+            )
+        },
+        Line {
+            when: When::FirstCommitOfItsPlace,
+            ..line(
+                "T3, the config's ignore file",
+                Allows::Files(Where::Path(".jigc/.gitignore"), May::Carried),
+                &THE_CONFIG_CARRIED,
+            )
+        },
         line(
             "T4",
             Allows::Commit(Holding::TheIndex),
@@ -761,7 +801,7 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 /// Two cells run their own command a second time over what a first refusal left
 /// ([`Lead::Refused`]): the ruling on a refusal's caches is bounded by *a refused command
 /// run again refuses again, with the plant standing*.
-const FINALIZE_CELLS: [Cell; 25] = [
+const FINALIZE_CELLS: [Cell; 26] = [
     finalize(
         "task-finalize-a-task-that-is-not-there",
         FRESH,
@@ -778,6 +818,23 @@ const FINALIZE_CELLS: [Cell; 25] = [
         Listed::Acts,
         None,
     ),
+    // The record's §6, entry 19: the docs say two things of a pending config delta at a
+    // commit that is not the layer's first; until ruled, it may not ride — the cell
+    // `milestone-finalize-a-pending-config-delta` is the same question at the boundary.
+    Cell {
+        marks: &[Mark::Silence(19)],
+        ..finalize(
+            "task-finalize-a-pending-config-delta",
+            FRESH,
+            a_decision!(
+                [],
+                [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
+            ),
+            FINALIZE_THE_DECISION,
+            Listed::Acts,
+            None,
+        )
+    },
     finalize(
         "task-finalize-an-untracked-file-at-the-created-docs-home",
         FRESH,

@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding): §20, two keys — one mechanism at two doors, a finalize commits a change under the config layer nobody staged — two cells, each marked with the rows' record's §6, entry 19; §1, the two design docs' sentences that say two things of it; §19's *"the cell holds"* corrected.*
+
 *Changed 2026-10-19, with the fourth commit of the milestone family's own: §19, the terminals' cells — one key of their own, four cells under §17's, and the leads of 2026-10-18 each a cell.*
 
 *Changed 2026-10-19, with the third commit of the milestone family's own: §18, the fan-out doors' cells — none red.*
@@ -165,6 +167,30 @@ $JIGC start --workflow single-task "tidy the changelog" > /dev/null
 $JIGC doc set-field changelog:changelog#releases/1-0-0/link --unset --task tidy-the-changelog; echo "exit=$?"   # exit=0 — "already absent — nothing changed"
 ls .jigc/tasks/tidy-the-changelog/docs/          # changelog:changelog.md — the committed changelog, copied in by this call
 ```
+
+### `r1-finalize-design-says-an-ordinary-finalize-commits-a-pending-config-delta-where-its-stage-takes-the-config-layer-on-a-first-commit`
+
+*Recorded 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding), which found the question the rows' record had called answered — whether a pending config delta rides a finalize — answered two ways by the design docs: the rows' record's §6, entry 19, open. For the stabilization run's ledger: doctype `inconsistency`, two design docs that disagree — and one of them with itself — the product with the first side.*
+
+**One side** — `design/finalize.md` → *The doc-only arm*, of a delta this arm leaves out:
+
+> **Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh
+
+> Both wait for the next ordinary finalize.
+
+and → *Rollback discipline*, of the config layer: *"the two stage functions `git add` this jigc-owned set every finalize"*.
+
+**The other side** — `design/finalize.md` → *5. Stage*:
+
+> on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),
+
+> finalize **never** runs `git add --all`: untracked and unstaged working-tree changes stay out of the commit and are surfaced
+
+and `design/storage.md` → *The per-task working area (staging)*:
+
+> jigc's promotion (docs + first-commit config) — and finalize unions exactly those, never sweeping unstaged/untracked working-tree WIP
+
+**What disagrees.** By the first, every ordinary finalize commits the config layer as the working tree holds it, a pending delta included; by the second, it stages the layer on a first commit, and a change nobody staged stays out of the commit. Since M48 `setup`'s install commit lands the layer (`design/assistant-adapter.md` → *The install commit's pathspec*), so no finalize after it is the layer's first. **The product** is with the first, and wider than it: both doors stage the layer by its directory, so a file of the user's under `.jigc/config` rides too (§20). The first side's own sentence names what it describes a gap — G8 of M55's gap list, which the doc-only arm was settled to close. **What follows** is the human's to rule (entry 19); its robust answer has the first side's sentences change and the product stop staging the layer by its directory.
 
 ### `r1-finalize-design-says-the-unsquashed-aggregate-commits-the-index-where-the-output-contract-says-the-boundary-takes-none-of-it`
 
@@ -818,7 +844,7 @@ $JIGC milestone finalize land-it; echo "exit=$?"   # exit=0 — "notes.txt (neve
 
 ### What the other cells show
 
-**The leads of 2026-10-18, each a cell now**: a change staged **before** `milestone create` is refused by the boundary under both spellings — `finalize.carried-staged`, exit 3, *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the change stays staged"* (`milestone-finalize-a-file-staged-before-the-milestone`, `milestone-finalize-squash-false-a-file-staged-before-the-milestone`); a plain-spelling boundary over a built edge index takes the stamp's file away under `M10`'s *invalidated* (every cell of `land-it` re-enters its sub-tasks, which builds the index); and a pending config delta rides the aggregate under `M3, the config` — the cell **holds** (`milestone-finalize-a-pending-config-delta`). The base cells land; a second base cell over two reporters' findings lands their docs under `M2`. At a created doc's home a link or a directory refuses `store.home-not-regular-file`, a change staged there `finalize.promote-clobber`; at the record a file, a committed file, an edit and a link or a directory refuse; a foreign file in a sub-task's area **or the milestone's** is moved aside — the second under `M6, the milestone's area moved aside`, the line this commit adds — and the user's own worktree, a file beside a cache and one in the merged set stay. `discard` refuses a foreign file in either area (`milestone.foreign-bytes`), takes it under `--force` with the path named, refuses a file of the user's in a sub-task's worktree (`milestone.dirty-worktree`), and leaves the user's own worktree, there or moved away. **Two needs are scheduled**: `M2` × *E*, before and after the first write — `fresh` holds no committed doc a sub-task copies in.
+**The leads of 2026-10-18, each a cell now**: a change staged **before** `milestone create` is refused by the boundary under both spellings — `finalize.carried-staged`, exit 3, *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the change stays staged"* (`milestone-finalize-a-file-staged-before-the-milestone`, `milestone-finalize-squash-false-a-file-staged-before-the-milestone`); a plain-spelling boundary over a built edge index takes the stamp's file away under `M10`'s *invalidated* (every cell of `land-it` re-enters its sub-tasks, which builds the index); and a pending config delta rides the aggregate under `M3, the config` — the cell **holds** (`milestone-finalize-a-pending-config-delta`). *[Not so for long — corrected 2026-10-19, by the first of the fixes after the review of part B: `M3, the config` held the layer in any commit, where its sentences say *first commit*; narrowed, the cell is red and marked with the rows' record's §6, entry 19, which is open — §20.]* The base cells land; a second base cell over two reporters' findings lands their docs under `M2`. At a created doc's home a link or a directory refuses `store.home-not-regular-file`, a change staged there `finalize.promote-clobber`; at the record a file, a committed file, an edit and a link or a directory refuse; a foreign file in a sub-task's area **or the milestone's** is moved aside — the second under `M6, the milestone's area moved aside`, the line this commit adds — and the user's own worktree, a file beside a cache and one in the merged set stay. `discard` refuses a foreign file in either area (`milestone.foreign-bytes`), takes it under `--force` with the path named, refuses a file of the user's in a sub-task's worktree (`milestone.dirty-worktree`), and leaves the user's own worktree, there or moved away. **Two needs are scheduled**: `M2` × *E*, before and after the first write — `fresh` holds no committed doc a sub-task copies in.
 
 ### §14's leads for `B7`, each answered or kept
 
@@ -829,3 +855,58 @@ $JIGC milestone finalize land-it; echo "exit=$?"   # exit=0 — "notes.txt (neve
 | a record missing from the worktree — *"nothing was written. `git checkout …` brings the record back"* | `engine/src/milestone.rs`, `create` | **answered** — `milestone-create-a-change-staged-at-the-records-home` meets it and changes nothing; the other doors over a record gone answer otherwise, a key of words (§17, above) |
 | a settled sub-task's leftover — *"the record is right and nothing was changed"* | `engine/src/milestone.rs`, `task discard` of a settled sub-task | **a lead still** — no cell builds a settled sub-task whose area stands again; the task family's, by its own row |
 | `git_home_claims` — *"nothing was written: `git …` failed"*; a pin git cannot answer — *"nothing was written and nothing was adopted"* | `cli/src/task.rs`; `engine/src/file_state.rs` | **leads still** — no plant of the frame makes git fail, and the states that would (a permission bit changed by hand) are declared bounds, no cells (the plan's §1.1) |
+
+## 20. A finalize commits a change under the config layer nobody staged — two keys, one mechanism at two doors, two cells, each marked
+
+*2026-10-19, this tree's debug build and the previous release's rebuild (`accf3996…ab5d`), macOS arm64; the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding). Both keys turn on the rows' record's §6, **entry 19**, open: under the reading in force until it is ruled, a pending delta at a commit that is not the config layer's first is a change nobody staged.*
+
+**The mechanism, and its count.** One act at three sites, all in `crates/cli/src/task.rs`, each `git add -- .jigc/config .jigc/.gitignore` — a directory, so whatever stands under it: `stage_index_honoring` (an ordinary `task finalize`), `stage_migration` (a migration task's), and `overlay_docs_commit_and_ff`, which both spellings of `milestone finalize` commit through. The doc-only arm and the amend arm stage no config. Two doors, so two keys in the grammar the keys have; one fix closes both.
+
+### `r1-task-finalize-commits-a-change-under-the-config-layer-nobody-staged`
+
+- *The cell.* `task-finalize-a-pending-config-delta` — a knob set with `jigc config set` before the task's finalize — marked with **entry 19**.
+- *What it came to.* **Git's state moved outside its allowance**: the commit holds `.jigc/config/manifest.yaml`, which no line wrote and the index did not hold; on both binaries.
+
+### `r1-milestone-finalize-commits-a-change-under-the-config-layer-nobody-staged`
+
+- *The cell.* `milestone-finalize-a-pending-config-delta` — the same knob, set after the join — marked with **entry 19**. It held until the fix, under `M3, the config` as it then read.
+- *What it came to.* **Git's state moved outside its allowance**, on both binaries.
+
+### Seen, and held by no cell
+
+**A file of the user's, nobody staged, under `.jigc/config`** rides each door's commit at exit 0, on both binaries — the review's drive at the boundary, and the same at `task finalize`. Red under either answer to entry 19 (its *other answer* carries jigc's own delta only). No cell plants it: no kind of plant targets a carried line (`byte_cell::aimed` — *U* targets a line that lands bytes, and a carried line lands none), so the need is not derived; a plant kind for a commit's carried place is the frame's to add. The two repros below each make both the delta and the file, and show both in the commit.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p ../outside; for s in context decision consequences summary; do printf '%s, in a line.\n' $s > ../outside/$s; done
+$JIGC start --workflow single-task "record a decision" > /dev/null
+$JIGC doc create adr --title "One way" --task record-a-decision > /dev/null
+for s in context decision consequences; do $JIGC doc set-slot adr:one-way#$s --from-file ../outside/$s --task record-a-decision > /dev/null; done
+$JIGC doc set-field commit:record-a-decision#type --value docs --task record-a-decision > /dev/null
+$JIGC doc set-slot commit:record-a-decision#summary --from-file ../outside/summary --task record-a-decision > /dev/null
+$JIGC config set finalize.fan-out.squash true > /dev/null          # the cell's pending delta
+printf 'a note of the user\n' > .jigc/config/notes-of-the-user.txt  # and a file of the user's, nobody staged
+git status --porcelain                        # ?? .jigc/config/manifest.yaml · ?? .jigc/config/notes-of-the-user.txt
+$JIGC task finalize record-a-decision > /dev/null; echo "exit=$?"   # exit=0
+git show --name-only --format= HEAD -- .jigc/config   # both files, in the task's commit
+```
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p ../outside; printf 'add a file\n' > ../outside/summary
+$JIGC milestone create "Land it" > /dev/null; $JIGC milestone add-task land-it "Add alpha file" > /dev/null
+$JIGC milestone provision land-it > /dev/null
+(cd .jigc/worktrees/add-alpha-file && $JIGC workflow sub-task --task add-alpha-file > /dev/null \
+  && $JIGC doc set-field commit:add-alpha-file#type --value feat --task add-alpha-file > /dev/null \
+  && $JIGC doc set-slot commit:add-alpha-file#summary --from-file ../../../../outside/summary --task add-alpha-file > /dev/null \
+  && printf 'code\n' > a.txt && git add a.txt)
+$JIGC milestone join land-it > /dev/null
+$JIGC config set finalize.fan-out.squash true > /dev/null          # the cell's pending delta
+printf 'a note of the user\n' > .jigc/config/notes-of-the-user.txt  # and a file of the user's, nobody staged
+$JIGC milestone finalize land-it > /dev/null 2>&1; echo "exit=$?"   # exit=0
+git show --name-only --format= HEAD -- .jigc/config   # both files, in the boundary's commit
+```

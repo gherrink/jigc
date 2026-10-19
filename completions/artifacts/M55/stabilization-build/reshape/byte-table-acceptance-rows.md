@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding): `M3, the config` held under any `HEAD`, where its sentences say *first commit* — so a file of the user's nobody staged under `.jigc/config`, swept into a landed boundary, held. It is in force on the layer's first commit alone, a condition of its own (§7, *the place's first commit*), and `jigc task finalize`'s row gains the same two lines, `T3, the config` and its ignore file's half, so that the two rows read the stage's sentence one way (§3, §4); the doc-only arm's G8 sentence is struck as a ground of the line. Whether a pending delta rides a commit that is not the layer's first is §6, entry 19 — two docs say two things — where §4 and the family's record had called it answered.*
+
 *Changed 2026-10-19, with the fourth commit of the milestone family's own, which brings the cells of `discard` and of `milestone finalize`'s plain spelling: `M6` gains its moved-aside half for the milestone's own area, whose complement its second sentence keeps too — the line as data had moved aside the sub-tasks' areas' alone (§4); and §6 gains entry 18, where the design doc's narrated loss at a landed boundary meets the exit rule. No other line moved.*
 
 *Changed 2026-10-19, with the second commit of the milestone family's own: §4b's note on the message file of a record commit says what the record doors' cells showed. No line moved.*
@@ -345,6 +347,16 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *5. Stage*
 
+**`T3, the config` and `T3, the config's ignore file` — `.jigc/config` and `.jigc/.gitignore`: carried into the commit as they stand in the working tree, and written nothing.** When: the layer's first commit — `HEAD` holds nothing at the place before the command. On a refusal: no (T7). *Added 2026-10-19, by the first of the fixes after the review of `B7`'s part B (its first finding).* `T3`'s second sentence stages the layer *"on a first commit"*, and as data `T3` stages only at the places a line of the file layer wrote — none named the config, so this row read the sentence as granting nothing, where `M3, the config` read it as granting every commit. Both rows now read it one way: the layer carried as it stands (§7, *carried as it stands*), on its first commit (§7, *the place's first commit*); `T3`'s *at `.jigc/config` and `.jigc/.gitignore`* is staged where these carry it. Since M48 `setup`'s install commit lands the layer, so no prepared state is such a commit and the two lines excuse nothing in any cell; a pending delta at a later commit is §6, entry 19. The spelling `doc-only` replaces them, with `T3`.
+
+> on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),
+
+— `design/finalize.md` → *5. Stage*
+
+> jigc's promotion (docs + first-commit config) — and finalize unions exactly those, never sweeping unstaged/untracked working-tree WIP
+
+— `design/storage.md` → *The per-task working area (staging)*
+
 **T4 — one commit on the checked-out branch, holding the index as it stood and what T3 staged — nothing that was neither staged nor a line's.** When: always. On a refusal: no (T7).
 
 > The commit set is therefore **the git index** — the agent's staged code plus jigc's just-staged docs/config — committed whole
@@ -403,7 +415,7 @@ Owner doc: `design/finalize.md`.
 
 — `design/finalize.md` → *4. Promote managed docs*
 
-**A second spelling, with its own commit line — the doc-only arm.** A task whose workflow includes `step:finalize-doc-only` commits its own paths and never the index; which task that is cannot be read off a repository's bytes, so it is a spelling of the leaf that a cell names. No cell of the acceptance is one. *[Not so — corrected 2026-10-19, by the fifth of the fixes after the review of `B7`'s part A: one is. `task-finalize-a-link-to-nothing-at-the-created-docs-home` runs a task of `report-inconsistency`, whose workflow includes `step:finalize-doc-only`, and has since the acceptance's cells were built (2026-10-13); it names the spelling since `B7`'s third commit ([the findings](byte-table-findings.md) → §15).]* **Ruled 2026-10-18**, option A: `B7` builds the switch by which a cell names a spelling of its leaf, in a commit of its own before the milestone rows, with cells for this spelling and for `M4`'s. **Built 2026-10-18**, by that task's third commit: the spelling `doc-only`, which takes `T2`, `T3` and `T4` out of force and puts `T9` in their place. *Corrected the same day, by the same commit:* this paragraph said the arm's row replaces `T3` and `T4`; read whole, *The doc-only arm* leaves the stamp out of its path set as well — `T2`'s write — and a pending config delta, `T3`'s second sentence. So all three.
+**A second spelling, with its own commit line — the doc-only arm.** A task whose workflow includes `step:finalize-doc-only` commits its own paths and never the index; which task that is cannot be read off a repository's bytes, so it is a spelling of the leaf that a cell names. No cell of the acceptance is one. *[Not so — corrected 2026-10-19, by the fifth of the fixes after the review of `B7`'s part A: one is. `task-finalize-a-link-to-nothing-at-the-created-docs-home` runs a task of `report-inconsistency`, whose workflow includes `step:finalize-doc-only`, and has since the acceptance's cells were built (2026-10-13); it names the spelling since `B7`'s third commit ([the findings](byte-table-findings.md) → §15).]* **Ruled 2026-10-18**, option A: `B7` builds the switch by which a cell names a spelling of its leaf, in a commit of its own before the milestone rows, with cells for this spelling and for `M4`'s. **Built 2026-10-18**, by that task's third commit: the spelling `doc-only`, which takes `T2`, `T3` and `T4` out of force and puts `T9` in their place — and, since 2026-10-19, `T3, the config` and its ignore file's half with `T3`. *Corrected the same day, by the same commit:* this paragraph said the arm's row replaces `T3` and `T4`; read whole, *The doc-only arm* leaves the stamp out of its path set as well — `T2`'s write — and a pending config delta, `T3`'s second sentence. So all three.
 
 **T9 — under the spelling `doc-only`: one commit on the checked-out branch, holding only the paths the row's other lines wrote — the task's promoted docs — and never the index as it stood; whatever else is staged stays staged; the stamp is not refreshed and no pending config delta rides.** When: the task's composed workflow includes `step:finalize-doc-only`, a condition no manifest shows, carried as the spelling a cell names. On a refusal: no (T7).
 
@@ -662,7 +674,7 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 
 — `design/finalize.md` → *`fan-out` finalize*
 
-**`M3, the config` — the project config layer: carried into the aggregate commit as it stands in the working tree, and written nothing.** When: always, under both spellings — `squash: false` replaces `M3` and not this line, whose aggregate *"ride[s] the parent's aggregate commit"* too. On a refusal: no (M8). *Added 2026-10-19, with the milestone family's rows (the task `B7`'s second part), for the lead of 2026-10-18 that a pending `.jigc/config` delta rides the aggregate:* `M3`'s own first sentence has the boundary overlay *"the promoted docs + first-commit config"*, and the line as data held nothing of the config, so a boundary that carried a pending delta read *git's state moved* for what its sentence declares. The config is the layer `T3` names, and a pending delta is what an ordinary finalize commits — the doc-only arm leaves it out *"by construction"* where *"an ordinary code-less finalize commits it beside the doc"*. Carried by a word of its own (§7, *carried as it stands*): a commit may hold at the place the bytes the working tree held there before the command, and the command writes nothing there.
+**`M3, the config` — the project config layer: carried into the aggregate commit as it stands in the working tree, and written nothing.** When: always, under both spellings — `squash: false` replaces `M3` and not this line, whose aggregate *"ride[s] the parent's aggregate commit"* too. On a refusal: no (M8). *Added 2026-10-19, with the milestone family's rows (the task `B7`'s second part), for the lead of 2026-10-18 that a pending `.jigc/config` delta rides the aggregate:* `M3`'s own first sentence has the boundary overlay *"the promoted docs + first-commit config"*, and the line as data held nothing of the config, so a boundary that carried a pending delta read *git's state moved* for what its sentence declares. The config is the layer `T3` names, and a pending delta is what an ordinary finalize commits — the doc-only arm leaves it out *"by construction"* where *"an ordinary code-less finalize commits it beside the doc"*. Carried by a word of its own (§7, *carried as it stands*): a commit may hold at the place the bytes the working tree held there before the command, and the command writes nothing there. **[Narrowed 2026-10-19, by the first of the fixes after the review of `B7`'s part B (its first finding): the line held under any `HEAD` — so a file of the user's nobody staged under `.jigc/config`, which a landed boundary sweeps into its commit at exit 0 (driven on this tree's debug build and on the previous release's, the same), held. Its sentences say less. The first overlays *"first-commit config"*, the second stages the layer *"on a first commit"*; the third is the doc-only arm's, speaks of `task finalize`, and calls the commit of a pending delta a *gap* — G8 — and it is one side of a question the docs answer two ways (§6, entry 19), not a ground for this line: it is struck from the line's quotes, and stands below for the record. *"The config is the layer `T3` names, and a pending delta is what an ordinary finalize commits"* above is withdrawn with it. The line is in force on the layer's first commit alone (§7, *the place's first commit*), as `T3, the config` is at the task's door; `setup`'s install commit lands the layer since M48, so it excuses nothing in any cell, and the cell of a pending delta is red and marked with entry 19. When, above: the layer's first commit, under both spellings.]**
 
 > overlays the promoted docs + first-commit config
 
@@ -671,6 +683,8 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 > on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),
 
 — `design/finalize.md` → *5. Stage*
+
+*Struck as a ground of the line, 2026-10-19 — one side of §6, entry 19:*
 
 > **Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh
 
@@ -1209,7 +1223,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4, 7 and 18 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4, 7, 18 and 19 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -1497,6 +1511,49 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *What the product should do — robust.* **Keep the bytes and keep the success path free**: before removing a landed sub-task's worktree, move what git neither ignores nor holds — its untracked and unstaged files — aside to `.jigc/displaced/<sub-task-id>/`, the disposition the same boundary gives a working area's complement (`M6`'s *"Both keep their complement"*), and keep narrating what git ignores. *Why*: the measured warrant is against a *refusal* on the success path, not against keeping a byte; a move refuses nothing and loses nothing, so the clause holds and the warrant stands. *Its price*: build output that is not ignored lands in `displaced/`, which nothing cleans. *The other answer*: the clause yields here — the narrated loss is a declared bound of the 1.x line, written into the bounds' list with its reach.
 - *Until ruled*, the reading under which more is red: the clause — the cell `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` is *lost*, under `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree`, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §17).
 
+**19. A pending `.jigc/config` delta at a commit that is not the layer's first — does a finalize carry it? Two docs say two things. Open.**
+
+*Recorded 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding), which found the question called answered by the docs where they answer it both ways.*
+
+- *The question.* `jigc config set` writes the project config layer — `.jigc/config/manifest.yaml` — and stages nothing. Since M48 `setup`'s install commit lands the layer, so every finalize after it meets such a delta at a commit that is not the layer's first. Both doors stage the layer by its directory, `git add -- .jigc/config .jigc/.gitignore` — `task finalize` in its stage (`stage_index_honoring`, and `stage_migration` for a migration task), the milestone boundary in the overlay both its spellings commit through (`overlay_docs_commit_and_ff`), all in `crates/cli/src/task.rs` — so the delta rides the commit, and so does **any** file under `.jigc/config` nobody staged, a file of the user's included. Driven on this tree's debug build and on the previous release's rebuild, the same on both: a knob set, and in another run a note of the user's left untracked under `.jigc/config`, are each in the commit `task finalize` lands, and in the one a landed boundary lands, at exit 0 ([byte-table-findings.md](byte-table-findings.md) → §20, the repros).
+- *The words for carrying it.*
+
+> **Outside the path set by construction:** a pending `.jigc/config` delta (an ordinary code-less finalize commits it beside the doc — gap G8) and the `.jigc/version` stamp, which this arm does not refresh
+
+— `design/finalize.md` → *The doc-only arm*
+
+> Both wait for the next ordinary finalize.
+
+— `design/finalize.md` → *The doc-only arm*
+
+> the two stage functions `git add` this jigc-owned set every finalize
+
+— `design/finalize.md` → *Rollback discipline*
+
+- *The words against it.*
+
+> on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`),
+
+— `design/finalize.md` → *5. Stage*
+
+> finalize **never** runs `git add --all`: untracked and unstaged working-tree changes stay out of the commit and are surfaced
+
+— `design/finalize.md` → *5. Stage*
+
+> jigc's promotion (docs + first-commit config) — and finalize unions exactly those, never sweeping unstaged/untracked working-tree WIP
+
+— `design/storage.md` → *The per-task working area (staging)*
+
+> so the scaffolding never rides the user's first `finalize`
+
+— `design/assistant-adapter.md` → *`jigc setup` has assistant-*neutral* install responsibilities too*
+
+  — and the milestone boundary's *"overlays the promoted docs + first-commit config"* (`M3`) says *first-commit* too. The G8 sentence's own name for what it describes is a gap: M55's gap list has *"Code-less finalize commits anything staged during the task + unstaged .jigc/config deltas"* (`completions/artifacts/M55/gap-list.md`, G8), which the doc-only arm was settled to close (`completions/artifacts/M55/settle-log.md`, R1). And where the product itself routes a config delta, it has the user stage it: `jigc uninstall`'s refusal over the invocation log prints `jigc config set invocation-log false`, then `git -C <home> add -- .jigc/config` (`DECISIONS.md` → *2026-10-06 — `jigc uninstall`'s refusal over the invocation log says the order itself*).
+- *What the product should do — robust.* **Commit no change under the config layer that nobody staged.** A finalize commits the task's index and what this transaction itself wrote; a change under `.jigc/config` it did not write — a knob set earlier with `jigc config set`, or a file of the user's — stays out of the commit and is named in the left-out list, where the ordinary finalize already names untracked and unstaged paths, and the user stages it, as the uninstall route above already tells them to. *Why*: the exit rule's first clause, *"commits content the user did not ask for"*; and one command behaving as its siblings — the doc-only arm leaves the delta out *"by construction"*, the ordinary arm promises it *"never runs `git add --all`"*, and a pathspec that is a directory is a sweep of that directory. *Its price*: a knob set and never staged reaches no teammate until the user commits it — which is how every other change to a repository's configuration travels. **The doc sentences that would change**: `design/finalize.md` → *The doc-only arm*, the parenthesis and *"Both wait for the next ordinary finalize"* (the stamp's half stays); → *Rollback discipline*, *"every finalize"*. **The product change that follows**: the three sites above stop staging the config layer by its directory, staging at most a path the transaction itself wrote there.
+- *The other answer*: the delta rides, as the G8 sentence has it — and then only jigc's own. A file under `.jigc/config` nobody wrote through jigc is content the user did not ask for under either answer, so the stage would have to tell the two apart (the knobs file alone, or the layer's files `setup` and `config set` write).
+- *What each makes of the cells.* `task-finalize-a-pending-config-delta` and `milestone-finalize-a-pending-config-delta`: under the first answer each is *git's state moved outside its allowance* — the commit holds a path no line wrote and no index held; under the second each holds. A file of the user's nobody staged under `.jigc/config` is red under both; no cell plants one — no kind of plant targets a carried line (`byte_cell::aimed`) — and its drive is a repro under the two keys.
+- *Until ruled*, the reading under which more is red: the first. `T3, the config` and `M3, the config` are in force on the layer's first commit alone (§7, *the place's first commit*), and the two cells are red, each under a key of its door — `r1-task-finalize-commits-a-change-under-the-config-layer-nobody-staged`, `r1-milestone-finalize-commits-a-change-under-the-config-layer-nobody-staged`, one mechanism — and marked with this entry ([byte-table-readings.md](byte-table-readings.md) → §18). The two docs' disagreement is [byte-table-findings.md](byte-table-findings.md) → §1, `r1-finalize-design-says-an-ordinary-finalize-commits-a-pending-config-delta-where-its-stage-takes-the-config-layer-on-a-first-commit`.
+
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.
@@ -1527,7 +1584,7 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
 | **a copy of a staged doc of the unit** — staged in its own task area, a sub-task's area, or its own merged set (narrowed 2026-10-18, after the review of `B7`'s part A: it had been a doc staged in *any* unit, so a sibling's doc promoted was let land) — as a regular file | T1; M2 |
 | **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
-| **carried as it stands** — a place the command writes nothing at, whose bytes as the working tree held them before the command a commit it makes may hold (added 2026-10-19, with the milestone family's rows) | `M3, the config` |
+| **carried as it stands** — a place the command writes nothing at, whose bytes as the working tree held them before the command a commit it makes may hold (added 2026-10-19, with the milestone family's rows; under the condition *the place's first commit* since the first of the fixes after part B's review, which gave `T3` the same lines) | `M3, the config`; `T3, the config` — each with its ignore file's half |
 | **moved aside** — gone from its place, and standing with the same bytes under a named directory | T6; M6 |
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6; T9; MC3, MA4, MS4, MD2 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
@@ -1538,6 +1595,7 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **a worktree's registration removed**, at a path under a named directory | U6; M7; MD6 |
 | **a worktree's registration added**, with its checkout, at a path under a named place — whose components may stand for the unit and its sub-tasks (added 2026-10-19, with the milestone family's rows) | MP2 |
 | a condition read off the state before the command: **the repository has no commit** | S9 |
+| a condition read off the state before the command: **the place's first commit** — the tree `HEAD` holds has nothing at the line's place, an unborn `HEAD` included (added 2026-10-19, by the first of the fixes after the review of `B7`'s part B: *"on a first commit, the project config layer"*) | `T3, the config`; `M3, the config` — each with its ignore file's half |
 | a condition read off how the command ended: **it refused** (added 2026-10-13, for the ruling) | C1, C2, C3 |
 | a line **of a spelling** — in force only where a cell names that spelling of its leaf, and the lines the spelling replaces out of force there (added 2026-10-18, by the task `B7`'s third commit, for the human's ruling on the two spellings) | T9 (`doc-only`, replacing T2, T3, T4); M4 (`squash: false`, replacing M3) |
 | **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); every other line (no) |
