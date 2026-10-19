@@ -2975,7 +2975,8 @@ fn commit(manifest: &mut Manifest, id: &str, changed: &[(&str, Option<(u32, &str
 
 /// Milestone records, committed in one commit over the `HEAD` that stands: under `root`, a
 /// directory from the repository's root (`""` for the root itself), one record a milestone,
-/// each naming its sub-tasks as items `### <id>  {#<id>}`.
+/// each naming its sub-tasks as items `### <id>  {#<id>}` — and its shared base, as
+/// [`a_records_head`] has it.
 fn records(manifest: &mut Manifest, root: &str, milestones: &[(&str, &[&str])]) {
     let home = match root {
         "" => "milestone-records".to_string(),
@@ -2986,10 +2987,11 @@ fn records(manifest: &mut Manifest, root: &str, milestones: &[(&str, &[&str])]) 
         at = format!("{at}/{component}");
         dir(manifest, &at);
     }
+    let head = a_records_head(manifest);
     let written: Vec<(String, String)> = milestones
         .iter()
         .map(|(id, tasks)| {
-            let mut bytes = format!("# {id}\n\n## Tasks\n");
+            let mut bytes = format!("{head}# {id}\n\n## Tasks\n");
             for task in *tasks {
                 bytes.push_str(&format!(
                     "\n### {task}  {{#{task}}}\n\n<!-- fields -->\n- intent: an intent\n"
@@ -3007,6 +3009,18 @@ fn records(manifest: &mut Manifest, root: &str, milestones: &[(&str, &[&str])]) 
         .collect();
     let id = format!("records-{}", manifest.commits.len());
     commit(manifest, &id, &changed);
+}
+
+/// **A record's front matter**, as `jigc milestone create` writes it: the shared base it
+/// pins — the main checkout's `HEAD` where the record is written, the sandbox's first commit
+/// over [`sandbox`] — then its status.
+fn a_records_head(manifest: &Manifest) -> String {
+    let head = manifest
+        .checkouts
+        .get(REPO)
+        .map(|main| main.head.as_str())
+        .unwrap_or_default();
+    format!("---\nbase: {head} {head}\nstatus: active\n---\n\n")
 }
 
 /// `manifest` with where each marker stands read off it, as the frame's reader would: the
@@ -4938,21 +4952,32 @@ fn a_chain_holds_a_commit_a_sub_task_in_id_order_then_the_aggregate() {
     }
 }
 
-/// **A place a command mints is one where nothing stood** — the milestone family's rows,
-/// the task `B7`'s second part: `jigc milestone create` mints a milestone whose id is its
-/// title's slug, `add-task` a sub-task whose id is its intent's, `add-from-spec` one a
-/// criterion of a committed spec, so the argv names none of them by its id. A place's
-/// component may be [`byte_cell::MINTED`], alone or with a fixed suffix: an id at which
-/// nothing stood before the command — *"both mints still refuse a pre-existing id before
-/// creating anything"* (`design/team-ready-state.md` → *The commit model*). A new area and
-/// a new record hold under it; a sibling's area that stood, rewritten or added to, and a
-/// record that stood, rewritten, do not; nor does a file the suffix does not name.
+/// **A place a command mints is one where nothing stood, at the id the command minted** —
+/// the milestone family's rows, the task `B7`'s second part: `jigc milestone create` mints a
+/// milestone whose id is its title's slug, `add-task` a sub-task whose id is its intent's,
+/// `add-from-spec` one a criterion of a committed spec, so the argv names none of them by
+/// its id. A place's component may be [`byte_cell::MINTED`], alone or with a fixed suffix:
+/// the one id the command minted — the record `HEAD` holds after it gains it, a milestone's
+/// record at the home or a sub-task's item in the unit's record, where it did not before —
+/// at which nothing stood before the command, in the working tree or in what git held
+/// there: *"both mints still refuse a pre-existing id before creating anything"*, and *"a
+/// home with nothing on disk is a free id only when git holds nothing there either"*
+/// (`design/team-ready-state.md` → *The commit model*, → *The lifecycle*). Or
+/// [`byte_cell::EACH_MINTED`], any id of those, where the door mints one *"per criterion"*.
+///
+/// A new record and its area hold; a sibling's area that stood, rewritten or added to, and
+/// a record that stood, rewritten, do not; nor does a file the suffix does not name. The
+/// review of the task `B7`'s second part, its eighth finding, and these added after it: a
+/// record deleted from the working tree that `HEAD` still holds, minted over, does not hold;
+/// nor does a mint of two, a milestone's or a sub-task's, under the singular word — each
+/// holds under [`byte_cell::EACH_MINTED`] — nor an area at an id no record gains.
 #[test]
 fn a_place_a_command_mints_is_one_nothing_stood_at() {
+    const COMMITS: Line = line("N3", Allows::Commit(Holding::OnlyTheLines));
     const MINTS: Row = row(&[
         line(
             "N1",
-            Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+            Allows::Files(Where::Under(".jigc/milestones/<minted>"), May::Rebuilt),
         ),
         line(
             "N2",
@@ -4961,77 +4986,250 @@ fn a_place_a_command_mints_is_one_nothing_stood_at() {
                 May::WriteWhole,
             ),
         ),
+        COMMITS,
+    ]);
+    const MINTS_EACH: Row = row(&[
+        line(
+            "N1",
+            Allows::Files(Where::Under(".jigc/milestones/<each-minted>"), May::Rebuilt),
+        ),
+        line(
+            "N2",
+            Allows::Files(
+                Where::Path("<docs-root>/milestone-records/<each-minted>.md"),
+                May::WriteWhole,
+            ),
+        ),
+        COMMITS,
     ]);
     let before = then(&sandbox(), |m| {
         dir(m, "repo/.jigc");
-        dir(m, "repo/.jigc/tasks");
-        dir(m, "repo/.jigc/tasks/t1");
-        put(m, "repo/.jigc/tasks/t1/base.json", "a pin\n");
+        dir(m, "repo/.jigc/milestones");
+        dir(m, "repo/.jigc/milestones/m0");
+        put(m, "repo/.jigc/milestones/m0/base.json", "a pin\n");
     });
     // What stands under `.jigc/` was the lead-ins': the product's own, never a loss.
     let base = then(&sandbox(), |m| dir(m, "repo/.jigc"));
-    let came = |before: &Manifest, after: &Manifest| {
+    let came = |row: Row, before: &Manifest, after: &Manifest| {
         Cell {
             base: Some(&base),
-            ..Cell::of(MINTS, before, after)
+            ..Cell::of(row, before, after)
         }
         .came_to()
     };
+    let area = |m: &mut Manifest, id: &str| {
+        dir(m, &format!("repo/.jigc/milestones/{id}"));
+        put(
+            m,
+            &format!("repo/.jigc/milestones/{id}/base.json"),
+            "a pin\n",
+        );
+    };
 
     let minted = then(&before, |m| {
-        dir(m, "repo/.jigc/tasks/t2");
-        put(m, "repo/.jigc/tasks/t2/base.json", "a pin\n");
-        put(m, "repo/.jigc/tasks/t2/intent", "an intent\n");
+        area(m, "m");
+        records(m, "docs", &[("m", &[])]);
     });
-    let (class, why) = came(&before, &minted);
-    assert_eq!(class, Classification::Holds, "a new area: {why:#?}");
-    for (what, after) in [
+    for row in [MINTS, MINTS_EACH] {
+        let (class, why) = came(row, &before, &minted);
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "a new record and its area: {why:#?}"
+        );
+    }
+    for (what, after, says) in [
         (
             "the area that stood, rewritten",
-            then(&before, |m| {
-                put(m, "repo/.jigc/tasks/t1/base.json", "another pin\n")
+            then(&minted, |m| {
+                put(m, "repo/.jigc/milestones/m0/base.json", "another pin\n")
             }),
+            "m0/",
         ),
         (
             "the area that stood, added to",
-            then(&before, |m| {
-                put(m, "repo/.jigc/tasks/t1/intent", "an intent\n")
+            then(&minted, |m| {
+                put(m, "repo/.jigc/milestones/m0/intent", "an intent\n")
             }),
+            "m0/",
+        ),
+        (
+            "an area at an id no record gains",
+            then(&minted, |m| area(m, "n")),
+            "milestones/n/",
+        ),
+        (
+            "a file the suffix does not name",
+            then(&minted, |m| {
+                put(m, "repo/docs/milestone-records/m.txt", "# m\n")
+            }),
+            "m.txt",
         ),
     ] {
-        let (class, why) = came(&before, &after);
+        let (class, why) = came(MINTS, &before, &after);
         assert!(
-            class == Classification::WrittenOutside && why.iter().any(|why| why.contains("t1/")),
+            class == Classification::WrittenOutside && why.iter().any(|why| why.contains(says)),
             "{what}: {class}, {why:#?}"
         );
     }
-
-    const RECORD: &str = "repo/docs/milestone-records/m.md";
-    let recorded = |m: &mut Manifest| {
-        dir(m, "repo/docs");
-        dir(m, "repo/docs/milestone-records");
-        put(m, RECORD, "# m\n");
-    };
-    let (class, why) = came(&before, &then(&before, recorded));
-    assert_eq!(class, Classification::Holds, "a new record: {why:#?}");
-    let stood = then(&before, recorded);
-    let (class, why) = came(&stood, &then(&stood, |m| put(m, RECORD, "# m, again\n")));
+    // A record that stood — in the working tree, or in `HEAD` alone, its file deleted —
+    // rewritten and committed.
+    let stood = then(&before, |m| records(m, "docs", &[("m", &[])]));
+    let deleted = then(&stood, |m| {
+        m.files.remove("repo/docs/milestone-records/m.md");
+    });
+    for (what, before) in [
+        ("a record that stood, rewritten", &stood),
+        (
+            "a record deleted from the working tree that `HEAD` holds, minted over",
+            &deleted,
+        ),
+    ] {
+        let after = then(before, |m| {
+            area(m, "m");
+            records(m, "docs", &[("m", &["s1"])]);
+        });
+        for row in [MINTS, MINTS_EACH] {
+            // The commit holds at the record what no line lets it hold.
+            let (class, why) = came(row, before, &after);
+            assert!(
+                class == Classification::GitMoved && why.iter().any(|why| why.contains("m.md")),
+                "{what}: {class}, {why:#?}"
+            );
+        }
+    }
+    // Two milestones minted by one command.
+    let two = then(&before, |m| {
+        area(m, "m");
+        area(m, "n");
+        records(m, "docs", &[("m", &[]), ("n", &[])]);
+    });
+    // The two records the commit holds, written where no line lets them be.
+    let (class, why) = came(MINTS, &before, &two);
     assert!(
-        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.md")),
-        "a record that stood, rewritten: {class}, {why:#?}"
+        class == Classification::GitMoved
+            && why.iter().any(|why| why.contains("records/m.md"))
+            && why.iter().any(|why| why.contains("records/n.md")),
+        "a mint of two milestones, under the singular word: {class}, {why:#?}"
     );
+    let (class, why) = came(MINTS_EACH, &before, &two);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a mint of two milestones, under the word for each: {why:#?}"
+    );
+
+    // A sub-task's mint, by a door whose unit is the milestone: the item its record gains.
+    const ADDS: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "A1",
+                Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+            ),
+            line(
+                "A2",
+                Allows::Files(
+                    Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                    May::WriteWhole,
+                ),
+            ),
+            COMMITS,
+        ])
+    };
+    const ADDS_EACH: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "A1",
+                Allows::Files(Where::Under(".jigc/tasks/<each-minted>"), May::Rebuilt),
+            ),
+            line(
+                "A2",
+                Allows::Files(
+                    Where::Path("<docs-root>/milestone-records/<unit>.md"),
+                    May::WriteWhole,
+                ),
+            ),
+            COMMITS,
+        ])
+    };
+    let task = |m: &mut Manifest, id: &str| {
+        dir(m, "repo/.jigc/tasks");
+        dir(m, &format!("repo/.jigc/tasks/{id}"));
+        put(m, &format!("repo/.jigc/tasks/{id}/base.json"), "a pin\n");
+    };
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        task(m, "s1");
+        records(m, "docs", &[("m", &["s1"])]);
+    });
+    let came = |row: Row, after: &Manifest| {
+        Cell {
+            argv: &["probe", "m"],
+            base: Some(&base),
+            ..Cell::of(row, &before, after)
+        }
+        .came_to()
+    };
+    let added = then(&before, |m| {
+        task(m, "s2");
+        records(m, "docs", &[("m", &["s1", "s2"])]);
+    });
+    for row in [ADDS, ADDS_EACH] {
+        let (class, why) = came(row, &added);
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "a sub-task the record gains: {why:#?}"
+        );
+    }
     let (class, why) = came(
-        &before,
+        ADDS,
         &then(&before, |m| {
-            dir(m, "repo/docs");
-            dir(m, "repo/docs/milestone-records");
-            put(m, "repo/docs/milestone-records/m.txt", "# m\n");
+            task(m, "s2");
+            task(m, "s3");
+            records(m, "docs", &[("m", &["s1", "s2", "s3"])]);
         }),
     );
     assert!(
-        class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.txt")),
-        "a file the suffix does not name: {class}, {why:#?}"
+        class == Classification::WrittenOutside
+            && why.iter().any(|why| why.contains("tasks/s2/"))
+            && why.iter().any(|why| why.contains("tasks/s3/")),
+        "a mint of two sub-tasks, under the singular word: {class}, {why:#?}"
     );
+    let (class, why) = came(
+        ADDS_EACH,
+        &then(&before, |m| {
+            task(m, "s2");
+            task(m, "s3");
+            records(m, "docs", &[("m", &["s1", "s2", "s3"])]);
+        }),
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a mint of two sub-tasks, under the word for each: {why:#?}"
+    );
+    for (what, after) in [
+        (
+            "an area beside the one the record gains",
+            then(&added, |m| task(m, "s3")),
+        ),
+        (
+            "an area the record does not gain",
+            then(&before, |m| task(m, "s3")),
+        ),
+    ] {
+        for row in [ADDS, ADDS_EACH] {
+            let (class, why) = came(row, &after);
+            assert!(
+                class == Classification::WrittenOutside
+                    && why.iter().any(|why| why.contains("tasks/s3/")),
+                "{what}: {class}, {why:#?}"
+            );
+        }
+    }
 }
 
 /// **The re-seed rebuilds a sub-task's area only where none stood, and `provision` a
@@ -5141,13 +5339,6 @@ fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
                 Classification::WrittenOutside,
             ),
         ] {
-            // At the two doors that mint a sub-task, an area where nothing stood is a mint's
-            // place too (`MA1`, `MS1`): `<minted>` cannot tell the mint from a second area,
-            // the bound its word declares — so a settled sub-task's area made there is that
-            // bound's, not the re-seed's.
-            if what.contains("settled") && row.leaf[1].starts_with("add-") {
-                continue;
-            }
             let (class, why) = came(&after);
             assert!(
                 class == expected && why.iter().any(|why| why.contains(says)),
@@ -5183,13 +5374,17 @@ fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
         "a worktree into an empty leftover no checkout is: {why:#?}"
     );
     let rewritten = then(&provisioned, |m| {
-        put(m, &format!("{S2}/work.txt"), "other work\n")
+        put(m, &format!("{S2}/README.md"), "another readme\n")
     });
     let added = then(&provisioned, |m| {
         put(m, &format!("{S2}/more.txt"), "more\n")
     });
     for (what, after, says) in [
-        ("a live checkout's file rewritten", &rewritten, "work.txt"),
+        (
+            "a live checkout's file rewritten",
+            &rewritten,
+            "s2/README.md",
+        ),
         ("a live checkout added to", &added, "more.txt"),
     ] {
         let (class, why) = came(&provisioned, after);
@@ -5212,7 +5407,7 @@ fn settled_records(manifest: &mut Manifest, root: &str, id: &str, items: &[(&str
         at = format!("{at}/{component}");
         dir(manifest, &at);
     }
-    let mut bytes = format!("# {id}\n\n## Tasks\n");
+    let mut bytes = format!("{}# {id}\n\n## Tasks\n", a_records_head(manifest));
     for (task, status) in items {
         bytes.push_str(&format!(
             "\n### {task}  {{#{task}}}\n\n<!-- fields -->\n- intent: an intent\n- status: {status}\n"
@@ -5229,8 +5424,9 @@ fn settled_records(manifest: &mut Manifest, root: &str, id: &str, items: &[(&str
 }
 
 /// `manifest` with a linked worktree added at `path`, from the sandbox's root, registered
-/// as `name`: its directory, a file of a sub-task's work staged in its index, its `HEAD`
-/// the main checkout's first commit.
+/// as `name`, as `git worktree add --detach` leaves one at the base [`records`] pins: its
+/// directory with the base's one file, its `HEAD` detached at the main checkout's first
+/// commit, its index that commit's tree.
 fn worktree_added(manifest: &mut Manifest, path: &str, name: &str) {
     let mut at = String::new();
     for part in path.split('/') {
@@ -5243,7 +5439,7 @@ fn worktree_added(manifest: &mut Manifest, path: &str, name: &str) {
             dir(manifest, &at);
         }
     }
-    put(manifest, &format!("{path}/work.txt"), "a sub-task's work\n");
+    put(manifest, &format!("{path}/{README}"), "readme\n");
     manifest
         .registrations
         .insert(name.to_string(), path.to_string());
@@ -5252,10 +5448,9 @@ fn worktree_added(manifest: &mut Manifest, path: &str, name: &str) {
         Checkout {
             head: "c0".to_string(),
             branch: None,
-            index: [("work.txt".to_string(), staged("a sub-task's work\n"))].into(),
+            index: [(README.to_string(), staged("readme\n"))].into(),
         },
     );
-    manifest.held.insert(blob_of("a sub-task's work\n"));
 }
 
 /// **A registration a command adds is at the place its line names** — `jigc milestone
@@ -5264,7 +5459,11 @@ fn worktree_added(manifest: &mut Manifest, path: &str, name: &str) {
 /// second part. A worktree registered, its checkout with it, at `.jigc/worktrees/<sub-task>`
 /// — a sub-task the milestone's committed record names — holds under a line of
 /// [`Allows::Registered`]; with no such line it is git's state moved, and so is one for a
-/// task the record does not name, and one made outside the workbench.
+/// task the record does not name, and one made outside the workbench. **And it is as `git
+/// worktree add --detach` leaves one at the pinned base** — its `HEAD` detached at the base
+/// the milestone's committed record pins, its index that commit's tree: the review of the
+/// task `B7`'s second part, its ninth finding, found the line excused a new checkout by its
+/// path alone, so one at another commit, on a branch, or with something staged held.
 #[test]
 fn a_registration_a_command_adds_is_at_the_place_its_line_names() {
     const WORKTREES: Line = line(
@@ -5286,13 +5485,15 @@ fn a_registration_a_command_adds_is_at_the_place_its_line_names() {
         dir(m, "repo/.jigc");
         records(m, "docs", &[("m", &["s1"])]);
     });
-    let came = |row: Row, path: &str, name: &str| {
-        let after = then(&before, |m| worktree_added(m, path, name));
+    let came_to = |row: Row, after: &Manifest| {
         Cell {
             argv: &["probe", "m"],
-            ..Cell::of(row, &before, &after)
+            ..Cell::of(row, &before, after)
         }
         .came_to()
+    };
+    let came = |row: Row, path: &str, name: &str| {
+        came_to(row, &then(&before, |m| worktree_added(m, path, name)))
     };
     let (class, why) = came(PROVISIONS, "repo/.jigc/worktrees/s1", "s1");
     assert_eq!(
@@ -5319,6 +5520,45 @@ fn a_registration_a_command_adds_is_at_the_place_its_line_names() {
         assert!(
             class == Classification::GitMoved
                 && why.iter().any(|why| why.contains(&format!("`{name}`"))),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+
+    // At the place its line names, and not as the add leaves one at the pinned base.
+    const S1: &str = "repo/.jigc/worktrees/s1";
+    let provisioned = then(&before, |m| worktree_added(m, S1, "s1"));
+    let main_head = before.checkouts[REPO].head.clone();
+    for (what, after) in [
+        (
+            "its `HEAD` at another commit than the pinned base",
+            then(&provisioned, |m| {
+                m.checkouts.get_mut(S1).expect("the worktree").head = main_head.clone()
+            }),
+        ),
+        (
+            "on a branch",
+            then(&provisioned, |m| {
+                m.checkouts.get_mut(S1).expect("the worktree").branch = Some("s1".to_string())
+            }),
+        ),
+        (
+            "with something staged in its index",
+            then(&provisioned, |m| {
+                put(m, &format!("{S1}/work.txt"), "a sub-task's work\n");
+                m.checkouts
+                    .get_mut(S1)
+                    .expect("the worktree")
+                    .index
+                    .insert("work.txt".to_string(), staged("a sub-task's work\n"));
+                m.held.insert(blob_of("a sub-task's work\n"));
+            }),
+        ),
+    ] {
+        let (class, why) = came_to(PROVISIONS, &after);
+        assert!(
+            class == Classification::GitMoved
+                && why.iter().any(|why| why.contains("`s1`"))
+                && why.iter().any(|why| why.contains("pinned base")),
             "{what}: {class}, {why:#?}"
         );
     }

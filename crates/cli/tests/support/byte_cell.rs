@@ -238,7 +238,8 @@ pub struct Quote {
 /// reaches its own sub-tasks' areas and no other task's; and [`ITS_MILESTONE`], the
 /// milestone whose committed record names the unit as one of its tasks. **A place may open
 /// with [`DOCS_ROOT`]**, the directory the cascade resolves `docs-root` to. And a fourth
-/// stands for a unit the command mints and does not name by its id ([`MINTED`]). Two more
+/// stands for a unit the command mints and does not name by its id ([`MINTED`], or
+/// [`EACH_MINTED`] where it mints several). Two more
 /// stand for a sub-task of the unit where a thing of it did not stand: [`RE_SEEDED`], a
 /// live one whose area did not, and [`UNPROVISIONED`], one whose worktree no checkout was.
 #[derive(Clone, Copy, Debug)]
@@ -280,18 +281,43 @@ pub const ITS_SUB_TASKS: &str = "<sub-task>";
 /// name, has none.
 pub const ITS_MILESTONE: &str = "<its-milestone>";
 
-/// **The component of a place that stands for a work unit the command mints**: an id at
-/// which nothing stood before the command — the path up to and with this component held
-/// no entry in the manifest taken before it. A mint makes what was not there and touches
-/// nothing that was: *"both mints still refuse a pre-existing id before creating anything,
-/// which is exactly what makes removing what this call minted safe"*
-/// (`design/team-ready-state.md` → *The commit model — path-scoped commit at each milestone
-/// op*). It is the word for a unit the command's argv does not name by its id — the
-/// milestone `jigc milestone create "<title>"` mints, whose id is the title's slug; the
-/// sub-task `add-task` mints from an intent, and the ones `add-from-spec` mints from a
-/// spec's criteria. **What it cannot tell apart**: one mint from two — a command that minted
-/// a second unit beside its own is not seen here.
+/// **The component of a place that stands for the work unit the command mints**: the one id
+/// the command minted — the committed record names it after the command and did not before
+/// — at which nothing stood before the command, the path up to and with this component
+/// holding no entry in the manifest taken before it, and nothing at or under it in what git
+/// held there, the tree the main checkout's `HEAD` held and its index. A mint makes what was
+/// not there and touches nothing that was: *"both mints still refuse a pre-existing id
+/// before creating anything, which is exactly what makes removing what this call minted
+/// safe"* (`design/team-ready-state.md` → *The commit model — path-scoped commit at each
+/// milestone op*), and *"a home with nothing on disk is a free id only when git holds
+/// nothing there either"* (→ *The terminal is terminal — a settled record has no workbench
+/// (M42 completion audit)*, the rc.24 fix pass's CPL-5).
+///
+/// It is the word for a unit the command's argv does not name by its id — the milestone
+/// `jigc milestone create "<title>"` mints, whose id is the title's slug, and the sub-task
+/// `add-task` mints from an intent. **The id is read off the record, as `HEAD` holds it
+/// after the command**, beside the record before it: for a command that acts on a unit,
+/// an item its record names and did not ([`ITS_SUB_TASKS`]'s reading of it) — *"Appends
+/// one `tasks` item"*; for one that acts on none, a record at the home `HEAD` holds and did
+/// not — *"**`create` / `add-task`** — a **separate** record-only path-scoped commit each"*.
+/// **And it is one**: where the command minted two, the place is nowhere — `add-task`
+/// *"mints a sub-task"*, `create` one milestone. A door that mints one per something says
+/// so with [`EACH_MINTED`].
+///
+/// Narrowed 2026-10-19, after the review of the task `B7`'s second part, its eighth finding:
+/// the word asked the working tree alone, so a record deleted from disk that `HEAD` still
+/// held counted as nothing stood, and it could not tell one mint from two — an area at an
+/// id no record gained, a second area beside the one it did, and an area made for a
+/// sub-task the record already named and had settled, each held.
 pub const MINTED: &str = "<minted>";
+
+/// **The component of a place that stands for any of the work units the command mints**:
+/// [`MINTED`]'s reading, of each id the command minted however many it minted — the
+/// sub-tasks `add-from-spec` mints *"one sub-task per criterion"* of a committed spec
+/// (`design/write-commands.md` → *Minting a milestone + its task list (M7)*). **What it
+/// cannot tell apart**: how many the door should have minted — the frame does not count a
+/// spec's criteria.
+pub const EACH_MINTED: &str = "<each-minted>";
 
 /// **The component of a place that stands for a sub-task whose area the re-seed rebuilds**:
 /// a sub-task the committed record of the unit the command acts on names
@@ -483,7 +509,15 @@ pub enum Allows {
     /// --detach` populates from the pinned base's *tree*"* (`design/team-ready-state.md` →
     /// *What a fan-out worktree isolates — and what it does not (M45)*), at
     /// `.jigc/worktrees/<sub-task>`. A registration made anywhere else, or for a task the
-    /// unit's record does not name, is git's state moved outside the allowance.
+    /// unit's record does not name, is git's state moved outside the allowance. **And the
+    /// checkout stands as that add leaves one**: its `HEAD` detached (*"`--detach`"*) at the
+    /// shared base the unit's committed record pins (*"pins one shared base (= HEAD) that
+    /// every sub-task inherits"*, `design/write-commands.md` → *Minting a milestone + its
+    /// task list (M7)*), and its index that commit's tree, nothing staged against it. One
+    /// at another commit, on a branch, or with something staged is git's state moved too.
+    /// Added 2026-10-19, after the review of the task `B7`'s second part, its ninth
+    /// finding: the line excused a new checkout by its path alone. *What it does not ask*:
+    /// the checkout's files, which are the file layer's lines'.
     Registered(&'static str),
 }
 
@@ -910,9 +944,17 @@ struct Acting {
     /// stands does not read.
     docs_root: Option<String>,
     /// Every path of the repository that held an entry before the command, from its root —
-    /// what [`MINTED`] asks a place against; `None` where no manifest was read, and then a
-    /// place that holds the word is nowhere.
+    /// in the working tree, or in what git held: the tree the main checkout's `HEAD` held
+    /// and its index, each path with the directories above it. What [`MINTED`],
+    /// [`EACH_MINTED`] and [`RE_SEEDED`] ask a place against; `None` where no manifest was
+    /// read, and then a place that holds the word is nowhere.
     stood: Option<BTreeSet<String>>,
+    /// The ids the command minted, read off the committed records before and after it —
+    /// what [`MINTED`] and [`EACH_MINTED`] stand for.
+    minted: BTreeSet<String>,
+    /// The shared base the unit's committed record pins — the `base:` of its front matter,
+    /// the full id — what [`Allows::Registered`] asks a new checkout's `HEAD` against.
+    base: Option<String>,
     /// Every linked checkout whose directory stood before the command, by that directory
     /// from the repository's root — what [`UNPROVISIONED`] asks a place against.
     checked_out: BTreeSet<String>,
@@ -921,8 +963,8 @@ struct Acting {
 impl Acting {
     /// What the row's [`Unit`] reads off `argv`, against the manifest taken before the
     /// command — where the task areas stand, the cascade's layers, and the committed
-    /// records.
-    fn of(row: &Row, argv: &[&str], before: &Manifest) -> Acting {
+    /// records — and what it minted, against the committed records after it.
+    fn of(row: &Row, argv: &[&str], before: &Manifest, after: &Manifest) -> Acting {
         let flag = argv.iter().enumerate().find_map(|(at, word)| match *word {
             "--task" => argv.get(at + 1).map(|id| id.to_string()),
             word => word.strip_prefix("--task=").map(str::to_string),
@@ -956,64 +998,24 @@ impl Acting {
                 .map(|word| word.to_string()),
         };
         let docs_root = docs_root(before);
-        // Every committed record at the home, by its milestone: the sub-task ids its items
-        // name, `### <id>  {#<id>}`, the sub-task's id its anchor.
-        // And of each, the items the record has settled: a `- status: ` leaf of the item,
-        // `joined` or `discarded` — *"active / joined / discarded"*, the two that are over
-        // (`design/team-ready-state.md` → *The lifecycle*).
-        let records: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)> = docs_root
+        let records = docs_root
             .as_deref()
-            .map(|root| {
-                let home = match root {
-                    "" => RECORD_HOME.to_string(),
-                    root => format!("{root}/{RECORD_HOME}"),
-                };
-                before
-                    .files
-                    .keys()
-                    .filter_map(|path| {
-                        let rel = in_repo(path)?;
-                        let id = rel
-                            .strip_prefix(home.as_str())?
-                            .strip_prefix('/')?
-                            .strip_suffix(".md")?;
-                        (!id.contains('/')).then_some((id.to_string(), committed(before, rel)?))
-                    })
-                    .map(|(id, entry)| {
-                        let (mut items, mut settled) = (BTreeSet::new(), BTreeSet::new());
-                        let mut item: Option<String> = None;
-                        for line in entry.lines().unwrap_or_default() {
-                            let Ok(line) = std::str::from_utf8(line) else {
-                                continue;
-                            };
-                            let line = line.trim_end();
-                            if let Some(heading) = line.strip_prefix("### ") {
-                                item = heading
-                                    .rsplit_once("{#")
-                                    .and_then(|(_, anchor)| anchor.strip_suffix('}'))
-                                    .map(str::to_string);
-                                items.extend(item.clone());
-                            } else if let (Some(at), Some(status)) =
-                                (item.as_ref(), line.strip_prefix("- status: "))
-                                && matches!(status.trim(), "joined" | "discarded")
-                            {
-                                settled.insert(at.clone());
-                            }
-                        }
-                        (id, (items, settled))
-                    })
-                    .collect()
-            })
+            .map(|root| committed_records(before, root))
             .unwrap_or_default();
-        let (sub_tasks, settled) = unit
-            .as_ref()
-            .and_then(|unit| records.get(unit))
-            .cloned()
+        let own = unit.as_ref().and_then(|unit| records.get(unit));
+        let (sub_tasks, settled, base) = own
+            .map(|record| {
+                (
+                    record.items.clone(),
+                    record.settled.clone(),
+                    record.base.clone(),
+                )
+            })
             .unwrap_or_default();
         let milestone = unit.as_ref().and_then(|unit| {
             let naming: Vec<&String> = records
                 .iter()
-                .filter(|(_, (items, _))| items.contains(unit))
+                .filter(|(_, record)| record.items.contains(unit))
                 .map(|(id, _)| id)
                 .collect();
             match naming.as_slice() {
@@ -1021,19 +1023,54 @@ impl Acting {
                 _ => None,
             }
         });
+        // What stood: the working tree, and what git held — `HEAD`'s tree and the index,
+        // each path with the directories above it.
+        let mut stood: BTreeSet<String> = before
+            .files
+            .keys()
+            .filter_map(|path| in_repo(path).map(str::to_string))
+            .collect();
+        if let Some(main) = before.checkouts.get(REPO) {
+            for path in tree_of(before, &main.head).keys().chain(main.index.keys()) {
+                let mut at = String::new();
+                for part in path.split('/') {
+                    if !at.is_empty() {
+                        at.push('/');
+                    }
+                    at.push_str(part);
+                    stood.insert(at.clone());
+                }
+            }
+        }
+        // What the command minted, off the records `HEAD` holds after it: for a unit, the
+        // items its record names that it did not; for none, the records at the home that
+        // stood nowhere before.
+        let minted: BTreeSet<String> = docs_root
+            .as_deref()
+            .map(|root| {
+                let now = committed_records(after, root);
+                match unit.as_ref() {
+                    Some(unit) => now
+                        .get(unit)
+                        .map(|record| record.items.difference(&sub_tasks).cloned().collect())
+                        .unwrap_or_default(),
+                    None => now
+                        .keys()
+                        .filter(|id| !stood.contains(&record_path(root, id)))
+                        .cloned()
+                        .collect(),
+                }
+            })
+            .unwrap_or_default();
         Acting {
             unit,
             sub_tasks,
             settled,
             milestone,
             docs_root,
-            stood: Some(
-                before
-                    .files
-                    .keys()
-                    .filter_map(|path| in_repo(path).map(str::to_string))
-                    .collect(),
-            ),
+            stood: Some(stood),
+            minted,
+            base,
             checked_out: before
                 .checkouts
                 .keys()
@@ -1065,9 +1102,9 @@ impl Acting {
         want == got
     }
 
-    /// Whether `path`, from the repository's root, is a place a command mints at
-    /// ([`MINTED`]).
-    fn minted(&self, path: &str) -> bool {
+    /// Whether nothing stood at `path`, from the repository's root, before the command — in
+    /// the working tree or in what git held ([`MINTED`], [`RE_SEEDED`]).
+    fn nothing_stood(&self, path: &str) -> bool {
         self.stood
             .as_ref()
             .is_some_and(|stood| !stood.contains(path))
@@ -1136,6 +1173,86 @@ fn docs_root(before: &Manifest) -> Option<String> {
     })
 }
 
+/// **A milestone's committed record, as the frame reads it**: the sub-task ids its items
+/// name, `### <id>  {#<id>}`, the sub-task's id its anchor; of those, the items it has
+/// settled — a `- status: ` leaf of the item, `joined` or `discarded`, *"active / joined /
+/// discarded"*, the two that are over (`design/team-ready-state.md` → *The lifecycle*); and
+/// the shared base its front matter pins, `base: <sha> <short>`, the full id.
+#[derive(Clone, Debug, Default)]
+struct Record {
+    items: BTreeSet<String>,
+    settled: BTreeSet<String>,
+    base: Option<String>,
+}
+
+/// Where a milestone's record stands, from the repository's root, under the docs root
+/// `root` (`""` the root itself).
+fn record_path(root: &str, id: &str) -> String {
+    match root {
+        "" => format!("{RECORD_HOME}/{id}.md"),
+        root => format!("{root}/{RECORD_HOME}/{id}.md"),
+    }
+}
+
+/// Every record at the home under the docs root `root` whose bytes in the working tree are
+/// the ones the main checkout's `HEAD` holds ([`committed`]), by its milestone.
+fn committed_records(manifest: &Manifest, root: &str) -> BTreeMap<String, Record> {
+    let home = match root {
+        "" => RECORD_HOME.to_string(),
+        root => format!("{root}/{RECORD_HOME}"),
+    };
+    manifest
+        .files
+        .keys()
+        .filter_map(|path| {
+            let rel = in_repo(path)?;
+            let id = rel
+                .strip_prefix(home.as_str())?
+                .strip_prefix('/')?
+                .strip_suffix(".md")?;
+            (!id.contains('/')).then_some((id.to_string(), committed(manifest, rel)?))
+        })
+        .map(|(id, entry)| {
+            let mut record = Record::default();
+            let mut item: Option<String> = None;
+            // The front matter: between a first line `---` and the next.
+            let mut front = None;
+            for (at, line) in entry.lines().unwrap_or_default().into_iter().enumerate() {
+                let Ok(line) = std::str::from_utf8(line) else {
+                    continue;
+                };
+                let line = line.trim_end();
+                match (at, front, line) {
+                    (0, None, "---") => front = Some(true),
+                    (_, Some(true), "---") => front = Some(false),
+                    (_, Some(true), line) => {
+                        if let Some(value) = line.strip_prefix("base: ") {
+                            record.base = value.split_whitespace().next().map(str::to_string);
+                        }
+                    }
+                    _ => {}
+                }
+                if front == Some(true) {
+                    continue;
+                }
+                if let Some(heading) = line.strip_prefix("### ") {
+                    item = heading
+                        .rsplit_once("{#")
+                        .and_then(|(_, anchor)| anchor.strip_suffix('}'))
+                        .map(str::to_string);
+                    record.items.extend(item.clone());
+                } else if let (Some(at), Some(status)) =
+                    (item.as_ref(), line.strip_prefix("- status: "))
+                    && matches!(status.trim(), "joined" | "discarded")
+                {
+                    record.settled.insert(at.clone());
+                }
+            }
+            (id, record)
+        })
+        .collect()
+}
+
 /// The entry at `rel` — from the repository's root — where its bytes are the ones the main
 /// checkout's `HEAD` holds there: the blob of the commit that last changed the path, down
 /// its first parents.
@@ -1165,13 +1282,17 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     want.len() == got.len()
         && want.iter().zip(&got).enumerate().all(|(at, (want, part))| {
             let id_with = |word: &str| want.strip_prefix(word).and_then(|s| part.strip_suffix(s));
-            if want.starts_with(MINTED) {
-                id_with(MINTED).is_some_and(|id| !id.is_empty())
-                    && acting.minted(&got_so_far(&got, at))
+            if want.starts_with(EACH_MINTED) {
+                id_with(EACH_MINTED).is_some_and(|id| acting.minted.contains(id))
+                    && acting.nothing_stood(&got_so_far(&got, at))
+            } else if want.starts_with(MINTED) {
+                id_with(MINTED)
+                    .is_some_and(|id| acting.minted.len() == 1 && acting.minted.contains(id))
+                    && acting.nothing_stood(&got_so_far(&got, at))
             } else if want.starts_with(RE_SEEDED) {
                 id_with(RE_SEEDED)
                     .is_some_and(|id| acting.sub_tasks.contains(id) && !acting.settled.contains(id))
-                    && acting.minted(&got_so_far(&got, at))
+                    && acting.nothing_stood(&got_so_far(&got, at))
             } else if want.starts_with(UNPROVISIONED) {
                 id_with(UNPROVISIONED).is_some_and(|id| acting.sub_tasks.contains(id))
                     && !acting.checked_out.contains(&got_so_far(&got, at))
@@ -1522,7 +1643,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     }
 
     let (before, after) = (seen.before, seen.after);
-    let acting = Acting::of(row, seen.argv, before);
+    let acting = Acting::of(row, seen.argv, before, after);
     let mut tally = Tally {
         row,
         staged: staged_in_the_unit(before, &acting)
@@ -1937,11 +2058,38 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 if in_repo(path).is_some_and(|rel| under(dir, rel)))
         })
     };
-    let registered = |tally: &Tally<'_>, path: &str| {
+    // A registration at its line's place, its checkout as `git worktree add --detach` leaves
+    // one at the pinned base; or, where only the place is right, why the checkout is not.
+    let off_the_base = |tally: &Tally<'_>, path: &str| -> Option<String> {
+        let checkout = after.checkouts.get(path)?;
+        let base = tally.acting.base.as_deref().unwrap_or_default();
+        let mut why = Vec::new();
+        if base.is_empty() || checkout.head != base {
+            why.push("its `HEAD` is not the pinned base");
+        }
+        if checkout.branch.is_some() {
+            why.push("it is on a branch");
+        }
+        if !staged_in(after, checkout).is_empty() {
+            why.push("its index is not its `HEAD`'s tree");
+        }
+        (!why.is_empty()).then(|| why.join(", "))
+    };
+    let at_the_place = |tally: &Tally<'_>, path: &str| {
         tally.line_for(|allows| {
             matches!(allows, Allows::Registered(place)
                 if in_repo(path).is_some_and(|rel| under_for(place, rel, &tally.acting)))
         })
+    };
+    let registered = |tally: &Tally<'_>, path: &str| {
+        at_the_place(tally, path)
+            .filter(|_| after.checkouts.contains_key(path) && off_the_base(tally, path).is_none())
+    };
+    let not_from_the_base = |tally: &Tally<'_>, path: &str| -> String {
+        at_the_place(tally, path)
+            .and_then(|_| off_the_base(tally, path))
+            .map(|why| format!(" — not as the add leaves one at the pinned base: {why}"))
+            .unwrap_or_default()
     };
     let names: BTreeSet<&String> = before
         .registrations
@@ -1962,9 +2110,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             },
             (None, Some(path)) => match registered(&tally, path) {
                 Some(at) => tally.excused[at] += 1,
-                None => tally.git.push(format!(
-                    "the registration `{name}`, of a worktree at `{path}`, was made"
-                )),
+                None => {
+                    let why = not_from_the_base(&tally, path);
+                    tally.git.push(format!(
+                        "the registration `{name}`, of a worktree at `{path}`, was made{why}"
+                    ))
+                }
             },
             _ => tally
                 .git
@@ -1985,7 +2136,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             },
             (None, Some(_)) if place != REPO => match registered(&tally, place) {
                 Some(at) => tally.excused[at] += 1,
-                None => tally.git.push(format!("a checkout at `{place}` was made")),
+                None => {
+                    let why = not_from_the_base(&tally, place);
+                    tally
+                        .git
+                        .push(format!("a checkout at `{place}` was made{why}"))
+                }
             },
             (Some(was), Some(is)) => {
                 if place != REPO && was.head != is.head {

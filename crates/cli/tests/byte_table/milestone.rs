@@ -4,7 +4,8 @@
 //! `jigc milestone finalize`'s, §4, and the seven other leaves', §4b — `create`,
 //! `add-task`, `add-from-spec`, `provision`, `execute`, `join`, `discard` — under the rules
 //! the install family's file states. A place a command mints, whose id no argv word holds,
-//! is written [`MINTED`](crate::support::byte_cell::MINTED).
+//! is written [`MINTED`](crate::support::byte_cell::MINTED), and one of the several
+//! `add-from-spec` mints [`EACH_MINTED`](crate::support::byte_cell::EACH_MINTED).
 //!
 //! **What of the record is no line.** `M8` is where *on a refusal: no* comes from. `M9` —
 //! a refused boundary leaves objects in the store — is no difference to a table that
@@ -625,8 +626,9 @@ pub const ADD_TASK: Row = Row {
 const ADD_FROM_SPEC_RE_SEEDS: [Line; 2] = the_re_seed("MS2", "MS6");
 
 /// **`jigc milestone add-from-spec`** — the record's §4b: `add-task`'s row, a sub-task a
-/// criterion of the spec. Its home is `vendored`, the one prepared state that holds a
-/// committed spec.
+/// criterion of the spec — so its areas are each sub-task's it mints (`<each-minted>`,
+/// `byte_cell::EACH_MINTED`), where `add-task`'s is the one. Its home is `vendored`, the one
+/// prepared state that holds a committed spec.
 pub const ADD_FROM_SPEC: Row = Row {
     leaf: &["milestone", "add-from-spec"],
     unit: Unit::TheWordAfterTheLeaf,
@@ -634,9 +636,12 @@ pub const ADD_FROM_SPEC: Row = Row {
     consent: None,
     home: Prepared::Of(State::Vendored),
     lines: &[
+        // **Read 2026-10-19 as each sub-task the door mints**, after the review of the task
+        // `B7`'s second part (its eighth finding): `<minted>` is now the one id the record
+        // gains, and this door mints one a criterion.
         line(
             "MS1",
-            Allows::Files(Where::Under(".jigc/tasks/<minted>"), May::Rebuilt),
+            Allows::Files(Where::Under(".jigc/tasks/<each-minted>"), May::Rebuilt),
             &[ADD_FROM_SPEC_MINTS, A_MINT_REFUSES_WHAT_STOOD],
         ),
         Line {
