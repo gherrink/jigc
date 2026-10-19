@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The milestone family's fan-out doors have their cells — `provision`, `execute`, `join`, 13 in the gate and 18 on demand — and none is red (the byte table, task `B7`, its second part: the third of its commits)
+
+**What.** The second of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)): each leaf's refusing cell, its base cell, its six on demand and a planted cell for every need its row makes — `provision` 11, `execute` 10, `join` 10; the lists. No row and no frame changes, and no product source. The three leave the list of leaves whose cells are owed.
+
+**Every cell holds or refuses having changed nothing** ([the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §18). `provision` is the first cell to excuse a registration added (`MP2`, the first commit's word, 12 differences — a registration and a checkout a worktree); a file of the user's where a sub-task's worktree goes is refused `milestone.leftover-holds-work`; `join` over a milestone that is not there builds the edge index on its way, under `C1`. Only the re-seed's lines excuse nothing (`MP3`, `MP4`, `ME1`, `ME2`, `MJ1`, `MJ2`): no cell's cache or area is absent before the command — named as such, beside `MA6` and `MS6`. *Seconds*: 0.8 to 3.8 s a cell in the arm of `fresh` (mean 2.9), load not measured.
+
+**The lists.** 454 cells — 334 in the gate in four arms, 120 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 102 that stood, byte for byte, and these 18). The expected-red list as it was: 76 cells under nineteen keys. The leaves whose cells are owed: `discard` and `finalize`.
+
 ## 2026-10-19 — The milestone family's record doors have their cells — `create`, `add-task`, `add-from-spec`, 51 in the gate and 18 on demand — and eight are red on this tree under three keys, each the same on the previous release: a change the user staged at the record is replaced, a rejected record commit leaves its message file rewritten, and a refusal leaves the directories it made (the byte table, task `B7`, its second part: the second of its commits)
 
 **What.** The first of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)), on the rows of the first commit; the arm of `vendored`, new — `add-from-spec`'s home, the one prepared state with a committed spec; the lists. No row and no frame changes, and no product source. The three leave the list of leaves whose cells are owed.

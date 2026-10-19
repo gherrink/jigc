@@ -7,14 +7,15 @@
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
-//! other leaves of the `milestone` family — and 423 cells: the acceptance's
+//! other leaves of the `milestone` family — and 454 cells: the acceptance's
 //! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
 //! **the doc family's hundred and thirty-seven** (its eight leaves) **and the milestone
-//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), of which a
-//! hundred and two run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`) **and its
+//! fan-out doors' thirty-one** (`provision`, `execute`, `join`), of which a hundred and
+//! twenty run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
 //! rows —
@@ -1620,6 +1621,17 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         &[Prepared::Of(State::Vendored)],
     ),
     (
+        &["milestone", "provision"],
+        "MP1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "provision"],
+        "MP2",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (&["milestone", "join"], "C1", &[Prepared::Of(State::Fresh)]),
+    (
         &["doc", "add-item"],
         "W1",
         &[Prepared::Of(State::CommittedSingletons)],
@@ -1839,49 +1851,54 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "provision"], "MP1", ITS_FAMILYS_CELLS),
-    (&["milestone", "provision"], "MP2", ITS_FAMILYS_CELLS),
-    (&["milestone", "provision"], "MP3", ITS_FAMILYS_CELLS),
-    (&["milestone", "provision"], "MP4", ITS_FAMILYS_CELLS),
-    (&["milestone", "provision"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "provision"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "provision"], "MP3", NO_CACHE_TO_RE_DERIVE),
+    (&["milestone", "provision"], "MP4", NO_AREA_TO_RE_SEED),
     (
         &["milestone", "provision"],
-        "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        "C1",
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "provision"],
-        "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        "C2",
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "execute"], "ME1", ITS_FAMILYS_CELLS),
-    (&["milestone", "execute"], "ME2", ITS_FAMILYS_CELLS),
-    (&["milestone", "execute"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "execute"], "C2", ITS_FAMILYS_CELLS),
+    (
+        &["milestone", "provision"],
+        "C3, the base pin",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (
+        &["milestone", "provision"],
+        "C3, the task list",
+        A_REFUSAL_THAT_REBUILDS_IT,
+    ),
+    (&["milestone", "execute"], "ME1", NO_CACHE_TO_RE_DERIVE),
+    (&["milestone", "execute"], "ME2", NO_AREA_TO_RE_SEED),
+    (&["milestone", "execute"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["milestone", "execute"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "execute"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "execute"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "join"], "MJ1", ITS_FAMILYS_CELLS),
-    (&["milestone", "join"], "MJ2", ITS_FAMILYS_CELLS),
-    (&["milestone", "join"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "join"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "join"], "MJ1", NO_CACHE_TO_RE_DERIVE),
+    (&["milestone", "join"], "MJ2", NO_AREA_TO_RE_SEED),
+    (&["milestone", "join"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "join"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "join"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (&["milestone", "discard"], "MD1", ITS_FAMILYS_CELLS),
     (&["milestone", "discard"], "MD2", ITS_FAMILYS_CELLS),
@@ -2053,6 +2070,11 @@ const A_REFUSAL_THAT_REBUILDS_IT: &str =
 /// that is absent before the command.
 const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names and the workbench lacks — a fresh clone, or the \
      area taken away by hand — which no cell of the family constructs: before the port";
+
+/// What would use a line of the re-seed of the milestone's cache: the cache absent, or stale,
+/// before the command.
+const NO_CACHE_TO_RE_DERIVE: &str = "the milestone's cache absent or stale before the command — a fresh clone, or the cache \
+     taken away by hand — which no cell of the family constructs: before the port";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -8232,7 +8254,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (423, 321, 102),
+        (454, 334, 120),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy — fifty-eight in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -8240,7 +8262,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
          demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
-         eighteen on demand"
+         eighteen on demand — and its fan-out doors thirty-one: thirteen in the gate, eighteen \
+         on demand"
     );
 }
 

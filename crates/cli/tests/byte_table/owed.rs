@@ -42,9 +42,6 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// this list in the commit that brings its cells — after which every need of its row is a
 /// cell or a line of `scheduled-cells.tsv` with its reason.
 pub const CELLS_OWED: &[(&[&str], &str)] = &[
-    (&["milestone", "provision"], "B7"),
-    (&["milestone", "execute"], "B7"),
-    (&["milestone", "join"], "B7"),
     (&["milestone", "discard"], "B7"),
     (&["milestone", "finalize"], "B7"),
 ];

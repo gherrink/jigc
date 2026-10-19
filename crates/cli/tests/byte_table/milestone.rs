@@ -1989,12 +1989,337 @@ const ADD_FROM_SPEC_CELLS: [Cell; 23] = [
     ),
 ];
 
+// ---------------------------------------------------------------------------
+// The fan-out doors' cells — `provision`, `execute`, `join` (the second of the three parts
+// the record's §4b names)
+// ---------------------------------------------------------------------------
+
+/// **`ship-it` and two sub-tasks nobody has re-entered** — `add-alpha` and `add-beta`.
+const TWO_SUB_TASKS: [Lead; 3] = [
+    MINT_IT,
+    jigc(&["milestone", "add-task", "ship-it", "add alpha"]),
+    jigc(&["milestone", "add-task", "ship-it", "add beta"]),
+];
+
+/// The same, provisioned: a worktree each.
+const PROVISIONED: Lead = jigc(&["milestone", "provision", "ship-it"]);
+
+/// A sub-task re-entered from its own worktree: its area provisioned with its commit doc,
+/// which the join then merges.
+macro_rules! re_entered {
+    ($task:literal) => {
+        Lead::Step(Step::JigcAt(
+            Place::Repo(concat!(".jigc/worktrees/", $task)),
+            &["workflow", "sub-task", "--task", $task],
+        ))
+    };
+}
+
+const PROVISION_IT: &[&str] = &["milestone", "provision", "ship-it"];
+const EXECUTE_IT: &[&str] = &["milestone", "execute", "ship-it"];
+const JOIN_IT: &[&str] = &["milestone", "join", "ship-it"];
+
+/// The base cell of a fan-out door in every prepared state but its home: in the
+/// never-adopted repository the command as typed, with no lead, which every `milestone`
+/// door refuses; in the others the same leads as the home's base cell.
+macro_rules! fan_out_elsewhere {
+    ($leaf:literal, $argv:expr, [$($lead:expr),* $(,)?]) => {
+        [
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-bare"),
+                &["milestone", $leaf],
+                Prepared::Bare,
+                &[],
+                $argv,
+                NOT_SET_UP,
+                None,
+            ),
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-committed-singletons"),
+                &["milestone", $leaf],
+                Prepared::Of(State::CommittedSingletons),
+                &[$($lead,)*],
+                $argv,
+                Listed::Acts,
+                None,
+            ),
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-migrated"),
+                &["milestone", $leaf],
+                Prepared::Of(State::Migrated),
+                &[$($lead,)*],
+                $argv,
+                Listed::Acts,
+                None,
+            ),
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-refs-post-hoc"),
+                &["milestone", $leaf],
+                Prepared::Of(State::RefsPostHoc),
+                &[$($lead,)*],
+                $argv,
+                Listed::Acts,
+                None,
+            ),
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-chatty-hooks"),
+                &["milestone", $leaf],
+                Prepared::Of(State::ChattyHooks),
+                &[$($lead,)*],
+                $argv,
+                Listed::Acts,
+                None,
+            ),
+            cell(
+                concat!("milestone-", $leaf, "-ship-it-in-vendored"),
+                &["milestone", $leaf],
+                VENDORED,
+                &[$($lead,)*],
+                $argv,
+                Listed::Acts,
+                None,
+            ),
+        ]
+    };
+}
+
+/// **The cells of `jigc milestone provision`**, each listed from the row's doc: the base
+/// cell provisions a worktree a sub-task and registers it (`MP1`, `MP2`); **a file of the
+/// user's where a sub-task's worktree goes** (`MP1`) is a leftover the door *"cannot prove
+/// is disposable"* and refuses over — `provision` *"clears a leftover before `git worktree
+/// add`"* among *"the three doors standing where **no commit has carried those bytes**"*
+/// (`MP5`); a file of the user's in the milestone's area (`MP3`) or a sub-task's (`MP4`)
+/// is where the re-seed writes nothing over an area that stands — it stays.
+const PROVISION_CELLS: [Cell; 5] = [
+    cell(
+        "milestone-provision-a-milestone-that-is-not-there",
+        &["milestone", "provision"],
+        FRESH,
+        &[],
+        &["milestone", "provision", "m-a-milestone"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    cell(
+        "milestone-provision-two-sub-tasks",
+        &["milestone", "provision"],
+        FRESH,
+        &TWO_SUB_TASKS,
+        PROVISION_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-provision-a-file-of-the-users-where-a-worktree-goes",
+        &["milestone", "provision"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            Lead::Plant(Plant::File(".jigc/worktrees/add-alpha/notes.txt")),
+        ],
+        PROVISION_IT,
+        refuses(1, "milestone.leftover-holds-work"),
+        at("MP1", Kind::Untracked),
+    ),
+    cell(
+        "milestone-provision-a-file-of-the-users-in-the-milestones-area",
+        &["milestone", "provision"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            Lead::Plant(Plant::File(".jigc/milestones/ship-it/notes.txt")),
+        ],
+        PROVISION_IT,
+        Listed::Acts,
+        at("MP3", Kind::Untracked),
+    ),
+    cell(
+        "milestone-provision-a-file-of-the-users-in-a-sub-tasks-area",
+        &["milestone", "provision"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            Lead::Plant(Plant::File(".jigc/tasks/add-alpha/notes.txt")),
+        ],
+        PROVISION_IT,
+        Listed::Acts,
+        at("MP4", Kind::Untracked),
+    ),
+];
+
+const PROVISION_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
+    "provision",
+    PROVISION_IT,
+    [TWO_SUB_TASKS[0], TWO_SUB_TASKS[1], TWO_SUB_TASKS[2]]
+);
+
+/// **The cells of `jigc milestone execute`**: the base cell composes the walk over a
+/// provisioned milestone and mints nothing (`ME3`); a file of the user's in the milestone's
+/// area (`ME1`) or a sub-task's (`ME2`) stays.
+const EXECUTE_CELLS: [Cell; 4] = [
+    cell(
+        "milestone-execute-a-milestone-that-is-not-there",
+        &["milestone", "execute"],
+        FRESH,
+        &[],
+        &["milestone", "execute", "m-a-milestone"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    cell(
+        "milestone-execute-two-provisioned-sub-tasks",
+        &["milestone", "execute"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+        ],
+        EXECUTE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-execute-a-file-of-the-users-in-the-milestones-area",
+        &["milestone", "execute"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            Lead::Plant(Plant::File(".jigc/milestones/ship-it/notes.txt")),
+        ],
+        EXECUTE_IT,
+        Listed::Acts,
+        at("ME1", Kind::Untracked),
+    ),
+    cell(
+        "milestone-execute-a-file-of-the-users-in-a-sub-tasks-area",
+        &["milestone", "execute"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            Lead::Plant(Plant::File(".jigc/tasks/add-alpha/notes.txt")),
+        ],
+        EXECUTE_IT,
+        Listed::Acts,
+        at("ME2", Kind::Untracked),
+    ),
+];
+
+const EXECUTE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
+    "execute",
+    EXECUTE_IT,
+    [
+        TWO_SUB_TASKS[0],
+        TWO_SUB_TASKS[1],
+        TWO_SUB_TASKS[2],
+        PROVISIONED
+    ]
+);
+
+/// **The cells of `jigc milestone join`**: the base cell merges the two sub-tasks' commit
+/// docs, each re-entered from its worktree, and persists nothing (`MJ3`); a file of the
+/// user's in the milestone's area (`MJ1`) or a sub-task's (`MJ2`) stays.
+const JOIN_CELLS: [Cell; 4] = [
+    cell(
+        "milestone-join-a-milestone-that-is-not-there",
+        &["milestone", "join"],
+        FRESH,
+        &[],
+        &["milestone", "join", "m-a-milestone"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    cell(
+        "milestone-join-two-re-entered-sub-tasks",
+        &["milestone", "join"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            re_entered!("add-alpha"),
+            re_entered!("add-beta"),
+        ],
+        JOIN_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-join-a-file-of-the-users-in-the-milestones-area",
+        &["milestone", "join"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            re_entered!("add-alpha"),
+            re_entered!("add-beta"),
+            Lead::Plant(Plant::File(".jigc/milestones/ship-it/notes.txt")),
+        ],
+        JOIN_IT,
+        Listed::Acts,
+        at("MJ1", Kind::Untracked),
+    ),
+    cell(
+        "milestone-join-a-file-of-the-users-in-a-sub-tasks-area",
+        &["milestone", "join"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            re_entered!("add-alpha"),
+            re_entered!("add-beta"),
+            Lead::Plant(Plant::File(".jigc/tasks/add-alpha/notes.txt")),
+        ],
+        JOIN_IT,
+        Listed::Acts,
+        at("MJ2", Kind::Untracked),
+    ),
+];
+
+const JOIN_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
+    "join",
+    JOIN_IT,
+    [
+        TWO_SUB_TASKS[0],
+        TWO_SUB_TASKS[1],
+        TWO_SUB_TASKS[2],
+        PROVISIONED,
+        re_entered!("add-alpha"),
+        re_entered!("add-beta"),
+    ]
+);
+
 /// **The family's cells**: `milestone finalize`'s acceptance and its spelling `squash:
-/// false`, then the record doors' — `create`, `add-task`, `add-from-spec`.
+/// false`, then the record doors' — `create`, `add-task`, `add-from-spec` — and the fan-out
+/// doors' — `provision`, `execute`, `join`.
 pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &UNSQUASHED,
     &CREATE_CELLS,
     &ADD_TASK_CELLS,
     &ADD_FROM_SPEC_CELLS,
+    &PROVISION_CELLS,
+    &PROVISION_ELSEWHERE,
+    &EXECUTE_CELLS,
+    &EXECUTE_ELSEWHERE,
+    &JOIN_CELLS,
+    &JOIN_ELSEWHERE,
 ];
