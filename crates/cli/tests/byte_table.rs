@@ -1657,6 +1657,11 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     ),
     (&["milestone", "join"], "C1", &[Prepared::Of(State::Fresh)]),
     (
+        &["milestone", "join"],
+        "MJ4, the edge index",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
         &["milestone", "finalize"],
         "M2",
         &[Prepared::Of(State::Fresh)],
@@ -8648,7 +8653,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (520, 388, 132),
+        (522, 390, 132),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -8656,7 +8661,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
          demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
-         eighteen on demand — its fan-out doors thirty-one: thirteen in the gate, eighteen on \
+         eighteen on demand — its fan-out doors thirty-three: fifteen in the gate, eighteen on \
          demand — and its terminals sixty-five, `discard`'s twenty-eight and `milestone \
          finalize`'s plain spelling's thirty-seven: fifty-three in the gate, twelve on demand"
     );

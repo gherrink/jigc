@@ -748,8 +748,9 @@ pub const EXECUTE: Row = Row {
 /// The re-seed's two lines of `join`.
 const JOIN_RE_SEEDS: [Line; 2] = the_re_seed("MJ1", "MJ2");
 
-/// **`jigc milestone join`** — the record's §4b: the re-seed, and nothing else; the join is
-/// a preview and its overlay is never persisted (`MJ3`, no line).
+/// **`jigc milestone join`** — the record's §4b: the re-seed, and the committed edge index
+/// its ref walk reads, rebuilt where its file is absent or its stamp stale (`MJ4`); the
+/// join is a preview and its overlay is never persisted (`MJ3`, no line).
 pub const JOIN: Row = Row {
     leaf: &["milestone", "join"],
     unit: Unit::TheWordAfterTheLeaf,
@@ -759,6 +760,28 @@ pub const JOIN: Row = Row {
     lines: &[
         JOIN_RE_SEEDS[0],
         JOIN_RE_SEEDS[1],
+        // **Added 2026-10-19**, after the review of the task `B7`'s second part (its fifth
+        // finding): driven on both binaries, `join` at exit 0 writes `.jigc/index/edges.json`
+        // where it was absent, and no line covered it — every cell's leads had built the
+        // index first. *Rebuilt*, not *invalidated*: a read makes or rewrites the cache and
+        // takes nothing of it away; the stamp's file gone is a finalize's alone (`M10`).
+        line(
+            "MJ4, the edge index",
+            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            &[
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "The by-task-id join (M7)",
+                    words: "the join runs the forward-ref check **once per sub-area**, resolving that area's outgoing edges against `committed ∪ that one area`",
+                },
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "Edge index lifecycle",
+                    words: "| **committed rebuild** | first read after a stamp mismatch (branch switch, pull, rebase) — rebuild from committed `.md`s | atomic; persists in `.jigc/index/` with the new stamp |",
+                },
+                THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[2],
+            ],
+        ),
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
@@ -2310,8 +2333,10 @@ const EXECUTE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
 
 /// **The cells of `jigc milestone join`**: the base cell merges the two sub-tasks' commit
 /// docs, each re-entered from its worktree, and persists nothing (`MJ3`); a file of the
-/// user's in the milestone's area (`MJ1`) or a sub-task's (`MJ2`) stays.
-const JOIN_CELLS: [Cell; 4] = [
+/// user's in the milestone's area (`MJ1`) or a sub-task's (`MJ2`) stays; the edge index's
+/// file gone, the join's read rebuilds it, and a file of the user's beside it stays
+/// (`MJ4`).
+const JOIN_CELLS: [Cell; 6] = [
     cell(
         "milestone-join-a-milestone-that-is-not-there",
         &["milestone", "join"],
@@ -2370,6 +2395,45 @@ const JOIN_CELLS: [Cell; 4] = [
         JOIN_IT,
         Listed::Acts,
         at("MJ2", Kind::Untracked),
+    ),
+    // **The edge index's file gone before the join** — moved away, as a user's `rm` of a
+    // cache leaves it: the join's ref walk reads the committed index, and that read rebuilds
+    // what is absent (`MJ4`). Every other cell of the door re-enters its sub-tasks first,
+    // which builds the index, so none met the rebuild (the review of the task `B7`'s second
+    // part, its fifth finding).
+    cell(
+        "milestone-join-the-edge-index-gone",
+        &["milestone", "join"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            re_entered!("add-alpha"),
+            re_entered!("add-beta"),
+            Lead::MovedAway("repo/.jigc/index/edges.json"),
+        ],
+        JOIN_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-join-a-file-of-the-users-under-the-edge-index",
+        &["milestone", "join"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            re_entered!("add-alpha"),
+            re_entered!("add-beta"),
+            Lead::Plant(Plant::File(".jigc/index/notes.md")),
+        ],
+        JOIN_IT,
+        Listed::Acts,
+        at("MJ4, the edge index", Kind::Untracked),
     ),
 ];
 
