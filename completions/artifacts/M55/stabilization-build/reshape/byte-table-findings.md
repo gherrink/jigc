@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, by the fifth of the fixes after the review of the milestone family's task (`B7`), part B (its sixth finding): §21, the two needs `M2` × *E* that §19 scheduled, built in `committed-singletons` — three cells, one red under a key of its own, marked with the second of the human's declared bounds; §19 annotated.*
+
 *Changed 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding): §20, two keys — one mechanism at two doors, a finalize commits a change under the config layer nobody staged — two cells, each marked with the rows' record's §6, entry 19; §1, the two design docs' sentences that say two things of it; §19's *"the cell holds"* corrected.*
 
 *Changed 2026-10-19, with the fourth commit of the milestone family's own: §19, the terminals' cells — one key of their own, four cells under §17's, and the leads of 2026-10-18 each a cell.*
@@ -846,7 +848,7 @@ $JIGC milestone finalize land-it; echo "exit=$?"   # exit=0 — "notes.txt (neve
 
 ### What the other cells show
 
-**The leads of 2026-10-18, each a cell now**: a change staged **before** `milestone create` is refused by the boundary under both spellings — `finalize.carried-staged`, exit 3, *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the change stays staged"* (`milestone-finalize-a-file-staged-before-the-milestone`, `milestone-finalize-squash-false-a-file-staged-before-the-milestone`); a plain-spelling boundary over a built edge index takes the stamp's file away under `M10`'s *invalidated* (every cell of `land-it` re-enters its sub-tasks, which builds the index); and a pending config delta rides the aggregate under `M3, the config` — the cell **holds** (`milestone-finalize-a-pending-config-delta`). *[Not so for long — corrected 2026-10-19, by the first of the fixes after the review of part B: `M3, the config` held the layer in any commit, where its sentences say *first commit*; narrowed, the cell is red and marked with the rows' record's §6, entry 19, which is open — §20.]* The base cells land; a second base cell over two reporters' findings lands their docs under `M2`. At a created doc's home a link or a directory refuses `store.home-not-regular-file`, a change staged there `finalize.promote-clobber`; at the record a file, a committed file, an edit and a link or a directory refuse; a foreign file in a sub-task's area **or the milestone's** is moved aside — the second under `M6, the milestone's area moved aside`, the line this commit adds — and the user's own worktree, a file beside a cache and one in the merged set stay. `discard` refuses a foreign file in either area (`milestone.foreign-bytes`), takes it under `--force` with the path named, refuses a file of the user's in a sub-task's worktree (`milestone.dirty-worktree`), and leaves the user's own worktree, there or moved away. **Two needs are scheduled**: `M2` × *E*, before and after the first write — `fresh` holds no committed doc a sub-task copies in.
+**The leads of 2026-10-18, each a cell now**: a change staged **before** `milestone create` is refused by the boundary under both spellings — `finalize.carried-staged`, exit 3, *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the change stays staged"* (`milestone-finalize-a-file-staged-before-the-milestone`, `milestone-finalize-squash-false-a-file-staged-before-the-milestone`); a plain-spelling boundary over a built edge index takes the stamp's file away under `M10`'s *invalidated* (every cell of `land-it` re-enters its sub-tasks, which builds the index); and a pending config delta rides the aggregate under `M3, the config` — the cell **holds** (`milestone-finalize-a-pending-config-delta`). *[Not so for long — corrected 2026-10-19, by the first of the fixes after the review of part B: `M3, the config` held the layer in any commit, where its sentences say *first commit*; narrowed, the cell is red and marked with the rows' record's §6, entry 19, which is open — §20.]* The base cells land; a second base cell over two reporters' findings lands their docs under `M2`. At a created doc's home a link or a directory refuses `store.home-not-regular-file`, a change staged there `finalize.promote-clobber`; at the record a file, a committed file, an edit and a link or a directory refuse; a foreign file in a sub-task's area **or the milestone's** is moved aside — the second under `M6, the milestone's area moved aside`, the line this commit adds — and the user's own worktree, a file beside a cache and one in the merged set stay. `discard` refuses a foreign file in either area (`milestone.foreign-bytes`), takes it under `--force` with the path named, refuses a file of the user's in a sub-task's worktree (`milestone.dirty-worktree`), and leaves the user's own worktree, there or moved away. **Two needs are scheduled**: `M2` × *E*, before and after the first write — `fresh` holds no committed doc a sub-task copies in. *[Built 2026-10-19, by the fifth of the fixes after the review of part B (its sixth finding): `committed-singletons` holds such a doc and is an arm of the gate — three cells there, one red under a key of its own and marked *bound 2*, §21.]*
 
 ### §14's leads for `B7`, each answered or kept
 
@@ -911,4 +913,44 @@ $JIGC config set finalize.fan-out.squash true > /dev/null          # the cell's 
 printf 'a note of the user\n' > .jigc/config/notes-of-the-user.txt  # and a file of the user's, nobody staged
 $JIGC milestone finalize land-it > /dev/null 2>&1; echo "exit=$?"   # exit=0
 git show --name-only --format= HEAD -- .jigc/config   # both files, in the boundary's commit
+```
+
+## 21. A hand edit at the home of a doc a sub-task updates (`M2` × *E*) — three cells in `committed-singletons`, one red under a key of its own, marked with the second bound
+
+*2026-10-19, this tree's debug build and the previous release's rebuild (`accf3996…ab5d`, checked), macOS arm64; the fifth of the fixes after the review of the milestone family's task (`B7`), part B (its sixth finding). The two needs were scheduled because `fresh` holds no committed doc a sub-task copies in; `committed-singletons` does, and is an arm of the gate. The three cells stand in its arm.*
+
+**Where a sub-task's first write copies from.** *"During a fan-out, a sub-agent's **code, git index, and HEAD** resolve against its **worktree** (`repo_root`), while the committed **doc-store** and the shared **`.jigc/`** (config, task areas, caches) resolve against **jigc_home** — the main checkout"* (`design/storage.md` → *CLI and git*). So the copy-in reads the main checkout's `VISION.md`, whatever the sub-task's worktree holds, and a line the user added there in no commit is in the sub-task's staged copy — on both binaries, driven. At the boundary *"a sub-task's area is a task area and each merged doc is asked of the sub-task that staged it"*, and *"The file is what the task copied in → never a conflict"* (`design/reconciliation.md` → *What a task copied in*); before the first write the edit *"is carried by the copy-in and recorded as the baseline, so that order keeps landing with both sides in one commit"* (→ *Baseline adoption*). `design/write-commands.md` → *copy-on-first-touch* says the first write *"copies the committed body into the sub-area"*; read with the same section's witness of *"the id git stores them under at the doc's home"* and with the storage sentence above, it names the committed doc whose body is copied, not a blob, and is not taken as the other side of a question.
+
+| cell | listed | this tree's binary | the previous release |
+|---|---|---|---|
+| `milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-another-part` — the sub-task writes `thesis` | acts | **holds**, exit 0: the line lands in the boundary's commit beside the sub-task's thesis | *not the listed outcome*, exit 3, `reconciliation.conflict-block`; the line stays |
+| `milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part` — it writes `open-questions`, where the line stands; marked *bound 2* | acts | **lost**, exit 0 — the key below | *not the listed outcome*, exit 3, `reconciliation.conflict-block`; the line stays |
+| `milestone-finalize-a-hand-edit-after-a-sub-tasks-first-write` | refuses: exit 3, `reconciliation.conflict-block` | refuses, nothing changed | refuses, nothing changed |
+
+Each is the task family's cell at `T1` at the boundary (§4): the same three outcomes on this tree, and the same refusal on the previous release, where no task held a witness of what it copied in. **None is a regression in the frame's words**: the previous release's two cells before the first write are red there too, as *not the listed outcome* — though there the line stays, and here, where the sub-task writes its part, it is in no object.
+
+### `r1-milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-is-replaced-by-its-write-to-the-same-part`
+
+- *The cell.* `milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part`, in `committed-singletons`: a milestone of one sub-task, provisioned; a line added by hand to `VISION.md` in the main checkout, in no commit; the sub-task, in its worktree, writes the vision's `open-questions` slot — the part the line stands in — and is joined; the boundary lands.
+- *What it came to.* **Lost.** Exit 0, `finalized … promoted VISION.md`; the line stands at no path of the sandbox and in no object.
+- *Held against.* The exit rule's first clause. **It stands on a declared bound**, the second of the human's four of 2026-10-06: *an uncommitted edit that exists before a task first writes a doc is carried into the task, and a write by that task to the same part replaces it*, whose reach is *"a task whose first write to that doc copies the file in, then a write by that same task to the slot or field the hand edit changed"* (`design/reconciliation.md` → *What a task copied in*). A sub-task is such a task, and its first write copies the file in from the main checkout. What this cell adds to the task family's is the checkout: the sub-agent's worktree never held the line, so it wrote over a part it could have read only through the staged copy. Whether the bound's reach was meant to cross checkouts, no sentence says; the reach as written does not limit it. A bound takes no cell off the list.
+- *One mechanism with* `r1-task-finalize-a-hand-edit-before-the-tasks-first-write-is-replaced-by-its-write-to-the-same-part` (§4): the copy-in of a task's first write, and the promote that lands its staged copy. A notice at that first write, recorded for the 1.x fix pass, would reach both.
+- *The previous release.* **It does not show it.** The same cell refuses there, exit 3, and the line stands.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"; cd "$REPO"
+mkdir -p ../outside; printf 'sharpen the vision\n' > ../outside/summary; printf 'Sharper.\n' > ../outside/prose
+$JIGC milestone create "Land it" > /dev/null; $JIGC milestone add-task land-it "Sharpen the vision" > /dev/null
+$JIGC milestone provision land-it > /dev/null
+printf '\na line of the user\n' >> VISION.md          # in the main checkout, in no commit; it stands in `open-questions`
+(cd .jigc/worktrees/sharpen-the-vision && $JIGC workflow sub-task --task sharpen-the-vision > /dev/null \
+  && $JIGC doc set-field commit:sharpen-the-vision#type --value docs --task sharpen-the-vision > /dev/null \
+  && $JIGC doc set-slot commit:sharpen-the-vision#summary --from-file ../../../../outside/summary --task sharpen-the-vision > /dev/null \
+  && $JIGC doc set-slot vision:vision#open-questions --from-file ../../../../outside/prose --task sharpen-the-vision > /dev/null)
+$JIGC milestone join land-it > /dev/null
+$JIGC milestone finalize land-it > /dev/null; echo "exit=$?"   # exit=0
+command grep -c 'a line of the user' VISION.md        # 0: the line is in no file
+git log --all --format=%h -S'a line of the user'      # nothing: no commit ever held it
 ```

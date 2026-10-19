@@ -136,6 +136,7 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 | mark | cell |
 |---|---|
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
+| bound 2 | `milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part` |
 | bound 2 | `task-finalize-a-hand-edit-before-the-first-write-to-the-same-part` |
 | silence 18 | `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` |
 | silence 19 | `milestone-finalize-a-pending-config-delta` |

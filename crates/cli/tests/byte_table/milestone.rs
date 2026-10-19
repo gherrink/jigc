@@ -3133,6 +3133,121 @@ const FINALIZE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
     ]
 );
 
+/// **A milestone of one sub-task that updates the committed vision from its worktree** —
+/// `land-it` in `committed-singletons`: the sub-task `sharpen-the-vision` re-entered in its
+/// worktree, its commit doc authored there, and one slot of `vision:vision` written —
+/// `$slot`, from `outside/prose` — which is the sub-task's first write to the doc; then the
+/// join. `$before` stands after the provision and before that first write, `$after` after
+/// the join, last before the command. The sub-task's doc-store is the main checkout's
+/// (`design/storage.md` → *CLI and git*), so its first write copies in the main checkout's
+/// `VISION.md`, whatever its worktree holds.
+macro_rules! a_sub_task_over_the_vision {
+    ($slot:literal, [$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
+        &[
+            jigc(&["milestone", "create", "Land it"]),
+            jigc(&["milestone", "add-task", "land-it", "Sharpen the vision"]),
+            jigc(&["milestone", "provision", "land-it"]),
+            $($before,)*
+            payload("summary", "sharpen the vision\n"),
+            payload("prose", "Sharper.\n"),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(".jigc/worktrees/sharpen-the-vision"),
+                &["workflow", "sub-task", "--task", "sharpen-the-vision"],
+            )),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(".jigc/worktrees/sharpen-the-vision"),
+                &[
+                    "doc",
+                    "set-field",
+                    "commit:sharpen-the-vision#type",
+                    "--value",
+                    "docs",
+                    "--task",
+                    "sharpen-the-vision",
+                ],
+            )),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(".jigc/worktrees/sharpen-the-vision"),
+                &[
+                    "doc",
+                    "set-slot",
+                    "commit:sharpen-the-vision#summary",
+                    "--from-file",
+                    "../../../../outside/summary",
+                    "--task",
+                    "sharpen-the-vision",
+                ],
+            )),
+            Lead::Step(Step::JigcAt(
+                Place::Repo(".jigc/worktrees/sharpen-the-vision"),
+                &[
+                    "doc",
+                    "set-slot",
+                    concat!("vision:vision#", $slot),
+                    "--from-file",
+                    "../../../../outside/prose",
+                    "--task",
+                    "sharpen-the-vision",
+                ],
+            )),
+            jigc(&["milestone", "join", "land-it"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// A line added by hand to the committed vision in the main checkout, in no commit (the
+/// plan's plant **E**). It stands in the vision's last part, `open-questions`.
+const A_HAND_EDIT_TO_THE_VISION: Lead = Lead::Plant(Plant::Edit("VISION.md"));
+
+const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
+
+/// **The cells of `M2` × *E*** — a hand edit at the home of a doc a sub-task updates, in
+/// `committed-singletons`, the one prepared state whose committed doc a sub-task copies
+/// in. Each is listed from the docs, as the task family's cells at `T1` are:
+///
+/// - **before the sub-task's first write**, the edit *"is carried by the copy-in and
+///   recorded as the baseline, so that order keeps landing with both sides in one
+///   commit"* (`design/reconciliation.md` → *Baseline adoption*), and at the boundary *"a
+///   sub-task's area is a task area"*, and *"The file is what the task copied in → never
+///   a conflict"* (→ *What a task copied in*): the cell acts. Where the sub-task writes
+///   **another part**, the line lands with it; where it writes **the part the line
+///   stands in**, its write replaces it — the human's declared bound of
+///   2026-10-06 on item 23, whose reach is *"a task whose first write to that doc copies
+///   the file in, then a write by that same task to the slot or field the hand edit
+///   changed"*; the cell is marked with it, and is red under its key;
+/// - **after it**, *"The file is no longer what the task copied in → the caller's
+///   `reconciliation.conflict-block`"*, and nothing is recorded.
+const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
+    finalizes(
+        "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-another-part",
+        SINGLETONS,
+        a_sub_task_over_the_vision!("thesis", [A_HAND_EDIT_TO_THE_VISION], []),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M2", Kind::EditBefore),
+    ),
+    Cell {
+        marks: &[Mark::Bound(2)],
+        ..finalizes(
+            "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part",
+            SINGLETONS,
+            a_sub_task_over_the_vision!("open-questions", [A_HAND_EDIT_TO_THE_VISION], []),
+            FINALIZE_IT,
+            Listed::Acts,
+            at("M2", Kind::EditBefore),
+        )
+    },
+    finalizes(
+        "milestone-finalize-a-hand-edit-after-a-sub-tasks-first-write",
+        SINGLETONS,
+        a_sub_task_over_the_vision!("thesis", [], [A_HAND_EDIT_TO_THE_VISION]),
+        FINALIZE_IT,
+        refuses(3, "reconciliation.conflict-block"),
+        at("M2", Kind::EditAfter),
+    ),
+];
+
 /// **A change staged before the milestone, under `squash: false`** — the carryover gate is
 /// the boundary's under both spellings (`M4`): refused, as under the plain one.
 const UNSQUASHED_CARRIED: [Cell; 1] = [unsquashed(
@@ -3166,5 +3281,6 @@ pub const CELLS: &[&[Cell]] = &[
     &DISCARD_ELSEWHERE,
     &FINALIZE_CELLS,
     &FINALIZE_ELSEWHERE,
+    &FINALIZE_A_HAND_EDIT,
     &UNSQUASHED_CARRIED,
 ];

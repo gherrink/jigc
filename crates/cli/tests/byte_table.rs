@@ -1528,7 +1528,10 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (
         &["milestone", "finalize"],
         "M1",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
@@ -1538,42 +1541,66 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (
         &["milestone", "finalize"],
         "M3",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M5",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M6, the worktrees",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M6, the sub-tasks' areas",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M6, the milestone's area",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M7",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M10, the edge index",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
         "M10, the file-state hashes",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "create"],
@@ -1664,7 +1691,10 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (
         &["milestone", "finalize"],
         "M2",
-        &[Prepared::Of(State::Fresh)],
+        &[
+            Prepared::Of(State::Fresh),
+            Prepared::Of(State::CommittedSingletons),
+        ],
     ),
     (
         &["milestone", "finalize"],
@@ -8211,6 +8241,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "milestone-finalize-a-change-staged-at-the-record",
         ],
     ),
+    // The human's declared bound 2 of 2026-10-06, at the boundary: one mechanism with the
+    // task family's key above, the copy-in a sub-task's first write makes from the main
+    // checkout's doc-store; the cell marked.
+    (
+        "r1-milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-is-replaced-by-its-write-to-the-same-part",
+        Classification::Lost,
+        &["milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part"],
+    ),
     (
         "r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree",
         Classification::Lost,
@@ -8653,7 +8691,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (522, 390, 132),
+        (525, 393, 132),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -8662,8 +8700,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
          demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
          eighteen on demand — its fan-out doors thirty-three: fifteen in the gate, eighteen on \
-         demand — and its terminals sixty-five, `discard`'s twenty-eight and `milestone \
-         finalize`'s plain spelling's thirty-seven: fifty-three in the gate, twelve on demand"
+         demand — and its terminals sixty-eight, `discard`'s twenty-eight and `milestone \
+         finalize`'s plain spelling's forty: fifty-six in the gate, twelve on demand"
     );
 }
 
