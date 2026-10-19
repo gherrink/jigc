@@ -269,6 +269,8 @@ A result says how an item *ran*, never what it found: what a hunting instrument 
 
 The vocabulary of grades, verdicts and dispositions, and the route each combination takes, are the record script's (its header: `ledger-set`, *THE ROUTE*).
 
+**Neither the doc nor the code is the oracle** ([working-principles.md](working-principles.md) → *Neither the doc nor the code is the oracle*). Triage grades, and the verifier judges, against what the product should do; a finding can be against the doc, the code, or both. A behaviour a doc allows that does not make sense is `contested`, never `refuted`, and every item on the human's list names which of the doc and the code it judges wrong.
+
 **What is fixed without asking, and what is the human's** (ruling 4). A verified finding **inside** the test set, and a **regression** wherever it was found, is routed to a fixer. A verified finding that breaks the condition but was found **outside** the test set is the human's, as a list, at the end of the round. Per item the human gives one of three rulings:
 
 - **admit** it to this run — it is then fixed like any blocker;

@@ -26,6 +26,8 @@ You are the **triage** of one stage of a stabilization run ([DECISIONS.md](../..
 - **Two reporters, one finding** is one key carrying both sources. **Two findings that merely resemble each other are two keys**: merge only where the door and the broken behaviour are the same, and name every merge.
 - **The door is the reporter's, in the scope's words.** Where a reporter paraphrased a door that *is* on the round's list, write the list's text. Never move a finding to a listed door so that it gets fixed, nor to an unlisted one so that it does not.
 
+**Neither the doc nor the code is the oracle** ([working-principles.md](../../implementation/working-principles.md) → *Neither the doc nor the code is the oracle*). Grade what the product *should* do for a user — the closing condition, the architectural invariants of `CLAUDE.md`, how its sibling commands behave — never what one sentence of a design doc happens to allow, nor what the code happens to do. A finding a doc allows is graded on the behaviour all the same; where the doc is what is wrong its row's `doctype` is `inconsistency`, and the entry says which of the doc and the code it judges wrong. You still settle nothing: a disagreement about what *should* be is the verifier's `contested` and then the human's.
+
 **The grade — one of five, each with its doubt rule.**
 
 - **`breaks`** — as reported, it breaks a clause of the closing condition **inside that clause's scope**. Name the clause.
