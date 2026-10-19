@@ -349,11 +349,12 @@ pub const RE_SEEDED: &str = "<re-seeded>";
 /// add`)"*, the same section — so the place stands for it: only a checkout is reused, and
 /// only a checkout is left untouched. The same review, the same finding: `MP1` read
 /// [`ITS_SUB_TASKS`], so a rewrite inside a live sub-task's worktree held. **And whose item
-/// the record has not settled** — read so 2026-10-19 under the record's §6, entry 20, open:
-/// no sentence says `provision` skips a sub-task the record has settled, and the one that
-/// names the case narrates it as the defect the abandon's teardown was built against
-/// (*"`milestone provision` will happily re-provision a worktree for a sub-task that was
-/// discarded"*); until it is ruled, the stricter reading, as [`RE_SEEDED`] has it.
+/// the record has not settled** — read so 2026-10-19 under the record's §6, entry 20, then
+/// open, and ruled the same day by the human: `milestone provision` skips sub-tasks the
+/// record has settled, as the re-seed does, and the milestone design is to say so (the
+/// sentence that names the case narrates it as the defect the abandon's teardown was built
+/// against, *"`milestone provision` will happily re-provision a worktree for a sub-task that
+/// was discarded"*).
 pub const UNPROVISIONED: &str = "<unprovisioned>";
 
 /// **The leading component of a place that stands for the directory the cascade resolves
@@ -456,7 +457,11 @@ pub enum May {
     /// (its ninth finding, the sixth fix's left-open): the line read *rebuilt*, any bytes.
     FromTheBasesTree,
     /// Gone from its place and standing, the same entry, under this directory of the
-    /// repository.
+    /// repository — whose components may stand for the acting unit and its sub-tasks as a
+    /// place's do ([`OWN`], [`ITS_SUB_TASKS`]): a landed sub-task worktree's leftovers go to
+    /// `.jigc/displaced/<sub-task>`, by the human's ruling of 2026-10-19 on the rows'
+    /// record's §6, entry 18, and to no other unit's place there. *What it does not ask*:
+    /// that the sub-task a file arrives under is the one whose worktree it left.
     MovedAsideTo(&'static str),
     /// **Gone from its name, and standing under another in the same unit** — a staged doc
     /// re-slugged: its unit's base pin stands, and the unit's `docs/` gained a doc it did
@@ -1468,8 +1473,9 @@ impl<'a> Tally<'a> {
                 let Allows::Files(place, may) = line.allows else {
                     return false;
                 };
-                let aside =
-                    |dir: &str, path: &str| in_repo(path).is_some_and(|rel| under(dir, rel));
+                let aside = |dir: &str, path: &str| {
+                    in_repo(path).is_some_and(|rel| under_for(dir, rel, &self.acting))
+                };
                 if let May::MovedAsideTo(dir) = may
                     && aside(dir, diff.path)
                 {
@@ -1816,7 +1822,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 let to = stands
                     .files
                     .iter()
-                    .find(|to| in_repo(to).is_some_and(|rel| under(dir, rel)))?;
+                    .find(|to| in_repo(to).is_some_and(|rel| under_for(dir, rel, &tally.acting)))?;
                 Some((at, to))
             }
             _ => None,
@@ -2790,8 +2796,9 @@ pub enum Mark {
     /// A place where a design doc is silent or says two things: an entry of the committed
     /// record's list, by its number (`…/reshape/byte-table-acceptance-rows.md` → §6).
     Silence(u8),
-    /// One of the four bounds the human declared on 2026-10-06, by its number in the
-    /// plan's list (its §1.1).
+    /// One of the bounds the human declared on 2026-10-06, by its number in the plan's list
+    /// (its §1.1) — the first, the third or the fourth since the human retired the second
+    /// on 2026-10-19.
     Bound(u8),
 }
 

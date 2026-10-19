@@ -56,6 +56,19 @@ const THE_CONFIG_CARRIED: [Quote; 2] = [
     super::THE_CONFIG_LAYERS_FIRST_COMMIT,
 ];
 
+/// **The human's ruling of 2026-10-19 on the rows' record's §6, entry 18** — the sentence
+/// `M6, the worktrees moved aside` rests on, as `DECISIONS.md` records it, until the design
+/// docs say it: their change is a finding of the run's ledger, as the ruling has it.
+const THE_WORKTREES_LEFTOVERS_MOVED_ASIDE: Quote = Quote {
+    doc: "DECISIONS.md",
+    heading: B8_RULINGS,
+    words: "**Before removing a landed sub-task's worktree, the boundary moves its unstaged and untracked files that git does not ignore into `.jigc/displaced/<sub-task-id>/` and names them**",
+};
+
+/// The heading of `DECISIONS.md`'s entry that records the human's three rulings of
+/// 2026-10-19 — the task `B8`'s first commit.
+const B8_RULINGS: &str = "2026-10-19 — The human's three rulings of the day, recorded: a landed boundary moves a sub-task worktree's unstaged and untracked files that git does not ignore aside, where it took them; `milestone provision` skips a sub-task the record has settled; and bound 2 is retired — a `doc` write over a part that holds an uncommitted hand edit refuses at the write; four marks leave their cells, one line is added, and no classification moves (the byte table, task B8, the first of its commits)";
+
 /// The re-seed's two lines of `finalize` — `M11` and `M12`, added 2026-10-19 after the
 /// review of the task `B7`'s second part (its tenth finding): the sentence the re-seed's
 /// lines quote names this door among the seven, and the row lacked them.
@@ -278,6 +291,26 @@ pub const FINALIZE: Row = Row {
                     heading: "The per-task working area (staging)",
                     words: "Both keep their complement, to `.jigc/displaced/<unit-id>/<relative>`",
                 },
+            ],
+        ),
+        // A landed sub-task's worktree keeps what git neither ignores nor holds — the
+        // human's ruling of 2026-10-19 on the rows' record's §6, entry 18, the line's
+        // sentence until the design docs say it — under that sub-task's place in
+        // `displaced/`. Last of the moved-aside lines: a directory made under
+        // `displaced/` is the first such line's that names it, as it was before this one.
+        line(
+            "M6, the worktrees moved aside",
+            Allows::Files(
+                Where::Under(".jigc/worktrees/<sub-task>"),
+                May::MovedAsideTo(".jigc/displaced/<sub-task>"),
+            ),
+            &[
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "Repository layout & state location",
+                    words: "ephemeral per-sub-agent code worktrees (provisioned per fan-out; torn down on a LANDED boundary, or by `milestone discard` — an aborted finalize leaves them intact for the re-run)",
+                },
+                THE_WORKTREES_LEFTOVERS_MOVED_ASIDE,
             ],
         ),
         line(
@@ -737,7 +770,7 @@ pub const PROVISION: Row = Row {
             ],
         ),
         // At a place no checkout stood, of a sub-task the record has not settled — the
-        // stricter reading of the record's §6, entry 20, as `MP1`'s.
+        // human's ruling of 2026-10-19 on the record's §6, entry 20, as `MP1`'s.
         line(
             "MP2",
             Allows::Registered(".jigc/worktrees/<unprovisioned>"),
@@ -2275,8 +2308,9 @@ macro_rules! fan_out_elsewhere {
 /// add`"* among *"the three doors standing where **no commit has carried those bytes**"*
 /// (`MP5`); a file of the user's in the milestone's area (`MP3`) or a sub-task's (`MP4`)
 /// is where the re-seed writes nothing over an area that stands — it stays. **A sub-task
-/// the record has settled** gets no worktree (`MP1`, `MP2`, the stricter reading of the
-/// record's §6, entry 20 — the cell is marked).
+/// the record has settled** gets no worktree (`MP1`, `MP2`, the human's ruling of
+/// 2026-10-19 on the record's §6, entry 20: `provision` skips a sub-task the record has
+/// settled, as the re-seed does).
 const PROVISION_CELLS: [Cell; 6] = [
     cell(
         "milestone-provision-a-milestone-that-is-not-there",
@@ -2338,23 +2372,20 @@ const PROVISION_CELLS: [Cell; 6] = [
         Listed::Acts,
         at("MP4", Kind::Untracked),
     ),
-    Cell {
-        marks: &[Mark::Silence(20)],
-        ..cell(
-            "milestone-provision-a-sub-task-the-record-has-settled",
-            &["milestone", "provision"],
-            FRESH,
-            &[
-                TWO_SUB_TASKS[0],
-                TWO_SUB_TASKS[1],
-                TWO_SUB_TASKS[2],
-                jigc(&["task", "discard", "add-beta"]),
-            ],
-            PROVISION_IT,
-            Listed::Acts,
-            None,
-        )
-    },
+    cell(
+        "milestone-provision-a-sub-task-the-record-has-settled",
+        &["milestone", "provision"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            jigc(&["task", "discard", "add-beta"]),
+        ],
+        PROVISION_IT,
+        Listed::Acts,
+        None,
+    ),
 ];
 
 const PROVISION_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
@@ -2902,10 +2933,11 @@ const fn finalizes(
 /// - **at the record** (`M5`), what stands in its place and an edit or a change staged at
 ///   it are refused as at the other record doors;
 /// - **a file jigc did not write in a sub-task's area or the milestone's** is moved aside
-///   (`M6`); **one in a live sub-task's worktree** goes with the checkout — the landed
-///   boundary *"names every byte it destroys"* (`design/team-ready-state.md` → *Abandon
-///   refuses on a dirty worktree*), which the row lists as acting and the plant rule reads
-///   as lost: the rows' record's §6, entry 18;
+///   (`M6`); **one in a live sub-task's worktree** is moved aside to
+///   `.jigc/displaced/<sub-task-id>/` before the worktree goes — the human's ruling of
+///   2026-10-19 on the rows' record's §6, entry 18, `M6, the worktrees moved aside` — so
+///   the cell acts; the product takes it with the checkout and names it, and the plant
+///   rule reads that as lost, a finding of the product;
 /// - **the user's own worktree** (`M7`) and **a file of the user's in a cache** (`M10`)
 ///   stay;
 /// - **a sub-task's area gone, at a milestone with no work to land**: the re-seed rebuilds
@@ -3175,24 +3207,22 @@ const FINALIZE_CELLS: [Cell; 31] = [
         refuses(1, "reconciliation.conflict-block"),
         at("M5", Kind::StagedThere),
     ),
-    // The record's §6, entry 18: the design doc narrates this loss, and the exit rule
-    // holds every cell to it; until ruled, the clause.
-    Cell {
-        marks: &[Mark::Silence(18)],
-        ..finalizes(
-            "milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree",
-            FRESH,
-            two_sub_tasks_joined!(
-                [],
-                [Lead::Plant(Plant::File(
-                    ".jigc/worktrees/add-alpha-file/notes.txt"
-                ))]
-            ),
-            FINALIZE_IT,
-            Listed::Acts,
-            at("M6, the worktrees", Kind::Foreign),
-        )
-    },
+    // The record's §6, entry 18, ruled 2026-10-19: the boundary moves the file aside
+    // before it removes the worktree (`M6, the worktrees moved aside`); the product takes
+    // it, a finding of the product.
+    finalizes(
+        "milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::File(
+                ".jigc/worktrees/add-alpha-file/notes.txt"
+            ))]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M6, the worktrees", Kind::Foreign),
+    ),
     finalizes(
         "milestone-finalize-a-foreign-file-in-a-sub-tasks-area",
         FRESH,
@@ -3362,10 +3392,12 @@ const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
 ///   sub-task's area is a task area"*, and *"The file is what the task copied in → never
 ///   a conflict"* (→ *What a task copied in*): the cell acts. Where the sub-task writes
 ///   **another part**, the line lands with it; where it writes **the part the line
-///   stands in**, its write replaces it — the human's declared bound of
-///   2026-10-06 on item 23, whose reach is *"a task whose first write to that doc copies
-///   the file in, then a write by that same task to the slot or field the hand edit
-///   changed"*; the cell is marked with it, and is red under its key;
+///   stands in**, its write replaces it — what the human's declared bound of 2026-10-06
+///   on item 23 reached, *"a task whose first write to that doc copies the file in, then a
+///   write by that same task to the slot or field the hand edit changed"*, until the human
+///   retired the bound on 2026-10-19: such a write refuses at the write, naming the part
+///   and showing the hand-edited text; the cell is red under its key, a finding of the
+///   product, and carries no mark;
 /// - **after it**, *"The file is no longer what the task copied in → the caller's
 ///   `reconciliation.conflict-block`"*, and nothing is recorded.
 const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
@@ -3377,17 +3409,14 @@ const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
         Listed::Acts,
         at("M2", Kind::EditBefore),
     ),
-    Cell {
-        marks: &[Mark::Bound(2)],
-        ..finalizes(
-            "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part",
-            SINGLETONS,
-            a_sub_task_over_the_vision!("open-questions", [A_HAND_EDIT_TO_THE_VISION], []),
-            FINALIZE_IT,
-            Listed::Acts,
-            at("M2", Kind::EditBefore),
-        )
-    },
+    finalizes(
+        "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part",
+        SINGLETONS,
+        a_sub_task_over_the_vision!("open-questions", [A_HAND_EDIT_TO_THE_VISION], []),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M2", Kind::EditBefore),
+    ),
     finalizes(
         "milestone-finalize-a-hand-edit-after-a-sub-tasks-first-write",
         SINGLETONS,

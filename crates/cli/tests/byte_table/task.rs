@@ -783,7 +783,8 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 ///   so the finalize's validation refuses;
 /// - **an edit before the task's first write** (`T1`) is carried into the task where the
 ///   task writes another part, and where it writes the same part the write replaces it —
-///   the second of the bounds of 2026-10-06, which the cell stands on;
+///   the second of the bounds of 2026-10-06, which the human retired on 2026-10-19: such a
+///   write refuses at the write, and the cell is red under its key, unmarked;
 /// - **a change staged at the doc and not in the working file** (`T1`) is replaced at
 ///   finalize — the first of those bounds;
 /// - **what is staged elsewhere rides the commit** (`T4`: *"The commit set is therefore
@@ -979,25 +980,22 @@ const FINALIZE_CELLS: [Cell; 26] = [
         Listed::Acts,
         at("T1", Kind::EditBefore),
     ),
-    Cell {
-        marks: &[Mark::Bound(2)],
-        ..finalize(
-            "task-finalize-a-hand-edit-before-the-first-write-to-the-same-part",
-            SINGLETONS,
-            &[
-                A_TASK_OVER_THE_VISION[0],
-                A_HAND_EDIT,
-                A_TASK_OVER_THE_VISION[1],
-                A_TASK_OVER_THE_VISION[2],
-                A_TASK_OVER_THE_VISION[3],
-                A_TASK_OVER_THE_VISION[4],
-                A_TASK_OVER_THE_VISION[5],
-            ],
-            FINALIZE_THE_VISION,
-            Listed::Acts,
-            at("T1", Kind::EditBefore),
-        )
-    },
+    finalize(
+        "task-finalize-a-hand-edit-before-the-first-write-to-the-same-part",
+        SINGLETONS,
+        &[
+            A_TASK_OVER_THE_VISION[0],
+            A_HAND_EDIT,
+            A_TASK_OVER_THE_VISION[1],
+            A_TASK_OVER_THE_VISION[2],
+            A_TASK_OVER_THE_VISION[3],
+            A_TASK_OVER_THE_VISION[4],
+            A_TASK_OVER_THE_VISION[5],
+        ],
+        FINALIZE_THE_VISION,
+        Listed::Acts,
+        at("T1", Kind::EditBefore),
+    ),
     Cell {
         beside: Some(THE_COPY_IN_SUITE),
         ..finalize(

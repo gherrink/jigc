@@ -2064,6 +2064,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "M3, the config's ignore file",
         NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
     ),
+    (
+        &["milestone", "finalize"],
+        "M6, the worktrees moved aside",
+        NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS,
+    ),
     (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["doc", "add-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
@@ -2218,6 +2223,13 @@ const NO_DISCARD_OVER_AN_ABSENT_AREA: &str = "a sub-task's area absent before `d
 const NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER: &str = "a commit that is the config layer's first — `HEAD` holding nothing under `.jigc/config`, or no \
      `.jigc/.gitignore`, before the command — which no prepared state is: `setup`'s install \
      commit lands the layer, and a repository set up before it did is before the port";
+
+/// What would use `M6, the worktrees moved aside`: a landed boundary that moves a live
+/// sub-task worktree's unstaged and untracked files aside, as the human's ruling of
+/// 2026-10-19 on the rows' record's §6, entry 18 has it.
+const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed boundary that moves what git neither ignores nor holds out of a sub-task's \
+     worktree into `.jigc/displaced/<sub-task-id>/`, as the human's ruling on entry 18 has it: on \
+     this tree it takes the file with the checkout, and the cell of it is lost under its key";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -3379,6 +3391,66 @@ fn bytes_that_stand_elsewhere_are_not_lost() {
         },
         Classification::GitMoved,
     );
+}
+
+/// **A file moved aside lands where its line names, and a component of that place may stand
+/// for a sub-task of the unit** — the human's ruling of 2026-10-19 on the rows' record's §6,
+/// entry 18: before removing a landed sub-task's worktree, the boundary moves its unstaged
+/// and untracked files that git does not ignore into `.jigc/displaced/<sub-task-id>/`. On
+/// `milestone finalize`'s own row: a file of the user's in a sub-task's worktree, moved to
+/// that sub-task's place under `.jigc/displaced/`, holds; moved under an id the record does
+/// not name, or loose at the directory's root, it is *written outside its allowance*; gone,
+/// it is *lost* — the line moves bytes and never lets them go.
+#[test]
+fn a_file_moved_aside_lands_under_its_units_place() {
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        records(m, "docs", &[("m", &["s1"])]);
+        for path in ["repo/.jigc/worktrees", "repo/.jigc/worktrees/s1"] {
+            dir(m, path);
+        }
+        put(m, "repo/.jigc/worktrees/s1/notes.txt", MARKER);
+    });
+    let moved_to = |to: Option<&str>| {
+        then(&before, |m| {
+            m.files
+                .retain(|path, _| !path.starts_with("repo/.jigc/worktrees"));
+            let Some(to) = to else {
+                return;
+            };
+            let mut at = REPO.to_string();
+            let parts: Vec<&str> = to.split('/').collect();
+            for part in &parts[..parts.len() - 1] {
+                at = format!("{at}/{part}");
+                dir(m, &at);
+            }
+            put(m, &format!("{REPO}/{to}"), MARKER);
+        })
+    };
+    let came = |after: &Manifest| {
+        Cell {
+            planted: &[("repo/.jigc/worktrees/s1/notes.txt", MARKER)],
+            argv: &["milestone", "finalize", "m"],
+            ..Cell::of(milestone::FINALIZE, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&moved_to(Some(".jigc/displaced/s1/notes.txt")));
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "moved to its sub-task's place: {why:#?}"
+    );
+    for elsewhere in [".jigc/displaced/s2/notes.txt", ".jigc/displaced/notes.txt"] {
+        let (class, why) = came(&moved_to(Some(elsewhere)));
+        assert_eq!(
+            class,
+            Classification::WrittenOutside,
+            "moved to `{elsewhere}`: {why:#?}"
+        );
+    }
+    let (class, why) = came(&moved_to(None));
+    assert_eq!(class, Classification::Lost, "gone: {why:#?}");
 }
 
 /// **A plant with no bytes is a fault of the cell**, and so are two plants with one
@@ -8426,8 +8498,17 @@ fn marked(cells: &[&byte_cell::Cell]) -> Vec<String> {
         .collect()
 }
 
+/// **The declared bounds a cell may stand on**, by their numbers in the plan's list (its
+/// §1.1): the human's four of 2026-10-06 less the second, which the human retired on
+/// 2026-10-19 — *"Bound 2 is retired, for tasks and sub-tasks alike"*: a `doc` write that
+/// would replace a part holding an uncommitted hand edit the copy-in carried refuses at the
+/// write (`DECISIONS.md`, the entry of that day). A cell that stood on it is plain red under
+/// its key.
+const DECLARED_BOUNDS: [u8; 3] = [1, 3, 4];
+
 /// **Every way the marks of `cells` are not the ones a list of readings holds**: a mark
-/// for a silence the record's list has no entry for, or a bound that is none of the four;
+/// for a silence the record's list has no entry for, or a bound that is none of the
+/// declared ones ([`DECLARED_BOUNDS`]);
 /// a cell marked twice with one mark; a marked cell the list's table has no line for; a
 /// line of the table for a cell that carries no such mark.
 fn unmarked(cells: &[&byte_cell::Cell], silences: &[u8], readings: &str) -> Vec<String> {
@@ -8436,12 +8517,12 @@ fn unmarked(cells: &[&byte_cell::Cell], silences: &[u8], readings: &str) -> Vec<
         for (at, mark) in cell.marks.iter().enumerate() {
             let known = match mark {
                 Mark::Silence(entry) => silences.contains(entry),
-                Mark::Bound(number) => (1..=4).contains(number),
+                Mark::Bound(number) => DECLARED_BOUNDS.contains(number),
             };
             if !known {
                 out.push(format!(
                     "`{}` carries the mark *{}*, which is no entry of the record's list and \
-                     none of the four bounds",
+                     none of the declared bounds",
                     cell.name,
                     mark.named()
                 ));
@@ -8522,12 +8603,15 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
         ]
     );
     says(&unmarked(&[&plain, &one, &two], &[1, 2], list), &[]);
-    let (lost, twice) = (
+    // Bound 2 is no bound since the human's ruling of 2026-10-19: a mark of it is a mark of
+    // nothing.
+    let (lost, twice, retired) = (
         cell("lost", &[Mark::Silence(9), Mark::Bound(5)]),
-        cell("twice", &[Mark::Bound(2), Mark::Bound(2)]),
+        cell("twice", &[Mark::Bound(3), Mark::Bound(3)]),
+        cell("retired", &[Mark::Bound(2)]),
     );
     says(
-        &unmarked(&[&one, &lost, &twice], &[1, 2], list),
+        &unmarked(&[&one, &lost, &twice, &retired], &[1, 2], list),
         &[
             (
                 "`lost` carries the mark *silence 9*",
@@ -8535,12 +8619,17 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
             ),
             (
                 "`lost` carries the mark *bound 5*",
-                "none of the four bounds",
+                "none of the declared bounds",
             ),
-            ("`twice` carries the mark *bound 2* twice", ""),
+            ("`twice` carries the mark *bound 3* twice", ""),
+            (
+                "`retired` carries the mark *bound 2*",
+                "none of the declared bounds",
+            ),
             ("no line `| silence 9 | `lost` |`", ""),
-            ("no line `| bound 2 | `twice` |`", ""),
-            ("no line `| bound 2 | `twice` |`", ""),
+            ("no line `| bound 2 | `retired` |`", ""),
+            ("no line `| bound 3 | `twice` |`", ""),
+            ("no line `| bound 3 | `twice` |`", ""),
             ("no line `| bound 5 | `lost` |`", ""),
             (
                 "the line `| silence 1 | `two` |`",
