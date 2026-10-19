@@ -118,6 +118,7 @@ const LIVE_DOCS: &[&str] = &[
     "implementation/public-hygiene.md",
     "implementation/release.md",
     "implementation/stabilization-workflow.md",
+    "implementation/working-principles.md",
     "ideas/adapter-permission-model.md",
     "ideas/adr-lifecycle-extensions.md",
     "ideas/assumption-register.md",

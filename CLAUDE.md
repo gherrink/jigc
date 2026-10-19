@@ -22,7 +22,7 @@ Two operating modes, each with its own loop:
 - **Design decisions & docs** → the [design workflow](implementation/design-workflow.md) (discuss → converge → write; default output is discussion).
 - **Code** → the [dev workflow](implementation/dev-workflow.md) (test-first: scope → red → green → refactor → gate → commit).
 
-The conventions below apply across both — and to the loop that takes a build to a version ready to release, the [stabilization workflow](implementation/stabilization-workflow.md) (open → test → rule → fix → close).
+The conventions below apply across both — and to the loop that takes a build to a version ready to release, the [stabilization workflow](implementation/stabilization-workflow.md) (open → test → rule → fix → close). **Rules of judgment the human has set for every workflow** — the first: when a doc and the robust behaviour disagree, the behaviour wins and the doc changes — live in [implementation/working-principles.md](implementation/working-principles.md), one section each; they are pointed at from here, never restated.
 
 **Branches** (since 2026-10-01 — [DECISIONS.md](DECISIONS.md) → *the branching switch*). **This is the branch model's one home**; the lifecycle an increment walks is [increment-workflow.md](implementation/increment-workflow.md) → Branches, and `main`'s ruleset is [release.md](implementation/release.md) → The main branch.
 
