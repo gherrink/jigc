@@ -365,6 +365,31 @@ pub const UNPROVISIONED: &str = "<unprovisioned>";
 /// root. Where a layer that stands does not read, the place is nowhere.
 pub const DOCS_ROOT: &str = "<docs-root>";
 
+/// **A whole place that is a doc of the store, at its doctype's current home** — `<slug>.md`
+/// directly in a doctype's home directory, or a placement doctype's one file — as the
+/// cascade resolves the homes before the command or after it ([`Homes::over`]; a root
+/// knob's re-point moves the homes): *"The resolved
+/// `docs-root` is prepended to every persisted doctype's `location:` at schema load"*
+/// (`design/storage.md` → *Config layout*). A path two doctypes' homes would hold is no
+/// doc's. Added 2026-10-19, for the movers family's rows (the task `B8`): every door of the
+/// family writes the committed store where it stands.
+pub const A_DOC: &str = "<a-doc>";
+
+/// **A whole place that is a doc at a home its doctype had at an earlier schema version**,
+/// and no doctype's current home — what a snapshot of the schema declares
+/// (`design/corpus-migration.md` → *Prior-schema sourcing — the versioned snapshot store*).
+pub const A_PRIOR_DOC: &str = "<a-prior-doc>";
+
+/// **The doc the command's address names, at its home** — the unit, `<type>:<slug>`, the
+/// first word after the leaf: `<slug>.md` at the doctype's home directory, or a placement
+/// doctype's file.
+pub const THE_DOC: &str = "<the-doc>";
+
+/// **The prior home the command's `--from` names** — that file, or any path under that
+/// directory: *"the door sweeps every committed `.md` under it into the doctype's current
+/// home"* (`design/corpus-migration.md` → *The freeze-exempt sibling*).
+pub const PRIOR_HOME: &str = "<prior-home>";
+
 /// Where a milestone's committed record stands under the docs root: `milestone-records/`,
 /// the `location:` the `milestone-record` doctype declares.
 const RECORD_HOME: &str = "milestone-records";
@@ -471,6 +496,48 @@ pub enum May {
     /// a staged doc gone from a unit that stands is not *lost*. A commit holds nothing
     /// under it.
     ReSlugged,
+    /// **Retitled** — the doc the address names ([`THE_DOC`]) rewritten so that its lines
+    /// are the ones it held before the command but its `# ` title line, which is the title
+    /// `--to` gives; where its slug changes, standing so at another path of its home
+    /// directory, where nothing stood before in the working tree or in what git held, and
+    /// gone from its own: *"**Rewrites the moved doc's H1** to `<New Title>` (the unified
+    /// retitle), then **`git mv`** old→new path"*, and the retitle-only arm, *"rewrite the
+    /// H1 and commit, with **no `git mv` and no referrer repoint**"*
+    /// (`design/write-commands.md` → *`jigc rename`*). One such move or rewrite, or none:
+    /// two candidates are no retitle. `jigc rename`'s `RN1`; added 2026-10-19 (the task
+    /// `B8`).
+    Retitled,
+    /// **Repointed** — a doc of the store that referred to the doc [`May::Retitled`] moved,
+    /// rewritten so that each line that changed held the old identity and holds the new
+    /// one in its place, every other line as it stood, none added or gone: *"rewrites each
+    /// referrer's structured ref-field old→new"*. Nothing where the doc did not move.
+    /// `jigc rename`'s `RN2`.
+    Repointed,
+    /// **Into its home** — gone from its place, and standing, the same entry, at its
+    /// doctype's home as the cascade resolves it **after** the command, under its own name
+    /// (or as a placement doctype's file); where something stood there before, it stands
+    /// moved aside under `.jigc/displaced/`. The doctype is the one the command names, for a
+    /// place that is a prior home ([`PRIOR_HOME`], `jigc relocate`'s `RL1`), and else the
+    /// one whose home held the path before the command (`jigc config set`'s `CS2`, a root
+    /// knob's re-point). Added 2026-10-19 (the task `B8`).
+    IntoItsHome,
+    /// **Migrated** — a doc of the store below its doctype's current schema version (its
+    /// stamp, `schema-version: N`, below the version the doctype's pack manifest declares,
+    /// or absent) rewritten at its home — or, from a home its doctype had at an earlier
+    /// version ([`A_PRIOR_DOC`]), moved to the current one — so that its stamp is the current
+    /// version and **its prose stands as it stood, in order**: every line that is no line of
+    /// its front matter, not its `# ` title and no `- <field>:` leaf stands in it after.
+    /// *"The prose is **unchanged**"* (`design/corpus-migration.md` → *The determinism
+    /// boundary holds*). `jigc migrate-corpus`'s `MG1`; added 2026-10-19 (the task `B8`).
+    Migrated,
+    /// **Its knob set** — the project manifest, made or rewritten so that every line of it
+    /// that is no line of the knob the command names (the unit) stands as it stood, in
+    /// order, and every line that is not so names that knob, beside the `scalar:` line
+    /// that holds them: *"`jigc config set <key> <value>` | a `scalar-set`"*, in the one
+    /// file a hand edit is first-class — *"**by hand** (edit `manifest.yaml`"*
+    /// (`design/overrides.md` → *Authoring deltas*). `jigc config set`'s `CS1`; added
+    /// 2026-10-19 (the task `B8`).
+    ItsKeySet,
 }
 
 /// **What no line that lets a cache be rebuilt covers**, by its path from the repository's
@@ -593,6 +660,14 @@ pub enum When {
     /// The command refused. A line under it holds on a refusal and **only** then: what
     /// the command may do where it exits 0 is another line's to say.
     Refused,
+    /// **It committed** — the command exited 0, or it refused having landed a commit of its
+    /// own on the checked-out branch: a line under it that holds on a refusal holds on such
+    /// a refusal alone. `jigc migrate-corpus` refuses one doc while *"the run's other docs
+    /// still migrate and commit, and the run exits non-zero"* (`design/finalize.md` → *4.
+    /// Promote managed docs*), and a refusal that committed nothing is held to change
+    /// nothing — the reading of the rows' record's §6, entry 22, until it is ruled. Added
+    /// 2026-10-19, with the movers family's rows (the task `B8`).
+    ItCommitted,
 }
 
 /// **One line of an allowance.** `id` is the line's number in the committed record; a
@@ -755,6 +830,14 @@ impl Kind {
 /// committed doc the line reads. Nor does **K**, *a file in a directory's place* — it
 /// takes every doc of the home's directory, not the one the line reads — nor **S** or
 /// **M**, which are held to a write.
+///
+/// **And a committed doc the command rewrites or moves where it stands** — the movers
+/// family's words, [`May::Retitled`], [`May::Repointed`], [`May::IntoItsHome`],
+/// [`May::Migrated`] and [`May::ItsKeySet`] (the task `B8`): **U**, **L** and **K** go there
+/// as to a place the command replaces, **E** after the first write and **S** where the
+/// command writes, as to a tracked file it rewrites; **M** to the knob's manifest, which
+/// the command merges a line into. **T** does not: a committed file at the place is the
+/// doc itself.
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -775,17 +858,28 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
     let read = |may: May| matches!(may, May::CopiedFrom);
+    // A committed doc the command rewrites or moves where it stands — the movers family's
+    // words. **T** does not go there: a committed file at the place is the doc itself.
+    let rewrites = |may: May| {
+        matches!(
+            may,
+            May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
+        )
+    };
     let aimed = match (kind, line.allows) {
-        (Kind::Untracked, Allows::Files(_, may)) => lands(may) || read(may),
+        (Kind::Untracked, Allows::Files(_, may)) => lands(may) || read(may) || rewrites(may),
         (Kind::Committed, Allows::Files(place, may)) => {
             lands(may) && one_file(place) && !matches!(place, Where::Hook)
         }
         (
             Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside | Kind::DirForAFile,
             Allows::Files(place, may),
-        ) => one_file(place) && (lands(may) || read(may) || matches!(may, May::MergeInto)),
+        ) => {
+            one_file(place)
+                && (lands(may) || read(may) || rewrites(may) || matches!(may, May::MergeInto))
+        }
         (Kind::FileForADir, Allows::Files(place, may)) => {
-            one_file(place) && (lands(may) || matches!(may, May::MergeInto))
+            one_file(place) && (lands(may) || rewrites(may) || matches!(may, May::MergeInto))
         }
         (Kind::EditBefore, Allows::Files(_, may)) => {
             matches!(may, May::CopyOfAStagedDoc) || read(may)
@@ -793,12 +887,14 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         (Kind::EditAfter, Allows::Files(place, may)) => {
             one_file(place)
                 && !matches!(place, Where::Hook)
-                && (lands(may) || merges(may) || read(may))
+                && (lands(may) || merges(may) || read(may) || rewrites(may))
         }
         (Kind::StagedThere, Allows::Files(place, may)) => {
-            one_file(place) && !matches!(place, Where::Hook) && (lands(may) || merges(may))
+            one_file(place)
+                && !matches!(place, Where::Hook)
+                && (lands(may) || merges(may) || rewrites(may))
         }
-        (Kind::UsersLine, Allows::Files(_, may)) => merges(may),
+        (Kind::UsersLine, Allows::Files(_, may)) => merges(may) || matches!(may, May::ItsKeySet),
         (Kind::Foreign, Allows::Files(place, may)) => {
             matches!(place, Where::Under(_)) && matches!(may, May::Removed)
         }
@@ -1013,6 +1109,17 @@ struct Acting {
     /// Every linked checkout whose directory stood before the command, by that directory
     /// from the repository's root — what [`UNPROVISIONED`] asks a place against.
     checked_out: BTreeSet<String>,
+    /// The doctypes' homes as the cascade resolves them before the command and after it —
+    /// what [`A_DOC`], [`A_PRIOR_DOC`], [`THE_DOC`] and the words that move a doc read.
+    homes: Option<Homes>,
+    homes_after: Option<Homes>,
+    /// The doc the unit names, where the unit is an address: its identity, and its home.
+    the_doc: Option<(String, String)>,
+    /// What the command's `--from` names, from the repository's root — [`PRIOR_HOME`].
+    from: Option<String>,
+    /// The title the command's `--to` gives — what [`May::Retitled`] asks the new `# `
+    /// line to be.
+    to: Option<String>,
 }
 
 impl Acting {
@@ -1117,7 +1224,29 @@ impl Acting {
                 }
             })
             .unwrap_or_default();
+        let homes = Homes::over(before);
+        let the_doc = unit.as_ref().and_then(|unit| {
+            let (ty, slug) = unit.split_once(':')?;
+            let home = homes.as_ref()?.current.get(ty)?;
+            Some((unit.clone(), home.for_name(&format!("{slug}.md"))))
+        });
+        let word_after = |flag: &str| {
+            argv.iter()
+                .position(|word| *word == flag)
+                .and_then(|at| argv.get(at + 1))
+                .map(|word| word.to_string())
+        };
+        let from = word_after("--from").map(|from| {
+            from.trim_start_matches("./")
+                .trim_end_matches('/')
+                .to_string()
+        });
         Acting {
+            homes,
+            homes_after: Homes::over(after),
+            the_doc,
+            from,
+            to: word_after("--to"),
             unit,
             sub_tasks,
             settled,
@@ -1185,6 +1314,20 @@ impl Acting {
 /// no string. *Not read*: a listed pack's own `knobs.yaml`, which the shipped topology has
 /// none of.
 fn docs_root(before: &Manifest) -> Option<String> {
+    let root = knob(before, "docs-root")?;
+    let root = root.trim_matches('/');
+    Some(if root == "." {
+        String::new()
+    } else {
+        root.to_string()
+    })
+}
+
+/// **What the cascade resolves a scalar knob to** over `manifest` — the project layer's
+/// value (`.jigc/config/manifest.yaml`, its `scalar:` map), else the team layer's
+/// (`~/.config/jigc/manifest.yaml`), else the dev pack's own default (`knobs.yaml`). `None`
+/// where a layer that stands is no YAML map, or the knob there is no string.
+fn knob(manifest: &Manifest, key: &str) -> Option<String> {
     fn says(bytes: &[u8], at: &[&str]) -> Result<Option<String>, ()> {
         let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).map_err(|_| ())?;
         if !yaml.is_mapping() {
@@ -1198,34 +1341,269 @@ fn docs_root(before: &Manifest) -> Option<String> {
                 .ok_or(()),
         }
     }
-    let mut value = None;
     for layer in [
         format!("{REPO}/.jigc/config/manifest.yaml"),
         "home/.config/jigc/manifest.yaml".to_string(),
     ] {
-        match before.files.get(&layer) {
+        match manifest.files.get(&layer) {
             None => continue,
-            Some(Entry::File { bytes, .. }) => match says(bytes, &["scalar", "docs-root"]) {
+            Some(Entry::File { bytes, .. }) => match says(bytes, &["scalar", key]) {
                 Ok(None) => continue,
-                Ok(Some(set)) => {
-                    value = Some(set);
-                    break;
-                }
+                Ok(Some(set)) => return Some(set),
                 Err(()) => return None,
             },
             Some(_) => return None,
         }
     }
-    let value = match value {
-        Some(value) => value,
-        None => says(DEV_KNOBS.as_bytes(), &["docs-root", "default"]).ok()??,
-    };
-    let root = value.trim_matches('/');
-    Some(if root == "." {
-        String::new()
-    } else {
-        root.to_string()
-    })
+    says(DEV_KNOBS.as_bytes(), &[key, "default"]).ok()?
+}
+
+/// **The shipped packs' own files** — their schemas and their schema snapshots, read as a
+/// doctype's home is declared there (`location:` or `placement:`), the way the docs root's
+/// default is read off the dev pack's `knobs.yaml` and never spelled in the frame.
+static SHIPPED_PACKS: include_dir::Dir<'static> =
+    include_dir::include_dir!("$CARGO_MANIFEST_DIR/packs");
+
+/// **Where a doctype's docs stand**, from the repository's root: a directory each of its
+/// docs stands in as `<slug>.md` (`""` the root itself), or the one file a placement
+/// doctype's doc is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Home {
+    Dir(String),
+    File(String),
+}
+
+impl Home {
+    /// Whether `rel`, from the repository's root, is a doc at this home: the file itself,
+    /// or `<slug>.md` directly in the directory.
+    fn holds(&self, rel: &str) -> bool {
+        match self {
+            Home::File(file) => rel == file,
+            Home::Dir(dir) => {
+                let name = match dir.as_str() {
+                    "" => Some(rel),
+                    dir => rel
+                        .strip_prefix(dir)
+                        .and_then(|rest| rest.strip_prefix('/')),
+                };
+                name.is_some_and(|name| !name.contains('/') && name.ends_with(".md"))
+            }
+        }
+    }
+
+    /// Where a doc whose file is named `name` stands at this home.
+    fn for_name(&self, name: &str) -> String {
+        match self {
+            Home::File(file) => file.clone(),
+            Home::Dir(dir) => joined(dir, name),
+        }
+    }
+}
+
+/// `rest` under `dir`, both from the repository's root (`""` the root itself).
+fn joined(dir: &str, rest: &str) -> String {
+    match dir {
+        "" => rest.to_string(),
+        dir => format!("{dir}/{rest}"),
+    }
+}
+
+/// **Every doctype's home, as the cascade resolves it over one manifest** — its current
+/// schema's, and every home a snapshot of an earlier schema version declares
+/// (`design/corpus-migration.md` → *Prior-schema sourcing — the versioned snapshot store*).
+#[derive(Clone, Debug, Default)]
+struct Homes {
+    current: BTreeMap<String, Home>,
+    prior: Vec<(String, Home)>,
+    /// Each doctype's current schema version, as its pack's `schema-manifest.yaml` declares
+    /// it — the version a migrated doc is stamped with (`design/corpus-migration.md` → *The
+    /// schema-version stamp*). A doctype no manifest governs has none.
+    versions: BTreeMap<String, u64>,
+}
+
+/// What a schema file declares of its doctype's home.
+enum Declared {
+    Location(String),
+    Placement(String),
+}
+
+/// The doctype a schema file declares, and its home as declared — `None` for a schema with
+/// neither, a transient doctype.
+fn declared(bytes: &[u8]) -> Option<(String, Declared)> {
+    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).ok()?;
+    let ty = yaml.get("type")?.as_str()?.to_string();
+    if let Some(location) = yaml.get("location").and_then(serde_yaml_ng::Value::as_str) {
+        return Some((ty, Declared::Location(location.to_string())));
+    }
+    let file = yaml.get("placement")?.get("file")?.as_str()?;
+    Some((ty, Declared::Placement(file.to_string())))
+}
+
+impl Homes {
+    /// **The homes over `manifest`**: the dev pack's schemas; the methodology pack's where
+    /// the project's `.jigc/config/packs.yaml` composes it (`compose-embedded-methodology:
+    /// true`, `design/multi-pack.md`); a listed pack's schemas, read off the manifest under
+    /// the directory that file's `packs:` names, from the repository's root; and a project
+    /// layer's shadow, `.jigc/config/schemas/<type>.yaml` — each outranking the one before
+    /// it. A `location:` stands under the docs root — *"The resolved `docs-root` is
+    /// prepended to every persisted doctype's `location:` at schema load"*
+    /// (`design/storage.md` → *Config layout*) — and a `placement:` file carrying a leading
+    /// directory under `placement-root` where that knob is set: *"a declared home
+    /// **carrying a leading directory component** re-roots to
+    /// `<placement-root>/<remainder>`"* (→ *Placement — direct-file and root-located homes
+    /// (M38)*). `None` where the docs root does not resolve. *Not read*: a pack named by an
+    /// absolute path, and a listed pack's own knobs.
+    fn over(manifest: &Manifest) -> Option<Homes> {
+        let docs_root = docs_root(manifest)?;
+        let placement_root = knob(manifest, "placement-root").unwrap_or_default();
+        let packs: Option<serde_yaml_ng::Value> = match manifest
+            .files
+            .get(&format!("{REPO}/.jigc/config/packs.yaml"))
+        {
+            Some(Entry::File { bytes, .. }) => serde_yaml_ng::from_slice(bytes).ok(),
+            _ => None,
+        };
+        let composes = packs
+            .as_ref()
+            .and_then(|yaml| yaml.get("compose-embedded-methodology"))
+            .and_then(serde_yaml_ng::Value::as_bool)
+            .unwrap_or(false);
+        let listed: Vec<String> = packs
+            .as_ref()
+            .and_then(|yaml| yaml.get("packs"))
+            .and_then(serde_yaml_ng::Value::as_sequence)
+            .map(|packs| {
+                packs
+                    .iter()
+                    .filter_map(serde_yaml_ng::Value::as_str)
+                    .filter(|pack| !pack.starts_with('/'))
+                    .map(|pack| {
+                        pack.trim_start_matches("./")
+                            .trim_end_matches('/')
+                            .to_string()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let shipped = |kind: &str| -> Vec<Vec<u8>> {
+            let mut packs = vec!["dev"];
+            if composes {
+                packs.push("methodology");
+            }
+            packs
+                .into_iter()
+                .filter_map(|pack| SHIPPED_PACKS.get_dir(format!("{pack}/{kind}")))
+                .flat_map(|dir| dir.files().map(|file| file.contents().to_vec()))
+                .collect()
+        };
+        let from_the_manifest = |dir: &str| -> Vec<Vec<u8>> {
+            let prefix = format!("{REPO}/{dir}/");
+            manifest
+                .files
+                .iter()
+                .filter(|(path, _)| {
+                    path.strip_prefix(&prefix)
+                        .is_some_and(|name| !name.contains('/') && name.ends_with(".yaml"))
+                })
+                .filter_map(|(_, entry)| match entry {
+                    Entry::File { bytes, .. } => Some(bytes.clone()),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut schemas = shipped("schemas");
+        // A listed pack outranks the shipped ones, the first of the list the highest: read
+        // lowest first, so a later one wins.
+        for pack in listed.iter().rev() {
+            schemas.extend(from_the_manifest(&format!("{pack}/schemas")));
+        }
+        schemas.extend(from_the_manifest(".jigc/config/schemas"));
+        let resolve = |declared: Declared| match declared {
+            Declared::Location(dir) => Home::Dir(joined(&docs_root, dir.trim_matches('/'))),
+            Declared::Placement(file) => Home::File(re_rooted(&placement_root, &file)),
+        };
+        let mut homes = Homes::default();
+        for manifest in shipped("config") {
+            let Ok(yaml) = serde_yaml_ng::from_slice::<serde_yaml_ng::Value>(&manifest) else {
+                continue;
+            };
+            for doctype in yaml
+                .get("doctypes")
+                .and_then(serde_yaml_ng::Value::as_sequence)
+                .into_iter()
+                .flatten()
+            {
+                if let (Some(ty), Some(version)) = (
+                    doctype.get("type").and_then(serde_yaml_ng::Value::as_str),
+                    doctype
+                        .get("schema-version")
+                        .and_then(serde_yaml_ng::Value::as_u64),
+                ) {
+                    homes.versions.insert(ty.to_string(), version);
+                }
+            }
+        }
+        for schema in schemas {
+            if let Some((ty, home)) = declared(&schema) {
+                homes.current.insert(ty, resolve(home));
+            }
+        }
+        for snapshot in shipped("schema-snapshots") {
+            if let Some((ty, home)) = declared(&snapshot) {
+                let home = resolve(home);
+                if homes.current.contains_key(&ty)
+                    && homes.current.get(&ty) != Some(&home)
+                    && !homes.prior.contains(&(ty.clone(), home.clone()))
+                {
+                    homes.prior.push((ty, home));
+                }
+            }
+        }
+        Some(homes)
+    }
+
+    /// The doctype whose current home holds `rel` — `None` where none does, or two do.
+    fn doctype_at(&self, rel: &str) -> Option<&str> {
+        let at: Vec<&str> = self
+            .current
+            .iter()
+            .filter(|(_, home)| home.holds(rel))
+            .map(|(ty, _)| ty.as_str())
+            .collect();
+        match at.as_slice() {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+
+    /// The doctype one of whose earlier homes holds `rel`, where no current home does.
+    fn prior_doctype_at(&self, rel: &str) -> Option<&str> {
+        if self.current.values().any(|home| home.holds(rel)) {
+            return None;
+        }
+        let at: BTreeSet<&str> = self
+            .prior
+            .iter()
+            .filter(|(_, home)| home.holds(rel))
+            .map(|(ty, _)| ty.as_str())
+            .collect();
+        match at.len() {
+            1 => at.into_iter().next(),
+            _ => None,
+        }
+    }
+}
+
+/// A declared placement file under `placement-root` — `""` unset, every declared home
+/// standing; `.` the repository's root; else that directory — where it carries a leading
+/// directory component; a home declared at the root is never re-rooted.
+fn re_rooted(root: &str, file: &str) -> String {
+    let root = root.trim_matches('/');
+    match (root, file.split_once('/')) {
+        ("", _) | (_, None) => file.to_string(),
+        (".", Some((_, rest))) => rest.to_string(),
+        (root, Some((_, rest))) => format!("{root}/{rest}"),
+    }
 }
 
 /// **A milestone's committed record, as the frame reads it**: the sub-task ids its items
@@ -1329,6 +1707,31 @@ fn committed<'m>(manifest: &'m Manifest, rel: &str) -> Option<&'m Entry> {
 /// for a command that acts on a unit, [`OWN`], [`ITS_SUB_TASKS`] and [`ITS_MILESTONE`] for
 /// what [`Acting`] reads, and a leading [`DOCS_ROOT`] for the docs root.
 fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
+    match pattern {
+        THE_DOC => return acting.the_doc.as_ref().is_some_and(|(_, at)| at == path),
+        A_DOC => {
+            return [&acting.homes, &acting.homes_after]
+                .into_iter()
+                .flatten()
+                .any(|homes| homes.doctype_at(path).is_some());
+        }
+        A_PRIOR_DOC => {
+            return acting
+                .homes
+                .as_ref()
+                .is_some_and(|homes| homes.prior_doctype_at(path).is_some());
+        }
+        PRIOR_HOME => {
+            return acting.from.as_ref().is_some_and(|from| {
+                !from.is_empty()
+                    && (path == from
+                        || path
+                            .strip_prefix(from.as_str())
+                            .is_some_and(|rest| rest.starts_with('/')))
+            });
+        }
+        _ => {}
+    }
     let Some(pattern) = acting.rooted(pattern) else {
         return false;
     };
@@ -1451,8 +1854,41 @@ impl<'a> Tally<'a> {
                     When::NoCommitYet => unborn,
                     When::FirstCommitOfItsPlace => first_commit_of(line.allows),
                     When::Refused => !self.acted,
+                    When::ItCommitted => self.acted || self.made_a_commit(),
                 }
         })
+    }
+
+    /// **Whether the command left a commit of its own on the checked-out branch** — the
+    /// main checkout's `HEAD` moved, on the same branch, to a commit whose first parents
+    /// reach the one it stood at.
+    fn made_a_commit(&self) -> bool {
+        let (Some(was), Some(is)) = (
+            self.seen.before.checkouts.get(REPO),
+            self.seen.after.checkouts.get(REPO),
+        ) else {
+            return false;
+        };
+        if was.head == is.head || was.branch != is.branch || is.head.is_empty() {
+            return false;
+        }
+        let mut at = Some(is.head.as_str());
+        let mut steps = 0;
+        while let Some(id) = at
+            && steps <= self.seen.after.commits.len()
+        {
+            if id == was.head {
+                return true;
+            }
+            at = self
+                .seen
+                .after
+                .commits
+                .get(id)
+                .and_then(|commit| commit.parent.as_deref());
+            steps += 1;
+        }
+        was.head.is_empty() && at.is_none()
     }
 
     /// Whether `place` is where `path` — from the sandbox's root — stands.
@@ -1479,20 +1915,44 @@ impl<'a> Tally<'a> {
                 if let May::MovedAsideTo(dir) = may
                     && aside(dir, diff.path)
                 {
-                    // The arrival: a directory, or an entry that left a place of the line.
+                    // The arrival: a directory, or an entry that left a place of the line —
+                    // gone from it, or something else standing there now.
                     return diff.before.is_none()
                         && diff.after.is_some_and(|arrived| {
                             matches!(arrived, Entry::Dir(_))
                                 || self.seen.before.files.iter().any(|(from, left)| {
                                     left.same(arrived)
                                         && self.placed(place, from)
-                                        && !self.seen.after.files.contains_key(from)
+                                        && self
+                                            .seen
+                                            .after
+                                            .files
+                                            .get(from)
+                                            .is_none_or(|now| !now.same(left))
                                 })
                         });
+                }
+                // The arrivals a word reads away from its place: the doc the address names,
+                // moved within its home; a doc moved into its doctype's home.
+                if let (Some(rel), Some(is)) = (in_repo(diff.path), diff.after) {
+                    let arrived = match may {
+                        May::Retitled => {
+                            diff.before.is_none()
+                                && self
+                                    .retitle()
+                                    .is_some_and(|(old, new)| new != old && new == rel)
+                        }
+                        May::IntoItsHome => self.arrived_home(place, rel, diff.before, is),
+                        _ => false,
+                    };
+                    if arrived {
+                        return true;
+                    }
                 }
                 if !self.placed(place, diff.path) {
                     return false;
                 }
+                let rel = in_repo(diff.path).unwrap_or_default();
                 if matches!(may, May::Rebuilt | May::Invalidated(_))
                     && in_repo(diff.path).is_some_and(|rel| NO_CACHE.contains(&rel))
                 {
@@ -1506,15 +1966,25 @@ impl<'a> Tally<'a> {
                 match (may, diff.before, diff.after) {
                     (May::WriteWhole, _, Some(Entry::File { .. })) => true,
                     (May::WriteWhole, _, _) => matches!(place, Where::Under(_)),
-                    (May::MergeInto, None, Some(Entry::File { .. })) => true,
-                    (May::MergeInto, Some(was), Some(is)) => match (was.lines(), is.lines()) {
-                        (Some(was), Some(is)) => stand_in(&was, &is),
-                        _ => false,
-                    },
-                    (May::TakeOutOf, Some(was), Some(is)) => match (was.lines(), is.lines()) {
-                        (Some(was), Some(is)) => stand_in(&is, &was),
-                        _ => false,
-                    },
+                    (
+                        May::MergeInto
+                        | May::TakeOutOf
+                        | May::Repointed
+                        | May::Migrated
+                        | May::ItsKeySet,
+                        was,
+                        Some(is @ Entry::File { .. }),
+                    ) => self.fits(may, rel, was, is),
+                    (May::Retitled, Some(Entry::File { .. }), Some(Entry::File { .. })) => self
+                        .retitle()
+                        .is_some_and(|(old, new)| old == rel && new == old),
+                    (May::Retitled, Some(Entry::File { .. }), None) => self
+                        .retitle()
+                        .is_some_and(|(old, new)| old == rel && new != old),
+                    (May::IntoItsHome, Some(_), None) => self.moved_home(place, rel).is_some(),
+                    (May::Migrated, Some(was @ Entry::File { .. }), None) => {
+                        self.migrated_away(rel, was)
+                    }
                     (May::Removed, Some(_), None) => true,
                     (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
                     (May::Rebuilt | May::Invalidated(_), _, Some(Entry::File { .. })) => true,
@@ -1544,6 +2014,295 @@ impl<'a> Tally<'a> {
                 }
             })
             .map(|(at, _)| at)
+    }
+
+    /// **What `HEAD` held at `rel`**, from the repository's root, before the command — a
+    /// regular file with its bytes, or nothing: what a word's content rule reads a commit's
+    /// file against. `Err` where `HEAD` holds an entry there whose
+    /// bytes the manifest does not carry: what it held cannot be told.
+    fn head_held(&self, rel: &str) -> Result<Option<Entry>, ()> {
+        let before = self.seen.before;
+        let head = before
+            .checkouts
+            .get(REPO)
+            .map(|main| main.head.as_str())
+            .unwrap_or_default();
+        match tree_of(before, head).get(rel) {
+            None => Ok(None),
+            Some((mode, blob)) => before
+                .blobs
+                .get(blob)
+                .map(|bytes| {
+                    Some(Entry::File {
+                        mode: mode & 0o7777,
+                        blob: blob.clone(),
+                        bytes: bytes.clone(),
+                    })
+                })
+                .ok_or(()),
+        }
+    }
+
+    /// **Whether `is` may stand at `rel`** — from the repository's root — **over `was`**,
+    /// by the content rule of a word that has one: *merged into*, *taken out of*,
+    /// *repointed*, *migrated*, *its knob set*. Read over the bytes the working tree held
+    /// there before the command where the working tree changed, and over the bytes `HEAD`
+    /// held where a commit holds the path.
+    fn fits(&self, may: May, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
+        let Some(now) = is.lines() else {
+            return false;
+        };
+        match may {
+            May::MergeInto => was
+                .map(Entry::lines)
+                .is_none_or(|lines| lines.is_some_and(|was| stand_in(&was, &now))),
+            May::TakeOutOf => was
+                .and_then(Entry::lines)
+                .is_some_and(|was| stand_in(&now, &was)),
+            May::Repointed => was.is_some_and(|was| self.repointed(was, is)),
+            May::Migrated => self.migrated_into(rel, was, is),
+            May::ItsKeySet => self.its_knob_set(was, is),
+            _ => false,
+        }
+    }
+
+    /// **The doc the address names, retitled** ([`May::Retitled`]): its home before the
+    /// command, and where it stands after — the same path, rewritten, or one path of the
+    /// same directory at which nothing stood, its own gone. The doc there holds the lines it
+    /// held but its `# ` title line, and that line is the title `--to` gives; an unchanged
+    /// file is no retitle in place. `None` where there is no one such file.
+    fn retitle(&self) -> Option<(String, String)> {
+        let (_, old) = self.acting.the_doc.as_ref()?;
+        let was = self.seen.before.files.get(&format!("{REPO}/{old}"))?;
+        let kept = but_its_title(was)?;
+        let dir = old.rsplit_once('/').map_or("", |(dir, _)| dir);
+        let titled = |entry: &Entry| match &self.acting.to {
+            None => true,
+            Some(to) => entry
+                .lines()
+                .and_then(|lines| lines.into_iter().find(|line| line.starts_with(b"# ")))
+                .is_some_and(|line| {
+                    line.strip_suffix(b"\n").unwrap_or(line) == format!("# {to}").as_bytes()
+                }),
+        };
+        let found: Vec<&str> = self
+            .seen
+            .after
+            .files
+            .iter()
+            .filter_map(|(path, entry)| {
+                let rel = in_repo(path)?;
+                let here = rel.rsplit_once('/').map_or("", |(dir, _)| dir);
+                (here == dir
+                    && matches!(entry, Entry::File { .. })
+                    && (rel == old || self.acting.nothing_stood(rel))
+                    && (rel != old || !entry.same(was))
+                    && but_its_title(entry).as_ref() == Some(&kept)
+                    && titled(entry))
+                .then_some(rel)
+            })
+            .collect();
+        let gone = !self.seen.after.files.contains_key(&format!("{REPO}/{old}"));
+        match found.as_slice() {
+            [new] if new == old || gone => Some((old.clone(), new.to_string())),
+            _ => None,
+        }
+    }
+
+    /// **Whether `is` is `was` repointed** ([`May::Repointed`]): the doc the address names
+    /// moved, and each line that changed held its old identity and holds, in its place, the
+    /// new one — the slug its new home names — every other line as it stood, none added or
+    /// gone, and one line at least changed.
+    fn repointed(&self, was: &Entry, is: &Entry) -> bool {
+        let (Some((old, new)), Some((identity, _))) =
+            (self.retitle(), self.acting.the_doc.as_ref())
+        else {
+            return false;
+        };
+        let (Some(ty), Some(slug)) = (
+            identity.split(':').next(),
+            new.rsplit('/')
+                .next()
+                .and_then(|name| name.strip_suffix(".md")),
+        ) else {
+            return false;
+        };
+        if old == new {
+            return false;
+        }
+        let fresh = format!("{ty}:{slug}");
+        let (Some(was), Some(is)) = (was.lines(), is.lines()) else {
+            return false;
+        };
+        if was.len() != is.len() {
+            return false;
+        }
+        let mut changed = false;
+        for (before, after) in was.iter().zip(&is) {
+            if before == after {
+                continue;
+            }
+            let line = String::from_utf8_lossy(before);
+            if !line.contains(identity.as_str())
+                || after != &line.replace(identity.as_str(), &fresh).as_bytes()
+            {
+                return false;
+            }
+            changed = true;
+        }
+        changed
+    }
+
+    /// **Where a doc moved into its doctype's home stands** ([`May::IntoItsHome`]): the path
+    /// `rel` held before the command, the same entry standing after at its doctype's home
+    /// as the cascade resolves it after the command, under its own name — the doctype the
+    /// command names, for a place that is the prior home `--from` names, and else the one
+    /// whose home held the path before.
+    fn moved_home(&self, place: Where, rel: &str) -> Option<String> {
+        let was = self.seen.before.files.get(&format!("{REPO}/{rel}"))?;
+        let ty: &str = match place {
+            Where::Path(PRIOR_HOME) => self.acting.unit.as_deref()?,
+            _ => self.acting.homes.as_ref()?.doctype_at(rel)?,
+        };
+        let name = rel.rsplit('/').next()?;
+        let to = self
+            .acting
+            .homes_after
+            .as_ref()?
+            .current
+            .get(ty)?
+            .for_name(name);
+        let is = self.seen.after.files.get(&format!("{REPO}/{to}"))?;
+        (to != rel && is.same(was)).then_some(to)
+    }
+
+    /// **Whether `is`, at `rel` after the command, arrived there by a move into its home**
+    /// ([`May::IntoItsHome`]) from a path of the line's place that held the same entry and
+    /// is gone — and what stood at `rel` before, if anything did, stands moved aside under
+    /// `.jigc/displaced/` after it.
+    fn arrived_home(&self, place: Where, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
+        let from = self.seen.before.files.iter().any(|(from, left)| {
+            left.same(is)
+                && !self.seen.after.files.contains_key(from)
+                && self.placed(place, from)
+                && in_repo(from)
+                    .and_then(|from| self.moved_home(place, from))
+                    .as_deref()
+                    == Some(rel)
+        });
+        let parked = was.is_none_or(|was| {
+            self.seen.after.files.iter().any(|(at, now)| {
+                in_repo(at).is_some_and(|at| under(".jigc/displaced", at))
+                    && now.same(was)
+                    && !self.seen.before.files.contains_key(at)
+            })
+        });
+        from && parked
+    }
+
+    /// **The doc a migration rewrote at `rel`, and whether it is `is` migrated**
+    /// ([`May::Migrated`]): the doc that stood there before (`was`), or — at a current home
+    /// where none stood — one at a home its doctype had at an earlier version, gone after,
+    /// whose name lands there; below the doctype's current schema version before, at it
+    /// after, its prose in `is`, in order.
+    fn migrated_into(&self, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
+        let (Some(homes), Some(after)) =
+            (self.acting.homes.as_ref(), self.acting.homes_after.as_ref())
+        else {
+            return false;
+        };
+        let source: Option<(&str, &Entry)> = match was {
+            Some(was) => homes.doctype_at(rel).map(|ty| (ty, was)),
+            None => self.seen.before.files.iter().find_map(|(from, entry)| {
+                let from = in_repo(from)?;
+                let ty = homes.prior_doctype_at(from)?;
+                let name = from.rsplit('/').next()?;
+                (after.current.get(ty)?.for_name(name) == rel
+                    && !self
+                        .seen
+                        .after
+                        .files
+                        .contains_key(&format!("{REPO}/{from}")))
+                .then_some((ty, entry))
+            }),
+        };
+        let Some((ty, source)) = source else {
+            return false;
+        };
+        let Some(current) = homes.versions.get(ty) else {
+            return false;
+        };
+        let (Some(from), Some(to)) = (prose(source), prose(is)) else {
+            return false;
+        };
+        // The prose's own lines, as they stood and in order; a migration adds headings and
+        // the blank lines around them, and moves no word of prose.
+        fn worded(lines: Vec<&[u8]>) -> Vec<&[u8]> {
+            lines
+                .into_iter()
+                .filter(|line| !line.trim_ascii().is_empty() && !line.starts_with(b"#"))
+                .collect()
+        }
+        stamp(source) < *current && stamp(is) == *current && worded(from) == worded(to)
+    }
+
+    /// **Whether a doc gone from `rel`, a home its doctype had at an earlier version, was
+    /// migrated into its current home** ([`May::Migrated`]).
+    fn migrated_away(&self, rel: &str, was: &Entry) -> bool {
+        let Some(ty) = self
+            .acting
+            .homes
+            .as_ref()
+            .and_then(|homes| homes.prior_doctype_at(rel))
+        else {
+            return false;
+        };
+        let Some(name) = rel.rsplit('/').next() else {
+            return false;
+        };
+        let Some(to) = self
+            .acting
+            .homes_after
+            .as_ref()
+            .and_then(|homes| homes.current.get(ty))
+            .map(|home| home.for_name(name))
+        else {
+            return false;
+        };
+        let landed = self.seen.after.files.get(&format!("{REPO}/{to}"));
+        let stood = self.seen.before.files.get(&format!("{REPO}/{to}"));
+        stood.is_none()
+            && landed.is_some_and(|is| self.migrated_into(&to, None, is))
+            && prose(was).is_some()
+    }
+
+    /// **Whether `is` is the project manifest with its knob set** ([`May::ItsKeySet`]) over
+    /// `was`: the lines that do not name the knob the unit is, nor are the `scalar:` line,
+    /// the same in both, in order; and a line of `is` names the knob.
+    fn its_knob_set(&self, was: Option<&Entry>, is: &Entry) -> bool {
+        let Some(knob) = self.acting.unit.as_deref() else {
+            return false;
+        };
+        let names = |line: &&[u8]| {
+            String::from_utf8_lossy(line)
+                .trim_start()
+                .starts_with(&format!("{knob}:"))
+        };
+        let rest = |entry: Option<&Entry>| -> Option<Vec<Vec<u8>>> {
+            Some(match entry {
+                None => Vec::new(),
+                Some(entry) => entry
+                    .lines()?
+                    .into_iter()
+                    .filter(|line| !names(line) && line.trim_ascii_end() != b"scalar:")
+                    .map(<[u8]>::to_vec)
+                    .collect(),
+            })
+        };
+        let Some(lines) = is.lines() else {
+            return false;
+        };
+        lines.iter().any(names) && rest(was).is_some() && rest(was) == rest(Some(is))
     }
 
     /// **Whether the regular file at `path`, from the sandbox's root, is one the pinned
@@ -1583,17 +2342,97 @@ impl<'a> Tally<'a> {
     fn written_by_a_line(&self, path: &str, entry: Option<&(u32, String)>) -> Option<usize> {
         let key = format!("{REPO}/{path}");
         let after = self.seen.after.files.get(&key);
+        // The regular file the commit holds at the path is the one the working tree holds
+        // there after the command.
+        let as_after = |(mode, blob): &(u32, String)| {
+            mode & 0o170_000 == 0o100_000 && after.and_then(Entry::blob) == Some(blob.as_str())
+        };
         self.in_force()
             .find(|(_, line)| {
                 let Allows::Files(place, may) = line.allows else {
                     return false;
                 };
+                // The arrivals a word reads away from its place.
+                if let Some(entry) = entry
+                    && as_after(entry)
+                {
+                    let arrived = match may {
+                        May::Retitled => self
+                            .retitle()
+                            .is_some_and(|(old, new)| new != old && new == path),
+                        May::IntoItsHome => after.is_some_and(|is| {
+                            self.arrived_home(place, path, self.seen.before.files.get(&key), is)
+                        }),
+                        _ => false,
+                    };
+                    if arrived {
+                        return true;
+                    }
+                }
+                // A move carries its index entry with it: what the main checkout's index held
+                // at a path of the place, gone, now at the path the move landed on.
+                if let (May::IntoItsHome, Some((mode, blob))) = (may, entry)
+                    && let Some(main) = self.seen.before.checkouts.get(REPO)
+                    && main.index.iter().any(|(from, staged)| {
+                        staged.mode == *mode
+                            && staged.blob == *blob
+                            && after.is_some_and(|is| {
+                                self.arrived_home(place, path, self.seen.before.files.get(&key), is)
+                            })
+                            && self
+                                .seen
+                                .before
+                                .files
+                                .get(&format!("{REPO}/{from}"))
+                                .is_some_and(|_| {
+                                    self.moved_home(place, from).as_deref() == Some(path)
+                                })
+                    })
+                {
+                    return true;
+                }
                 if !self.placed(place, &key) {
                     return false;
                 }
                 match (may, entry) {
                     (May::Removed | May::MovedAsideTo(_), None) => true,
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
+                    (May::Retitled, None) => self
+                        .retitle()
+                        .is_some_and(|(old, new)| old == path && new != old),
+                    (May::IntoItsHome, None) => self.moved_home(place, path).is_some(),
+                    (May::Migrated, None) => self
+                        .seen
+                        .before
+                        .files
+                        .get(&key)
+                        .is_some_and(|was| self.migrated_away(path, was)),
+                    (May::Retitled, Some(entry)) => {
+                        as_after(entry)
+                            && self
+                                .retitle()
+                                .is_some_and(|(old, new)| old == path && new == old)
+                    }
+                    (May::IntoItsHome, Some(_)) => false,
+                    // A word that says what a file may become: the commit holds the file the
+                    // working tree holds after the command, and that file is what the word
+                    // lets stand over what `HEAD` held there before it — so a commit is no
+                    // way around the word, nor one that carries bytes of the user's no commit
+                    // held where the word does not let them in.
+                    (
+                        May::MergeInto
+                        | May::TakeOutOf
+                        | May::Repointed
+                        | May::Migrated
+                        | May::ItsKeySet,
+                        Some(entry),
+                    ) => {
+                        as_after(entry)
+                            && after.is_some_and(|is| match self.head_held(path) {
+                                Ok(was) => self.fits(may, path, was.as_ref(), is),
+                                Err(()) => false,
+                            })
+                    }
                     // Laid out holds no file; read from holds nothing the command wrote.
                     (_, None) | (May::LaidOut | May::CopiedFrom | May::ReSlugged, _) => false,
                     // Carried: what stood there in the working tree before the command.
@@ -1706,6 +2545,68 @@ fn but_its_title(entry: &Entry) -> Option<Vec<&[u8]>> {
     Some(lines)
 }
 
+/// **A doc's prose** ([`May::Migrated`]): its lines but the front matter — a first line
+/// `---` to the next — its first `# ` title line, and each `- <field>:` leaf line, whose
+/// key is lowercase `a-z0-9-`. `None` for what is no regular file.
+fn prose(entry: &Entry) -> Option<Vec<&[u8]>> {
+    let lines = entry.lines()?;
+    let mut front = lines
+        .first()
+        .is_some_and(|line| line.trim_ascii_end() == b"---");
+    let mut titled = false;
+    let mut out = Vec::new();
+    for (at, line) in lines.into_iter().enumerate() {
+        if front {
+            if at > 0 && line.trim_ascii_end() == b"---" {
+                front = false;
+            }
+            continue;
+        }
+        if !titled && line.starts_with(b"# ") {
+            titled = true;
+            continue;
+        }
+        let leaf = line.strip_prefix(b"- ").and_then(|rest| {
+            let key = rest.split(|byte| *byte == b':').next()?;
+            (!key.is_empty()
+                && key.len() < rest.len()
+                && key.iter().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-'
+                }))
+            .then_some(())
+        });
+        if leaf.is_none() {
+            out.push(line);
+        }
+    }
+    Some(out)
+}
+
+/// **A doc's schema-version stamp**, `schema-version: N` in its front matter — `0` where it
+/// carries none (*"stamp **absent** (the v0 corpus state)"*, `design/corpus-migration.md`).
+fn stamp(entry: &Entry) -> u64 {
+    let Some(lines) = entry.lines() else {
+        return 0;
+    };
+    if lines
+        .first()
+        .is_none_or(|line| line.trim_ascii_end() != b"---")
+    {
+        return 0;
+    }
+    lines
+        .iter()
+        .skip(1)
+        .take_while(|line| line.trim_ascii_end() != b"---")
+        .find_map(|line| {
+            String::from_utf8_lossy(line)
+                .trim_end()
+                .strip_prefix("schema-version: ")
+                .and_then(|value| value.trim().parse().ok())
+        })
+        .unwrap_or(0)
+}
+
 /// **The one classification of what was seen**, with why. `Err` is a fault of the cell as
 /// written, which no classification covers: a plant with no bytes, two plants with one
 /// marker, a plant the manifest taken before the command does not hold where the cell
@@ -1793,6 +2694,9 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
     // --- The plants: the user's, whatever the row declares. ---
     let nowhere = Stands::default();
     let mut judged: BTreeSet<&str> = BTreeSet::new();
+    // Where a plant was carried to under a line — a place the directories on the way to it
+    // are made for, as they are for a covered write.
+    let mut carried: BTreeMap<&str, usize> = BTreeMap::new();
     for plant in seen.planted {
         let stands = after.markers.get(&plant.marker).unwrap_or(&nowhere);
         if stands.files.contains(&plant.at) {
@@ -1825,11 +2729,18 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                     .find(|to| in_repo(to).is_some_and(|rel| under_for(dir, rel, &tally.acting)))?;
                 Some((at, to))
             }
+            // A doc moved into its home carries what was planted in it.
+            Allows::Files(place, May::IntoItsHome) if tally.placed(place, &plant.at) => {
+                let to = format!("{REPO}/{}", tally.moved_home(place, in_repo(&plant.at)?)?);
+                let to = stands.files.iter().find(|at| **at == to)?;
+                Some((at, to))
+            }
             _ => None,
         });
         if let Some((at, to)) = aside {
             tally.excused[at] += 1;
             judged.insert(to);
+            carried.insert(to, at);
         } else if !stands.files.is_empty() {
             tally.outside.push(format!(
                 "the planted `{}` is gone from its place, and its bytes stand at {:?}",
@@ -1962,6 +2873,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         let through = match (diff.before, diff.after) {
             (None, Some(Entry::Dir(_))) | (Some(Entry::Dir(_)), None) => by
                 .iter()
+                .chain(carried.iter())
                 .find(|(path, _)| path.starts_with(&inside))
                 .map(|(_, at)| *at),
             _ => None,

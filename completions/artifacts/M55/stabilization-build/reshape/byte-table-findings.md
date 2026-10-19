@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, with the second commit of the movers family's task (`B8`), which writes the family's rows: §23, two keys where the docs agree on what makes no sense for a user — a root knob's moves staged and the knob they follow left unstaged, and `config set`'s *"commit it with your next commit"* under the ruling on entry 19 — each driven on both binaries.*
+
 *Changed 2026-10-19, with the first commit of the movers family's task (`B8`), which records the human's three rulings of that day: §19's key is a finding of the product under the ruling on the rows' record's §6, entry 18 — a landed boundary moves a sub-task worktree's unstaged and untracked files that git does not ignore aside and names them — its doc change folded into it, the cell unmarked; §4's and §21's keys are findings of the product under the retirement of bound 2 — a `doc` write over a part that holds an uncommitted hand edit refuses at the write — one mechanism at two doors, their doc change folded into them, the cells unmarked; §1 gains the doc-only finding of the ruling on entry 20, and §22's settled sub-task is unmarked.*
 
 *Changed 2026-10-19, by the seventh of the fixes after the review of the milestone family's task (`B7`), part B: §1 and §20 record the human's ruling on the rows' record's §6, entry 19 — a finalize never carries a change under `.jigc/config` that nobody staged — the inconsistency key kept, the two cells unmarked; §17 gains the repro of the directories key (the review's, run as printed on both binaries) and the note that two of its keys share one writer with two of the task family's, and its message-file key is held at exit 0 by eighteen cells in the gate; §19's reason for the `git_home_claims` lead is corrected; §22, the seventh fix's five cells and the key one of them met — a refusing boundary leaves the worktrees' directory it made.*
@@ -1027,3 +1029,38 @@ find .jigc/worktrees -print                                     # .jigc/worktree
 - **A spec of two criteria** is built in `vendored` by a task that lands the criterion through `jigc`, and the frame reads a record commit before the last against its bytes (*merged into*, the rows' record's §7). It still cannot count criteria: `<each-minted>` takes any id the record gains.
 - **A settled sub-task at `provision`** gets no worktree on either binary; the line excludes it under the stricter reading of the rows' record's §6, entry 20 — ruled the same day by the human as that reading has it, a doc-only finding (§1).
 
+
+## 23. The movers family's rows — what the docs agree on that makes no sense for a user, two keys
+
+*2026-10-19, the movers family's rows (the task `B8`, its second commit), read under the human's rule of that day: neither the docs nor the code is the oracle — a sentence that allows something that makes no sense for a user is no allowance, and is a finding against the doc. Driven on this tree's debug build and on the previous release's rebuild (`accf3996…ab5d`, checked), the same on both; no cell holds either, and each repro is run as printed.*
+
+### `r1-config-set-stages-a-root-knobs-moves-and-leaves-the-knob-they-follow-unstaged`
+
+- *What happens.* `jigc config set placement-root notes` — and `docs-root` the same — moves every committed doc the re-point strands with a staged `git mv` and writes the knob to `.jigc/config/manifest.yaml`, untracked or unstaged. A `git commit` of what is staged then lands the moves without the knob: a clone of that commit resolves its placement homes under `docs/` and finds its docs under `notes/`, stranded.
+- *What the docs say.* They agree: *"a `git mv` lands in the index and which commit it joins stays the user's to place"* (`design/finalize.md` → *1. Preflight*), and *"none of the six verbs commits anything"* (`design/overrides.md` → *Authoring deltas — the `jigc config` verbs*), whose ack names both uncommitted subjects — *"The `docs-root` re-point's relocation lines say the same thing about a *different* subject (the staged `git mv`s), so both may print."*
+- *Why it is a finding and no allowance.* The re-point is one change — the knob and the moves its value needs — and the docs let it reach history in halves, the moves without the knob; a repository that does what the user asked of it at one commit does not do it at the next clone. And the human's ruling of 2026-10-19 on the rows' record's §6, entry 19: a config change is committed on purpose, with the task it belongs to or on its own.
+- *Robust — the human's to rule.* The re-point lands whole: the knob and its moves in **one** commit, which `config set` makes itself, path-scoped, as `rename` lands an identity move — never a staged half. *Over* staging the knob beside the moves: a commit of the index then carries both, but a commit that names paths, or a task's finalize, can still take one without the other. *What it changes*: `design/finalize.md`'s mover sentence, `design/overrides.md`'s *"none of the six verbs commits anything"* for the two root knobs, `cli::cli::BEHALF_DOORS` (`config set` then commits on behalf at a root knob, and refuses the posture family's commit members there), and the ack.
+- *What the table holds of it.* The rows let the knob be staged with the moves (`CS5` stages what `CS1` writes), so the sensible behaviour holds under them; no cell can see the knob left unstaged — a manifest holds what changed, never what should have.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" committed-singletons) || exit; eval "$rig"; cd "$REPO"
+$JIGC config set placement-root notes                     # exit 0 — two moves staged, the knob written
+git status --porcelain                                    # R docs/roadmap.md -> notes/roadmap.md … ?? .jigc/config/manifest.yaml
+git commit -qm "commit what is staged"
+git cat-file -e HEAD:.jigc/config/manifest.yaml || echo "the knob is in no commit; the moves are"
+```
+
+### `r1-config-set-says-commit-it-with-your-next-commit-where-a-config-change-lands-with-its-task-or-on-its-own`
+
+- *What happens.* Every `jigc config set` that writes closes its ack with *"written to `.jigc/config/`, uncommitted — commit it with your next commit"*, and a root knob's moves with the same clause.
+- *Held against.* The human's ruling of 2026-10-19 on the rows' record's §6, entry 19: *"Also a config change need to be committed. Either when it belongs into a task or individual."* — and *"`jigc config set` says so when it writes"*. *"your next commit"* is whatever commit comes next, an unrelated one included, which is what the ruling forbids (*"In general we should never add unrelated files into a commit"*). The doc half — `jigc config set`'s doc to say a config change is committed with its task or on its own — is already §1's `r1-finalize-design-says-an-ordinary-finalize-commits-a-pending-config-delta-where-its-stage-takes-the-config-layer-on-a-first-commit`; this key is the product's words, and `design/overrides.md`'s *"(*commit it with your next commit*)"*, which they follow.
+- *A key of words*: a cell holds bytes, not words.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+$JIGC config set finalize.fan-out.squash false            # … uncommitted — commit it with your next commit
+```

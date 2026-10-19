@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-19, with the second commit of the movers family's task (`B8`): the rows of `jigc rename`, `jigc relocate`, `jigc migrate-corpus` and `jigc config set` are written from their docs (§4c), before a cell of any of them runs; §6 gains **entry 21**, where two docs say two things of `migrate-corpus --no-commit`; and §7 gains the words the rows needed — a doc of the store at its doctype's home, read as the cascade resolves it, the doc an address names, the prior home `--from` names, *retitled*, *repointed*, *into its home*, *migrated*, *its knob set* — and says that a commit is read by the word its line has. A place where the docs agree on what makes no sense for a user is a finding and no line (§4c, *What the docs do not say*). No other line moved.*
+
 *Changed 2026-10-19, with the first commit of the movers family's task (`B8`), which records the human's three rulings of that day: §6, entries 18 and 20 are **ruled**, each option A, their questions kept — a landed boundary moves a sub-task worktree's unstaged and untracked files that git does not ignore into `.jigc/displaced/<sub-task-id>/`, and `milestone provision` skips a sub-task the record has settled — and the second of the human's declared bounds of 2026-10-06 is **retired**: a `doc` write that would replace a part holding an uncommitted hand edit the copy-in carried refuses at the write. §4 gains `M6, the worktrees moved aside`, whose sentence is the ruling on entry 18 as [DECISIONS.md](../../../../../DECISIONS.md) records it; §7's *moved aside* names a place whose components may stand for the unit and its sub-tasks, and `<unprovisioned>` reads the ruling on entry 20. No other line moved.*
 
 *Changed 2026-10-19, by the seventh of the fixes after the review of the milestone family's task (`B7`), part B (its fourth, seventh, tenth and eleventh findings, the second and sixth fixes' left-opens, and the human's ruling of that day): §6, entry 19 is **ruled** — a finalize never carries a change under `.jigc/config` that nobody staged — its question kept, its two cells unmarked and red under their keys; §6 gains **entry 20**, open — whether `provision` may make a worktree for a sub-task the record has settled, which `<unprovisioned>` now excludes as the stricter reading; `MP1` reads *from the pinned base's tree* in place of *rebuilt*; the re-seed's areas' half holds on a refusal (*"before their own guards"*) at every door that re-seeds; MS4's commits before the last hold the record partway under *merged into*, read off the commit's bytes; the rendered message's file stands under no line; §4b's *What the docs do not say* gains the cache's width as a row, and §7 the words. No sentence of a line moved; one quote is added to the re-seed's areas' lines.*
@@ -65,7 +67,7 @@
 
 *Changed 2026-10-13, with the first commit of the task `B4`: the row of `jigc task discard` is written from its docs (§3a), one more place where a doc is silent is listed (§6, entry 7), and three entries change the word they are carried by as data — `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole* over a directory (§7, the note under its table). No sentence of a line moved.*
 
-**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under; since `B5`, the rows of `jigc ingest` and `jigc unmanage`, which the install family's cells are run under with `setup`'s and `uninstall`'s; since `B6`, the rows of the eight `jigc doc` write leaves, the doc family (§3b); and since `B7`, the rows of the seven other leaves of the milestone family (§4b).
+**What a row is.** The byte table compares a repository's bytes before and after one writing command. A leaf's *row* says what that command may change — its *allowance* — line by line, and each line rests on one sentence of the design doc that owns the command. This file holds the rows of the four commands the plan's acceptance needs: `jigc setup`, `jigc uninstall`, `jigc task finalize` and `jigc milestone finalize` — and, since the plan's task `B4`, the row of `jigc task discard`, which its family's cells are run under; since `B5`, the rows of `jigc ingest` and `jigc unmanage`, which the install family's cells are run under with `setup`'s and `uninstall`'s; since `B6`, the rows of the eight `jigc doc` write leaves, the doc family (§3b); since `B7`, the rows of the seven other leaves of the milestone family (§4b); and since `B8`, the rows of the movers family's four (§4c).
 
 **How a line is written.** Its number; the place it speaks of; what may happen there; when, where the doc gives a condition; and whether it still holds when the command refuses. Under it, set off as a quotation, **the sentence the line rests on — a run of the doc's own bytes, markup included, never a paraphrase** — and under that the doc and the heading the sentence stands under. A line that needs two sentences quotes both, each with its own source. The quotation is what `B1`'s fence holds against the doc: a doc that moves reddens the row.
 
@@ -1259,6 +1261,211 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 ---
 
+## 4c. The movers family — `jigc rename`, `jigc relocate`, `jigc migrate-corpus`, `jigc config set`
+
+*Written 2026-10-19, as the second commit of the movers family's task (the plan's `B8`), after the human's three rulings of that day (its first commit): the four rows from their docs, before a cell of any of them runs. No binary was run to learn what a command writes, and no list of files was taken from the product's source.*
+
+**What the four share, and how they split.** Each writes the **committed store where it stands** — no task's working area, no promote — and each answers a home that is no regular file with one code (`design/finalize.md` → *4. Promote managed docs*, *The doors that write a committed home in place*). They split by the one act the docs make them differ on — **whether the door commits** (`design/finalize.md` → *1. Preflight*: *"The class is decided at the **act**"*):
+
+1. **The doors that commit** — `rename` (*"**task-less and self-committing**"*) and `migrate-corpus` (*"A pathspec-limited self-commit"*): each lands its writes in one commit of its own, holding what its lines wrote and nothing else.
+2. **The movers** — `relocate` and `config set`: each `git mv`s committed docs, stages them, and commits nothing (*"the two leaves that `git mv` a committed file and commit nothing"*); `config set` writes the project config layer besides, which it commits neither.
+
+**Each leaf names its unit as its grammar has it.** `rename` names a doc by its address, `<type>:<slug>` — the first word after the leaf; `relocate` a doctype, the first word after the leaf, and the doctype's prior home, `--from <prior-home>`; `config set` a knob, the first word after the leaf, and its value, the second; `migrate-corpus` none — its subject is the stale corpus.
+
+**Where a doc lives, read by the frame as the docs say it is resolved** — the word every row of the family needs, and no row before needed (§7, *a doctype's home*): a doctype's home is its schema's `location:` under the docs root (*"The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load"*), or its `placement:` file, re-rooted under `placement-root` where it carries a leading directory (`design/storage.md` → *Placement — direct-file and root-located homes (M38)*); a doc is `<home>/<slug>.md`. The schemas are read from the packs' own files — the shipped packs', and a listed pack's from the project's `packs.yaml` — as the docs root is read from the cascade (§7).
+
+### `jigc rename`
+
+Owner docs: `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*; `design/reconciliation.md` → *Rename detection*; `design/finalize.md` → *4. Promote managed docs* (the store doors); `design/validation.md` → the rollback-conflict and `file-state.absorbed` rows. Unit: the doc its address names. Home: `fresh`, with the leads that commit a doc whose id can move and a doc that refers to it — no prepared state holds a committed doc another refers to (`committed-singletons`' docs are singletons, whose identity is fixed; `vendored`'s spec and architecture doc refer to nothing).
+
+**RN1 — the renamed doc's home, `<the-doc>`: retitled — rewritten with its `# ` title line changed and every other line as it stood; where the slug changes, moved to a home beside it in its doctype's home that nothing held, and gone from its own.** When: always. On a refusal: no (RN6).
+
+> **Rewrites the moved doc's H1** to `<New Title>` (the unified retitle), then **`git mv`** old→new path
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+> rename **degrades to a retitle-only**: rewrite the H1 and commit, with **no `git mv` and no referrer repoint**
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+**RN2 — every committed doc that refers to it: repointed — each line that names the old identity holds the new one in its place, and nothing else changes.** When: the slug changes. On a refusal: no (RN6).
+
+> rewrites each referrer's structured ref-field old→new across the **three persisted ref-fields** (`adr.supersedes`, `arch-doc.cites`, `spec.derived-from`)
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+> the CLI rewrites **structured ref-fields in the managed store** and nothing else
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+**RN3 — one commit on the checked-out branch, holding what RN1 and RN2 wrote and nothing else.** When: always. On a refusal: no (RN6). The door refuses a tree that is not clean first (RN7), so what the index held is `HEAD`'s and the commit holds the lines' writes alone.
+
+> it is **task-less and self-committing**, mutating the committed store directly
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+> **re-baselines `file-state`** (`forget(old)` + `record(new)` + re-record every rewritten referrer) and rebuilds the edge index, stages, runs the user's git hooks (never `--no-verify`), commits
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+**RN4 — `.jigc/state/`: rebuilt — the file-state baseline re-keyed.** When: always. On a refusal: no — `C2` (§4a). RN3's second sentence, and:
+
+> then re-baseline `file-state` (`forget(old)` + `record(new)` + re-record each rewritten referrer) and invalidate/rebuild the index
+
+— `design/reconciliation.md` → *Rename detection*
+
+**RN5 — `.jigc/index/`: invalidated — rebuilt, or its stamped file taken away for the next read to rebuild.** When: always. On a refusal: no — `C1`. RN4's sentence — *"invalidate/rebuild the index"* — and the three sentences `T5` and `M10` quote of `design/storage.md` (§3, §4).
+
+**RN6 — a refusal leaves the store as it was.** Not a line: it is where RN1 to RN5 take their *on a refusal: no*.
+
+> on **any** pre-commit failure restores all captured bytes, the `git mv`, **and** the file-state record (file-state is *inside* the rollback inventory, not a best-effort post-commit step — so a failed rename leaves the store byte-and-record identical to before)
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+**RN7 — what it refuses before the transaction.** Not a line: a target that does not exist, a tree that is not clean, a task or milestone in flight, a slug another doc holds, a destination git cannot record, a home whose entry is no regular file, an identity that is fixed. The quote that names the first three:
+
+> **Validates** up front: target exists · tree clean
+
+— `design/write-commands.md` → *`jigc rename` — the CLI-owned identity refactor (M35)*
+
+**What of the docs is no line.** The prose report (*"reports … never rewrites"*) writes nothing. A rollback that meets a racer parks its pre-image under `.jigc/displaced/rename/` (`rename.rollback-conflict`): a racer is a writer inside the transaction's window, and no plant of the frame races — a cell that met the park would be *refused, and changed what a refusal may not*, the stricter reading.
+
+### `jigc relocate`
+
+Owner docs: `design/corpus-migration.md` → *The freeze-exempt sibling — the parallel relocation path (M39 inc-5)*; `design/reconciliation.md` → *Relocation collisions — two resolutions for one collision (M39)*; `design/finalize.md` → *1. Preflight* (the movers). Unit: the doctype, and its prior home `--from`. Home: `fresh`, with the leads that make the door's domain — a doctype no manifest governs, from a listed pack (*"the path is reachable only for a doctype supplied by a pack that ships no manifest entry for it"*), and a committed instance stranded at a prior home.
+
+**RL1 — every committed `.md` under the prior home: moved, the same bytes, into the doctype's current home.** When: always. On a refusal: no (RL5).
+
+> the door sweeps every committed `.md` under it into the doctype's current home
+
+— `design/corpus-migration.md` → *The freeze-exempt sibling — the parallel relocation path (M39 inc-5)*
+
+> The move is the **T1 standalone move primitive** (`relocate::move_doc` — `git mv old→new` + file-state re-key)
+
+— `design/corpus-migration.md` → *The freeze-exempt sibling — the parallel relocation path (M39 inc-5)*
+
+**RL2 — the main checkout's index staged at the places RL1 and RL3 wrote, and no commit.** When: always. On a refusal: no (RL5).
+
+> a `git mv` lands in the index and which commit it joins stays the user's to place
+
+— `design/finalize.md` → *1. Preflight*
+
+**RL3 — a foreign file at a destination: moved aside into `.jigc/displaced/`, under its name or the first free `<name>.<n>`, its index slot freed.** When: a destination holds a file the store does not manage. On a refusal: no (RL5).
+
+> It is **relocated into the gitignored `.jigc/` workbench** (a dedicated `displaced/` subpath
+
+— `design/reconciliation.md` → *Relocation collisions — two resolutions for one collision (M39)*
+
+> a committed-but-unmanaged squatter's tracked-path index slot is freed so the managed `git mv` into the vacated destination succeeds
+
+— `design/reconciliation.md` → *Relocation collisions — two resolutions for one collision (M39)*
+
+> A name already taken in `.jigc/displaced/` gets the first free `<name>.<n>` beside it
+
+— `design/reconciliation.md` → *Relocation collisions — two resolutions for one collision (M39)*
+
+**RL4 — `.jigc/state/`: rebuilt — the moved docs' baselines re-keyed.** When: always. On a refusal: no — `C2`. RL1's second sentence.
+
+**RL5 — a refusal moves nothing.** Not a line: the door's argument and doctype refusals are taken before the corpus is walked; a per-document refusal is a `blocked` row inside a report the door prints at exit 0 (*"This **`blocked` is not an exit rule**"*, `design/command-output-contract.md`), so it is the lines' to judge.
+
+### `jigc migrate-corpus`
+
+Owner docs: `design/corpus-migration.md` → *The determinism boundary holds*, *Relocation — the file-move + display-title transform (M38)*, *The commit boundary — the verb lands its own migration (M42)*; `design/write-commands.md` → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*; `design/finalize.md` → *4. Promote managed docs* (its one-doc refusal). Unit: none. Home: `fresh`, with the leads that commit a doc of the managed corpus below its doctype's current schema version — no prepared state holds a stale doc.
+
+**MG1 — a stale managed doc at its doctype's current home: migrated — rewritten so that its prose stands as it stood, in order, and only its structure moves.** When: always. On a refusal: **yes, where the run committed** — the second sentence; a refusal that committed nothing changes nothing, the reading of §6, entry 22, until it is ruled.
+
+> The prose is **unchanged**
+
+— `design/corpus-migration.md` → *The determinism boundary holds (the auto-migration distinction)*
+
+> It is a refusal of **one doc**: like every refusal this command makes outside the transform's fold, the doc joins `blocked`, the run's other docs still migrate and commit, and the run exits non-zero
+
+— `design/finalize.md` → *4. Promote managed docs*
+
+**`MG1, from a prior home` — a stale managed doc at a home its doctype had at an earlier schema version: moved to the current home, migrated as MG1 has it, and gone from the prior home.** When: always. On a refusal: as MG1.
+
+> **write once to `to`** → `remove(from)` → re-key file-state `from → to`
+
+— `design/corpus-migration.md` → *Relocation — the file-move + display-title transform (M38)*
+
+**MG2 — `.jigc/state/`: rebuilt — the migrated docs' baselines flipped, a moved doc's re-keyed.** When: always. On a refusal: as MG1.
+
+> (`engine::state::persist` is an internal call that writes the bytes and flips the file-state baseline in one motion)
+
+— `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*
+
+**MG3 — one commit on the checked-out branch, holding what MG1 wrote — both halves of a move — and nothing else.** When: a doc migrated. On a refusal: as MG1.
+
+> `git add` over exactly the paths the migration touched (added, modified, and both halves of a move) — explicitly **never a blanket `git add -A`**, so an ambient dirty tree is never swept in
+
+— `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*
+
+**MG4 — under the spelling `--no-commit`: no commit.** Not a line: the spelling takes MG3 out of force and adds none of its own, so what MG1 and MG2 wrote is what changes, and nothing is staged — the reading of §6, entry 21, until it is ruled. Whether the migrated paths are left staged two docs say two things.
+
+**MG5 — under the spelling `--dry-run`: the corpus read, and nothing written.** In place of MG1, `MG1, from a prior home`, MG2 and MG3. On a refusal: no. Its place is every doc of the store, which is what a plant that stands in a doc's place is aimed at, as at the doc family's `W3`.
+
+> **`--dry-run`** reports what the migration *would* do and **writes nothing** — no disk write, no commit
+
+— `design/write-commands.md` → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*
+
+### `jigc config set`
+
+Owner docs: `design/overrides.md` → *Authoring deltas — the `jigc config` verbs*; `design/storage.md` → *Config layout*, *Placement — direct-file and root-located homes (M38)*; `design/validation.md` → the M52 registrations' rollback-conflict family; `design/finalize.md` → *1. Preflight* (the movers). Unit: the knob, and its value. Home: `fresh`.
+
+**CS1 — the project manifest, `.jigc/config/manifest.yaml`: its knob set — every line that stood stays, in order, but a line of the knob it sets, and every line it adds is of that knob.** When: always. On a refusal: no (CS6).
+
+> | `jigc config set <key> <value>` | a `scalar-set` |
+
+— `design/overrides.md` → *Authoring deltas — the `jigc config` verbs*
+
+> **by hand** (edit `manifest.yaml` + drop a native file
+
+— `design/overrides.md` → *Authoring deltas — the `jigc config` verbs*
+
+  The second is why the line keeps every other line: the manifest is the one place a hand edit is first-class, so the user's own lines in it are theirs.
+
+**CS2 — a committed doc a root knob's re-point would strand: moved, the same bytes, to its doctype's home as the cascade resolves it with the knob set.** When: the knob is `docs-root` or `placement-root`. On a refusal: no (CS6).
+
+> `config set docs-root` now detects + routes + **auto-moves** each stranded instance
+
+— `design/storage.md` → *Placement — direct-file and root-located homes (M38)*
+
+> `jigc config set placement-root` **detects + routes + moves** every committed doc at a placement doctype's prior home *before* the knob lands
+
+— `design/storage.md` → *Placement — direct-file and root-located homes (M38)*
+
+**CS3 — a foreign file at a new home: moved aside into `.jigc/displaced/`.** When: as CS2. On a refusal: no (CS6). RL3's three sentences, and:
+
+> delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked in the gitignored `.jigc/displaced/` workbench rather than clobbered
+
+— `design/storage.md` → *Placement — direct-file and root-located homes (M38)*
+
+**CS4 — `.jigc/state/`: rebuilt — the moved docs' baselines re-keyed.** When: as CS2. On a refusal: no — `C2`.
+
+> the gitignored `.jigc/state/file-state.json` the move primitive re-keys on every call
+
+— `design/validation.md` → *The M52 registrations — Increment 5: the rollback-conflict family*
+
+**CS5 — the main checkout's index staged at the places CS2 and CS3 wrote, and no commit.** When: as CS2. On a refusal: no (CS6). RL2's sentence, and:
+
+> none of the six verbs commits anything
+
+— `design/overrides.md` → *Authoring deltas — the `jigc config` verbs*
+
+**CS6 — a refusal leaves the store and the knob as they were.** Not a line: the root knobs' value rules are asked *"before anything moves and before the knob lands"*, and a re-point that fails after a move undoes every move (`config.repoint-failed`, `config.rollback-conflict`), parking a racer's bytes under `.jigc/displaced/config/` — no plant races, as at RN6.
+
+### What the docs do not say of the family, and what a line cannot
+
+- **Whether the provenance stamp is refreshed.** *"`jigc setup` writes it and store-writing ops refresh it"* (`design/storage.md` → *Store provenance — the binary-provenance stamp (M36)*) names no op of this family. No line lets one write `.jigc/version`; a door that does is *written outside its allowance*, the stricter reading, and a cell that meets it raises the question.
+- **What a door that commits nothing, or `migrate-corpus`, may do to the edge index.** No sentence of `relocate`, `migrate-corpus` or `config set` says it writes or invalidates the index; the same.
+- **`migrate-corpus --no-commit` — the migrated paths staged, or left as the verb left them before it committed?** Two docs say two things: §6, entry 21.
+- **A root knob's moves staged and the knob they follow left unstaged.** The docs agree, and what they agree on makes no sense for a user: a commit of what is staged lands the moves without the knob that names their homes, and a clone of it finds its docs at homes its cascade does not resolve. Recorded as a finding of the docs and the product, not as an allowance the rows keep: [byte-table-findings.md](byte-table-findings.md) → §23. The rows let the knob be staged with the moves (CS5 stages what CS1 writes), so the sensible behaviour holds under them; no cell can see the knob left unstaged, a manifest holding no *must*.
+- **`relocate` and `config set` find a destination by the cascade, and the frame reads it the same way** (§7, *a doctype's home*): the shipped packs' schemas, a listed pack's from `packs.yaml` by a path from the repository's root, a project shadow. *Not read*: a pack named by an absolute path, a listed pack's own knobs.
+- **Which bytes `rename` repoints.** The lines that hold the old identity, each holding the new one in its place; a referrer whose ref the product re-emits in another form — the whole list reordered — would read *written outside its allowance*, the stricter reading.
+- **Whether a `relocate` destination's occupant is foreign or managed.** The docs block a managed one and park a foreign one; the frame tells them apart by nothing, and lets the destination's occupant be parked under `.jigc/displaced/` where a move landed on it. A managed doc parked there is not seen.
+
+---
+
 ## 4a. The caches, on a refusal — three lines that stand in every row
 
 Written on 2026-10-13 from the human's ruling of 2026-10-12 on §6, entry 1, which that entry now quotes. **What a cache is comes from the doc and not from the ruling's two examples**: `design/storage.md` declares three things rebuildable derived state — the edge index, the file↔state hashes, and a milestone's `{base,tasks}.json` — and names where each stands in its layout. Each line below quotes the sentence that declares the cache, and what the layout says of its directory: the comment that stands on the line of `index/`, of `state/` and of `milestones/` in that block, from its first word (the line's own columns of spaces are left out of the quotation). Nothing else under `.jigc/` is declared so: a task's working area is *a transient working copy* and one line of it is *authority* (→ *Source of truth*, the paragraph on `source-path`); `displaced/` is *the one gitignored subdir whose contents no operation can reconstruct*; a milestone's `merged/` has its own line, `M1`.
@@ -1316,7 +1523,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14, 15, 18, 19 and 20 are ruled** (2026-10-12, 2026-10-14, 2026-10-15, 2026-10-18 and 2026-10-19), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4 and 7 are open. *The human's declared bound 2 of 2026-10-06 — an uncommitted edit carried into a task and replaced by its write to the same part — is retired (2026-10-19): such a write refuses; [DECISIONS.md](../../../../../DECISIONS.md), the entry of that day.*
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14, 15, 18, 19 and 20 are ruled** (2026-10-12, 2026-10-14, 2026-10-15, 2026-10-18 and 2026-10-19), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4, 7, 21 and 22 are open. *The human's declared bound 2 of 2026-10-06 — an uncommitted edit carried into a task and replaced by its write to the same part — is retired (2026-10-19): such a write refuses; [DECISIONS.md](../../../../../DECISIONS.md), the entry of that day.*
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -1742,6 +1949,51 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *Until ruled*, the reading under which more is red: `<unprovisioned>` is a sub-task the record has not settled (§7), and the cell `milestone-provision-a-sub-task-the-record-has-settled` carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §19); it holds on both binaries.
 - *Ruled on 2026-10-19*, option A — the human's, as the orchestrating session handed it on: **`milestone provision` skips sub-tasks the record has settled, and the milestone design says so, as the re-seed does.** *Why*: a settled sub-task has nothing to work on. **The question is kept above, as it was put.** *How it is carried*: as the reading until ruled, which was the ruling's — `<unprovisioned>` is a sub-task the record has not settled (§7); `MP1` and `MP2` are as they were. The cell, re-read under the ruling, holds on both binaries and **loses its mark**. The doc's missing sentence, and the narrating one marked as the M42 defect it is, are a doc-only finding of the run's ledger: [byte-table-findings.md](byte-table-findings.md) → §1, `r1-team-ready-state-design-does-not-say-provision-skips-a-sub-task-the-record-has-settled`.
 
+**21. `migrate-corpus --no-commit` — are the migrated paths left staged, or as the fold wrote them? Two docs say two things. Open.**
+
+*Recorded 2026-10-19, with the movers family's rows (the task `B8`, its second commit).*
+
+- *The words for staging them.*
+
+> **`--no-commit`** performs the migration and leaves the changes staged for the operator to commit
+
+— `design/write-commands.md` → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)*
+
+- *The words for leaving them unstaged.* The verb's own design doc, whose *"today"* is the verb before it committed — *"an unstaged delete, an unstaged modify, and an **untracked** relocated file"*, the same section:
+
+> **`--no-commit`** — leave the tree exactly as the verb leaves it today
+
+— `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*
+
+  and the guide, `crates/cli/guides/MIGRATING.md` → item 4: *"`--no-commit` keeps the writes in the working tree instead"*; and the build of M42, `DECISIONS.md` → its Increment 1, T3: *"`--no-commit` performs the migration and **leaves the tree exactly as HEAD-today leaves it** (T2's staging + commit suppressed)"*. Searched for more: `design/command-output-contract.md` says only that a `--no-commit` run's `commit` is `null`.
+- *What the product does.* It leaves them unstaged — driven on this tree's debug build over a decision at schema version 1: exit 0, ` M docs/decisions/one-way.md`, and *"written but NOT committed (`--no-commit`) — the migrated paths are on disk and unstaged; stage and commit them yourself"*.
+- *What the product should do — robust; which side is wrong.* **Stage them**: the pathspec-limited `git add` of exactly the paths the migration touched — both halves of a move — and no commit. *Why*: unstaged, a relocation is an untracked file beside an unstaged deletion, and landing it takes a `git add` of paths the operator must find — *"a half-landed migration — rewritten docs beside a removed relocation source, only some of them staged — is the failure mode that closes"* (`MIGRATING.md`, the same item); staged, the move is one `R` the operator reads with `git diff --cached` and folds into the larger commit the flag exists for, and nothing rides a commit the operator did not ask for — the flag is the asking (the human's ruling of 2026-10-19 on entry 19). **What is wrong**: `design/corpus-migration.md`'s sentence, the guide's, and the product; `design/write-commands.md` is right.
+- *The other answer*: unstaged, as the product has it — the write-commands sentence changes, and the operator stages the paths the ack names.
+- *Until ruled*, the reading under which more is red: unstaged. `--no-commit` is a spelling of the row that takes MG3 out of force and stages nothing (MG4); a cell of it that stages is red, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §20).
+
+**22. A `migrate-corpus` whose commit a hook rejects — may it leave the migration written and staged? The design doc declares it, a builder's bound; the human's ruling on `setup`'s refusals, and the family's other committing door, say otherwise. Open.**
+
+*Recorded 2026-10-19, with the movers family's rows (the task `B8`, its second commit).*
+
+- *The words for leaving it.*
+
+> *Declared bound:* the refused run's staged residue is **stated** by the door's rejection frame, not removed — a `migrate-corpus` rollback is not in M47's scope.
+
+— `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*
+
+  — after *"a `pre-commit` rejection leaves the migration **written and staged but unlanded**"*, and the re-run that recovers it. A bound of M47's build, and none of the human's: the list the human declared on 2026-10-06 (the plan's §1.1) does not hold it.
+- *The words against it.* The human's ruling of 2026-10-14 on §6, entry 2, for `setup`'s refusals:
+
+> **every refusal of `setup` leaves the repository as it was** (caches aside, by the ruling of 2026-10-12)
+
+— `DECISIONS.md` → *2026-10-15 — The human's six rulings on the byte table's first cut, recorded: the families `B5` to `B9` are built now; what is held reaches what a reflog names; a change staged at a path jigc stages itself is a finding beyond the one declared bound; every refusal of `setup` leaves the repository as it was; `uninstall` lands its teardown in one path-scoped commit; a rejected record commit's message file is a finding (the byte table, task `B5`, the first of its commits)*
+
+  and the family's other door that commits its own writes, `rename` — *"on **any** pre-commit failure restores all captured bytes, the `git mv`, **and** the file-state record"* (RN6). Searched for more: `design/finalize.md`'s *Rollback discipline* is the finalize doors'; `design/validation.md`'s rollback-conflict family names `migrate-corpus` nowhere.
+- *What the product does* — not driven for this entry; the cell of a hook that rejects shows it (the family's cells).
+- *What the product should do — robust; which side is wrong.* **Roll back**: a rejected migration commit restores what the run wrote — the docs, a relocation's both halves, the baseline, the index — and the re-run migrates again, which the verb's idempotence makes cheap. *Why*: a refusal that leaves the repository changed is a state the user did not ask for and may commit by accident; one rule at the two doors of the family that commit; the human's ruling on `setup`'s refusals, made for the same reason. **What is wrong**: the declared bound, and the product if it stages. *Its price*: the recovery arm (*"a re-run after any rejection recovers"*) has less to recover — only a run killed mid-write.
+- *The other answer*: the bound stands, the human's to declare, with its reach.
+- *Until ruled*, the reading under which more is red: the refusal changes nothing. MG1, `MG1, from a prior home`, MG2 and MG3 hold on a refusal **where the run committed** — *"the run's other docs still migrate and commit"* — and on no other (§7, *it committed*); the cell of a hook that rejects is red where the migration stays written, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §21).
+
 **Decided here, as a builder, and the human may overturn each:**
 
 - **The invocation log is no line of the four rows.** `design/measurement.md` → *The in-repo invocation log*: a knob, default off, *"appends one JSONL record per `jigc` invocation to `.jigc/logs/invocations.jsonl`"*. Every command writes it while the knob is on, and no prepared state switches it on; the third of the bounds of 2026-10-06 is about exactly this file. A row gains the line, with a condition read off the project's configuration, when a cell switches the log on.
@@ -1775,7 +2027,13 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **read, and nothing written** — the place a copy is read from, which the command leaves as it stands; no commit or index may hold anything there (added 2026-10-18, for the doc family: it names where the plants that stand in a doc's place are aimed) | W3 |
 | **carried as it stands** — a place the command writes nothing at, whose bytes as the working tree held them before the command a commit it makes may hold (added 2026-10-19, with the milestone family's rows; under the condition *the place's first commit* since the first of the fixes after part B's review, which gave `T3` the same lines) | `M3, the config`; `T3, the config` — each with its ignore file's half |
 | **from the pinned base's tree** — a directory made where nothing stood; the checkout's own `.git` file at its root; and a regular file whose path under the checkout, its bytes and its executable bit are the ones the tree of the base the unit's committed record pins holds there — nothing changed, nothing gone, no link (added 2026-10-19, by the seventh of the fixes after the review of `B7`'s part B, the sixth fix's left-open: *"`git worktree add --detach` populates from the pinned base's *tree*"*, MP1's second sentence; it had read *rebuilt*) | MP1 |
-| **moved aside** — gone from its place, and standing with the same bytes under a named directory — whose components may stand for the unit and its sub-tasks as a place's do (added 2026-10-19, with the first commit of `B8`, for the human's ruling on §6, entry 18: a landed sub-task worktree's leftovers go to `.jigc/displaced/<sub-task-id>/`; it does not ask that the sub-task a file arrives under is the one whose worktree it left) | T6; M6; `M6, the worktrees moved aside` — `.jigc/displaced/<sub-task>` |
+| a whole place that is **a doc of the store** — `<a-doc>`: `<slug>.md` directly in a doctype's home directory, or a placement doctype's file, the homes resolved by the cascade before the command or after it (a root knob's re-point moves them), read off the packs' own schemas — the shipped packs', the methodology pack's where `packs.yaml` composes it, a listed pack's under the directory `packs.yaml` names, a project shadow — under the docs root and `placement-root` as `design/storage.md` has them; **a doc at an earlier home**, `<a-prior-doc>`, the same over the homes the packs' schema snapshots declare, where no current home holds the path; **the doc the address names**, `<the-doc>`, from the unit `<type>:<slug>`; and **the prior home `--from` names**, `<prior-home>`, that file or anything under that directory (added 2026-10-19, with the movers family's rows: every door of the family writes the committed store where it stands) | RN2, MG1, MG5, CS2, CS3, RL3 — `<a-doc>`; `MG1, from a prior home` — `<a-prior-doc>`; RN1 — `<the-doc>`; RL1 — `<prior-home>` |
+| **retitled** — the doc the address names rewritten so that its lines are the ones it held but its `# ` title line, which is the title `--to` gives; where its slug changes, standing so at another path of its home directory at which nothing stood before (in the working tree or in what git held), its own gone; one such, or none (added 2026-10-19, with the movers family's rows) | RN1 |
+| **repointed** — a doc of the store whose lines that changed each held the old identity of the doc **retitled** moved, and hold the new one — `<type>:<the new slug>` — in its place, none added or gone; nothing where the doc did not move (added 2026-10-19, with the movers family's rows) | RN2 |
+| **into its home** — gone from its place and standing, the same entry, at its doctype's home as the cascade resolves it after the command, under its own name; where something stood there, it stands moved aside under `.jigc/displaced/` — the doctype the command names for a place `--from` names, and else the one whose home held the path (added 2026-10-19, with the movers family's rows) | RL1; CS2 |
+| **migrated** — a doc of the store below its doctype's current schema version (its stamp below the version its pack's manifest declares, or absent) rewritten at its home, or moved there from an earlier home, so that its stamp is the current version and its prose — every line that is no line of its front matter, not its `# ` title, no `- <field>:` leaf — stands in it as it stood, in order (added 2026-10-19, with the movers family's rows) | MG1; `MG1, from a prior home` |
+| **its knob set** — the project manifest made or rewritten so that every line that is no line of the knob the unit names, nor its `scalar:` line, stands as it stood, in order, and a line of it names the knob (added 2026-10-19, with the movers family's rows) | CS1 |
+| **moved aside** — gone from its place, and standing with the same bytes under a named directory — whose components may stand for the unit and its sub-tasks as a place's do (added 2026-10-19, with the first commit of `B8`, for the human's ruling on §6, entry 18: a landed sub-task worktree's leftovers go to `.jigc/displaced/<sub-task-id>/`; it does not ask that the sub-task a file arrives under is the one whose worktree it left) | T6; M6; `M6, the worktrees moved aside` — `.jigc/displaced/<sub-task>`; RL3, CS3 — **its place left** where something else stands there now, a destination a move landed on (added 2026-10-19, with the movers family's rows) |
 | **a commit** on the checked-out branch, holding **only what the row's other lines wrote** | S11; A6; T9; MC3, MA4, MS4, MD2 |
 | **a commit** holding **the index as it stood, and what the row's other lines wrote** | T4 |
 | **a commit** holding **what the sub-tasks' worktrees had staged, and what the row's other lines wrote** — the checkouts at a place the line names, `.jigc/worktrees/<sub-task>`, and no other (narrowed 2026-10-18, after the review of `B7`'s part A: it had been every checkout but the main one, a user's own included) | M3 (and M4 until the third fix, below) |
@@ -1787,11 +2045,14 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | a condition read off the state before the command: **the repository has no commit** | S9 |
 | a condition read off the state before the command: **the place's first commit** — the tree `HEAD` holds has nothing at the line's place, an unborn `HEAD` included (added 2026-10-19, by the first of the fixes after the review of `B7`'s part B: *"on a first commit, the project config layer"*) | `T3, the config`; `M3, the config` — each with its ignore file's half |
 | a condition read off how the command ended: **it refused** (added 2026-10-13, for the ruling) | C1, C2, C3 |
-| a line **of a spelling** — in force only where a cell names that spelling of its leaf, and the lines the spelling replaces out of force there (added 2026-10-18, by the task `B7`'s third commit, for the human's ruling on the two spellings) | T9 (`doc-only`, replacing T2, T3, T4); M4 (`squash: false`, replacing M3) |
-| **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); the re-seed's areas — MA6, MS6, MP4, ME2, MJ2, M12, MD8 (yes, since the seventh of the fixes after the review of `B7`'s part B: *"before their own guards"*); every other line (no) |
+| a condition read off how the command ended: **it committed** — it exited 0, or it refused having landed a commit of its own on the checked-out branch (added 2026-10-19, with the movers family's rows: *"the run's other docs still migrate and commit, and the run exits non-zero"*, and §6, entry 22, until it is ruled) | MG1, `MG1, from a prior home`, MG2, MG3 |
+| a line **of a spelling** — in force only where a cell names that spelling of its leaf, and the lines the spelling replaces out of force there (added 2026-10-18, by the task `B7`'s third commit, for the human's ruling on the two spellings) | T9 (`doc-only`, replacing T2, T3, T4); M4 (`squash: false`, replacing M3); MG5 (`--dry-run`, replacing MG1, `MG1, from a prior home`, MG2, MG3); and a spelling that only takes a line out of force — `--no-commit`, replacing MG3 (added 2026-10-19, with the movers family's rows: a flag whose doc promises fewer writes) |
+| **holds on a refusal** — yes or no, from a sentence | M1 (yes); C1, C2, C3 (yes, by the ruling); the re-seed's areas — MA6, MS6, MP4, ME2, MJ2, M12, MD8 (yes, since the seventh of the fixes after the review of `B7`'s part B: *"before their own guards"*); MG1, `MG1, from a prior home`, MG2, MG3 (yes, where the run committed — *"the run's other docs still migrate and commit"*); every other line (no) |
 | **deleted after** — not a word of a line but of the frame: the rendered message's file, by its name (`record-commit-msg.txt`, `finalize-message.tmp`) under `.jigc/`, made or rewritten, stands under no line at exit 0 or on a refusal; gone, it is as the place's line has it (added 2026-10-19, by the seventh of the fixes after the review of `B7`'s part B, its tenth finding: *"(a temp file, deleted after)"*, `design/finalize.md` → *6. Commit*, and the human's ruling on §6, entry 6) | every line whose place is a unit's area under `.jigc/` — the milestone family's MC1, MA2, MS2, MP3, ME1, MJ1, M11, MD7 among them |
 | **the consent's flag**, under which a planted path named in the output may go | S14; U8; A4 |
 
 **Corrected 2026-10-13, with the first commit of the task `B4`: `S4`, `T5` and `M10` are *rebuilt*, where they were *written whole*.** As data, *written whole* over a directory lets anything under it happen — a file of it gone too — which the acceptance's cells had no occasion to meet. Each of the three was read against its sentence again: *"initializes the in-repo project layer (`.jigc/config/`) when absent"*, *"Invalidate the edge-index stamp"* and *"Update `file-state` hashes"* let a file be made or written, and none lets one go; `M1` alone says the command **clears** its directory, and keeps the word. The entries' words did not change — each already said *written* — only the word they are carried by. **One of the three sentences can be read the other way**: a stamp can be invalidated by taking its file away. The line follows the reading under which more is red, and a cell that meets a stamp's file gone is this note's to answer for. **[Answered 2026-10-18, by the fourth of the fixes after the review of `B7`'s part A: the docs do not leave it to a reading — the rebuild is the next read's, and the file may be gone after a finalize (§6, entry 16). `T5`'s and `M10`'s edge-index halves are *invalidated*, a word of their own; their file-state halves, and `S4`, stay *rebuilt*.]**
+
+**Read 2026-10-19, with the movers family's rows: a commit the command makes holds, at a path, what the line's word lets stand there.** A word that says what a file may become — *merged into*, *taken out of*, *repointed*, *migrated*, *its knob set* — was read at the file layer only: a file the working tree held as a commit the command made was excused under the commit's line, and the commit's path under any line whose place it was, whatever its bytes. So a merge that dropped a line and committed it held, and so would a migration that changed its prose and committed it. The commit's file is now held to the word **over what `HEAD` held there** — so a commit carries no bytes of the user's that no commit held where the word does not let them in — and is *git's state moved outside its allowance* where the word does not let it stand. What moved by it on either binary is the commit's `DECISIONS.md` entry's to say.
 
 Three conditions a doc gives could not be put as something a manifest shows, and are words in their lines only: *where its install commit can carry the settings file* (S6), *what stands there is jigc's own copy* (S8, U5; T2), and *git tracks the settings file and the record* (U3). Each lets the command do **less** — leave a file alone — so a line without the condition allows no write the doc forbids to anything but a file somebody edited, and such a file is a plant, which no line excuses.

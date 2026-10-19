@@ -17,13 +17,10 @@ pub const OWING: &[&str] = &["B4", "B5", "B6", "B7", "B8", "B9"];
 /// rule where the plan's script had not: they stand under `B5`, the install family's task,
 /// whose docs they share with `setup` and `uninstall`, and left it with that task's
 /// second commit, which brought their rows. The eight `doc` leaves left it with the doc
-/// family's first commit of `B6`, which brought theirs, and the seven `milestone` leaves
-/// with the first commit of `B7`'s second part, which brought theirs.
+/// family's first commit of `B6`, which brought theirs, the seven `milestone` leaves with
+/// the first commit of `B7`'s second part, and the four of the movers family with `B8`'s
+/// second commit.
 pub const OWED: &[(&[&str], &str)] = &[
-    (&["rename"], "B8"),
-    (&["relocate"], "B8"),
-    (&["migrate-corpus"], "B8"),
-    (&["config", "set"], "B8"),
     (&["start"], "B9"),
     (&["workflow"], "B9"),
     (&["migrate"], "B9"),
@@ -39,8 +36,14 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// leaves with its second commit, the two minting doors with its third — and `B7` the
 /// `milestone` family's eight, by the human's ruling of 2026-10-13: its second part brought
 /// the rows of the family's seven other leaves, and their cells and `milestone finalize`'s
-/// in three parts after. **The list is empty since** — every leaf with a row has its cells;
-/// `B8` and `B9` bring theirs with their rows. A leaf leaves this list in the commit that
+/// in three parts after. The list was empty from then until `B8`'s rows came, a commit
+/// before their cells — the movers family's four, and with them their spellings' needs, owed
+/// until a cell of a spelling comes. A leaf leaves this list in the commit that
 /// brings its cells — after which every need of its row is a cell or a line of
 /// `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[];
+pub const CELLS_OWED: &[(&[&str], &str)] = &[
+    (&["rename"], "B8"),
+    (&["relocate"], "B8"),
+    (&["migrate-corpus"], "B8"),
+    (&["config", "set"], "B8"),
+];

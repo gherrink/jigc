@@ -5,9 +5,10 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
-//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
-//! other leaves of the `milestone` family — and 520 cells: the acceptance's
+//! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
+//! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
+//! other leaves of the `milestone` family, and the movers family's four (`rename`,
+//! `relocate`, `migrate-corpus`, `config set`), whose cells are owed — and 530 cells: the acceptance's
 //! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -140,6 +141,8 @@ mod doc;
 mod install;
 #[path = "byte_table/milestone.rs"]
 mod milestone;
+#[path = "byte_table/movers.rs"]
+mod movers;
 #[path = "byte_table/task.rs"]
 mod task;
 
@@ -162,7 +165,7 @@ macro_rules! families {
     };
 }
 
-families![install, task, milestone, doc];
+families![install, task, milestone, doc, movers];
 
 use owed::{CELLS_OWED, OWED, OWING};
 
@@ -508,10 +511,10 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        22,
+        26,
         "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, \
-         `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the milestone \
-         family's seven beside `milestone finalize`: {rows:?}"
+         `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the milestone \
+         family's seven beside `milestone finalize`, and the movers family's four: {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -748,11 +751,19 @@ fn unmet(
             .filter(|(leaf, _, _)| leaf.as_slice() == row.leaf)
             .collect();
         let needs = needs(row);
-        // A spelling's needs are answered whatever is owed of the leaf's plain spelling.
-        let of_a_spelling = |need: &Need| match need {
-            Need::BaseAs(_) => true,
-            Need::Planted(_, spelling) => spelling.is_some(),
-            _ => false,
+        // A spelling's needs are answered whatever is owed of the leaf's plain spelling —
+        // once a cell of that spelling has come: a leaf whose cells are owed whole owes its
+        // spellings' with them, and a spelling begun is finished.
+        let spelling_of = |need: &Need| match need {
+            Need::BaseAs(name) => Some(*name),
+            Need::Planted(_, spelling) => *spelling,
+            _ => None,
+        };
+        let of_a_spelling = |need: &Need| {
+            spelling_of(need).is_some_and(|name| {
+                met.iter()
+                    .any(|(leaf, answer)| *leaf == row.leaf && spelling_of(answer) == Some(name))
+            })
         };
         if !owing.is_empty() {
             if owing.len() > 1 {
@@ -964,6 +975,44 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
     const FRESH: Prepared = Prepared::Of(State::Fresh);
     const A_STEP: &[Lead] = &[Lead::Step(Step::Jigc(&["start", "an intent"]))];
     const A_FILE: &[Lead] = &[Lead::Plant(Plant::File("a-file"))];
+
+    // A leaf whose cells are owed whole owes its spellings' too, until a cell of a spelling
+    // comes; from then on that spelling's needs are each answered — a spelling begun is
+    // finished. The task `B8`: its rows come a commit before their cells, and
+    // `migrate-corpus`'s two spellings with them.
+    const SPELLED_AND_OWED: Row = Row {
+        leaf: &["task", "finalize"],
+        home: FRESH,
+        spellings: &[byte_cell::Spelling {
+            name: "dry",
+            replaces: &["F1"],
+        }],
+        ..row(&[
+            line("F1", Allows::Files(Where::Path("a-file"), May::WriteWhole)),
+            Line {
+                spelling: Some("dry"),
+                ..line("F4", Allows::Files(Where::Path("a-file"), May::CopiedFrom))
+            },
+        ])
+    };
+    const OWED_BY_B4: &[(&[&str], &str)] = &[(&["task", "finalize"], "B4")];
+    says(&unmet(&[&SPELLED_AND_OWED], &[], &[], OWED_BY_B4), &[]);
+    const BEGUN: byte_cell::Cell = byte_cell::Cell {
+        spelling: Some("dry"),
+        ..cell("begun", FRESH, &[], &["task", "finalize", "it"], None)
+    };
+    let named = unmet(&[&SPELLED_AND_OWED], &[&BEGUN], &[], OWED_BY_B4);
+    assert_eq!(
+        named.len(),
+        7,
+        "a spelling begun has each of its needs answered: {named:#?}"
+    );
+    assert!(
+        named
+            .iter()
+            .all(|named| named.contains("F4 ×") && named.contains("as `dry`")),
+        "{named:#?}"
+    );
     const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
         Some(Aim { line, kind })
     }
@@ -1859,6 +1908,69 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 /// a cell has met it yet. A line that is on neither list, or on both, is named
 /// ([`unaccounted`]).
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
+    (&["rename"], "RN1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "RN2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "RN3", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "RN4", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "RN5", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "C3, the task list", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "RL1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "RL2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "RL3", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "RL4", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["relocate"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["relocate"],
+        "C3, the base pin",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (
+        &["relocate"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (&["migrate-corpus"], "MG1", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["migrate-corpus"],
+        "MG1, from a prior home",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (&["migrate-corpus"], "MG2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate-corpus"], "MG3", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate-corpus"], "MG5", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate-corpus"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate-corpus"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["migrate-corpus"],
+        "C3, the base pin",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (
+        &["migrate-corpus"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (&["config", "set"], "CS1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "CS2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "CS3", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "CS4", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "CS5", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["config", "set"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["config", "set"],
+        "C3, the base pin",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (
+        &["config", "set"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
     (
         &["setup"],
         "S6, removed",
@@ -2230,6 +2342,11 @@ const NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER: &str = "a commit that is the config l
 const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed boundary that moves what git neither ignores nor holds out of a sub-task's \
      worktree into `.jigc/displaced/<sub-task-id>/`, as the human's ruling on entry 18 has it: on \
      this tree it takes the file with the checkout, and the cell of it is lost under its key";
+
+/// What would use a line of the movers family's rows: the family's cells, owed by the task
+/// `B8` until the commits after its rows (`owed.rs` → `CELLS_OWED`).
+const THE_FAMILYS_CELLS_ARE_OWED: &str = "the family's cells, owed by the task `B8` (`CELLS_OWED`): its rows are written from \
+     their docs a commit before any cell of them runs";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -2643,8 +2760,16 @@ const DOCS: &[(&str, &str)] = &[
         include_str!("../../../design/assistant-adapter.md"),
     ),
     (
+        "design/corpus-migration.md",
+        include_str!("../../../design/corpus-migration.md"),
+    ),
+    (
         "design/finalize.md",
         include_str!("../../../design/finalize.md"),
+    ),
+    (
+        "design/overrides.md",
+        include_str!("../../../design/overrides.md"),
     ),
     (
         "design/project-setup.md",
@@ -2661,6 +2786,10 @@ const DOCS: &[(&str, &str)] = &[
     (
         "design/team-ready-state.md",
         include_str!("../../../design/team-ready-state.md"),
+    ),
+    (
+        "design/validation.md",
+        include_str!("../../../design/validation.md"),
     ),
     (
         "design/write-commands.md",
@@ -3453,6 +3582,588 @@ fn a_file_moved_aside_lands_under_its_units_place() {
     assert_eq!(class, Classification::Lost, "gone: {why:#?}");
 }
 
+/// A sandbox with these committed files, under the directories they need — the movers
+/// family's fixtures: `files` is `(path from the repository's root, bytes)`.
+fn with_committed(files: &[(&str, &str)]) -> Manifest {
+    then(&sandbox(), |m| {
+        for (path, bytes) in files {
+            let mut at = REPO.to_string();
+            let parts: Vec<&str> = path.split('/').collect();
+            for part in &parts[..parts.len() - 1] {
+                at = format!("{at}/{part}");
+                dir(m, &at);
+            }
+            put(m, &format!("{REPO}/{path}"), bytes);
+        }
+        let changed: Vec<(&str, Option<(u32, &str)>)> = files
+            .iter()
+            .map(|(path, bytes)| (*path, Some((0o100_644, *bytes))))
+            .collect();
+        commit(m, "c1", &changed);
+    })
+}
+
+/// `manifest` with a file written in no commit, under the directories it needs.
+fn written(manifest: &mut Manifest, path: &str, bytes: &str) {
+    let mut at = REPO.to_string();
+    let parts: Vec<&str> = path.split('/').collect();
+    for part in &parts[..parts.len() - 1] {
+        at = format!("{at}/{part}");
+        if !manifest.files.contains_key(&at) {
+            dir(manifest, &at);
+        }
+    }
+    put(manifest, &format!("{REPO}/{path}"), bytes);
+}
+
+/// `manifest` with `from` moved to `to` in the working tree and git's index — a `git mv`,
+/// staged and committed by nobody.
+fn git_mv(manifest: &mut Manifest, from: &str, to: &str, bytes: &str) {
+    manifest.files.remove(&format!("{REPO}/{from}"));
+    written(manifest, to, bytes);
+    let main = manifest.checkouts.get_mut(REPO).expect("the main checkout");
+    main.index.remove(from);
+    main.index.insert(to.to_string(), staged(bytes));
+}
+
+/// **A doc `jigc rename` moves is retitled where its home is, and every doc that referred
+/// to it repointed** — `RN1` and `RN2` of the movers family's row ([`movers::RENAME`]), the
+/// words *retitled* and *repointed* (the task `B8`). On the row itself: the doc moved to a
+/// slug of its home directory with its `# ` title the `--to` title and every other line as
+/// it was, a referrer's line holding the new identity, all of it in one commit, holds; so
+/// does the retitle-only arm, in place. A body line changed, a home in another doctype's
+/// directory, a title other than `--to`'s, two copies, the doc gone with no new home, a
+/// referrer's other line changed, and a file of no doctype's home rewritten for its
+/// mention are each red.
+#[test]
+fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
+    const ONE: &str =
+        "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe chose.\n";
+    const MOVED: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# The one way\n\n## Context\n\nWe chose.\n";
+    const TWO: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:one-way]\n---\n\n# Two ways\n\nAn aside.\n";
+    const REPOINTED: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:the-one-way]\n---\n\n# Two ways\n\nAn aside.\n";
+    const README_SAYS: &str = "readme\nsee adr:one-way\n";
+    let before = with_committed(&[
+        ("docs/decisions/one-way.md", ONE),
+        ("docs/decisions/two-ways.md", TWO),
+        ("README.md", README_SAYS),
+    ]);
+    let argv: &[&str] = &["rename", "adr:one-way", "--to", "The one way"];
+    // `changes`: a path from the repository's root to its bytes after, or to nothing.
+    let renamed = |changes: &[(&str, Option<&str>)]| {
+        then(&before, |m| {
+            for (path, bytes) in changes {
+                match bytes {
+                    Some(bytes) => written(m, path, bytes),
+                    None => {
+                        m.files.remove(&format!("{REPO}/{path}"));
+                    }
+                }
+            }
+            commit(
+                m,
+                "c2",
+                &changes
+                    .iter()
+                    .map(|(path, bytes)| (*path, bytes.map(|bytes| (0o100_644, bytes))))
+                    .collect::<Vec<_>>(),
+            );
+        })
+    };
+    let came = |after: &Manifest, argv: &[&str]| {
+        Cell {
+            argv,
+            ..Cell::of(movers::RENAME, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(
+        &renamed(&[
+            ("docs/decisions/one-way.md", None),
+            ("docs/decisions/the-one-way.md", Some(MOVED)),
+            ("docs/decisions/two-ways.md", Some(REPOINTED)),
+        ]),
+        argv,
+    );
+    assert_eq!(class, Classification::Holds, "the rename: {why:#?}");
+    let retitled =
+        "---\nschema-version: 2\nstatus: accepted\n---\n\n# One Way\n\n## Context\n\nWe chose.\n";
+    let (class, why) = came(
+        &renamed(&[("docs/decisions/one-way.md", Some(retitled))]),
+        &["rename", "adr:one-way", "--to", "One Way"],
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the retitle-only arm: {why:#?}"
+    );
+    for (case, changes) in [
+        (
+            "a body line changed",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                (
+                    "docs/decisions/the-one-way.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\n---\n\n# The one way\n\n## Context\n\nWe chose otherwise.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "another doctype's directory",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/specs/the-one-way.md", Some(MOVED)),
+            ],
+        ),
+        (
+            "a title other than `--to`'s",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                (
+                    "docs/decisions/the-one-way.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\n---\n\n# Another way\n\n## Context\n\nWe chose.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "two copies",
+            vec![("docs/decisions/the-one-way.md", Some(MOVED))],
+        ),
+        ("the doc gone", vec![("docs/decisions/one-way.md", None)]),
+        (
+            "a referrer's other line changed",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/the-one-way.md", Some(MOVED)),
+                (
+                    "docs/decisions/two-ways.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:the-one-way]\n---\n\n# Two ways\n\nAnother aside.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "a file of no doctype's home rewritten",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/the-one-way.md", Some(MOVED)),
+                ("README.md", Some("readme\nsee adr:the-one-way\n")),
+            ],
+        ),
+    ] {
+        let (class, why) = came(&renamed(&changes), argv);
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+}
+
+/// **A doc a mover moves lands at its doctype's home, the same entry** — `RL1` of `jigc
+/// relocate`'s row ([`movers::RELOCATE`]) and `CS2` of `jigc config set`'s
+/// ([`movers::CONFIG_SET`]), the word *into its home* (the task `B8`), and the foreign file a
+/// move finds at its destination, parked in the workbench (`RL3`, `CS3`). On the rows
+/// themselves: a stranded `note` under `--from` moved into the home a listed pack declares
+/// for it, staged and committed by nobody, holds — and so does the same move over a file
+/// of the user's at the destination parked under `.jigc/displaced/`; moved anywhere else,
+/// with other bytes, over a file left nowhere, or from outside `--from`, it is red; a line
+/// of the user's planted in the doc moves with it, and holds. A
+/// `placement-root` re-point moving the roadmap under the new root, the knob set, holds;
+/// to another directory, it is red.
+#[test]
+fn a_moved_doc_lands_at_its_doctypes_home() {
+    const NOTE: &str = "# Cache benchmarks\n\n## Body\n\nA single node caps throughput.\n";
+    const SCHEMA: &str = "type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The note.\" }\n";
+    let before = then(
+        &with_committed(&[
+            ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+            ("docs/else/stays.md", NOTE),
+        ]),
+        |m| {
+            written(
+                m,
+                ".jigc/config/packs.yaml",
+                "packs:\n  - .jigc/note-pack\n",
+            );
+            written(m, ".jigc/note-pack/schemas/note.yaml", SCHEMA);
+        },
+    );
+    let argv: &[&str] = &["relocate", "note", "--from", "docs/legacy-notes/"];
+    let came = |after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(movers::RELOCATE, &before, after)
+        }
+        .came_to()
+    };
+    let moved = |to: &str, bytes: &str| {
+        then(&before, |m| {
+            git_mv(m, "docs/legacy-notes/cache-benchmarks.md", to, bytes);
+        })
+    };
+    let (class, why) = came(&moved("docs/notes/cache-benchmarks.md", NOTE));
+    assert_eq!(class, Classification::Holds, "into its home: {why:#?}");
+    for (case, after) in [
+        (
+            "another directory",
+            moved("docs/other/cache-benchmarks.md", NOTE),
+        ),
+        (
+            "other bytes",
+            moved(
+                "docs/notes/cache-benchmarks.md",
+                "# Cache benchmarks\n\nOther.\n",
+            ),
+        ),
+        (
+            "from outside `--from`",
+            then(&before, |m| {
+                git_mv(m, "docs/else/stays.md", "docs/notes/stays.md", NOTE)
+            }),
+        ),
+    ] {
+        let (class, why) = came(&after);
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+    // A line of the user's in the stranded doc, in no commit, moves with it.
+    let edited = then(&before, |m| {
+        written(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            &format!("{NOTE}a line of the user's\n"),
+        );
+    });
+    let carried = then(&edited, |m| {
+        let bytes = format!("{NOTE}a line of the user's\n");
+        m.files
+            .remove(&format!("{REPO}/docs/legacy-notes/cache-benchmarks.md"));
+        written(m, "docs/notes/cache-benchmarks.md", &bytes);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index.remove("docs/legacy-notes/cache-benchmarks.md");
+        main.index
+            .insert("docs/notes/cache-benchmarks.md".to_string(), staged(NOTE));
+    });
+    let (class, why) = Cell {
+        argv,
+        planted: &[(
+            "repo/docs/legacy-notes/cache-benchmarks.md",
+            "a line of the user's",
+        )],
+        ..Cell::of(movers::RELOCATE, &edited, &carried)
+    }
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "an edit moved with its doc: {why:#?}"
+    );
+
+    // A file of the user's at the destination: parked, the move holds; taken, it is lost.
+    let squatted = then(&before, |m| {
+        written(
+            m,
+            "docs/notes/cache-benchmarks.md",
+            "the user's own notes\n",
+        );
+    });
+    let landed = then(&squatted, |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "docs/notes/cache-benchmarks.md",
+            NOTE,
+        );
+    });
+    let parked = then(&landed, |m| {
+        written(
+            m,
+            ".jigc/displaced/cache-benchmarks.md",
+            "the user's own notes\n",
+        );
+    });
+    let over = |after: &Manifest| {
+        Cell {
+            argv,
+            planted: &[(
+                "repo/docs/notes/cache-benchmarks.md",
+                "the user's own notes",
+            )],
+            ..Cell::of(movers::RELOCATE, &squatted, after)
+        }
+        .came_to()
+    };
+    let (class, why) = over(&parked);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the squatter parked: {why:#?}"
+    );
+    let (class, why) = over(&landed);
+    assert_eq!(class, Classification::Lost, "the squatter taken: {why:#?}");
+
+    // A root knob's re-point: the roadmap under the new root, and the knob set.
+    const ROADMAP: &str = "---\nschema-version: 1\n---\n\n# Roadmap\n";
+    let before = then(&with_committed(&[("docs/roadmap.md", ROADMAP)]), |m| {
+        written(
+            m,
+            ".jigc/config/packs.yaml",
+            "compose-embedded-methodology: true\n",
+        );
+    });
+    let argv: &[&str] = &["config", "set", "placement-root", "notes"];
+    let re_pointed = |to: &str| {
+        then(&before, |m| {
+            git_mv(m, "docs/roadmap.md", to, ROADMAP);
+            written(
+                m,
+                ".jigc/config/manifest.yaml",
+                "scalar:\n  placement-root: notes\n",
+            );
+        })
+    };
+    let came = |after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(movers::CONFIG_SET, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&re_pointed("notes/roadmap.md"));
+    assert_eq!(class, Classification::Holds, "the re-point: {why:#?}");
+    let (class, why) = came(&re_pointed("elsewhere/roadmap.md"));
+    assert!(class.is_red(), "another root: came out {class}, {why:#?}");
+}
+
+/// **A migrated doc keeps its prose, and its stamp is its doctype's current version** —
+/// `MG1` and `MG1, from a prior home` of `jigc migrate-corpus`'s row
+/// ([`movers::MIGRATE_CORPUS`]), the word *migrated* (the task `B8`). On the row itself: a
+/// v1 decision given its `## Options` heading and stamped 2, committed, holds; so does the
+/// v1 changelog moved from its earlier home to `CHANGELOG.md` with its title and stamp
+/// moved. A prose line changed or added, the stamp left behind, a doc already current
+/// rewritten, the changelog's prose dropped on its way, and a line of the user's in no
+/// commit swept into the migration's commit, are each red — and under `--dry-run` any
+/// write is.
+#[test]
+fn a_migrated_doc_keeps_its_prose() {
+    const V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+    const V2: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Options\n\n\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+    let before = with_committed(&[("docs/decisions/one-way.md", V1)]);
+    let migrated = |path: &str, bytes: &str| {
+        then(&before, |m| {
+            written(m, path, bytes);
+            commit(m, "c2", &[(path, Some((0o100_644, bytes)))]);
+        })
+    };
+    let came = |before: &Manifest, after: &Manifest, spelling: Option<&'static str>| {
+        Cell {
+            argv: &["migrate-corpus"],
+            spelling,
+            ..Cell::of(movers::MIGRATE_CORPUS, before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&before, &migrated("docs/decisions/one-way.md", V2), None);
+    assert_eq!(class, Classification::Holds, "the migration: {why:#?}");
+    for (case, bytes) in [
+        (
+            "a prose line changed",
+            V2.replace("It holds.", "It may hold."),
+        ),
+        (
+            "the stamp left behind",
+            V2.replace("schema-version: 2", "schema-version: 1"),
+        ),
+        (
+            "a line of prose added",
+            V2.replace("It holds.\n", "It holds.\nAnd more.\n"),
+        ),
+    ] {
+        let (class, why) = came(
+            &before,
+            &migrated("docs/decisions/one-way.md", &bytes),
+            None,
+        );
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+    // A line of the user's in the stale doc, in no commit: the migration keeps it on disk,
+    // and a commit that carries it carries what `HEAD` never held.
+    let edited = then(&before, |m| {
+        written(
+            m,
+            "docs/decisions/one-way.md",
+            &format!("{V1}A line of the user's.\n"),
+        );
+    });
+    let swept = then(&edited, |m| {
+        let bytes = format!("{V2}A line of the user's.\n");
+        written(m, "docs/decisions/one-way.md", &bytes);
+        commit(
+            m,
+            "c2",
+            &[(
+                "docs/decisions/one-way.md",
+                Some((0o100_644, bytes.as_str())),
+            )],
+        );
+    });
+    let (class, why) = came(&edited, &swept, None);
+    assert_eq!(
+        class,
+        Classification::GitMoved,
+        "the user's uncommitted line swept into the commit: {why:#?}"
+    );
+    let current = with_committed(&[("docs/decisions/one-way.md", V2)]);
+    let rewritten = then(&current, |m| {
+        let bytes = V2.replace("status: accepted", "status: superseded");
+        written(m, "docs/decisions/one-way.md", &bytes);
+        commit(
+            m,
+            "c2",
+            &[(
+                "docs/decisions/one-way.md",
+                Some((0o100_644, bytes.as_str())),
+            )],
+        );
+    });
+    let (class, why) = came(&current, &rewritten, None);
+    assert!(
+        class.is_red(),
+        "a doc already current: came out {class}, {why:#?}"
+    );
+    // A refusal: one doc refused while another was migrated and committed holds — the
+    // run's other docs still migrate and commit; a refusal that committed nothing and
+    // leaves the migration written and staged is red (the rows' record's §6, entry 22).
+    let refused = |after: &Manifest| {
+        Cell {
+            argv: &["migrate-corpus"],
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(movers::MIGRATE_CORPUS, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = refused(&migrated("docs/decisions/one-way.md", V2));
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "a refusal that committed the others: {why:#?}"
+    );
+    let unlanded = then(&before, |m| {
+        written(m, "docs/decisions/one-way.md", V2);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/decisions/one-way.md".to_string(), staged(V2));
+    });
+    let (class, why) = refused(&unlanded);
+    assert_eq!(
+        class,
+        Classification::RefusedAndChanged,
+        "a refusal that committed nothing: {why:#?}"
+    );
+
+    // Under `--dry-run` nothing is written.
+    let (class, why) = came(&before, &before, Some("--dry-run"));
+    assert_eq!(class, Classification::Holds, "a dry run: {why:#?}");
+    let (class, why) = came(
+        &before,
+        &migrated("docs/decisions/one-way.md", V2),
+        Some("--dry-run"),
+    );
+    assert!(
+        class.is_red(),
+        "a dry run that writes: came out {class}, {why:#?}"
+    );
+
+    // The v1 changelog, at its earlier home.
+    const OLD: &str = "---\nschema-version: 1\n---\n\n# changelog\n\n## Unreleased\n\nA change.\n";
+    const NEW: &str = "---\nschema-version: 2\n---\n\n# Changelog\n\n## Unreleased\n\nA change.\n";
+    let before = with_committed(&[("docs/changelog/changelog.md", OLD)]);
+    let relocated = |bytes: &str| {
+        then(&before, |m| {
+            m.files
+                .remove(&format!("{REPO}/docs/changelog/changelog.md"));
+            written(m, "CHANGELOG.md", bytes);
+            commit(
+                m,
+                "c2",
+                &[
+                    ("docs/changelog/changelog.md", None),
+                    ("CHANGELOG.md", Some((0o100_644, bytes))),
+                ],
+            );
+        })
+    };
+    let (class, why) = came(&before, &relocated(NEW), None);
+    assert_eq!(class, Classification::Holds, "the relocation: {why:#?}");
+    let (class, why) = came(&before, &relocated(&NEW.replace("A change.\n", "")), None);
+    assert!(
+        class.is_red(),
+        "the prose dropped: came out {class}, {why:#?}"
+    );
+}
+
+/// **A knob set keeps every other line of the project manifest** — `CS1` of `jigc config
+/// set`'s row ([`movers::CONFIG_SET`]), the word *its knob set* (the task `B8`). On the row
+/// itself: the knob's line added beside the user's own lines, or the manifest made where
+/// none stood, holds; the user's comment dropped, another knob's value changed, or the
+/// manifest left with no line of the knob, is each red.
+#[test]
+fn a_knob_set_keeps_every_other_line() {
+    const MINE: &str = "# a note of the user's\nscalar:\n  docs-root: docs\n";
+    let before = then(&sandbox(), |m| {
+        written(m, ".jigc/config/manifest.yaml", MINE)
+    });
+    let argv: &[&str] = &["config", "set", "finalize.fan-out.squash", "false"];
+    let set = |bytes: &str| then(&before, |m| written(m, ".jigc/config/manifest.yaml", bytes));
+    let came = |before: &Manifest, after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(movers::CONFIG_SET, before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(
+        &before,
+        &set(
+            "# a note of the user's\nscalar:\n  docs-root: docs\n  finalize.fan-out.squash: 'false'\n",
+        ),
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the knob's line added: {why:#?}"
+    );
+    let none = sandbox();
+    let made = then(&none, |m| {
+        written(
+            m,
+            ".jigc/config/manifest.yaml",
+            "scalar:\n  finalize.fan-out.squash: 'false'\n",
+        )
+    });
+    let (class, why) = came(&none, &made);
+    assert_eq!(class, Classification::Holds, "the manifest made: {why:#?}");
+    for (case, bytes) in [
+        (
+            "the user's comment dropped",
+            "scalar:\n  docs-root: docs\n  finalize.fan-out.squash: 'false'\n",
+        ),
+        (
+            "another knob's value changed",
+            "# a note of the user's\nscalar:\n  docs-root: notes\n  finalize.fan-out.squash: 'false'\n",
+        ),
+        (
+            "no line of the knob",
+            "# a note of the user's\nscalar:\n  docs-root: docs\n\n",
+        ),
+    ] {
+        let (class, why) = came(&before, &set(bytes));
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+}
+
 /// **A plant with no bytes is a fault of the cell**, and so are two plants with one
 /// marker, and a plant the manifest taken before the command does not hold where the cell
 /// says it stands: none is a classification.
@@ -3618,6 +4329,51 @@ fn a_merge_keeps_every_line_and_a_take_out_adds_none() {
     comes_out(
         &Cell::of(WRITES, &before, &linked),
         Classification::WrittenOutside,
+    );
+}
+
+/// **A commit is no way around a word that says what a file may become** — a line that lets
+/// a file be *merged into*, under a row whose commit holds what its lines wrote: the file
+/// merged and committed holds; a line of it dropped and committed is *git's state moved
+/// outside its allowance*, as it is *written outside* when nothing commits it. Until
+/// 2026-10-19 (the task `B8`) a file the working tree held as a commit made it was excused
+/// under the commit's line, and the commit's path under any line placed there, so a merge
+/// that dropped a line and committed it held.
+#[test]
+fn a_commit_is_no_way_around_a_words_content_rule() {
+    const MERGES_AND_COMMITS: Row = row(&[
+        line(
+            "M1",
+            Allows::Files(Where::Path("CLAUDE.md"), May::MergeInto),
+        ),
+        line("M2", Allows::Commit(Holding::OnlyTheLines)),
+    ]);
+    const MINE: &str = "# Mine\n\nmy own line\n";
+    let before = then(&sandbox(), |m| {
+        put(m, "repo/CLAUDE.md", MINE);
+        commit(m, "c1", &[("CLAUDE.md", Some((0o100_644, MINE)))]);
+    });
+    let committed = |bytes: &str| {
+        then(&before, |m| {
+            put(m, "repo/CLAUDE.md", bytes);
+            commit(m, "c2", &[("CLAUDE.md", Some((0o100_644, bytes)))]);
+        })
+    };
+    comes_out(
+        &Cell::of(
+            MERGES_AND_COMMITS,
+            &before,
+            &committed("# Mine\n\n@.jigc/AGENT.md\nmy own line\n"),
+        ),
+        Classification::Holds,
+    );
+    comes_out(
+        &Cell::of(
+            MERGES_AND_COMMITS,
+            &before,
+            &committed("# Mine\n\n@.jigc/AGENT.md\n"),
+        ),
+        Classification::GitMoved,
     );
 }
 
@@ -3993,7 +4749,9 @@ fn the_home_a_write_copies_in_from_is_read_and_never_written() {
 /// commit that carries them hold. A file nobody tracked goes with no commit, and holds.
 /// And a commit that carries a line of the user's that no commit held — an edit swept in
 /// at the path the command changed — is *git's state moved outside its allowance*; under
-/// a row whose commit holds only the lines, the same is not this rule's to see.
+/// a row whose commit holds only the lines it is too, since 2026-10-19 (the task `B8`), by
+/// the word's own content rule over what `HEAD` held: a take-out of `HEAD`'s file holds no
+/// line `HEAD` did not.
 #[test]
 fn a_commit_that_must_carry_what_the_lines_changed() {
     const REMOVED: Line = line("U1", Allows::Files(Where::Under(".jigc"), May::Removed));
@@ -4097,12 +4855,16 @@ fn a_commit_that_must_carry_what_the_lines_changed() {
         ),
         "{why:#?}"
     );
-    comes_out(
-        &Cell {
-            planted: edit,
-            ..Cell::of(TEARS_DOWN, &edited, &swept)
-        },
-        Classification::Holds,
+    let (got, why) = Cell {
+        planted: edit,
+        ..Cell::of(TEARS_DOWN, &edited, &swept)
+    }
+    .came_to();
+    assert_eq!(got, Classification::GitMoved, "{why:#?}");
+    assert!(
+        why.iter()
+            .any(|why| why.contains("holds at `CLAUDE.md` what the row does not let it hold")),
+        "{why:#?}"
     );
 }
 
@@ -6095,8 +6857,8 @@ fn the_config_layer_committed_is_carried_by_no_line_of_a_finalize() {
 
 /// **Every way a row's spellings do not stand on its lines**: a line in force under a
 /// spelling the row does not have; a spelling that replaces a line the row does not have
-/// as a line of every spelling; a spelling with no line of its own; two spellings of one
-/// name.
+/// as a line of every spelling; a spelling with no line of its own that takes none out of
+/// force; two spellings of one name.
 fn unspelled(rows: &[&Row]) -> Vec<String> {
     let mut out = Vec::new();
     for row in rows {
@@ -6126,9 +6888,17 @@ fn unspelled(rows: &[&Row]) -> Vec<String> {
                     ));
                 }
             }
-            if !row.lines.iter().any(|line| line.spelling == Some(name)) {
+            // A spelling is a line of its own, or a line it takes out of force: one that only
+            // takes a line away is a flag whose doc promises fewer writes.
+            let takes_away = spelling.replaces.iter().any(|id| {
+                row.lines
+                    .iter()
+                    .any(|line| line.id == *id && line.spelling.is_none())
+            });
+            if !takes_away && !row.lines.iter().any(|line| line.spelling == Some(name)) {
                 out.push(format!(
-                    "the spelling `{name}` of `jigc {leaf}` has no line of its own"
+                    "the spelling `{name}` of `jigc {leaf}` has no line of its own, and takes \
+                     none out of force"
                 ));
             }
             if row.spellings[..at].iter().any(|other| other.name == name) {
@@ -6267,6 +7037,17 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
             ("the spelling `path-scoped`", "is named twice"),
         ],
     );
+    // A spelling that only takes a line out of force — a flag whose doc promises fewer
+    // writes, `migrate-corpus --no-commit` under the reading until its question is ruled —
+    // stands on the line it replaces.
+    const TAKES_ONE_AWAY: Row = Row {
+        spellings: &[byte_cell::Spelling {
+            name: "no-commit",
+            replaces: &["P3"],
+        }],
+        ..row(&[line("P3", Allows::Commit(Holding::OnlyTheLines))])
+    };
+    says(&unspelled(&[&TAKES_ONE_AWAY]), &[]);
     let wrong = unspelled(&rows());
     assert!(wrong.is_empty(), "{wrong:#?}");
 
