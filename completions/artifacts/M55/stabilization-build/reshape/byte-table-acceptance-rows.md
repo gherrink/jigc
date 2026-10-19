@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-19, by the third of the fixes after the review of the milestone family's task (`B7`), part B (its third finding): §6, entry 18 is rewritten with every sentence that bears on it. For the narration: `design/finalize.md`'s restatement of 2026-10-06 and its build entry, both the builder's; `design/storage.md`'s sentence naming narration the worktrees' warrant; the pinned `sub_tasks[].discarded` key. Against it: the human's *"Over take-and-name"*, and his rulings on items 10 and 4 and on item 6. Its *"predates the rule"* is corrected, since the narration was restated after the rule. The question is narrowed to a file git does not ignore, since the human's rulings answer the ignored half. It stays open: no ruling of his speaks of a landed sub-task's unstaged or untracked bytes. The robust answer no longer calls the move the disposition the boundary already gives, because `design/storage.md` gives the worktrees narration on purpose. No line moved, and the cell's mark is as it was.*
+
 *Changed 2026-10-19, by the first of the fixes after the review of the milestone family's task (`B7`), part B (its first finding): `M3, the config` held under any `HEAD`, where its sentences say *first commit* — so a file of the user's nobody staged under `.jigc/config`, swept into a landed boundary, held. It is in force on the layer's first commit alone, a condition of its own (§7, *the place's first commit*), and `jigc task finalize`'s row gains the same two lines, `T3, the config` and its ignore file's half, so that the two rows read the stage's sentence one way (§3, §4); the doc-only arm's G8 sentence is struck as a ground of the line. Whether a pending delta rides a commit that is not the layer's first is §6, entry 19 — two docs say two things — where §4 and the family's record had called it answered.*
 
 *Changed 2026-10-19, with the fourth commit of the milestone family's own, which brings the cells of `discard` and of `milestone finalize`'s plain spelling: `M6` gains its moved-aside half for the milestone's own area, whose complement its second sentence keeps too — the line as data had moved aside the sub-tasks' areas' alone (§4); and §6 gains entry 18, where the design doc's narrated loss at a landed boundary meets the exit rule. No other line moved.*
@@ -1539,9 +1541,12 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *How it is carried.* As it was — `M4` holds what the sub-tasks' worktrees staged and what the row's other lines wrote (§7, *a chain*), and not the main checkout's index. No cell moves; none was marked.
 - *A neighbour, for the milestone rows.* The same contract and `design/finalize.md` → *Dirty-tree policy*, the carryover gate, say `jigc milestone create` snapshots the shared checkout's index for its aggregate; a change staged **before** the milestone is minted meets that gate, under both spellings — a need other than the cells' post-join plant (a lead, [byte-table-findings.md](byte-table-findings.md) → §15).
 
-**18. A landed milestone boundary over a live sub-task's worktree that holds a file nobody staged — may it take the file? The design doc and the exit rule say two things. Open.**
+**18. A landed milestone boundary over a live sub-task's worktree that holds a file nobody staged — may it take the file? For a file git ignores, the human's rulings answer it: named, not refused. For one git does not ignore, the design docs and the exit rule say two things, and no ruling of the human's answers it. Open.**
 
-- *The words for taking it, narrated.* The landed boundary's teardown removes each sub-task's worktree after the commit, and names what it destroys rather than refusing:
+*Rewritten 2026-10-19, by the third of the fixes after the review of the milestone family's task (`B7`), part B (its third finding). The entry quoted the design doc on one side and the exit rule on the other. It left out a restatement of the narration made after the rule, the sentence that names narration the worktrees' own warrant, and three rulings of the human's. It also said the decision *"predates the rule"*, where it was restated after it. Every sentence the review found is quoted below. The robust answer no longer calls a move aside the disposition the boundary already gives, and the question is narrowed to what the cell plants.*
+
+- *The question, narrowed.* The teardown removes three kinds of byte a landed sub-task's worktree holds and no commit carries: what git ignores, unstaged edits, and untracked files git does not ignore. **What git ignores is answered by the human**, twice. At M46 his decision, as [the razor's ledger](../../../M46/razor-ledger.md) → §2f records it, is *"**DECIDED (the human, 2026-08-18): extend the narration arm to all four doors.**"*, with its cost stated over that axis alone: *"A gitignored secret inside a fan-out worktree is still destroyed; it is named first."* His ruling on item 6 keeps it so where he widened the refusal: *"ignored files — build output — stay named, not refused"*. **The open question is the other two kinds** — an unstaged edit, or an untracked file git does not ignore, in the worktree of a sub-task the boundary lands. The cell plants the second.
+- *The words for taking it, narrated.* Two passages of the design doc:
 
 > **Bound, stated not glossed: visible, not prevented**
 
@@ -1551,17 +1556,80 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 
 — `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
 
-  — the evidence being build output in every worktree that did its job, a refusal on which *"fires on the ordinary fan-out **success** path and trains `--force` into reflex"* (the same paragraph); and `M6`'s own sentence tears the worktrees down *"on a LANDED boundary"*.
+  — the evidence being build output in every worktree that did its job, a refusal on which *"fires on the ordinary fan-out **success** path and trains `--force` into reflex"* (the same paragraph); and `M6`'s own sentence tears the worktrees down *"on a LANDED boundary"*. Restated on 2026-10-06, two days after the exit rule:
+
+> Files git ignores — build output — stay named by the teardown and are never refused over, and a *landed* sub-task's unstaged and untracked leftovers stay named too.
+
+— `design/finalize.md` → *Commit-doc rendering*
+
+> A sub-task the boundary lands is asked no bytes: its staged set was taken, and its unstaged and untracked leftovers stay named, on the M46 ruling this one does not reopen.
+
+— `DECISIONS.md` → *2026-10-06 — `jigc milestone finalize` also refuses over a discarded sub-task's unstaged edits and untracked files that git does not ignore, under `milestone.unlanded-work`; ignored files stay named (the build of the human's ruling on the fix pass's item 6; the builder's choices inside it)*
+
+  And narration is named the worktrees' own warrant, in the sentence that gives the task's working area the move instead:
+
+> It is the one disposition available here: the door takes no consent flag, and it cannot narrate the loss on the *landed-boundary* warrant its siblings use, because the commit carries the promoted docs and the index and takes nothing at all out of the working area.
+
+— `design/storage.md` → *The per-task working area (staging)*
+
+  The narration is a pinned key of the landed envelope: `design/command-output-contract.md` → *Evolution posture (declared)* names the worktree the teardown removes, *"swept at M47 (`sub_tasks[].discarded`, bytes **destroyed**)"*.
+- *Whose words those are, and when.* None of them is the human's, for these bytes.
+  - The narration of unstaged and untracked bytes at a landed boundary was born at M47, as a re-scope taken mid-build through the planning gates:
+
+> (3) The landed-path loss takes the **law-1 minimum** — warn before removing, name what was discarded — with the honest bound written down: *visible, not prevented*; the `discard`-style refusal is new surface → **M46**.
+
+— `DECISIONS.md` → *2026-07-26 — M47 Increment 3 halt resolution: the fan-out abort stops destroying sub-agent code (a mid-build re-scope, taken through the planning gates)*
+
+  - M46's planning refused the refusal. Its entry records the re-cut as the razor pass's, not as the human's. The guard-killer it measured is `--ignored`:
+
+> That re-cut Fork 7 from *"build a blocking refusal + `--force` at a fourth destroying door"* (new surface, and measured as a guard-killer — `--ignored` on a refusal fires on the ordinary fan-out success path, training `--force` into reflex) to **"make the narration true over the `--ignored` axis"**
+
+— `DECISIONS.md` → *2026-08-18 — M46 planned: the reconciliation wave, its razor guarded by agents, and four decisions taken on driven evidence*
+
+  - The human's decision of that day, quoted above, speaks of ignored bytes.
+  - The two sentences of 2026-10-06 are the builder's, inside the human's ruling on item 6, which was about a **discarded** sub-task. The sheet he ruled from, [fixer-decisions.md](../pre-opening/fixer-decisions.md) → item 6, says the fixer left a landed sub-task's leftovers to *"the human's M46 ruling that a *landed* sub-task's leftover bytes — build output — are narrated, not refused"*. That is the sheet's account of the ruling, whose recorded words are of ignored bytes, and he was asked nothing of the landed case.
+  - The storage sentence is M52's (2026-09-17).
 - *The words against it.* The exit rule's first clause, the human's, which the table holds every cell to (the plan's §1.1):
 
 > no jigc command at exit 0 destroys bytes no git object holds or commits content the user did not ask for
 
 — `DECISIONS.md` → *2026-10-04 — The exit rule, revised: four clauses, each with a scope and one instrument — a finding blocks the call only if it breaks a clause inside its scope (the human's)*
 
-  The design decision predates the rule (M46, 2026-08) and is none of the bounds the human declared on 2026-10-06 and 2026-10-11.
-- *What the product does.* `jigc milestone finalize` lands, removes the worktree, and names the file — *"discarded with the fan-out worktrees (not committed, not recoverable): add-alpha-file: untracked.txt (never staged)"* — at exit 0. Driven on this tree's debug build.
-- *What the product should do — robust.* **Keep the bytes and keep the success path free**: before removing a landed sub-task's worktree, move what git neither ignores nor holds — its untracked and unstaged files — aside to `.jigc/displaced/<sub-task-id>/`, the disposition the same boundary gives a working area's complement (`M6`'s *"Both keep their complement"*), and keep narrating what git ignores. *Why*: the measured warrant is against a *refusal* on the success path, not against keeping a byte; a move refuses nothing and loses nothing, so the clause holds and the warrant stands. *Its price*: build output that is not ignored lands in `displaced/`, which nothing cleans. *The other answer*: the clause yields here — the narrated loss is a declared bound of the 1.x line, written into the bounds' list with its reach.
-- *Until ruled*, the reading under which more is red: the clause — the cell `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` is *lost*, under `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree`, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §17).
+  Three rulings of the human's on the same boundary's other losses, after the rule. The first is on work a worktree registration holds:
+
+> **Over take-and-name.** *Why:* take-and-name would knowingly ship an exit-0 loss of a sub-agent's deliverable
+
+— `DECISIONS.md` → *2026-10-04 — rc.24 fix pass, fork on one of jigc's own sub-task worktree registrations that still holds work: the doors refuse, `--force` the consent (the human's decision)*
+
+  That ruling's own sentence had *"the landed `jigc milestone finalize` **names what it drops**"*. His ruling on items 10 and 4 replaced it for the work the boundary would drop, and refused before landing:
+
+> **Over** reversing to the wording of the registration ruling — land at exit 0 and name what was dropped
+
+— `DECISIONS.md` → *2026-10-06 — Ahead of the run's opening: round 1 hunts with the seven review rows and one cross-cutting reviewer and no per-area audit, two rows get a cross-model pass, the regression set has two parts, the blind trial has three arms and a written bar for passing — and the human's ruling on each of the twenty-three items the fix pass left him (the human's rulings, one question at a time, each relayed by the orchestrator; a record only — nothing built, and no run opened)*
+
+  And for these very bytes, at a sub-task `jigc task discard` settled, he ruled the refusal over a bound:
+
+> **Over** moving the question to `jigc task discard` (item 5, 5d) and over declaring it a bound.
+
+— `DECISIONS.md` → *2026-10-06 — Ahead of the run's opening: round 1 hunts with the seven review rows and one cross-cutting reviewer and no per-area audit, two rows get a cross-model pass, the regression set has two parts, the blind trial has three arms and a written bar for passing — and the human's ruling on each of the twenty-three items the fix pass left him (the human's rulings, one question at a time, each relayed by the orchestrator; a record only — nothing built, and no run opened)*
+
+  The narration is none of the bounds the human declared on 2026-10-06 and 2026-10-11. The list of declared bounds with their reach is owed and not written (`implementation/decisions-pending.md` → *The declared bounds, as one list with reach*), so no bound on it can be cited.
+- *Does a ruling of the human's already answer it?* **No — it stays open**, for a file git does not ignore in a landed sub-task's worktree.
+  - His decision at M46 and his ruling on item 6 settle what git ignores.
+  - His rulings on the registrations and on items 10 and 4 refuse over a staged path or a commit the boundary would **drop**. A landed sub-task's staged set is not dropped: it lands.
+  - His ruling on item 6 is about a **discarded** sub-task. It reached him on a sheet that placed the landed case under an M46 ruling of his, and his words say nothing of the landed case.
+  - What all three rulings share — a sub-agent's bytes the boundary would lose at exit 0 are kept, and a bound for them is declined — points one way. It is not a ruling on this case.
+- *What the product does.* `jigc milestone finalize` lands, removes the worktree, and names the file — *"discarded with the fan-out worktrees (not committed, not recoverable): add-alpha-file: notes.txt (never staged)"* — at exit 0, with no `.jigc/displaced/` made. Driven on this tree's debug build and on the previous release's rebuild (`accf3996…ab5d`), the same on both (2026-10-19, [byte-table-findings.md](byte-table-findings.md) → §19's repro, as printed).
+- *What the product should do — robust, revised.* **Keep the bytes and keep the success path free.**
+  - *The change.* Before removing a landed sub-task's worktree, move what git neither ignores nor holds — its unstaged edits and its untracked files — aside to `.jigc/displaced/<sub-task-id>/`, and keep narrating what git ignores.
+  - *Why.* The clause. The human's own reason against take-and-name, an exit-0 loss of a sub-agent's deliverable. And his refusal to declare the same bytes a bound at a discarded sub-task. The measured warrant is against a *refusal* on the success path, and was measured on `--ignored`; a move refuses nothing and loses nothing.
+  - *Revised.* The entry called this *"the disposition the same boundary gives a working area's complement"*. `design/storage.md` undercuts that. It gives the working area the move *because* that door cannot use the landed-boundary warrant, and it names narration the warrant of the worktrees. So the docs chose two dispositions on purpose. The answer **changes the worktrees' warrant**; it does not extend a rule they already follow.
+  - *What it changes.* That sentence of `design/storage.md`. The non-ignored half of the bound in `design/team-ready-state.md`. The last clause of the `design/finalize.md` sentence above. And the reach of two pinned keys: `sub_tasks[].discarded` would name ignored bytes only, and `committed.displaced` would carry the worktrees' moves beside the areas'. Whether a pinned key's new reach is a new mechanism, and so a halt, is the human's to say.
+  - *Its price.* Build output that is not ignored lands in `displaced/`, which nothing cleans.
+- *The other answers.*
+  - **Refuse, item 6's shape extended to a landed sub-task.** It fires on the success path wherever a sub-agent leaves a scratch file or build output that is not ignored — the trap M46 measured, on `--ignored`.
+  - **The clause yields.** The narrated loss becomes a declared bound of the 1.x line, written into the bounds' list with its reach — the answer the human declined for the same bytes at a discarded sub-task.
+- *Until ruled*, the reading under which more is red: the clause. The cell `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` is *lost*, under `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree`, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §17), on both binaries.
 
 **19. A pending `.jigc/config` delta at a commit that is not the layer's first — does a finalize carry it? Two docs say two things. Open.**
 
