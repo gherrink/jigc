@@ -5,6 +5,7 @@
 # Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's two minting doors (the task `B6`'s third commit of that family), at a load average of 8 to 24: eighty-four cells — the seventy-two above, the same lines byte for byte, and the minting doors' twelve, none red. The block below is that run's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's record doors (the task `B7`'s second part, its second commit), macOS arm64, load not measured: a hundred and two cells — the eighty-four above, the same lines byte for byte, and the record doors' eighteen, none red.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's fan-out doors (the task `B7`'s second part, its third commit), macOS arm64, load not measured: a hundred and twenty cells — the hundred and two above, the same lines byte for byte, and the fan-out doors' eighteen, none red.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's terminals (the task `B7`'s second part, its fourth commit), macOS arm64, load not measured: a hundred and thirty-two cells — the hundred and twenty above, the same lines byte for byte, and the terminals' twelve, none red.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -78,6 +79,18 @@ milestone-join-ship-it-in-migrated	jigc milestone join ship-it	migrated	acts	hol
 milestone-join-ship-it-in-refs-post-hoc	jigc milestone join ship-it	refs-post-hoc	acts	holds	exit 0
 milestone-join-ship-it-in-chatty-hooks	jigc milestone join ship-it	chatty-hooks	acts	holds	exit 0
 milestone-join-ship-it-in-vendored	jigc milestone join ship-it	vendored	acts	holds	exit 0
+milestone-discard-ship-it-in-bare	jigc milestone discard ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-discard-ship-it-in-committed-singletons	jigc milestone discard ship-it	committed-singletons	acts	holds	exit 0
+milestone-discard-ship-it-in-migrated	jigc milestone discard ship-it	migrated	acts	holds	exit 0
+milestone-discard-ship-it-in-refs-post-hoc	jigc milestone discard ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-discard-ship-it-in-chatty-hooks	jigc milestone discard ship-it	chatty-hooks	acts	holds	exit 0
+milestone-discard-ship-it-in-vendored	jigc milestone discard ship-it	vendored	acts	holds	exit 0
+milestone-finalize-land-it-in-bare	jigc milestone finalize land-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-finalize-land-it-in-committed-singletons	jigc milestone finalize land-it	committed-singletons	acts	holds	exit 0
+milestone-finalize-land-it-in-migrated	jigc milestone finalize land-it	migrated	acts	holds	exit 0
+milestone-finalize-land-it-in-refs-post-hoc	jigc milestone finalize land-it	refs-post-hoc	acts	holds	exit 0
+milestone-finalize-land-it-in-chatty-hooks	jigc milestone finalize land-it	chatty-hooks	acts	holds	exit 0
+milestone-finalize-land-it-in-vendored	jigc milestone finalize land-it	vendored	acts	holds	exit 0
 doc-add-a-milestone-in-bare	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
 doc-add-a-milestone-in-fresh	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
 doc-add-a-milestone-in-migrated	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1

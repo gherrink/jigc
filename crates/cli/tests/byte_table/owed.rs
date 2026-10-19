@@ -36,12 +36,11 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// of such a leaf need by need, and names it the day it also has a scheduled row. `B4`
 /// was the first cut's, and brought `jigc task finalize`'s and `jigc task discard`'s; `B5`
 /// brought the install family's four; `B6` brought the doc family's eight — the six edit
-/// leaves with its second commit, the two minting doors with its third — and `B7` is built
-/// now, by the human's ruling of 2026-10-13: its second part brought the rows of the
-/// family's seven other leaves, whose cells it brings in three parts after. A leaf leaves
-/// this list in the commit that brings its cells — after which every need of its row is a
-/// cell or a line of `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[
-    (&["milestone", "discard"], "B7"),
-    (&["milestone", "finalize"], "B7"),
-];
+/// leaves with its second commit, the two minting doors with its third — and `B7` the
+/// `milestone` family's eight, by the human's ruling of 2026-10-13: its second part brought
+/// the rows of the family's seven other leaves, and their cells and `milestone finalize`'s
+/// in three parts after. **The list is empty since** — every leaf with a row has its cells;
+/// `B8` and `B9` bring theirs with their rows. A leaf leaves this list in the commit that
+/// brings its cells — after which every need of its row is a cell or a line of
+/// `scheduled-cells.tsv` with its reason.
+pub const CELLS_OWED: &[(&[&str], &str)] = &[];

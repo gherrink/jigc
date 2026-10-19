@@ -5,6 +5,8 @@
 *Changed 2026-10-13, with the task `B2c` that lifts the rows into data
 ([install.rs](../../../../../crates/cli/tests/byte_table/install.rs), [task.rs](../../../../../crates/cli/tests/byte_table/task.rs), [milestone.rs](../../../../../crates/cli/tests/byte_table/milestone.rs)): the first entry of §6 is rewritten as the human ruled it on 2026-10-12, three lines stand in every row for it (§4a), and `M5` gains the sentence that names its place. No other line moved.*
 
+*Changed 2026-10-19, with the fourth commit of the milestone family's own, which brings the cells of `discard` and of `milestone finalize`'s plain spelling: `M6` gains its moved-aside half for the milestone's own area, whose complement its second sentence keeps too — the line as data had moved aside the sub-tasks' areas' alone (§4); and §6 gains entry 18, where the design doc's narrated loss at a landed boundary meets the exit rule. No other line moved.*
+
 *Changed 2026-10-19, with the second commit of the milestone family's own: §4b's note on the message file of a record commit says what the record doors' cells showed. No line moved.*
 
 *Changed 2026-10-19, with the first commit of the milestone family's own (the task `B7`, its second part): the rows of `jigc milestone create`, `add-task`, `add-from-spec`, `provision`, `execute`, `join` and `discard` are written from their docs (§4b), before a cell of any of them runs; `milestone finalize`'s row gains `M3, the config` — its own sentence's *first-commit config*, which the line as data had held nothing of (§4); and §7 gains the three words they needed — a place the command mints, a worktree's registration added, and carried as it stands. No other line moved.*
@@ -708,6 +710,16 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 
 — `design/storage.md` → *The per-task working area (staging)*
 
+**`M6, the milestone's area moved aside` — what jigc did not write in `.jigc/milestones/<id>/`, the join's `merged/` tree included: moved aside to `.jigc/displaced/<id>/`.** When: the boundary landed. On a refusal: no (M8). *Added 2026-10-19, with the cells of `milestone finalize`'s plain spelling (the task `B7`, its second part):* `M6`'s second sentence keeps the complement of **both** kinds of area — *"Both keep their complement"* — and the line as data moved aside the sub-tasks' areas' alone, so a file of the user's in the milestone's area, kept at `.jigc/displaced/`, read *written outside its allowance* for what the sentence declares. The sentence that names the milestone's area as the second subject:
+
+> A landed `jigc milestone finalize` removes each sub-task's `tasks/<sub-id>/` *and* the milestone's own `milestones/<id>/`
+
+— `design/storage.md` → *The per-task working area (staging)*
+
+> Both keep their complement, to `.jigc/displaced/<unit-id>/<relative>`
+
+— `design/storage.md` → *The per-task working area (staging)*
+
 **M7 — git's registrations of worktrees: removed, at a path under `.jigc/worktrees/` and at no other; every other registration is as it was.** When: the boundary landed. On a refusal: no. The first sentence is U6's.
 
 > So every other registration — live, `prunable` or locked; a human's, or jigc's own under another path (a moved repository's sub-task records name the old one, and are exactly what `git worktree repair` needs) — is left byte-identical
@@ -1197,7 +1209,7 @@ Six of the seven red lines are red by the plant's rule or by a sentence that nam
 
 ## 6. Where a doc is silent, or says two things — the list for the human
 
-One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4 and 7 are open.
+One list to rule from, one entry at a time. It decides nothing. Until an entry is ruled, a cell that hangs on it follows the stricter reading — the one under which more is red — and is marked. **Entries 1, 2, 3, 5, 6, 8, 9, 10, 11, 12, 14 and 15 are ruled** (2026-10-12, 2026-10-14, 2026-10-15 and 2026-10-18), each saying how it is carried; **entries 13, 16 and 17 are answered by the design docs** (2026-10-18), and were no silences; entries 4, 7 and 18 are open.
 
 **1. *Either a rebuildable cache or a transient working copy* — may a command that refuses leave the caches rebuilt? Ruled on 2026-10-12: it may.**
 
@@ -1460,6 +1472,30 @@ One list to rule from, one entry at a time. It decides nothing. Until an entry i
 - *What disagrees.* `design/finalize.md` → *Dirty-tree policy*, *"through `IndexHonoring` over the now-clean index"*, alone: `IndexHonoring` commits the index whole, and the contract says the boundary takes nothing of it. A doc-only finding: [byte-table-findings.md](byte-table-findings.md) → §1, `r1-finalize-design-says-the-unsquashed-aggregate-commits-the-index-where-the-output-contract-says-the-boundary-takes-none-of-it`.
 - *How it is carried.* As it was — `M4` holds what the sub-tasks' worktrees staged and what the row's other lines wrote (§7, *a chain*), and not the main checkout's index. No cell moves; none was marked.
 - *A neighbour, for the milestone rows.* The same contract and `design/finalize.md` → *Dirty-tree policy*, the carryover gate, say `jigc milestone create` snapshots the shared checkout's index for its aggregate; a change staged **before** the milestone is minted meets that gate, under both spellings — a need other than the cells' post-join plant (a lead, [byte-table-findings.md](byte-table-findings.md) → §15).
+
+**18. A landed milestone boundary over a live sub-task's worktree that holds a file nobody staged — may it take the file? The design doc and the exit rule say two things. Open.**
+
+- *The words for taking it, narrated.* The landed boundary's teardown removes each sub-task's worktree after the commit, and names what it destroys rather than refusing:
+
+> **Bound, stated not glossed: visible, not prevented**
+
+— `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
+
+> It narrates rather than refuses **on measured evidence**
+
+— `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
+
+  — the evidence being build output in every worktree that did its job, a refusal on which *"fires on the ordinary fan-out **success** path and trains `--force` into reflex"* (the same paragraph); and `M6`'s own sentence tears the worktrees down *"on a LANDED boundary"*.
+- *The words against it.* The exit rule's first clause, the human's, which the table holds every cell to (the plan's §1.1):
+
+> no jigc command at exit 0 destroys bytes no git object holds or commits content the user did not ask for
+
+— `DECISIONS.md` → *2026-10-04 — The exit rule, revised: four clauses, each with a scope and one instrument — a finding blocks the call only if it breaks a clause inside its scope (the human's)*
+
+  The design decision predates the rule (M46, 2026-08) and is none of the bounds the human declared on 2026-10-06 and 2026-10-11.
+- *What the product does.* `jigc milestone finalize` lands, removes the worktree, and names the file — *"discarded with the fan-out worktrees (not committed, not recoverable): add-alpha-file: untracked.txt (never staged)"* — at exit 0. Driven on this tree's debug build.
+- *What the product should do — robust.* **Keep the bytes and keep the success path free**: before removing a landed sub-task's worktree, move what git neither ignores nor holds — its untracked and unstaged files — aside to `.jigc/displaced/<sub-task-id>/`, the disposition the same boundary gives a working area's complement (`M6`'s *"Both keep their complement"*), and keep narrating what git ignores. *Why*: the measured warrant is against a *refusal* on the success path, not against keeping a byte; a move refuses nothing and loses nothing, so the clause holds and the warrant stands. *Its price*: build output that is not ignored lands in `displaced/`, which nothing cleans. *The other answer*: the clause yields here — the narrated loss is a declared bound of the 1.x line, written into the bounds' list with its reach.
+- *Until ruled*, the reading under which more is red: the clause — the cell `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` is *lost*, under `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree`, and carries this entry's mark ([byte-table-readings.md](byte-table-readings.md) → §17).
 
 **Decided here, as a builder, and the human may overturn each:**
 

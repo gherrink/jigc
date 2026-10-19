@@ -251,6 +251,27 @@ pub const FINALIZE: Row = Row {
                 },
             ],
         ),
+        // The milestone's area keeps its complement too — *"Both keep their complement"* —
+        // the join's `merged/` tree included.
+        line(
+            "M6, the milestone's area moved aside",
+            Allows::Files(
+                Where::Under(".jigc/milestones/<unit>"),
+                May::MovedAsideTo(".jigc/displaced"),
+            ),
+            &[
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "The per-task working area (staging)",
+                    words: "A landed `jigc milestone finalize` removes each sub-task's `tasks/<sub-id>/` *and* the milestone's own `milestones/<id>/`",
+                },
+                Quote {
+                    doc: "design/storage.md",
+                    heading: "The per-task working area (staging)",
+                    words: "Both keep their complement, to `.jigc/displaced/<unit-id>/<relative>`",
+                },
+            ],
+        ),
         line(
             "M7",
             Allows::Unregistered(".jigc/worktrees"),
@@ -1104,13 +1125,16 @@ const BETAS_COMMIT_DOC: [Lead; 3] = its_commit_doc!("add-beta-file");
 /// `squash-off`: the knob set and committed before the milestone is created, which pins
 /// its base, so that no config delta is pending at the boundary; each sub-task re-entered
 /// in its worktree, its commit doc authored and one file of code staged there; then the
-/// join. `$after` stands after the join, last before the command.
+/// join. `$before` stands before the milestone is created, after the knob's commit — where
+/// a change staged meets the carryover gate — and `$after` after the join, last before the
+/// command.
 macro_rules! two_sub_tasks_unsquashed {
-    ([$($after:expr),* $(,)?]) => {
+    ([$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
         &[
             jigc(&["config", "set", "finalize.fan-out.squash", "false"]),
             Lead::Step(Step::Git(&["add", ".jigc/config/manifest.yaml"])),
             Lead::Step(Step::Git(&["commit", "-q", "-m", "chore: squash false"])),
+            $($before,)*
             jigc(&["milestone", "create", "Squash off"]),
             jigc(&["milestone", "add-task", "squash-off", "Add alpha file"]),
             jigc(&["milestone", "add-task", "squash-off", "Add beta file"]),
@@ -1161,17 +1185,20 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 const UNSQUASHED: [Cell; 4] = [
     unsquashed(
         "milestone-finalize-squash-false-two-sub-tasks",
-        two_sub_tasks_unsquashed!([]),
+        two_sub_tasks_unsquashed!([], []),
         Listed::Acts,
         None,
         &[],
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-file-staged-elsewhere",
-        two_sub_tasks_unsquashed!([Lead::Plant(Plant::Staged {
-            at: "notes/staged-by-its-user.txt",
-            kept: true,
-        })]),
+        two_sub_tasks_unsquashed!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: "notes/staged-by-its-user.txt",
+                kept: true,
+            })]
+        ),
         Listed::Acts,
         Some(Aim {
             line: "M4",
@@ -1181,10 +1208,13 @@ const UNSQUASHED: [Cell; 4] = [
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes",
-        two_sub_tasks_unsquashed!([Lead::Plant(Plant::Staged {
-            at: A_NAME_GIT_QUOTES,
-            kept: true,
-        })]),
+        two_sub_tasks_unsquashed!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: A_NAME_GIT_QUOTES,
+                kept: true,
+            })]
+        ),
         Listed::Acts,
         Some(Aim {
             line: "M4",
@@ -1194,7 +1224,7 @@ const UNSQUASHED: [Cell; 4] = [
     ),
     unsquashed(
         "milestone-finalize-squash-false-a-hook-that-rejects",
-        two_sub_tasks_unsquashed!([Lead::Plant(Plant::RejectingHook)]),
+        two_sub_tasks_unsquashed!([], [Lead::Plant(Plant::RejectingHook)]),
         refuses(1, "`git commit` was rejected"),
         Some(Aim {
             line: "M4",
@@ -2023,10 +2053,10 @@ const JOIN_IT: &[&str] = &["milestone", "join", "ship-it"];
 /// never-adopted repository the command as typed, with no lead, which every `milestone`
 /// door refuses; in the others the same leads as the home's base cell.
 macro_rules! fan_out_elsewhere {
-    ($leaf:literal, $argv:expr, [$($lead:expr),* $(,)?]) => {
+    ($leaf:literal, $unit:literal, $argv:expr, [$($lead:expr),* $(,)?]) => {
         [
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-bare"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-bare"),
                 &["milestone", $leaf],
                 Prepared::Bare,
                 &[],
@@ -2035,7 +2065,7 @@ macro_rules! fan_out_elsewhere {
                 None,
             ),
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-committed-singletons"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-committed-singletons"),
                 &["milestone", $leaf],
                 Prepared::Of(State::CommittedSingletons),
                 &[$($lead,)*],
@@ -2044,7 +2074,7 @@ macro_rules! fan_out_elsewhere {
                 None,
             ),
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-migrated"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-migrated"),
                 &["milestone", $leaf],
                 Prepared::Of(State::Migrated),
                 &[$($lead,)*],
@@ -2053,7 +2083,7 @@ macro_rules! fan_out_elsewhere {
                 None,
             ),
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-refs-post-hoc"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-refs-post-hoc"),
                 &["milestone", $leaf],
                 Prepared::Of(State::RefsPostHoc),
                 &[$($lead,)*],
@@ -2062,7 +2092,7 @@ macro_rules! fan_out_elsewhere {
                 None,
             ),
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-chatty-hooks"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-chatty-hooks"),
                 &["milestone", $leaf],
                 Prepared::Of(State::ChattyHooks),
                 &[$($lead,)*],
@@ -2071,7 +2101,7 @@ macro_rules! fan_out_elsewhere {
                 None,
             ),
             cell(
-                concat!("milestone-", $leaf, "-ship-it-in-vendored"),
+                concat!("milestone-", $leaf, "-", $unit, "-in-vendored"),
                 &["milestone", $leaf],
                 VENDORED,
                 &[$($lead,)*],
@@ -2155,6 +2185,7 @@ const PROVISION_CELLS: [Cell; 5] = [
 
 const PROVISION_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
     "provision",
+    "ship-it",
     PROVISION_IT,
     [TWO_SUB_TASKS[0], TWO_SUB_TASKS[1], TWO_SUB_TASKS[2]]
 );
@@ -2220,6 +2251,7 @@ const EXECUTE_CELLS: [Cell; 4] = [
 
 const EXECUTE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
     "execute",
+    "ship-it",
     EXECUTE_IT,
     [
         TWO_SUB_TASKS[0],
@@ -2296,6 +2328,7 @@ const JOIN_CELLS: [Cell; 4] = [
 
 const JOIN_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
     "join",
+    "ship-it",
     JOIN_IT,
     [
         TWO_SUB_TASKS[0],
@@ -2307,9 +2340,699 @@ const JOIN_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
     ]
 );
 
+// ---------------------------------------------------------------------------
+// The terminals' cells — `discard` and `finalize`'s plain spelling (the third of the three
+// parts the record's §4b names)
+// ---------------------------------------------------------------------------
+
+const DISCARD_IT: &[&str] = &["milestone", "discard", "ship-it"];
+const DISCARD_IT_BY_CONSENT: &[&str] = &["milestone", "discard", "ship-it", "--force"];
+
+/// One cell of `jigc milestone discard` in `fresh`, over `ship-it`'s two sub-tasks
+/// provisioned: `$after` stands after the provision, last before the command.
+macro_rules! discards {
+    ($name:literal, [$($after:expr),* $(,)?], $argv:expr, $listed:expr, $aim:expr) => {
+        cell(
+            $name,
+            &["milestone", "discard"],
+            FRESH,
+            &[
+                TWO_SUB_TASKS[0],
+                TWO_SUB_TASKS[1],
+                TWO_SUB_TASKS[2],
+                PROVISIONED,
+                $($after,)*
+            ],
+            $argv,
+            $listed,
+            $aim,
+        )
+    };
+}
+
+/// **The cells of `jigc milestone discard`**, each listed from the row's doc:
+///
+/// - **the base cell abandons `ship-it`** — two sub-tasks nobody re-entered, their
+///   worktrees clean: the record settled, one commit of it alone, the workbench removed
+///   and its registrations with it (`MD1` to `MD4`, `MD6`);
+/// - **at the record** (`MD1`), what stands in its place, an edit, a change staged at it
+///   and the record deleted are each refused as at `add-task` — *"a record git calls
+///   modified conflict-blocks at **every door that rewrites the record**"* and *"an entry
+///   that is not a regular file refuses under `store.home-not-regular-file`"*;
+/// - **what is staged elsewhere stays out of the record's commit** (`MD2`), and **a hook
+///   that rejects** it leaves the record and the workbench as they were;
+/// - **a file of the user's beside the baseline** (`MD3`) stays;
+/// - **a file jigc did not write in the milestone's area or a sub-task's** (`MD4`) is a
+///   byte the abandon refuses over — *"On a **byte jigc did not write** — in any sub-task's
+///   working area *or* in `.jigc/milestones/<id>/` itself … it blocks with
+///   **`milestone.foreign-bytes`**"* — and under the consent the command names it as it
+///   takes it (`MD5`); one **in a sub-task's worktree** is content the door *"cannot prove
+///   is disposable"*: refused;
+/// - **the user's own linked worktree** (`MD6`), its directory there or moved away, is
+///   *"left byte-identical"*.
+const DISCARD_CELLS: [Cell; 22] = [
+    cell(
+        "milestone-discard-a-milestone-that-is-not-there",
+        &["milestone", "discard"],
+        FRESH,
+        &[],
+        &["milestone", "discard", "m-a-milestone"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    discards!(
+        "milestone-discard-ship-it",
+        [],
+        DISCARD_IT,
+        Listed::Acts,
+        None
+    ),
+    discards!(
+        "milestone-discard-a-file-of-the-users-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::File(ITS_RECORD)))],
+        DISCARD_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MD1", Kind::Untracked)
+    ),
+    discards!(
+        "milestone-discard-a-file-the-user-committed-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::Committed(ITS_RECORD)))],
+        DISCARD_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MD1", Kind::Committed)
+    ),
+    discards!(
+        "milestone-discard-a-link-to-nothing-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            ITS_RECORD
+        )))],
+        DISCARD_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MD1", Kind::LinkToNothing)
+    ),
+    discards!(
+        "milestone-discard-a-link-to-a-file-in-the-repository-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: false,
+        }))],
+        DISCARD_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MD1", Kind::LinkInside)
+    ),
+    discards!(
+        "milestone-discard-a-link-to-a-file-outside-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ITS_RECORD,
+            outside: true,
+        }))],
+        DISCARD_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MD1", Kind::LinkOutside)
+    ),
+    discards!(
+        "milestone-discard-a-directory-in-the-records-place",
+        [Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ITS_RECORD)))],
+        DISCARD_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("MD1", Kind::DirForAFile)
+    ),
+    discards!(
+        "milestone-discard-a-file-in-the-place-of-the-records-directory",
+        [
+            Lead::MovedAway("repo/docs/milestone-records"),
+            Lead::Plant(Plant::File(THE_RECORDS_DIRECTORY)),
+        ],
+        DISCARD_IT,
+        refuses(1, ITS_RECORD),
+        at("MD1", Kind::FileForADir)
+    ),
+    discards!(
+        "milestone-discard-a-hand-edit-to-the-record",
+        [Lead::Plant(Plant::Edit(ITS_RECORD))],
+        DISCARD_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MD1", Kind::EditAfter)
+    ),
+    discards!(
+        "milestone-discard-the-record-deleted",
+        [Lead::Plant(Plant::Deleted(ITS_RECORD))],
+        DISCARD_IT,
+        refuses(1, "milestone.area-io"),
+        at("MD1", Kind::EditAfter)
+    ),
+    discards!(
+        "milestone-discard-a-change-staged-at-the-record",
+        [Lead::Plant(Plant::Staged {
+            at: ITS_RECORD,
+            kept: false,
+        })],
+        DISCARD_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("MD1", Kind::StagedThere)
+    ),
+    discards!(
+        "milestone-discard-a-file-staged-elsewhere",
+        [STAGED_ELSEWHERE],
+        DISCARD_IT,
+        Listed::Acts,
+        at("MD2", Kind::StagedElsewhere)
+    ),
+    discards!(
+        "milestone-discard-a-staged-file-whose-name-git-quotes",
+        [STAGED_UNDER_A_QUOTED_NAME],
+        DISCARD_IT,
+        Listed::Acts,
+        at("MD2", Kind::QuotedName)
+    ),
+    discards!(
+        "milestone-discard-a-hook-that-rejects",
+        [Lead::Plant(Plant::RejectingHook)],
+        DISCARD_IT,
+        refuses(1, "`git commit` was rejected"),
+        at("MD2", Kind::RejectingHook)
+    ),
+    discards!(
+        "milestone-discard-a-file-of-the-users-beside-the-baseline",
+        [Lead::Plant(Plant::File(".jigc/state/notes.md"))],
+        DISCARD_IT,
+        Listed::Acts,
+        at("MD3", Kind::Untracked)
+    ),
+    discards!(
+        "milestone-discard-a-foreign-file-in-the-milestones-area",
+        [Lead::Plant(Plant::File(
+            ".jigc/milestones/ship-it/notes.txt"
+        ))],
+        DISCARD_IT,
+        refuses(1, "milestone.foreign-bytes"),
+        at("MD4, the milestone's area", Kind::Foreign)
+    ),
+    discards!(
+        "milestone-discard-a-foreign-file-in-the-milestones-area-by-consent",
+        [Lead::Plant(Plant::File(
+            ".jigc/milestones/ship-it/notes.txt"
+        ))],
+        DISCARD_IT_BY_CONSENT,
+        Listed::Acts,
+        at("MD4, the milestone's area", Kind::Foreign)
+    ),
+    discards!(
+        "milestone-discard-a-foreign-file-in-a-sub-tasks-area",
+        [Lead::Plant(Plant::File(".jigc/tasks/add-alpha/notes.txt"))],
+        DISCARD_IT,
+        refuses(1, "milestone.foreign-bytes"),
+        at("MD4, the sub-tasks' areas", Kind::Foreign)
+    ),
+    discards!(
+        "milestone-discard-a-file-of-the-users-in-a-sub-tasks-worktree",
+        [Lead::Plant(Plant::File(
+            ".jigc/worktrees/add-alpha/notes.txt"
+        ))],
+        DISCARD_IT,
+        refuses(1, "milestone.dirty-worktree"),
+        at("MD4, the worktrees", Kind::Foreign)
+    ),
+    discards!(
+        "milestone-discard-the-users-own-worktree",
+        [Lead::Plant(Plant::Worktree { moved_away: false })],
+        DISCARD_IT,
+        Listed::Acts,
+        at("MD6", Kind::WorktreeThere)
+    ),
+    discards!(
+        "milestone-discard-the-users-own-worktree-moved-away",
+        [Lead::Plant(Plant::Worktree { moved_away: true })],
+        DISCARD_IT,
+        Listed::Acts,
+        at("MD6", Kind::WorktreeMovedAway)
+    ),
+];
+
+const DISCARD_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
+    "discard",
+    "ship-it",
+    DISCARD_IT,
+    [
+        TWO_SUB_TASKS[0],
+        TWO_SUB_TASKS[1],
+        TWO_SUB_TASKS[2],
+        PROVISIONED,
+    ]
+);
+
+/// **A milestone of two code-carrying sub-tasks, joined** — `land-it`, under the plain
+/// spelling: each sub-task re-entered in its worktree, its commit doc authored and one
+/// file of code staged there; then the join, whose re-entry builds the edge index, so `M10`
+/// meets the stamp's file. `$before` stands before the milestone is created — where a
+/// change staged meets the carryover gate — and `$after` after the join.
+macro_rules! two_sub_tasks_joined {
+    ([$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
+        &[
+            $($before,)*
+            jigc(&["milestone", "create", "Land it"]),
+            jigc(&["milestone", "add-task", "land-it", "Add alpha file"]),
+            jigc(&["milestone", "add-task", "land-it", "Add beta file"]),
+            jigc(&["milestone", "provision", "land-it"]),
+            jigc(&["milestone", "execute", "land-it"]),
+            payload("summary", "add a file\n"),
+            ALPHAS_COMMIT_DOC[0], ALPHAS_COMMIT_DOC[1], ALPHAS_COMMIT_DOC[2],
+            BETAS_COMMIT_DOC[0], BETAS_COMMIT_DOC[1], BETAS_COMMIT_DOC[2],
+            ALPHAS_CODE[0], ALPHAS_CODE[1], BETAS_CODE[0], BETAS_CODE[1],
+            jigc(&["milestone", "join", "land-it"]),
+            $($after,)*
+        ]
+    };
+}
+
+const FINALIZE_IT: &[&str] = &["milestone", "finalize", "land-it"];
+const LAND_ITS_RECORD: &str = "docs/milestone-records/land-it.md";
+
+/// One cell of `jigc milestone finalize`, plainly spelled, in `state`.
+const fn finalizes(
+    name: &'static str,
+    state: Prepared,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(
+        name,
+        &["milestone", "finalize"],
+        state,
+        leads,
+        argv,
+        listed,
+        aim,
+    )
+}
+
+/// **The cells of `jigc milestone finalize`, plainly spelled** — beside the acceptance's
+/// three and the spelling `squash: false`'s four. Each listed from the row's doc:
+///
+/// - **the base cell lands `land-it`** — two code-carrying sub-tasks, one aggregate
+///   commit, the record flipped in it, the workbench torn down and the edge index's file
+///   taken away (`M3`, `M5`, `M6`, `M7`, `M10`); the leaf as the catalog types it names a
+///   milestone that is not there;
+/// - **at a created doc's home** (`M2`) — the numbered home the join leaves — a link, a
+///   directory, a file in its directory's place and a change staged there are refused:
+///   *"a sub-task's `created` doc never promotes over a file already at its destination,
+///   and the refusal is taken before either mode lays down a commit"* — a change staged
+///   there as `finalize.promote-clobber`, a link or a directory as
+///   `store.home-not-regular-file`, *"the one code every command answers this state with"*
+///   (`design/team-ready-state.md` → *The terminal is terminal*, the human's ruling of
+///   2026-10-06); a file in the place of a home's directory has no doc's words, and a run's
+///   are listed;
+/// - **what is staged elsewhere stays out of the boundary** (`M3`, and
+///   `design/command-output-contract.md`'s *"that entry structurally cannot ride the
+///   boundary commit"*), a hook that rejects tears nothing down (`M8`); **a change staged
+///   before the milestone was created** meets the carryover gate, *"`jigc milestone
+///   create` for the shared checkout's aggregate index"* — the boundary refuses over it
+///   (`finalize.carried-staged`); and **a pending config delta** rides the aggregate
+///   (`M3, the config`);
+/// - **at the record** (`M5`), what stands in its place and an edit or a change staged at
+///   it are refused as at the other record doors;
+/// - **a file jigc did not write in a sub-task's area or the milestone's** is moved aside
+///   (`M6`); **one in a live sub-task's worktree** goes with the checkout — the landed
+///   boundary *"names every byte it destroys"* (`design/team-ready-state.md` → *Abandon
+///   refuses on a dirty worktree*), which the row lists as acting and the plant rule reads
+///   as lost: the rows' record's §6, entry 18;
+/// - **the user's own worktree** (`M7`) and **a file of the user's in a cache** (`M10`)
+///   stay.
+const FINALIZE_CELLS: [Cell; 30] = [
+    finalizes(
+        "milestone-finalize-a-milestone-that-is-not-there",
+        FRESH,
+        &[],
+        &["milestone", "finalize", "m-a-milestone"],
+        refuses(1, "milestone.unknown"),
+        None,
+    ),
+    finalizes(
+        "milestone-finalize-two-code-carrying-sub-tasks",
+        FRESH,
+        two_sub_tasks_joined!([], []),
+        FINALIZE_IT,
+        Listed::Acts,
+        None,
+    ),
+    // A second base cell: two reporters' findings, the second numbered onto `stage-2` —
+    // the created docs `M2` lands, which the code-carrying milestone's commit docs are not.
+    finalizes(
+        "milestone-finalize-two-reporters-findings",
+        FRESH,
+        two_reporters_joined!([], []),
+        &["milestone", "finalize", "stage-reports"],
+        Listed::Acts,
+        None,
+    ),
+    finalizes(
+        "milestone-finalize-a-pending-config-delta",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        None,
+    ),
+    finalizes(
+        "milestone-finalize-a-file-of-the-users-in-the-merged-set",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::File(
+                ".jigc/milestones/land-it/merged/notes.txt"
+            ))]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M1", Kind::Untracked),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-nothing-at-the-id-the-join-numbered-onto",
+        FRESH,
+        two_reporters_joined!([], [Lead::Plant(Plant::LinkToNothing(THE_NUMBERED_HOME))]),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(3, "store.home-not-regular-file"),
+        at("M2", Kind::LinkToNothing),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-file-in-the-repository-at-the-id-the-join-numbered-onto",
+        FRESH,
+        two_reporters_joined!(
+            [],
+            [Lead::Plant(Plant::LinkToAFile {
+                at: THE_NUMBERED_HOME,
+                outside: false,
+            })]
+        ),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(3, "store.home-not-regular-file"),
+        at("M2", Kind::LinkInside),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-file-outside-at-the-id-the-join-numbered-onto",
+        FRESH,
+        two_reporters_joined!(
+            [],
+            [Lead::Plant(Plant::LinkToAFile {
+                at: THE_NUMBERED_HOME,
+                outside: true,
+            })]
+        ),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(3, "store.home-not-regular-file"),
+        at("M2", Kind::LinkOutside),
+    ),
+    finalizes(
+        "milestone-finalize-a-directory-at-the-id-the-join-numbered-onto",
+        FRESH,
+        two_reporters_joined!([], [Lead::Plant(Plant::Dir(THE_NUMBERED_HOME))]),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(3, "store.home-not-regular-file"),
+        at("M2", Kind::DirForAFile),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-in-the-place-of-the-findings-directory",
+        FRESH,
+        two_reporters_joined!([], [Lead::Plant(Plant::File("docs/inconsistencies"))]),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(1, "could not create"),
+        at("M2", Kind::FileForADir),
+    ),
+    finalizes(
+        "milestone-finalize-a-change-staged-at-the-id-the-join-numbered-onto",
+        FRESH,
+        two_reporters_joined!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: THE_NUMBERED_HOME,
+                kept: false,
+            })]
+        ),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(3, "finalize.promote-clobber"),
+        at("M2", Kind::StagedThere),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-staged-elsewhere",
+        FRESH,
+        two_sub_tasks_joined!([], [STAGED_ELSEWHERE]),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M3", Kind::StagedElsewhere),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-staged-before-the-milestone",
+        FRESH,
+        two_sub_tasks_joined!([STAGED_ELSEWHERE], []),
+        FINALIZE_IT,
+        refuses(3, "finalize.carried-staged"),
+        at("M3", Kind::StagedElsewhere),
+    ),
+    finalizes(
+        "milestone-finalize-a-staged-file-whose-name-git-quotes",
+        FRESH,
+        two_sub_tasks_joined!([], [STAGED_UNDER_A_QUOTED_NAME]),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M3", Kind::QuotedName),
+    ),
+    finalizes(
+        "milestone-finalize-a-hook-that-rejects",
+        FRESH,
+        two_sub_tasks_joined!([], [Lead::Plant(Plant::RejectingHook)]),
+        FINALIZE_IT,
+        refuses(1, "`git commit` was rejected"),
+        at("M3", Kind::RejectingHook),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-of-the-users-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::File(LAND_ITS_RECORD)))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("M5", Kind::Untracked),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-the-user-committed-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::Committed(
+                LAND_ITS_RECORD
+            )))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("M5", Kind::Committed),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-nothing-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+                LAND_ITS_RECORD
+            )))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("M5", Kind::LinkToNothing),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-file-in-the-repository-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: LAND_ITS_RECORD,
+                outside: false,
+            }))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("M5", Kind::LinkInside),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-file-outside-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: LAND_ITS_RECORD,
+                outside: true,
+            }))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("M5", Kind::LinkOutside),
+    ),
+    finalizes(
+        "milestone-finalize-a-directory-in-the-records-place",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::InPlaceOf(&Plant::Dir(LAND_ITS_RECORD)))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "store.home-not-regular-file"),
+        at("M5", Kind::DirForAFile),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-in-the-place-of-the-records-directory",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [
+                Lead::MovedAway("repo/docs/milestone-records"),
+                Lead::Plant(Plant::File(THE_RECORDS_DIRECTORY)),
+            ]
+        ),
+        FINALIZE_IT,
+        refuses(1, "Not a directory"),
+        at("M5", Kind::FileForADir),
+    ),
+    finalizes(
+        "milestone-finalize-a-hand-edit-to-the-record",
+        FRESH,
+        two_sub_tasks_joined!([], [Lead::Plant(Plant::Edit(LAND_ITS_RECORD))]),
+        FINALIZE_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("M5", Kind::EditAfter),
+    ),
+    finalizes(
+        "milestone-finalize-a-change-staged-at-the-record",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: LAND_ITS_RECORD,
+                kept: false,
+            })]
+        ),
+        FINALIZE_IT,
+        refuses(1, "reconciliation.conflict-block"),
+        at("M5", Kind::StagedThere),
+    ),
+    // The record's §6, entry 18: the design doc narrates this loss, and the exit rule
+    // holds every cell to it; until ruled, the clause.
+    Cell {
+        marks: &[Mark::Silence(18)],
+        ..finalizes(
+            "milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree",
+            FRESH,
+            two_sub_tasks_joined!(
+                [],
+                [Lead::Plant(Plant::File(
+                    ".jigc/worktrees/add-alpha-file/notes.txt"
+                ))]
+            ),
+            FINALIZE_IT,
+            Listed::Acts,
+            at("M6, the worktrees", Kind::Foreign),
+        )
+    },
+    finalizes(
+        "milestone-finalize-a-foreign-file-in-a-sub-tasks-area",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::File(
+                ".jigc/tasks/add-alpha-file/notes.txt"
+            ))]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M6, the sub-tasks' areas", Kind::Foreign),
+    ),
+    finalizes(
+        "milestone-finalize-a-foreign-file-in-the-milestones-area",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::File(
+                ".jigc/milestones/land-it/notes.txt"
+            ))]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M6, the milestone's area", Kind::Foreign),
+    ),
+    finalizes(
+        "milestone-finalize-the-users-own-worktree",
+        FRESH,
+        two_sub_tasks_joined!([], [Lead::Plant(Plant::Worktree { moved_away: false })]),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M7", Kind::WorktreeThere),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-of-the-users-under-the-edge-index",
+        FRESH,
+        two_sub_tasks_joined!([], [Lead::Plant(Plant::File(".jigc/index/notes.md"))]),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M10, the edge index", Kind::Untracked),
+    ),
+    finalizes(
+        "milestone-finalize-a-file-of-the-users-beside-the-file-state-hashes",
+        FRESH,
+        two_sub_tasks_joined!([], [Lead::Plant(Plant::File(".jigc/state/notes.md"))]),
+        FINALIZE_IT,
+        Listed::Acts,
+        at("M10, the file-state hashes", Kind::Untracked),
+    ),
+];
+
+const FINALIZE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
+    "finalize",
+    "land-it",
+    FINALIZE_IT,
+    [
+        jigc(&["milestone", "create", "Land it"]),
+        jigc(&["milestone", "add-task", "land-it", "Add alpha file"]),
+        jigc(&["milestone", "add-task", "land-it", "Add beta file"]),
+        jigc(&["milestone", "provision", "land-it"]),
+        jigc(&["milestone", "execute", "land-it"]),
+        payload("summary", "add a file\n"),
+        ALPHAS_COMMIT_DOC[0],
+        ALPHAS_COMMIT_DOC[1],
+        ALPHAS_COMMIT_DOC[2],
+        BETAS_COMMIT_DOC[0],
+        BETAS_COMMIT_DOC[1],
+        BETAS_COMMIT_DOC[2],
+        ALPHAS_CODE[0],
+        ALPHAS_CODE[1],
+        BETAS_CODE[0],
+        BETAS_CODE[1],
+        jigc(&["milestone", "join", "land-it"]),
+    ]
+);
+
+/// **A change staged before the milestone, under `squash: false`** — the carryover gate is
+/// the boundary's under both spellings (`M4`): refused, as under the plain one.
+const UNSQUASHED_CARRIED: [Cell; 1] = [unsquashed(
+    "milestone-finalize-squash-false-a-file-staged-before-the-milestone",
+    two_sub_tasks_unsquashed!([STAGED_ELSEWHERE], []),
+    refuses(3, "finalize.carried-staged"),
+    Some(Aim {
+        line: "M4",
+        kind: Kind::StagedElsewhere,
+    }),
+    &[],
+)];
+
 /// **The family's cells**: `milestone finalize`'s acceptance and its spelling `squash:
-/// false`, then the record doors' — `create`, `add-task`, `add-from-spec` — and the fan-out
-/// doors' — `provision`, `execute`, `join`.
+/// false`, then the record doors' — `create`, `add-task`, `add-from-spec` — the fan-out
+/// doors' — `provision`, `execute`, `join` — and the terminals' — `discard`, and
+/// `finalize`'s plain spelling.
 pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &UNSQUASHED,
@@ -2322,4 +3045,9 @@ pub const CELLS: &[&[Cell]] = &[
     &EXECUTE_ELSEWHERE,
     &JOIN_CELLS,
     &JOIN_ELSEWHERE,
+    &DISCARD_CELLS,
+    &DISCARD_ELSEWHERE,
+    &FINALIZE_CELLS,
+    &FINALIZE_ELSEWHERE,
+    &UNSQUASHED_CARRIED,
 ];

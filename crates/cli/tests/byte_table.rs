@@ -7,15 +7,17 @@
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
 //! cell. **The table has twenty-two rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, and the seven
-//! other leaves of the `milestone` family — and 454 cells: the acceptance's
+//! other leaves of the `milestone` family — and 519 cells: the acceptance's
 //! twelve, the task family's seventy** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
 //! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
 //! **the doc family's hundred and thirty-seven** (its eight leaves) **and the milestone
-//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`) **and its
-//! fan-out doors' thirty-one** (`provision`, `execute`, `join`), of which a hundred and
-//! twenty run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
+//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), **its
+//! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
+//! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
+//! carryover gate's cell under `squash: false`), of which a hundred and thirty-two run on
+//! demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
 //! rows —
@@ -871,8 +873,8 @@ fn needs_table(
 /// reason, a plant aimed at no line, an aim with no plant, an aim at a line the row does
 /// not have, an aim the line's own vocabulary turns away — with **the reason the frame
 /// derives** — and a plant that is not of the kind the cell says. Then this tree: nothing
-/// is unmet; and **the fence is not vacuous** — with the owed list taken away, the four
-/// rows of the acceptance are named for what the twelve cells do not answer.
+/// is unmet; and **the fence is not vacuous** — with the scheduled list taken away, every
+/// scheduled need is named, and with the `milestone` family's cells taken away, its needs.
 #[test]
 fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
     const REPLACES: Row = Row {
@@ -1278,27 +1280,39 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
          the plan that owes them",
         wrong.join("\n  ")
     );
-    // Not vacuous: with nothing owed and nothing scheduled, every scheduled need and every
-    // need of a leaf whose cells are owed is named — and the cells that are there answer
-    // the rest.
-    let bare = unmet(&rows, &cells, &[], &[]);
+    // Not vacuous: with nothing scheduled, every scheduled need is named and no other — the
+    // cells that are there answer the rest; and with a family's cells taken away, its needs
+    // are named.
+    let bare = unmet(&rows, &cells, &[], CELLS_OWED);
     let needed: usize = rows.iter().map(|row| needs(row).len()).sum();
     let waiting = scheduled_cells(SCHEDULED_CELLS).len();
     assert!(
-        bare.len() > waiting && bare.len() < needed,
-        "with nothing owed and nothing scheduled, {} of {needed} needs are unmet, where \
-         {waiting} are scheduled",
+        bare.len() == waiting && bare.len() < needed,
+        "with nothing scheduled, {} of {needed} needs are unmet, where {waiting} are scheduled",
         bare.len()
     );
     assert!(
-        bare.iter().any(|line| line
-            == "`jigc milestone finalize` needs a cell for *refusing*, and has no cell and no \
-                scheduled row for it")
-            && bare
-                .iter()
-                .any(|line| line.contains("*S2 × K, a file in a directory's place*"))
+        bare.iter()
+            .any(|line| line.contains("*S2 × K, a file in a directory's place*"))
             && !bare.iter().any(|line| line.contains("*U1 × D*")),
         "{bare:#?}"
+    );
+    let without: Vec<&byte_cell::Cell> = cells
+        .iter()
+        .copied()
+        .filter(|cell| cell.leaf.first() != Some(&"milestone"))
+        .collect();
+    let taken = unmet(
+        &rows,
+        &without,
+        &scheduled_cells(SCHEDULED_CELLS),
+        CELLS_OWED,
+    );
+    assert!(
+        taken.iter().any(|line| line
+            == "`jigc milestone finalize` needs a cell for *refusing*, and has no cell and no \
+                scheduled row for it"),
+        "{taken:#?}"
     );
     assert_eq!(
         needs_table(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED)
@@ -1632,6 +1646,61 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     ),
     (&["milestone", "join"], "C1", &[Prepared::Of(State::Fresh)]),
     (
+        &["milestone", "finalize"],
+        "M2",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M6, moved aside",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M3, the config",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "M6, the milestone's area moved aside",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD2",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD3",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD4, the milestone's area",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD4, the sub-tasks' areas",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD4, the worktrees",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "discard"],
+        "MD6",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
         &["doc", "add-item"],
         "W1",
         &[Prepared::Of(State::CommittedSingletons)],
@@ -1724,10 +1793,6 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
 const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference happen at the home a write copies in from — it \
      names the place, which is what the plants in a doc's place are aimed at";
 
-/// What would use every line of a row that no cell of the gate excuses a difference
-/// under: the cells of its family, which a later task of the plan owes.
-const ITS_FAMILYS_CELLS: &str = "the cells of its family, which are owed";
-
 /// **The lines that excuse nothing in any cell the gate runs** — named, each with what
 /// would use it, and not removed: a line is its doc's sentence, and stands whether or not
 /// a cell has met it yet. A line that is on neither list, or on both, is named
@@ -1786,12 +1851,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         &["task", "discard"],
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
-    ),
-    (&["milestone", "finalize"], "M2", ITS_FAMILYS_CELLS),
-    (
-        &["milestone", "finalize"],
-        "M6, moved aside",
-        ITS_FAMILYS_CELLS,
     ),
     (&["milestone", "finalize"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["milestone", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
@@ -1900,46 +1959,22 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "discard"], "MD1", ITS_FAMILYS_CELLS),
-    (&["milestone", "discard"], "MD2", ITS_FAMILYS_CELLS),
-    (&["milestone", "discard"], "MD3", ITS_FAMILYS_CELLS),
-    (
-        &["milestone", "discard"],
-        "MD4, the milestone's area",
-        ITS_FAMILYS_CELLS,
-    ),
-    (
-        &["milestone", "discard"],
-        "MD4, the sub-tasks' areas",
-        ITS_FAMILYS_CELLS,
-    ),
-    (
-        &["milestone", "discard"],
-        "MD4, the worktrees",
-        ITS_FAMILYS_CELLS,
-    ),
-    (&["milestone", "discard"], "MD6", ITS_FAMILYS_CELLS),
-    (&["milestone", "discard"], "C1", ITS_FAMILYS_CELLS),
-    (&["milestone", "discard"], "C2", ITS_FAMILYS_CELLS),
+    (&["milestone", "discard"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["milestone", "discard"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "discard"],
         "C3, the base pin",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "discard"],
         "C3, the task list",
-        ITS_FAMILYS_CELLS,
-    ),
-    (
-        &["milestone", "finalize"],
-        "M3, the config",
-        ITS_FAMILYS_CELLS,
+        A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (
         &["milestone", "finalize"],
         "M3, the config's ignore file",
-        ITS_FAMILYS_CELLS,
+        NO_PENDING_IGNORE_FILE,
     ),
     (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
@@ -2075,6 +2110,11 @@ const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names a
 /// before the command.
 const NO_CACHE_TO_RE_DERIVE: &str = "the milestone's cache absent or stale before the command — a fresh clone, or the cache \
      taken away by hand — which no cell of the family constructs: before the port";
+
+/// What would use the half of `M3, the config` at the config's ignore file: a pending change
+/// to it.
+const NO_PENDING_IGNORE_FILE: &str = "a change to `.jigc/.gitignore` nobody committed before the boundary: no cell makes one — the \
+     pending config delta's cell sets a knob";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -7809,6 +7849,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "milestone-add-task-a-hook-that-rejects",
             "milestone-add-from-spec-a-hook-that-rejects",
+            "milestone-discard-a-hook-that-rejects",
         ],
     ),
     (
@@ -7827,7 +7868,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "milestone-add-task-a-change-staged-at-the-record",
             "milestone-add-from-spec-a-change-staged-at-the-record",
+            "milestone-discard-a-change-staged-at-the-record",
+            "milestone-finalize-a-change-staged-at-the-record",
         ],
+    ),
+    (
+        "r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree",
+        Classification::Lost,
+        &["milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree"],
     ),
 ];
 
@@ -8254,7 +8302,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (454, 334, 120),
+        (519, 387, 132),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy — fifty-eight in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -8262,8 +8310,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
          demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
-         eighteen on demand — and its fan-out doors thirty-one: thirteen in the gate, eighteen \
-         on demand"
+         eighteen on demand — its fan-out doors thirty-one: thirteen in the gate, eighteen on \
+         demand — and its terminals sixty-five, `discard`'s twenty-eight and `milestone \
+         finalize`'s plain spelling's thirty-seven: fifty-three in the gate, twelve on demand"
     );
 }
 

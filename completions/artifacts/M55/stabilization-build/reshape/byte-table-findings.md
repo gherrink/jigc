@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, with the fourth commit of the milestone family's own: §19, the terminals' cells — one key of their own, four cells under §17's, and the leads of 2026-10-18 each a cell.*
+
 *Changed 2026-10-19, with the third commit of the milestone family's own: §18, the fan-out doors' cells — none red.*
 
 *Changed 2026-10-19, with the second commit of the milestone family's own (the task `B7`, its second part): §17, the record doors' cells — three keys, eight cells, and a key of words held by no cell.*
@@ -697,6 +699,7 @@ $JIGC milestone finalize $m > /dev/null 2>&1; echo "exit=$?"; ls .jigc/index/   
 - **Leads, for the milestone rows (`B7`, part B).**
   - *A change staged before the milestone is minted.* `jigc milestone create` snapshots the shared checkout's staged set for the boundary's aggregate (`design/finalize.md` → *Dirty-tree policy*, the carryover gate: *"`jigc milestone create` for the shared checkout's aggregate index"*), so a change staged **before** `milestone create` meets that gate — a need other than the cells' plant, staged after the join, under both spellings.
   - *`M10` meets a built index.* The plain spelling's cells are the milestone rows'; a cell whose leads build the index before the boundary — as `jigc workflow sub-task` in a worktree does — is what puts `M10`'s *invalidated* to a cell under `squash: true`, as `task-finalize-a-foreign-file-under-the-edge-index` does for `T5`.
+- *[Taken up 2026-10-19, by the milestone family's cells (`B7`, its second part): the change staged before `milestone create` is a cell under each spelling, refused `finalize.carried-staged`; every plain-spelling cell of `land-it` builds the index before the boundary, which takes its file away under `M10`'s word; and the pending config delta is a cell that holds under `M3, the config` — §19.]*
 - **A lead, for `B8`.** `jigc rename` invalidates the edge index the same way (`crates/cli/src/rename.rs`, `index::invalidate`); its row's edge-index line is owed the same word, on its own doc's sentences, and a cell whose leads build the index first.
 
 ## 16. What ruling 1's *names what stands there* asks of the cells — a lead for the fixer of §10's and §11's keys
@@ -778,3 +781,51 @@ $JIGC milestone add-task ship-it "do another" > /dev/null 2>&1; echo "exit=$?"  
 *2026-10-19, this tree's debug build, macOS arm64; the third commit of the milestone family's own (the task `B7`, its second part), the second of its three parts of cells: `jigc milestone provision`, `execute` and `join`, on the rows of the rows' record's §4b.*
 
 **Every cell holds or refuses having changed nothing.** `provision` makes a worktree a sub-task and registers it at `.jigc/worktrees/<sub-task>` (`MP1`, `MP2`, the word *a worktree's registration added*), and refuses a file of the user's where a worktree goes (`milestone.leftover-holds-work`), nothing changed; `execute` composes the walk and writes nothing; `join` merges the two sub-tasks' commit docs and persists nothing (`MJ3`); a file of the user's in the milestone's area or a sub-task's stays at all three. Over a milestone that is not there each refuses `milestone.unknown`; `join`'s refusal builds the edge index on its way — `C1`'s cache, which a refusal may rebuild by the human's ruling of 2026-10-12. In a repository with no `jigc setup` each refuses, nothing changed; in the five other states each acts and holds. No key is minted. **Not run here**: the previous release — the whole table's print on it is the family's numbers commit's.
+
+## 19. The milestone family's terminals — `discard` and `milestone finalize`'s plain spelling: 65 cells, 53 in the gate and 12 on demand, and the carryover gate's cell under `squash: false`; five red on this tree's binary, four under keys §17 holds and one under a key of its own
+
+*2026-10-19, this tree's debug build, macOS arm64; the fourth commit of the milestone family's own (the task `B7`, its second part), the last of its three parts of cells. On the previous release: the family's numbers commit, whose whole-table print holds every cell on both binaries.*
+
+### `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree`
+
+- *The cell.* `milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree` — marked with the rows' record's §6, **entry 18**.
+- *What it came to.* **Lost**: the boundary lands, removes the sub-task's worktree, and names the file it took — *"discarded with the fan-out worktrees (not committed, not recoverable): add-alpha-file: notes.txt (never staged)"* — at exit 0.
+- *Held against.* The exit rule's first clause, which the table holds every cell to; the design doc narrates the loss on purpose (*"visible, not prevented"*) — two things said, and entry 18 puts them to the human with the robust answer: move what git neither ignores nor holds aside to `.jigc/displaced/<sub-task-id>/`, as the boundary keeps a working area's complement.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p ../outside; printf 'add a file\n' > ../outside/summary
+$JIGC milestone create "Land it" > /dev/null; $JIGC milestone add-task land-it "Add alpha file" > /dev/null
+$JIGC milestone provision land-it > /dev/null
+(cd .jigc/worktrees/add-alpha-file && $JIGC workflow sub-task --task add-alpha-file > /dev/null \
+  && $JIGC doc set-field commit:add-alpha-file#type --value feat --task add-alpha-file > /dev/null \
+  && $JIGC doc set-slot commit:add-alpha-file#summary --from-file ../../../../outside/summary --task add-alpha-file > /dev/null \
+  && printf 'code\n' > a.txt && git add a.txt && printf 'the user'\''s own\n' > notes.txt)
+$JIGC milestone join land-it > /dev/null
+$JIGC milestone finalize land-it; echo "exit=$?"   # exit=0 — "notes.txt (never staged)" named as not recoverable
+```
+
+### Four more cells under §17's keys
+
+- `milestone-discard-a-change-staged-at-the-record` and `milestone-finalize-a-change-staged-at-the-record` — **lost**, under `r1-milestone-record-doors-replace-a-change-staged-at-the-record`: the abandon's record flip and the boundary's record flip each write the record over the user's staged change at it, which `design/team-ready-state.md` counts among the record's rewrites that *"conflict-block"* — *"`add-task`, `add-from-spec`, `milestone discard`, a sub-task's `task discard`, the finalize flip"*.
+- `milestone-discard-a-hook-that-rejects` — **refused, and changed what a refusal may not**, under `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`: the rejected record commit rewrites `record-commit-msg.txt` in the milestone's area.
+
+### Seen, and held by no cell
+
+- **More bare refusals**, under §17's key of words: `discard` over the record deleted answers `milestone.area-io` — *"could not read the milestone record … resolve the underlying I/O condition (a disk or permissions problem …)"*, a route that names the wrong cause — and `milestone finalize` over a file in the place of a home's directory answers with an I/O error and no code: *"could not create … to promote into: File exists"*, and over the records' directory *"validating the merged effective state … Not a directory"*.
+
+### What the other cells show
+
+**The leads of 2026-10-18, each a cell now**: a change staged **before** `milestone create` is refused by the boundary under both spellings — `finalize.carried-staged`, exit 3, *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the change stays staged"* (`milestone-finalize-a-file-staged-before-the-milestone`, `milestone-finalize-squash-false-a-file-staged-before-the-milestone`); a plain-spelling boundary over a built edge index takes the stamp's file away under `M10`'s *invalidated* (every cell of `land-it` re-enters its sub-tasks, which builds the index); and a pending config delta rides the aggregate under `M3, the config` — the cell **holds** (`milestone-finalize-a-pending-config-delta`). The base cells land; a second base cell over two reporters' findings lands their docs under `M2`. At a created doc's home a link or a directory refuses `store.home-not-regular-file`, a change staged there `finalize.promote-clobber`; at the record a file, a committed file, an edit and a link or a directory refuse; a foreign file in a sub-task's area **or the milestone's** is moved aside — the second under `M6, the milestone's area moved aside`, the line this commit adds — and the user's own worktree, a file beside a cache and one in the merged set stay. `discard` refuses a foreign file in either area (`milestone.foreign-bytes`), takes it under `--force` with the path named, refuses a file of the user's in a sub-task's worktree (`milestone.dirty-worktree`), and leaves the user's own worktree, there or moved away. **Two needs are scheduled**: `M2` × *E*, before and after the first write — `fresh` holds no committed doc a sub-task copies in.
+
+### §14's leads for `B7`, each answered or kept
+
+| sentence | where | now |
+|---|---|---|
+| a record's home that is no regular file — *"nothing was written. Put the record back …"* | `cli/src/milestone.rs`, the record doors' preflight | **answered** — the cells of a link or a directory in the record's place at `add-task`, `add-from-spec`, `discard` and `finalize` refuse `store.home-not-regular-file` and change nothing: the sentence is true there |
+| a record's home taken — *"nothing was written. jigc writes regular files only …"* | `engine/src/milestone.rs`, `create` | **answered** — `create`'s cells of a link or a directory at the record's home refuse, nothing changed |
+| a record missing from the worktree — *"nothing was written. `git checkout …` brings the record back"* | `engine/src/milestone.rs`, `create` | **answered** — `milestone-create-a-change-staged-at-the-records-home` meets it and changes nothing; the other doors over a record gone answer otherwise, a key of words (§17, above) |
+| a settled sub-task's leftover — *"the record is right and nothing was changed"* | `engine/src/milestone.rs`, `task discard` of a settled sub-task | **a lead still** — no cell builds a settled sub-task whose area stands again; the task family's, by its own row |
+| `git_home_claims` — *"nothing was written: `git …` failed"*; a pin git cannot answer — *"nothing was written and nothing was adopted"* | `cli/src/task.rs`; `engine/src/file_state.rs` | **leads still** — no plant of the frame makes git fail, and the states that would (a permission bit changed by hand) are declared bounds, no cells (the plan's §1.1) |

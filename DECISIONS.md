@@ -2,6 +2,40 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The milestone family's terminals have their cells — `discard`, and `milestone finalize`'s plain spelling — 53 in the gate and 12 on demand; five are red, four under the record doors' keys and one marked with a new entry of the record's §6: a landed boundary takes a file nobody staged from a sub-task's worktree, which the design narrates and the exit rule forbids; and `M6` gains the moved-aside half its sentence gives the milestone's own area (the byte table, task `B7`, its second part: the fourth of its commits)
+
+**What.** The last of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)): `discard`'s 28 and `milestone finalize`'s plain spelling's 37, beside its acceptance's three, with the carryover gate's cell under `squash: false`; one line of `milestone finalize`'s row, from its own sentence; one entry of the record's §6; two scheduled needs. No product source changes. **Every leaf with a row has its cells**: the list of leaves whose cells are owed is empty, and stays so — `B8` and `B9` bring their cells with their rows.
+
+### The cells, on this tree's binary
+
+Each listed from the row's doc ([the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §19). **Five are red**:
+
+| key | cells | came to |
+|---|---:|---|
+| `r1-milestone-finalize-takes-a-file-nobody-staged-from-a-landed-sub-tasks-worktree` | 1 | **lost**, marked *silence 18* — the boundary lands and removes the worktree with the user's file, naming it as not recoverable |
+| `r1-milestone-record-doors-replace-a-change-staged-at-the-record` (§17) | 2 more | **lost** — `discard`'s and `finalize`'s record flips write over a change the user staged at the record |
+| `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area` (§17) | 1 more | *refused, and changed what a refusal may not* — `discard`'s rejected commit |
+
+Everything else holds or refuses having changed nothing — 48 of the gate's 53 new, and the twelve on demand. **The leads of 2026-10-18 are cells**: a change staged before `milestone create` is refused by the boundary under both spellings (`finalize.carried-staged`, as `design/command-output-contract.md` says the carryover gate does); every plain cell of `land-it` re-enters its sub-tasks, which builds the edge index, and the boundary takes its file away under `M10`'s *invalidated*; and a pending config delta rides the aggregate under `M3, the config` and holds. *Listed from the docs and corrected from a first run before any cell was committed*: a link or a directory at a created doc's home is `store.home-not-regular-file`, the one code the human's ruling of 2026-10-06 gives the state, where the first draft listed `finalize.promote-clobber`; and three refusals whose words no doc gives are a run's (§19's bare refusals). *Seconds*: a cell of the two leaves 0.8 to 9.5 s in the arm of `fresh` (mean about 6), load not measured.
+
+### One line, from its own sentence
+
+**`M6, the milestone's area moved aside`** — what jigc did not write in `.jigc/milestones/<id>/` moved to `.jigc/displaced/`: `M6`'s second sentence, *"Both keep their complement"*, is of both kinds of area the boundary tears down, and the line as data moved aside the sub-tasks' areas' alone, so a file of the user's in the milestone's area or its `merged/` tree, kept as the sentence says, read *written outside its allowance*. Quoted with `design/storage.md`'s sentence that names the milestone's area the second subject. Written into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4 with the line, before its cells ran.
+
+### One more place where the docs say two things
+
+[The rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, **entry 18** ([the readings](completions/artifacts/M55/stabilization-build/reshape/byte-table-readings.md) → §17): `design/team-ready-state.md` has the landed boundary narrate rather than refuse the loss of a sub-task worktree's unstaged and untracked bytes — *"visible, not prevented"*, on measured evidence against a refusal on the success path — and the exit rule's first clause has no command at exit 0 destroy bytes no git object holds. *Robust*: move what git neither ignores nor holds aside to `.jigc/displaced/<sub-task-id>/` before the removal — the disposition the same boundary gives a working area's complement — which refuses nothing and loses nothing. *Until ruled*: the clause; one cell red and marked.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A second base cell** for `milestone finalize`, two reporters' findings, so that `M2` excuses a landed created doc in some cell; the code-carrying milestone's commit docs are promoted nowhere.
+- **`M2` × *E* is scheduled**, before and after the first write: `fresh` holds no committed doc a sub-task copies in, and a created doc has no home that stands; the task family's `T1` cells hold the promote the boundary shares.
+- **The cell fence's check that it is not vacuous** read the owed list, which is empty now: it holds instead that with the scheduled list taken away exactly the scheduled needs are named, and with the `milestone` family's cells taken away `milestone finalize`'s refusing need is.
+
+### The lists
+
+519 cells — 387 in the gate in four arms, 132 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 120 that stood, byte for byte, and these 12). The expected-red list: **81 cells under twenty keys**. Marked cells: **three, in three lines**. Scheduled needs: eight, where six.
+
 ## 2026-10-19 — The milestone family's fan-out doors have their cells — `provision`, `execute`, `join`, 13 in the gate and 18 on demand — and none is red (the byte table, task `B7`, its second part: the third of its commits)
 
 **What.** The second of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)): each leaf's refusing cell, its base cell, its six on demand and a planted cell for every need its row makes — `provision` 11, `execute` 10, `join` 10; the lists. No row and no frame changes, and no product source. The three leave the list of leaves whose cells are owed.
