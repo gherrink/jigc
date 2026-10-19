@@ -538,10 +538,14 @@ pub enum May {
     /// stamp, `schema-version: N`, below the version the doctype's pack manifest declares,
     /// or absent) rewritten at its home — or, from a home its doctype had at an earlier
     /// version ([`A_PRIOR_DOC`]), moved to the current one — so that its stamp is the current
-    /// version and **its prose stands as it stood, in order**: every line that is no line of
-    /// its front matter, not its `# ` title and no `- <field>:` leaf stands in it after.
-    /// *"The prose is **unchanged**"* (`design/corpus-migration.md` → *The determinism
-    /// boundary holds*). `jigc migrate-corpus`'s `MG1`; added 2026-10-19 (the task `B8`).
+    /// version and **every byte the migration's sentences do not let it change stands as it
+    /// stood, in order**: its front matter's fields and values, its `- key:` bullets, its
+    /// headings, its prose. What may change is the stamp, the `# ` title where the
+    /// doctype's `display-title:` moved, and the `## ` headings of sections its schema
+    /// added, each read off the two schemas ([`carried`]). *"The prose is **unchanged**"*
+    /// (`design/corpus-migration.md` → *The determinism boundary holds*). `jigc
+    /// migrate-corpus`'s `MG1`; added 2026-10-19 (the task `B8`); every byte, not every
+    /// prose line, since the review of `B8` (its H3).
     Migrated,
     /// **Its knob set** — the project manifest, made or rewritten so that every line of it
     /// that is no line of the knob the command names (the unit) stands as it stood, in
@@ -1455,6 +1459,63 @@ struct Homes {
     /// it — the version a migrated doc is stamped with (`design/corpus-migration.md` → *The
     /// schema-version stamp*). A doctype no manifest governs has none.
     versions: BTreeMap<String, u64>,
+    /// **Each doctype's shape at each version a schema declares** — its current schema's at
+    /// [`Homes::versions`], and a snapshot's (`schema-snapshots/<type>.v<N>.yaml`) at `N`:
+    /// what a migration between two versions may change of a doc's own lines
+    /// ([`May::Migrated`]).
+    shapes: BTreeMap<String, BTreeMap<u64, Shape>>,
+}
+
+/// **What a schema declares of a doc's own lines that a migration may change**
+/// (`design/corpus-migration.md` → *The deterministic transform*, *Relocation*): the
+/// `## ` heading of each body section, which an *added-optional-section* splices — *"splice
+/// an empty `## <Heading>` slot-section block at the section's schema-ordered offset"* — and
+/// the `# ` title a `display-title:` fixes, which a *display-title-changed* rewrites —
+/// *"rewrites the doc's H1 line (`# changelog` → `# Changelog`)"*.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Shape {
+    /// `## <Heading>` of each section that is no header, as the writer renders its id:
+    /// *"the writer title-cases `out-of-scope` → "Out Of Scope""*
+    /// (`design/project-setup.md`).
+    headings: Vec<String>,
+    /// `# <display-title>`, where the schema declares one.
+    title: Option<String>,
+}
+
+/// The doctype a schema file declares, and its [`Shape`].
+fn shaped(bytes: &[u8]) -> Option<(String, Shape)> {
+    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).ok()?;
+    let ty = yaml.get("type")?.as_str()?.to_string();
+    let headings = yaml
+        .get("sections")
+        .and_then(serde_yaml_ng::Value::as_sequence)
+        .into_iter()
+        .flatten()
+        .filter(|section| {
+            !section
+                .get("header")
+                .and_then(serde_yaml_ng::Value::as_bool)
+                .unwrap_or(false)
+        })
+        .filter_map(|section| section.get("id")?.as_str())
+        .map(|id| {
+            let words: Vec<String> = id
+                .split('-')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    chars.next().map_or_else(String::new, |first| {
+                        first.to_ascii_uppercase().to_string() + chars.as_str()
+                    })
+                })
+                .collect();
+            format!("## {}", words.join(" "))
+        })
+        .collect();
+    let title = yaml
+        .get("display-title")
+        .and_then(serde_yaml_ng::Value::as_str)
+        .map(|title| format!("# {title}"));
+    Some((ty, Shape { headings, title }))
 }
 
 /// What a schema file declares of its doctype's home.
@@ -1521,7 +1582,8 @@ impl Homes {
                     .collect()
             })
             .unwrap_or_default();
-        let shipped = |kind: &str| -> Vec<Vec<u8>> {
+        // Each file of `kind` in the packs composed, by its name.
+        let shipped_named = |kind: &str| -> Vec<(String, Vec<u8>)> {
             let mut packs = vec!["dev"];
             if composes {
                 packs.push("methodology");
@@ -1529,7 +1591,22 @@ impl Homes {
             packs
                 .into_iter()
                 .filter_map(|pack| SHIPPED_PACKS.get_dir(format!("{pack}/{kind}")))
-                .flat_map(|dir| dir.files().map(|file| file.contents().to_vec()))
+                .flat_map(|dir| {
+                    dir.files().map(|file| {
+                        let name = file
+                            .path()
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        (name, file.contents().to_vec())
+                    })
+                })
+                .collect()
+        };
+        let shipped = |kind: &str| -> Vec<Vec<u8>> {
+            shipped_named(kind)
+                .into_iter()
+                .map(|(_, bytes)| bytes)
                 .collect()
         };
         let from_the_manifest = |dir: &str| -> Vec<Vec<u8>> {
@@ -1583,8 +1660,25 @@ impl Homes {
             if let Some((ty, home)) = declared(&schema) {
                 homes.current.insert(ty, resolve(home));
             }
+            if let Some((ty, shape)) = shaped(&schema)
+                && let Some(version) = homes.versions.get(&ty)
+            {
+                homes.shapes.entry(ty).or_default().insert(*version, shape);
+            }
         }
-        for snapshot in shipped("schema-snapshots") {
+        for (name, snapshot) in shipped_named("schema-snapshots") {
+            let version = name
+                .strip_suffix(".yaml")
+                .and_then(|stem| stem.rsplit_once(".v"))
+                .and_then(|(_, version)| version.parse::<u64>().ok());
+            if let (Some(version), Some((ty, shape))) = (version, shaped(&snapshot)) {
+                homes
+                    .shapes
+                    .entry(ty)
+                    .or_default()
+                    .entry(version)
+                    .or_insert(shape);
+            }
             if let Some((ty, home)) = declared(&snapshot) {
                 let home = resolve(home);
                 if homes.current.contains_key(&ty)
@@ -2336,21 +2430,19 @@ impl<'a> Tally<'a> {
             return false;
         };
         let source = &source;
-        let Some(current) = homes.versions.get(ty) else {
+        let (Some(current), Some(shapes)) = (homes.versions.get(ty), homes.shapes.get(ty)) else {
             return false;
         };
-        let (Some(from), Some(to)) = (prose(source), prose(is)) else {
+        let Some(now) = shapes.get(current) else {
             return false;
         };
-        // The prose's own lines, as they stood and in order; a migration adds headings and
-        // the blank lines around them, and moves no word of prose.
-        fn worded(lines: Vec<&[u8]>) -> Vec<&[u8]> {
-            lines
-                .into_iter()
-                .filter(|line| !line.trim_ascii().is_empty() && !line.starts_with(b"#"))
-                .collect()
-        }
-        stamp(source) < *current && stamp(is) == *current && worded(from) == worded(to)
+        // The shape the doc was written to: its stamp's version's — a doc with none, *"the
+        // v0 corpus state"*, has the first version's shape, whose stamp alone it lacks —
+        // and where no snapshot declares that version, the current one, which lets the
+        // migration change nothing but the stamp.
+        let was = stamp(source);
+        let then = shapes.get(&was.max(1)).unwrap_or(now);
+        was < *current && stamp(is) == *current && carried(source, is, *current, then, now)
     }
 
     /// **Where a doc at `rel`, a home its doctype had at an earlier version, is migrated
@@ -2372,7 +2464,7 @@ impl<'a> Tally<'a> {
         let stood = self.seen.before.files.get(&format!("{REPO}/{to}"));
         stood.is_none()
             && landed.is_some_and(|is| self.migrated_into(&to, None, is, false))
-            && prose(was).is_some()
+            && was.lines().is_some()
     }
 
     /// **Whether `is` is the project manifest with its knob set** ([`May::ItsKeySet`]) over
@@ -2645,41 +2737,104 @@ fn but_its_title(entry: &Entry) -> Option<Vec<&[u8]>> {
     Some(lines)
 }
 
-/// **A doc's prose** ([`May::Migrated`]): its lines but the front matter — a first line
-/// `---` to the next — its first `# ` title line, and each `- <field>:` leaf line, whose
-/// key is lowercase `a-z0-9-`. `None` for what is no regular file.
-fn prose(entry: &Entry) -> Option<Vec<&[u8]>> {
-    let lines = entry.lines()?;
-    let mut front = lines
+/// **Whether `is` is `source` migrated from the shape `then` to the shape `now`, stamped
+/// `version`, with every byte the migration's sentences do not let it change standing**
+/// ([`May::Migrated`]): every line of `source` stands in `is`, in order and byte for byte —
+/// its front matter's fields and their values, its `- key:` bullets, its headings of every
+/// level and its blank lines among them — but two the sentences rewrite in place: the
+/// stamp, *"value-bumps the stamp"*, which stands at `version`, and the `# ` title where
+/// `now`'s `display-title:` is not `then`'s, which stands as `now` declares it. Each other
+/// line of `is` is blank, or one a sentence adds: the `## ` heading of a section `now`
+/// declares and `then` does not, once — *"splice an empty `## <Heading>` slot-section
+/// block"*; the stamp where `source` had none, once; and the two `---` around it where it had
+/// no front matter — *"splices a `---` front-matter block into a header-less doctype"*
+/// (`design/corpus-migration.md` → *The deterministic transform*, *Relocation*).
+///
+/// *Not read* — each comes out red where a migration takes it: a value an authored map
+/// remaps (`ValueRemapped`), a field or bullet an *added-optional-field* or *added item
+/// field* writes, a slot promoted into an item block, a section's offset among its
+/// siblings. No cell's doctype migrates by one (`adr` 1→2 adds `## Options`, `changelog`
+/// 1→2 moves and re-titles).
+fn carried(source: &Entry, is: &Entry, version: u64, then: &Shape, now: &Shape) -> bool {
+    let (Some(source), Some(is)) = (source.lines(), is.lines()) else {
+        return false;
+    };
+    let ended = |line: &[u8], text: &str| -> Vec<u8> {
+        let mut out = text.as_bytes().to_vec();
+        if line.ends_with(b"\n") {
+            out.push(b'\n');
+        }
+        out
+    };
+    let fenced = source
         .first()
         .is_some_and(|line| line.trim_ascii_end() == b"---");
+    let front_ends = if fenced {
+        source
+            .iter()
+            .skip(1)
+            .position(|line| line.trim_ascii_end() == b"---")
+            .map(|at| at + 1)
+    } else {
+        None
+    };
+    let stamp_line = format!("schema-version: {version}");
+    let retitled = now
+        .title
+        .as_ref()
+        .filter(|title| then.title.as_ref() != Some(*title));
+    let mut stamped = false;
     let mut titled = false;
-    let mut out = Vec::new();
-    for (at, line) in lines.into_iter().enumerate() {
-        if front {
-            if at > 0 && line.trim_ascii_end() == b"---" {
-                front = false;
-            }
-            continue;
-        }
-        if !titled && line.starts_with(b"# ") {
+    let mut expected: Vec<Vec<u8>> = Vec::new();
+    for (at, line) in source.iter().enumerate() {
+        let in_front = front_ends.is_some_and(|end| at > 0 && at < end);
+        if in_front && !stamped && line.starts_with(b"schema-version:") {
+            stamped = true;
+            expected.push(ended(line, &stamp_line));
+        } else if !in_front
+            && front_ends.is_none_or(|end| at > end)
+            && !titled
+            && line.starts_with(b"# ")
+        {
             titled = true;
-            continue;
-        }
-        let leaf = line.strip_prefix(b"- ").and_then(|rest| {
-            let key = rest.split(|byte| *byte == b':').next()?;
-            (!key.is_empty()
-                && key.len() < rest.len()
-                && key.iter().all(|byte| {
-                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-'
-                }))
-            .then_some(())
-        });
-        if leaf.is_none() {
-            out.push(line);
+            match retitled {
+                Some(title) => expected.push(ended(line, title)),
+                None => expected.push(line.to_vec()),
+            }
+        } else {
+            expected.push(line.to_vec());
         }
     }
-    Some(out)
+    // What a sentence adds, each as often as it may stand.
+    let mut adds: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
+    for heading in now.headings.iter().filter(|h| !then.headings.contains(h)) {
+        *adds
+            .entry(heading.trim_end().as_bytes().to_vec())
+            .or_default() += 1;
+    }
+    if !stamped {
+        *adds.entry(stamp_line.into_bytes()).or_default() += 1;
+    }
+    if front_ends.is_none() {
+        *adds.entry(b"---".to_vec()).or_default() += 2;
+    }
+    // Every line of `source` matched in order, the first `is` line that equals it taken —
+    // which loses no match, since a line `is` adds may equally stand where it was matched.
+    let mut wanted = expected.iter().peekable();
+    for line in is {
+        if wanted.peek().is_some_and(|want| want.as_slice() == line) {
+            wanted.next();
+            continue;
+        }
+        if line.trim_ascii().is_empty() {
+            continue;
+        }
+        match adds.get_mut(line.trim_ascii_end()) {
+            Some(left) if *left > 0 => *left -= 1,
+            _ => return false,
+        }
+    }
+    wanted.peek().is_none()
 }
 
 /// **A doc's schema-version stamp**, `schema-version: N` in its front matter — `0` where it

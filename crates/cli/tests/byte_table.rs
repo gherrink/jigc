@@ -4120,7 +4120,13 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
 /// moved. A prose line changed or added, the stamp left behind, a doc already current
 /// rewritten, the changelog's prose dropped on its way, and a line of the user's in no
 /// commit swept into the migration's commit, are each red — and under `--dry-run` any
-/// write is. A line of the user's in the old changelog moves with it, and holds under
+/// write is. **Every byte the migration's sentences do not let it change** (the review of
+/// `B8`, its H3, red first — each came out *holds*): a `- key:` bullet or a sub-heading the
+/// author wrote in a slot dropped or changed, the `supersedes` edge dropped, the status
+/// flipped, a field added, the title rewritten where no `display-title:` moved, a heading
+/// no schema adds or the added one twice, the changelog's title not the one its schema
+/// declares, a heading of its author's dropped — each is red; a doc with no stamp given one
+/// holds, and given two is red. A line of the user's in the old changelog moves with it, and holds under
 /// `--no-commit`; a commit that carries it is red, read against what `HEAD` held at the
 /// old home (the task `B8`'s third commit, red first: the plant came out *written
 /// outside*, then the commit *held*).
@@ -4164,6 +4170,92 @@ fn a_migrated_doc_keeps_its_prose() {
             &migrated("docs/decisions/one-way.md", &bytes),
             None,
         );
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+    // Every byte the migration's sentences do not let it change: a `- key:` bullet and a
+    // sub-heading the author wrote inside a slot, a ref in the front matter and a field's
+    // value (the review of `B8`, its H3 — each came out *holds*).
+    const AUTHORED: &str = "---\nschema-version: 1\nstatus: accepted\nsupersedes: [adr:old]\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n### A caveat of the author's\n\n- risk: we may lose data\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+    let authored = with_committed(&[("docs/decisions/one-way.md", AUTHORED)]);
+    let into = |bytes: &str| {
+        then(&authored, |m| {
+            written(m, "docs/decisions/one-way.md", bytes);
+            commit(
+                m,
+                "c2",
+                &[("docs/decisions/one-way.md", Some((0o100_644, bytes)))],
+            );
+        })
+    };
+    let honest = AUTHORED
+        .replace("schema-version: 1", "schema-version: 2")
+        .replace("## Decision", "## Options\n\n\n\n## Decision");
+    let (class, why) = came(&authored, &into(&honest), None);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the authored migration: {why:#?}"
+    );
+    // A doc with no stamp, *"the v0 corpus state"*: the stamp is added, once.
+    let unstamped = AUTHORED.replace("schema-version: 1\n", "");
+    let v0 = with_committed(&[("docs/decisions/one-way.md", unstamped.as_str())]);
+    let stamped = |bytes: &str| {
+        then(&v0, |m| {
+            written(m, "docs/decisions/one-way.md", bytes);
+            commit(
+                m,
+                "c2",
+                &[("docs/decisions/one-way.md", Some((0o100_644, bytes)))],
+            );
+        })
+    };
+    let (class, why) = came(&v0, &stamped(&honest), None);
+    assert_eq!(class, Classification::Holds, "a v0 doc stamped: {why:#?}");
+    let twice = honest.replace("---\n\n", "schema-version: 2\n---\n\n");
+    let (class, why) = came(&v0, &stamped(&twice), None);
+    assert!(
+        class.is_red(),
+        "the stamp added twice: came out {class}, {why:#?}"
+    );
+    for (case, bytes) in [
+        (
+            "a bullet of the author's dropped",
+            honest.replace("- risk: we may lose data\n", ""),
+        ),
+        (
+            "a bullet's value changed",
+            honest.replace("- risk: we may lose data", "- risk: none"),
+        ),
+        (
+            "a sub-heading of the author's dropped",
+            honest.replace("### A caveat of the author's\n", ""),
+        ),
+        (
+            "the `supersedes` edge dropped",
+            honest.replace("supersedes: [adr:old]\n", ""),
+        ),
+        (
+            "the status flipped",
+            honest.replace("status: accepted", "status: superseded"),
+        ),
+        (
+            "a front-matter field added",
+            honest.replace("status: accepted\n", "status: accepted\ndate: 2026-10-19\n"),
+        ),
+        (
+            "the title rewritten",
+            honest.replace("# One way\n", "# The one way\n"),
+        ),
+        (
+            "a heading no schema adds",
+            honest.replace("## Consequences", "## Notes\n\n## Consequences"),
+        ),
+        (
+            "the added heading twice",
+            honest.replace("## Decision", "## Options\n\n## Decision"),
+        ),
+    ] {
+        let (class, why) = came(&authored, &into(&bytes), None);
         assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
     }
     // A line of the user's in the stale doc, in no commit: the migration keeps it on disk,
@@ -4276,11 +4368,20 @@ fn a_migrated_doc_keeps_its_prose() {
     };
     let (class, why) = came(&before, &relocated(NEW), None);
     assert_eq!(class, Classification::Holds, "the relocation: {why:#?}");
-    let (class, why) = came(&before, &relocated(&NEW.replace("A change.\n", "")), None);
-    assert!(
-        class.is_red(),
-        "the prose dropped: came out {class}, {why:#?}"
-    );
+    for (case, bytes) in [
+        ("the prose dropped", NEW.replace("A change.\n", "")),
+        (
+            "the title not the one the schema declares",
+            NEW.replace("# Changelog", "# The changelog"),
+        ),
+        (
+            "a heading of the author's dropped",
+            NEW.replace("## Unreleased\n\n", ""),
+        ),
+    ] {
+        let (class, why) = came(&before, &relocated(&bytes), None);
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
     // A line of the user's in the old changelog, in no commit: the migration carries it to
     // the doc's new home — under `--no-commit`, it holds there; and a commit that carries it
     // carries what `HEAD` never held at the old home.
