@@ -8,7 +8,7 @@
 //! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, and the movers family's four (`rename`,
-//! `relocate`, `migrate-corpus`, `config set`) — and 659 cells: the acceptance's
+//! `relocate`, `migrate-corpus`, `config set`) — and 665 cells: the acceptance's
 //! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -18,7 +18,7 @@
 //! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
 //! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
 //! carryover gate's cell under `squash: false`), **and the movers family's fifty-nine
-//! and seventy** (`relocate`, `config set`; `rename`, `migrate-corpus`), of which a hundred
+//! and seventy-six** (`relocate`, `config set`; `rename`, `migrate-corpus`), of which a hundred
 //! and fifty-six run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
@@ -1897,6 +1897,11 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         &[Prepared::Of(State::CommittedSingletons)],
     ),
     (&["rename"], "RN1", &[Prepared::Of(State::Fresh)]),
+    (
+        &["rename"],
+        "RN1, at its new home",
+        &[Prepared::Of(State::Fresh)],
+    ),
     (&["rename"], "RN2", &[Prepared::Of(State::Fresh)]),
     (&["rename"], "RN3", &[Prepared::Of(State::Fresh)]),
     (&["rename"], "RN4", &[Prepared::Of(State::Fresh)]),
@@ -3627,28 +3632,39 @@ fn git_mv(manifest: &mut Manifest, from: &str, to: &str, bytes: &str) {
 }
 
 /// **A doc `jigc rename` moves is retitled where its home is, and every doc that referred
-/// to it repointed** — `RN1` and `RN2` of the movers family's row ([`movers::RENAME`]), the
-/// words *retitled* and *repointed* (the task `B8`). On the row itself: the doc moved to a
-/// slug of its home directory with its `# ` title the `--to` title and every other line as
-/// it was, a referrer's line holding the new identity, all of it in one commit, holds; so
-/// does the retitle-only arm, in place. A body line changed, a home in another doctype's
-/// directory, a title other than `--to`'s, two copies, the doc gone with no new home, a
-/// referrer's other line changed, and a file of no doctype's home rewritten for its
-/// mention are each red.
+/// to it repointed** — `RN1`, `RN1, at its new home` and `RN2` of the movers family's row
+/// ([`movers::RENAME`]), the words *retitled* and *repointed* (the task `B8`). On the row
+/// itself: the doc moved to the slug its `--to` title gives, in its home directory, with its
+/// `# ` title the `--to` title and every other line as it was, a referrer's ref-field
+/// holding the new identity, all of it in one commit, holds; so does the retitle-only arm,
+/// in place, a ref-field list re-emitted in its canonical form with its other element as
+/// it was, and a `--slug` that names the slug. A body line changed, a home in another
+/// doctype's directory, a title other than `--to`'s, **a slug other than the one the title
+/// gives** (the review of `B8`, H11), two copies, the doc gone with no new home, a
+/// referrer's other line changed, a file of no doctype's home rewritten for its mention,
+/// **a ref to another doc whose id the old one prefixes rewritten, and a mention in a
+/// referrer's prose rewritten** (H4) are each red; so is the doc landing over a file of the
+/// user's at its new home. And the new home is a line's place (H7): what squats it — a
+/// file of the user's, one committed, a link, a directory — is what the row needs a cell
+/// for there.
 #[test]
 fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
     const ONE: &str =
         "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe chose.\n";
-    const MOVED: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# The one way\n\n## Context\n\nWe chose.\n";
-    const TWO: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:one-way]\n---\n\n# Two ways\n\nAn aside.\n";
-    const REPOINTED: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:the-one-way]\n---\n\n# Two ways\n\nAn aside.\n";
+    const MOVED: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# Single way\n\n## Context\n\nWe chose.\n";
+    const TWO: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:one-way]\n---\n\n# Two ways\n\nAn aside. See adr:one-way in passing.\n";
+    const REPOINTED: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:single-way]\n---\n\n# Two ways\n\nAn aside. See adr:one-way in passing.\n";
+    const THREE: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:one-way-two]\n---\n\n# Three ways\n\nNone of it.\n";
+    const FOUR: &str = "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:old,adr:one-way]\n---\n\n# Four ways\n\nBoth.\n";
     const README_SAYS: &str = "readme\nsee adr:one-way\n";
     let before = with_committed(&[
         ("docs/decisions/one-way.md", ONE),
         ("docs/decisions/two-ways.md", TWO),
+        ("docs/decisions/three-ways.md", THREE),
+        ("docs/decisions/four-ways.md", FOUR),
         ("README.md", README_SAYS),
     ]);
-    let argv: &[&str] = &["rename", "adr:one-way", "--to", "The one way"];
+    let argv: &[&str] = &["rename", "adr:one-way", "--to", "Single way"];
     // `changes`: a path from the repository's root to its bytes after, or to nothing.
     let renamed = |changes: &[(&str, Option<&str>)]| {
         then(&before, |m| {
@@ -3680,7 +3696,7 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
     let (class, why) = came(
         &renamed(&[
             ("docs/decisions/one-way.md", None),
-            ("docs/decisions/the-one-way.md", Some(MOVED)),
+            ("docs/decisions/single-way.md", Some(MOVED)),
             ("docs/decisions/two-ways.md", Some(REPOINTED)),
         ]),
         argv,
@@ -3697,15 +3713,130 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
         Classification::Holds,
         "the retitle-only arm: {why:#?}"
     );
+    // A list re-emitted in its canonical form — *"swaps the one element and re-emits the
+    // canonical whole-list"* — its other element as it was.
+    let (class, why) = came(
+        &renamed(&[
+            ("docs/decisions/one-way.md", None),
+            ("docs/decisions/single-way.md", Some(MOVED)),
+            ("docs/decisions/two-ways.md", Some(REPOINTED)),
+            (
+                "docs/decisions/four-ways.md",
+                Some(
+                    "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:old, adr:single-way]\n---\n\n# Four ways\n\nBoth.\n",
+                ),
+            ),
+        ]),
+        argv,
+    );
+    assert_eq!(class, Classification::Holds, "a list re-emitted: {why:#?}");
+    // `--slug` names the slug: *"unless `--slug` overrides"*.
+    let (class, why) = came(
+        &renamed(&[
+            ("docs/decisions/one-way.md", None),
+            ("docs/decisions/zzz.md", Some(MOVED)),
+            (
+                "docs/decisions/two-ways.md",
+                Some(
+                    "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:zzz]\n---\n\n# Two ways\n\nAn aside. See adr:one-way in passing.\n",
+                ),
+            ),
+        ]),
+        &[
+            "rename",
+            "adr:one-way",
+            "--to",
+            "Single way",
+            "--slug",
+            "zzz",
+        ],
+    );
+    assert_eq!(class, Classification::Holds, "a `--slug`: {why:#?}");
+    // A title whose slug drops its edge word — *"a leading or trailing filler word … is
+    // dropped"* — gives the doc's own slug: a retitle in place holds, and a move to the
+    // slug with the word kept is red.
+    const THE_ONE_WAY: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# The one way\n\n## Context\n\nWe chose.\n";
+    let the_one_way: &[&str] = &["rename", "adr:one-way", "--to", "The one way"];
+    let (class, why) = came(
+        &renamed(&[("docs/decisions/one-way.md", Some(THE_ONE_WAY))]),
+        the_one_way,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "an edge word dropped: {why:#?}"
+    );
+    let (class, why) = came(
+        &renamed(&[
+            ("docs/decisions/one-way.md", None),
+            ("docs/decisions/the-one-way.md", Some(THE_ONE_WAY)),
+            (
+                "docs/decisions/two-ways.md",
+                Some(
+                    "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:the-one-way]\n---\n\n# Two ways\n\nAn aside. See adr:one-way in passing.\n",
+                ),
+            ),
+        ]),
+        the_one_way,
+    );
+    assert!(
+        class.is_red(),
+        "the slug with its edge word kept: came out {class}, {why:#?}"
+    );
+    // The new home is a line's place, and what squats it is what the row needs a cell for.
+    let at_the_new_home: Vec<String> = needs(&movers::RENAME)
+        .iter()
+        .map(Need::named)
+        .filter(|need| need.starts_with("RN1, at its new home × "))
+        .collect();
+    assert_eq!(
+        at_the_new_home,
+        [
+            "RN1, at its new home × U",
+            "RN1, at its new home × T",
+            "RN1, at its new home × L, to nothing",
+            "RN1, at its new home × L, to a file in the repository",
+            "RN1, at its new home × L, to a file outside it",
+            "RN1, at its new home × K, a directory in a file's place",
+        ],
+        "what squats the doc's new home is what the row needs a cell for there"
+    );
+    // The doc landed over a file of the user's at its new home.
+    let squatted = then(&before, |m| {
+        written(m, "docs/decisions/single-way.md", "the user's own notes\n");
+    });
+    let over = then(&squatted, |m| {
+        m.files.remove(&format!("{REPO}/docs/decisions/one-way.md"));
+        written(m, "docs/decisions/single-way.md", MOVED);
+        written(m, "docs/decisions/two-ways.md", REPOINTED);
+        commit(
+            m,
+            "c2",
+            &[
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/single-way.md", Some((0o100_644, MOVED))),
+                ("docs/decisions/two-ways.md", Some((0o100_644, REPOINTED))),
+            ],
+        );
+    });
+    let (class, why) = Cell {
+        argv,
+        ..Cell::of(movers::RENAME, &squatted, &over)
+    }
+    .came_to();
+    assert!(
+        class.is_red(),
+        "the doc landed over a file of the user's: came out {class}, {why:#?}"
+    );
     for (case, changes) in [
         (
             "a body line changed",
             vec![
                 ("docs/decisions/one-way.md", None),
                 (
-                    "docs/decisions/the-one-way.md",
+                    "docs/decisions/single-way.md",
                     Some(
-                        "---\nschema-version: 2\nstatus: accepted\n---\n\n# The one way\n\n## Context\n\nWe chose otherwise.\n",
+                        "---\nschema-version: 2\nstatus: accepted\n---\n\n# Single way\n\n## Context\n\nWe chose otherwise.\n",
                     ),
                 ),
             ],
@@ -3714,7 +3845,7 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
             "another doctype's directory",
             vec![
                 ("docs/decisions/one-way.md", None),
-                ("docs/specs/the-one-way.md", Some(MOVED)),
+                ("docs/specs/single-way.md", Some(MOVED)),
             ],
         ),
         (
@@ -3722,7 +3853,7 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
             vec![
                 ("docs/decisions/one-way.md", None),
                 (
-                    "docs/decisions/the-one-way.md",
+                    "docs/decisions/single-way.md",
                     Some(
                         "---\nschema-version: 2\nstatus: accepted\n---\n\n# Another way\n\n## Context\n\nWe chose.\n",
                     ),
@@ -3731,18 +3862,18 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
         ),
         (
             "two copies",
-            vec![("docs/decisions/the-one-way.md", Some(MOVED))],
+            vec![("docs/decisions/single-way.md", Some(MOVED))],
         ),
         ("the doc gone", vec![("docs/decisions/one-way.md", None)]),
         (
             "a referrer's other line changed",
             vec![
                 ("docs/decisions/one-way.md", None),
-                ("docs/decisions/the-one-way.md", Some(MOVED)),
+                ("docs/decisions/single-way.md", Some(MOVED)),
                 (
                     "docs/decisions/two-ways.md",
                     Some(
-                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:the-one-way]\n---\n\n# Two ways\n\nAnother aside.\n",
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:single-way]\n---\n\n# Two ways\n\nAnother aside.\n",
                     ),
                 ),
             ],
@@ -3751,8 +3882,62 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
             "a file of no doctype's home rewritten",
             vec![
                 ("docs/decisions/one-way.md", None),
-                ("docs/decisions/the-one-way.md", Some(MOVED)),
-                ("README.md", Some("readme\nsee adr:the-one-way\n")),
+                ("docs/decisions/single-way.md", Some(MOVED)),
+                ("README.md", Some("readme\nsee adr:single-way\n")),
+            ],
+        ),
+        (
+            "a slug other than the one the title gives",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/zzz.md", Some(MOVED)),
+                (
+                    "docs/decisions/two-ways.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:zzz]\n---\n\n# Two ways\n\nAn aside. See adr:one-way in passing.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "a ref to another doc the old id prefixes rewritten",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/single-way.md", Some(MOVED)),
+                ("docs/decisions/two-ways.md", Some(REPOINTED)),
+                (
+                    "docs/decisions/three-ways.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:single-way-two]\n---\n\n# Three ways\n\nNone of it.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "a mention in a referrer's prose rewritten",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/single-way.md", Some(MOVED)),
+                (
+                    "docs/decisions/two-ways.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:single-way]\n---\n\n# Two ways\n\nAn aside. See adr:single-way in passing.\n",
+                    ),
+                ),
+            ],
+        ),
+        (
+            "a list's other element changed",
+            vec![
+                ("docs/decisions/one-way.md", None),
+                ("docs/decisions/single-way.md", Some(MOVED)),
+                ("docs/decisions/two-ways.md", Some(REPOINTED)),
+                (
+                    "docs/decisions/four-ways.md",
+                    Some(
+                        "---\nschema-version: 2\nstatus: accepted\nsupersedes: [adr:older, adr:single-way]\n---\n\n# Four ways\n\nBoth.\n",
+                    ),
+                ),
             ],
         ),
     ] {
@@ -10584,7 +10769,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (659, 503, 156),
+        (665, 509, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -10595,8 +10780,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
          demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
-         the movers family's doors that commit seventy, `rename`'s thirty-one and \
-         `migrate-corpus`'s thirty-nine: fifty-eight in the gate, twelve on demand — and its \
+         the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
+         `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
          movers fifty-nine, `relocate`'s twenty-four and `config set`'s thirty-five: \
          forty-seven in the gate, twelve on demand"
     );

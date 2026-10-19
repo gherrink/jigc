@@ -16,7 +16,7 @@ use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     A_DOC, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, Mark, May,
-    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, Unit, When, Where,
+    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -85,6 +85,14 @@ const A_SQUATTER_PARKED: [Quote; 3] = [
     },
 ];
 
+/// **`jigc rename` moves the doc and retitles it** — `RN1`'s first sentence, and `RN1, at
+/// its new home`'s.
+const THE_RETITLE: Quote = Quote {
+    doc: "design/write-commands.md",
+    heading: RENAME_SECTION,
+    words: "**Rewrites the moved doc's H1** to `<New Title>` (the unified retitle), then **`git mv`** old→new path",
+};
+
 /// **`jigc rename`'s transaction** — `RN3`'s second sentence and `RN4`'s first.
 const THE_TRANSACTION: Quote = Quote {
     doc: "design/write-commands.md",
@@ -114,15 +122,23 @@ pub const RENAME: Row = Row {
             "RN1",
             Allows::Files(Where::Path(THE_DOC), May::Retitled),
             &[
-                Quote {
-                    doc: "design/write-commands.md",
-                    heading: RENAME_SECTION,
-                    words: "**Rewrites the moved doc's H1** to `<New Title>` (the unified retitle), then **`git mv`** old→new path",
-                },
+                THE_RETITLE,
                 Quote {
                     doc: "design/write-commands.md",
                     heading: RENAME_SECTION,
                     words: "rename **degrades to a retitle-only**: rewrite the H1 and commit, with **no `git mv` and no referrer repoint**",
+                },
+            ],
+        ),
+        line(
+            "RN1, at its new home",
+            Allows::Files(Where::Path(THE_NEW_DOC), May::Retitled),
+            &[
+                THE_RETITLE,
+                Quote {
+                    doc: "design/write-commands.md",
+                    heading: RENAME_SECTION,
+                    words: "**Derives the new slug** = `slugify(\"<New Title>\")` (the same `engine::slug::slugify` the `create` path uses via `id-from: title`, so a renamed doc is byte-identical to a freshly-created one of that title), unless `--slug` overrides",
                 },
             ],
         ),
@@ -497,6 +513,8 @@ const STAGED_UNDER_A_QUOTED_NAME: Lead = Lead::Plant(Plant::Staged {
 /// architecture doc's, under the docs root of `fresh`.
 const ONE_WAY: &str = "docs/decisions/one-way.md";
 const GATEWAY: &str = "docs/architecture/gateway.md";
+/// Where the decision stands once `--to "Single way"` has moved it: the slug the title gives.
+const SINGLE_WAY: &str = "docs/decisions/single-way.md";
 const A_DECISION: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Options\n\n\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
 const A_DOC_THAT_CITES_IT: &str = "---\nschema-version: 1\ncites: [adr:one-way]\n---\n\n# Gateway\n\n## Overview\n\nThe gateway takes one way.\n\n## Components\n";
 
@@ -541,10 +559,15 @@ const fn renames(
 ///   touches is a regular file, or the door refuses"*; where the doc gives both, the code
 ///   is the run's — `store.home-not-regular-file` at the doc's own home — and a file in
 ///   the place of the decisions' directory leaves no target (`store.not-found`);
+/// - **what squats the doc's new home** (`RN1, at its new home`) — a file of the user's,
+///   one committed, a link, a directory: *"a collision with a **different** existing doc
+///   **blocks**"*, *"A *regular file* at the destination is still the collision arm's
+///   `write.already-present`"*, and a link or a directory there answers
+///   `store.home-not-regular-file`: *"The three homes now answer alike"*;
 /// - **a hook that rejects** the commit: *"on **any** pre-commit failure restores all
 ///   captured bytes"* (`RN6`);
 /// - **a file of the user's in a cache** (`RN4`, `RN5`) stays.
-const RENAME_CELLS: [Cell; 31] = [
+const RENAME_CELLS: [Cell; 37] = [
     cell(
         "rename-a-decision-the-catalog-names",
         &["rename"],
@@ -641,6 +664,49 @@ const RENAME_CELLS: [Cell; 31] = [
         })),
         refuses(1, "rename.dirty-tree"),
         at("RN1", Kind::StagedThere),
+    ),
+    // `RN1, at its new home`: what squats the decision's new home.
+    renames(
+        "rename-a-file-of-the-users-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::File(SINGLE_WAY))),
+        refuses(1, "write.already-present"),
+        at("RN1, at its new home", Kind::Untracked),
+    ),
+    renames(
+        "rename-a-file-the-user-committed-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Committed(SINGLE_WAY))),
+        refuses(1, "write.already-present"),
+        at("RN1, at its new home", Kind::Committed),
+    ),
+    renames(
+        "rename-a-link-to-nothing-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::LinkToNothing(SINGLE_WAY))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1, at its new home", Kind::LinkToNothing),
+    ),
+    renames(
+        "rename-a-link-to-a-file-in-the-repository-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::LinkToAFile {
+            at: SINGLE_WAY,
+            outside: false,
+        })),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1, at its new home", Kind::LinkInside),
+    ),
+    renames(
+        "rename-a-link-to-a-file-outside-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::LinkToAFile {
+            at: SINGLE_WAY,
+            outside: true,
+        })),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1, at its new home", Kind::LinkOutside),
+    ),
+    renames(
+        "rename-a-directory-at-the-decisions-new-home",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Dir(SINGLE_WAY))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1, at its new home", Kind::DirForAFile),
     ),
     // `RN2`, at the citing doc's home.
     renames(

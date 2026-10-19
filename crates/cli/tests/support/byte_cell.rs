@@ -385,6 +385,19 @@ pub const A_PRIOR_DOC: &str = "<a-prior-doc>";
 /// doctype's file.
 pub const THE_DOC: &str = "<the-doc>";
 
+/// **Where the doc the command's address names stands once its identity has moved** — the
+/// unit's doctype's home, under the slug the command gives: `--slug`'s, where it names one,
+/// and else the one `--to`'s title gives, *"**Derives the new slug** = `slugify("<New
+/// Title>")` (the same `engine::slug::slugify` the `create` path uses via `id-from: title`,
+/// so a renamed doc is byte-identical to a freshly-created one of that title), unless
+/// `--slug` overrides"* (`design/write-commands.md` → *`jigc rename`*) — `<slug>.md` at a
+/// home directory, or a placement doctype's file, whose identity does not move. Where that
+/// slug is the doc's own, the place is [`THE_DOC`]'s. Added 2026-10-20, after the review of
+/// the task `B8` (H7, H11): the arrival was read inside the word, at no place, so nothing
+/// that squats a rename's destination was a need, and any free path of the home directory
+/// was taken for it.
+pub const THE_NEW_DOC: &str = "<the-new-doc>";
+
 /// **The prior home the command's `--from` names** — that file, or any path under that
 /// directory: *"the door sweeps every committed `.md` under it into the doctype's current
 /// home"* (`design/corpus-migration.md` → *The freeze-exempt sibling*).
@@ -511,20 +524,31 @@ pub enum May {
     ReSlugged,
     /// **Retitled** — the doc the address names ([`THE_DOC`]) rewritten so that its lines
     /// are the ones it held before the command but its `# ` title line, which is the title
-    /// `--to` gives; where its slug changes, standing so at another path of its home
-    /// directory, where nothing stood before in the working tree or in what git held, and
-    /// gone from its own: *"**Rewrites the moved doc's H1** to `<New Title>` (the unified
-    /// retitle), then **`git mv`** old→new path"*, and the retitle-only arm, *"rewrite the
-    /// H1 and commit, with **no `git mv` and no referrer repoint**"*
-    /// (`design/write-commands.md` → *`jigc rename`*). One such move or rewrite, or none:
-    /// two candidates are no retitle. `jigc rename`'s `RN1`; added 2026-10-19 (the task
-    /// `B8`).
+    /// `--to` gives; where its slug changes, standing so at its new home
+    /// ([`THE_NEW_DOC`], the slug the command gives), where nothing stood before in the
+    /// working tree or in what git held, and gone from its own: *"**Rewrites the moved
+    /// doc's H1** to `<New Title>` (the unified retitle), then **`git mv`** old→new
+    /// path"*, and the retitle-only arm, *"rewrite the H1 and commit, with **no `git mv`
+    /// and no referrer repoint**"* (`design/write-commands.md` → *`jigc rename`*). Read at
+    /// its place, each end of the move: the old home gone or rewritten in place (`RN1`), the
+    /// new one arrived at (`RN1, at its new home`). `jigc rename`'s; added 2026-10-19 (the
+    /// task `B8`); its arrival read at its own place and only at the slug the command
+    /// gives since 2026-10-20 (the review of `B8`, H7 and H11), where any free path of the
+    /// home directory held.
     Retitled,
     /// **Repointed** — a doc of the store that referred to the doc [`May::Retitled`] moved,
-    /// rewritten so that each line that changed held the old identity and holds the new
-    /// one in its place, every other line as it stood, none added or gone: *"rewrites each
-    /// referrer's structured ref-field old→new"*. Nothing where the doc did not move.
-    /// `jigc rename`'s `RN2`.
+    /// rewritten so that each line that changed is a **ref-field** of the doc's front
+    /// matter — a field its doctype's schema declares `type: ref` to the moved doc's
+    /// doctype — one of whose values was the old identity, whole, and that now holds the
+    /// field's values with that one the new identity, in the canonical form the field
+    /// grammar writes (`key: value`, a list `key: [a, b]`); every other line as it stood,
+    /// none added or gone: *"rewrites each referrer's structured ref-field old→new"*,
+    /// *"swaps the one element and re-emits the canonical whole-list"*, and *"the CLI
+    /// rewrites **structured ref-fields in the managed store** and nothing else"*. Nothing
+    /// where the doc did not move. `jigc rename`'s `RN2`. Narrowed 2026-10-20, after the
+    /// review of the task `B8` (H4): a line that held the old identity anywhere, as a
+    /// substring, could take the new one — a ref to another doc whose id the old one
+    /// prefixes, and a mention in the prose.
     Repointed,
     /// **Into its home** — gone from its place, and standing, the same entry, at its
     /// doctype's home as the cascade resolves it **after** the command, under its own name
@@ -861,7 +885,12 @@ impl Kind {
 /// so **U**, **T**, **L** and **K**, *a directory in a file's place*, go there — a file of
 /// the user's, one committed, a link, a directory (`design/reconciliation.md` →
 /// *Relocation collisions*). A place under a directory that is moved aside whole is no one
-/// file's, and none goes there.
+/// file's, and none goes there. **So do they to a destination a doc is moved to**
+/// ([`THE_NEW_DOC`], `RN1, at its new home`): nothing stands there before the move, so
+/// what does is a squatter, and the same four go there — and no other, since a tracked
+/// file there to edit or stage over is the committed one **T** puts, and the home's
+/// directory is the doc's own home's, which `RN1`'s place takes (added 2026-10-20, after
+/// the review of the task `B8`, H7).
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -882,19 +911,25 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
     let read = |may: May| matches!(may, May::CopiedFrom);
+    // A doc's destination: where the doc the address names stands once its identity moved.
+    let destination = |place: Where| matches!(place, Where::Path(path) if path == THE_NEW_DOC);
     // A committed doc the command rewrites or moves where it stands — the movers family's
     // words. **T** does not go there: a committed file at the place is the doc itself.
-    let rewrites = |may: May| {
-        matches!(
-            may,
-            May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
-        )
+    let rewrites = |place: Where, may: May| {
+        !destination(place)
+            && matches!(
+                may,
+                May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
+            )
     };
-    // One file's place whose occupant a move parks: a mover's destination.
-    let parks = |place: Where, may: May| one_file(place) && matches!(may, May::MovedAsideTo(_));
+    // One file's place where what stands is a squatter: a mover's destination, whose
+    // occupant a move parks, and a doc's.
+    let parks = |place: Where, may: May| {
+        one_file(place) && (matches!(may, May::MovedAsideTo(_)) || destination(place))
+    };
     let aimed = match (kind, line.allows) {
         (Kind::Untracked, Allows::Files(place, may)) => {
-            lands(may) || read(may) || rewrites(may) || parks(place, may)
+            lands(may) || read(may) || rewrites(place, may) || parks(place, may)
         }
         (Kind::Committed, Allows::Files(place, may)) => {
             (lands(may) && one_file(place) && !matches!(place, Where::Hook)) || parks(place, may)
@@ -906,12 +941,12 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
             one_file(place)
                 && (lands(may)
                     || read(may)
-                    || rewrites(may)
+                    || rewrites(place, may)
                     || parks(place, may)
                     || matches!(may, May::MergeInto))
         }
         (Kind::FileForADir, Allows::Files(place, may)) => {
-            one_file(place) && (lands(may) || rewrites(may) || matches!(may, May::MergeInto))
+            one_file(place) && (lands(may) || rewrites(place, may) || matches!(may, May::MergeInto))
         }
         (Kind::EditBefore, Allows::Files(_, may)) => {
             matches!(may, May::CopyOfAStagedDoc) || read(may)
@@ -919,12 +954,12 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         (Kind::EditAfter, Allows::Files(place, may)) => {
             one_file(place)
                 && !matches!(place, Where::Hook)
-                && (lands(may) || merges(may) || read(may) || rewrites(may))
+                && (lands(may) || merges(may) || read(may) || rewrites(place, may))
         }
         (Kind::StagedThere, Allows::Files(place, may)) => {
             one_file(place)
                 && !matches!(place, Where::Hook)
-                && (lands(may) || merges(may) || rewrites(may))
+                && (lands(may) || merges(may) || rewrites(place, may))
         }
         (Kind::UsersLine, Allows::Files(_, may)) => merges(may) || matches!(may, May::ItsKeySet),
         (Kind::Foreign, Allows::Files(place, may)) => {
@@ -1152,6 +1187,8 @@ struct Acting {
     /// The title the command's `--to` gives — what [`May::Retitled`] asks the new `# `
     /// line to be.
     to: Option<String>,
+    /// Where the doc the unit names stands once its identity has moved — [`THE_NEW_DOC`].
+    new_doc: Option<String>,
     /// **What the file-state baseline records before the command**, by path from the
     /// repository's root — the keys of `.jigc/state/file-state.json`'s `hashes`: a managed
     /// doc is one recorded there, a foreign file one that is not (`design/reconciliation.md`
@@ -1280,12 +1317,23 @@ impl Acting {
                 .trim_end_matches('/')
                 .to_string()
         });
+        let to = word_after("--to");
+        // The slug the command gives: `--slug`'s, and else the one `--to`'s title gives.
+        let new_doc = unit.as_ref().and_then(|unit| {
+            let (ty, _) = unit.split_once(':')?;
+            let home = homes.as_ref()?.current.get(ty)?;
+            let slug = word_after("--slug")
+                .or_else(|| to.as_deref().map(engine::slug::slugify))
+                .filter(|slug| !slug.is_empty())?;
+            Some(home.for_name(&format!("{slug}.md")))
+        });
         Acting {
             homes,
             homes_after: Homes::over(after),
             the_doc,
             from,
-            to: word_after("--to"),
+            to,
+            new_doc,
             baselined: baselined(before),
             unit,
             sub_tasks,
@@ -1464,6 +1512,12 @@ struct Homes {
     /// what a migration between two versions may change of a doc's own lines
     /// ([`May::Migrated`]).
     shapes: BTreeMap<String, BTreeMap<u64, Shape>>,
+    /// **Each doctype's ref-fields**, by its current schema: a field of a header section —
+    /// a line of the doc's front matter — that the schema declares `type: ref`, with the
+    /// doctype its `to:` names. What a rename may rewrite in a doc that refers to the one it
+    /// moves ([`May::Repointed`]): *"rewrites each referrer's structured ref-field
+    /// old→new"* (`design/write-commands.md` → *`jigc rename`*).
+    refs: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// **What a schema declares of a doc's own lines that a migration may change**
@@ -1516,6 +1570,35 @@ fn shaped(bytes: &[u8]) -> Option<(String, Shape)> {
         .and_then(serde_yaml_ng::Value::as_str)
         .map(|title| format!("# {title}"));
     Some((ty, Shape { headings, title }))
+}
+
+/// The doctype a schema file declares, and its ref-fields: each field of a header section
+/// declared `type: ref`, with the doctype its `to:` names ([`Homes::refs`]).
+fn ref_fields(bytes: &[u8]) -> Option<(String, BTreeMap<String, String>)> {
+    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_slice(bytes).ok()?;
+    let ty = yaml.get("type")?.as_str()?.to_string();
+    let refs = yaml
+        .get("sections")
+        .and_then(serde_yaml_ng::Value::as_sequence)
+        .into_iter()
+        .flatten()
+        .filter(|section| {
+            section
+                .get("header")
+                .and_then(serde_yaml_ng::Value::as_bool)
+                .unwrap_or(false)
+        })
+        .filter_map(|section| section.get("fields")?.as_sequence())
+        .flatten()
+        .filter(|field| field.get("type").and_then(serde_yaml_ng::Value::as_str) == Some("ref"))
+        .filter_map(|field| {
+            Some((
+                field.get("id")?.as_str()?.to_string(),
+                field.get("to")?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    Some((ty, refs))
 }
 
 /// What a schema file declares of its doctype's home.
@@ -1659,6 +1742,9 @@ impl Homes {
         for schema in schemas {
             if let Some((ty, home)) = declared(&schema) {
                 homes.current.insert(ty, resolve(home));
+            }
+            if let Some((ty, refs)) = ref_fields(&schema) {
+                homes.refs.insert(ty, refs);
             }
             if let Some((ty, shape)) = shaped(&schema)
                 && let Some(version) = homes.versions.get(&ty)
@@ -1856,6 +1942,7 @@ fn baselined(manifest: &Manifest) -> Option<BTreeSet<String>> {
 fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     match pattern {
         THE_DOC => return acting.the_doc.as_ref().is_some_and(|(_, at)| at == path),
+        THE_NEW_DOC => return acting.new_doc.as_deref() == Some(path),
         A_DOC => {
             return [&acting.homes, &acting.homes_after]
                 .into_iter()
@@ -2080,22 +2167,14 @@ impl<'a> Tally<'a> {
                                 })
                         });
                 }
-                // The arrivals a word reads away from its place: the doc the address names,
-                // moved within its home; a doc moved into its doctype's home.
-                if let (Some(rel), Some(is)) = (in_repo(diff.path), diff.after) {
-                    let arrived = match may {
-                        May::Retitled => {
-                            diff.before.is_none()
-                                && self
-                                    .retitle()
-                                    .is_some_and(|(old, new)| new != old && new == rel)
-                        }
-                        May::IntoItsHome => self.arrived_home(place, rel, diff.before, is),
-                        _ => false,
-                    };
-                    if arrived {
-                        return true;
-                    }
+                // The arrival a word reads away from its place: a doc moved into its
+                // doctype's home. (The doc the address names, moved within its home, is read
+                // at its new home, a place of its own — [`THE_NEW_DOC`].)
+                if let (Some(rel), Some(is), May::IntoItsHome) =
+                    (in_repo(diff.path), diff.after, may)
+                    && self.arrived_home(place, rel, diff.before, is)
+                {
+                    return true;
                 }
                 if !self.placed(place, diff.path) {
                     return false;
@@ -2129,6 +2208,9 @@ impl<'a> Tally<'a> {
                     (May::Retitled, Some(Entry::File { .. }), None) => self
                         .retitle()
                         .is_some_and(|(old, new)| old == rel && new != old),
+                    (May::Retitled, None, Some(Entry::File { .. })) => self
+                        .retitle()
+                        .is_some_and(|(old, new)| new == rel && new != old),
                     (May::IntoItsHome, Some(_), None) => self.moved_home(place, rel).is_some(),
                     (May::Migrated, Some(was @ Entry::File { .. }), None) => {
                         self.migrated_away(rel, was)
@@ -2209,7 +2291,7 @@ impl<'a> Tally<'a> {
             May::TakeOutOf => was
                 .and_then(Entry::lines)
                 .is_some_and(|was| stand_in(&now, &was)),
-            May::Repointed => was.is_some_and(|was| self.repointed(was, is)),
+            May::Repointed => was.is_some_and(|was| self.repointed(rel, was, is)),
             May::Migrated => self.migrated_into(rel, was, is, committed),
             May::ItsKeySet => self.its_knob_set(was, is),
             _ => false,
@@ -2217,53 +2299,48 @@ impl<'a> Tally<'a> {
     }
 
     /// **The doc the address names, retitled** ([`May::Retitled`]): its home before the
-    /// command, and where it stands after — the same path, rewritten, or one path of the
-    /// same directory at which nothing stood, its own gone. The doc there holds the lines it
-    /// held but its `# ` title line, and that line is the title `--to` gives; an unchanged
-    /// file is no retitle in place. `None` where there is no one such file.
+    /// command, and where it stands after — its new home ([`THE_NEW_DOC`]), the slug the
+    /// command gives: that same path, rewritten, or another of its home directory at which
+    /// nothing stood, its own gone. The doc there holds the lines it held but its `# ` title
+    /// line, and that line is the title `--to` gives; an unchanged file is no retitle in
+    /// place. `None` where it does not stand so.
     fn retitle(&self) -> Option<(String, String)> {
         let (_, old) = self.acting.the_doc.as_ref()?;
+        let new = self.acting.new_doc.as_ref()?;
         let was = self.seen.before.files.get(&format!("{REPO}/{old}"))?;
+        let is = self.seen.after.files.get(&format!("{REPO}/{new}"))?;
         let kept = but_its_title(was)?;
-        let dir = old.rsplit_once('/').map_or("", |(dir, _)| dir);
-        let titled = |entry: &Entry| match &self.acting.to {
+        let titled = match &self.acting.to {
             None => true,
-            Some(to) => entry
+            Some(to) => is
                 .lines()
                 .and_then(|lines| lines.into_iter().find(|line| line.starts_with(b"# ")))
                 .is_some_and(|line| {
                     line.strip_suffix(b"\n").unwrap_or(line) == format!("# {to}").as_bytes()
                 }),
         };
-        let found: Vec<&str> = self
-            .seen
-            .after
-            .files
-            .iter()
-            .filter_map(|(path, entry)| {
-                let rel = in_repo(path)?;
-                let here = rel.rsplit_once('/').map_or("", |(dir, _)| dir);
-                (here == dir
-                    && matches!(entry, Entry::File { .. })
-                    && (rel == old || self.acting.nothing_stood(rel))
-                    && (rel != old || !entry.same(was))
-                    && but_its_title(entry).as_ref() == Some(&kept)
-                    && titled(entry))
-                .then_some(rel)
-            })
-            .collect();
-        let gone = !self.seen.after.files.contains_key(&format!("{REPO}/{old}"));
-        match found.as_slice() {
-            [new] if new == old || gone => Some((old.clone(), new.to_string())),
-            _ => None,
-        }
+        let moved = if new == old {
+            !is.same(was)
+        } else {
+            self.acting.nothing_stood(new)
+                && !self.seen.after.files.contains_key(&format!("{REPO}/{old}"))
+        };
+        (matches!(is, Entry::File { .. })
+            && moved
+            && but_its_title(is).as_ref() == Some(&kept)
+            && titled)
+            .then(|| (old.clone(), new.clone()))
     }
 
-    /// **Whether `is` is `was` repointed** ([`May::Repointed`]): the doc the address names
-    /// moved, and each line that changed held its old identity and holds, in its place, the
-    /// new one — the slug its new home names — every other line as it stood, none added or
-    /// gone, and one line at least changed.
-    fn repointed(&self, was: &Entry, is: &Entry) -> bool {
+    /// **Whether `is` is `was` repointed** ([`May::Repointed`]) — the doc of the store at
+    /// `rel`, from the repository's root: the doc the address names moved, and each line that
+    /// changed is a ref-field of the front matter of `was` that held the old identity among
+    /// its values, whole, and holds those values in the field grammar's canonical form with
+    /// that one the new identity — the slug its new home names — every other line as it
+    /// stood, none added or gone, and one line at least changed. The ref-fields are the ones
+    /// the schema of the doctype whose home holds `rel` declares `type: ref` to the moved
+    /// doc's doctype ([`Homes::refs`]).
+    fn repointed(&self, rel: &str, was: &Entry, is: &Entry) -> bool {
         let (Some((old, new)), Some((identity, _))) =
             (self.retitle(), self.acting.the_doc.as_ref())
         else {
@@ -2281,21 +2358,75 @@ impl<'a> Tally<'a> {
             return false;
         }
         let fresh = format!("{ty}:{slug}");
+        let Some(fields) = self.acting.homes.as_ref().and_then(|homes| {
+            let of = homes.doctype_at(rel)?;
+            Some(
+                homes
+                    .refs
+                    .get(of)?
+                    .iter()
+                    .filter(|(_, to)| to.as_str() == ty)
+                    .map(|(field, _)| field.as_str())
+                    .collect::<BTreeSet<&str>>(),
+            )
+        }) else {
+            return false;
+        };
         let (Some(was), Some(is)) = (was.lines(), is.lines()) else {
             return false;
         };
         if was.len() != is.len() {
             return false;
         }
+        let front = front_matter(&was);
         let mut changed = false;
-        for (before, after) in was.iter().zip(&is) {
+        for (at, (before, after)) in was.iter().zip(&is).enumerate() {
             if before == after {
                 continue;
             }
-            let line = String::from_utf8_lossy(before);
-            if !line.contains(identity.as_str())
-                || after != &line.replace(identity.as_str(), &fresh).as_bytes()
+            if !front.contains(&at) {
+                return false;
+            }
+            let Some(line) = std::str::from_utf8(before)
+                .ok()
+                .map(|line| line.strip_suffix('\n').unwrap_or(line))
+            else {
+                return false;
+            };
+            let Some((key, value)) = line.split_once(':') else {
+                return false;
+            };
+            let key = key.trim();
+            if !fields.contains(key) {
+                return false;
+            }
+            let value = value.trim();
+            let rendered = match value
+                .strip_prefix('[')
+                .and_then(|inner| inner.strip_suffix(']'))
             {
+                Some(inner) => {
+                    let elements: Vec<&str> = inner.split(',').map(str::trim).collect();
+                    if !elements.contains(&identity.as_str()) {
+                        return false;
+                    }
+                    let swapped: Vec<&str> = elements
+                        .into_iter()
+                        .map(|element| {
+                            if element == identity {
+                                fresh.as_str()
+                            } else {
+                                element
+                            }
+                        })
+                        .collect();
+                    format!("[{}]", swapped.join(", "))
+                }
+                None if value == identity => fresh.clone(),
+                None => return false,
+            };
+            let ends = if before.ends_with(b"\n") { "\n" } else { "" };
+            if *after != format!("{key}: {rendered}{ends}").as_bytes() {
                 return false;
             }
             changed = true;
@@ -2543,22 +2674,14 @@ impl<'a> Tally<'a> {
                 let Allows::Files(place, may) = line.allows else {
                     return false;
                 };
-                // The arrivals a word reads away from its place.
-                if let Some(entry) = entry
+                // The arrival a word reads away from its place.
+                if let (Some(entry), May::IntoItsHome) = (entry, may)
                     && as_after(entry)
+                    && after.is_some_and(|is| {
+                        self.arrived_home(place, path, self.seen.before.files.get(&key), is)
+                    })
                 {
-                    let arrived = match may {
-                        May::Retitled => self
-                            .retitle()
-                            .is_some_and(|(old, new)| new != old && new == path),
-                        May::IntoItsHome => after.is_some_and(|is| {
-                            self.arrived_home(place, path, self.seen.before.files.get(&key), is)
-                        }),
-                        _ => false,
-                    };
-                    if arrived {
-                        return true;
-                    }
+                    return true;
                 }
                 // A move carries its index entry with it: what the main checkout's index held
                 // at a path of the place, gone, now at the path the move landed on.
@@ -2599,11 +2722,9 @@ impl<'a> Tally<'a> {
                         .files
                         .get(&key)
                         .is_some_and(|was| self.migrated_away(path, was)),
+                    // The doc at its new home, or rewritten in place where that is its own.
                     (May::Retitled, Some(entry)) => {
-                        as_after(entry)
-                            && self
-                                .retitle()
-                                .is_some_and(|(old, new)| old == path && new == old)
+                        as_after(entry) && self.retitle().is_some_and(|(_, new)| new == path)
                     }
                     (May::IntoItsHome, Some(_)) => false,
                     // A word that says what a file may become: the commit holds the file the
@@ -2724,6 +2845,20 @@ impl<'a> Tally<'a> {
                 .count()
         };
         alike(after, before) >= alike(before, after)
+    }
+}
+
+/// **The positions of a doc's front-matter lines** — those between the `---` its first line
+/// is and the next `---`, neither fence among them; none where the doc opens with no fence
+/// or its front matter has no end.
+fn front_matter(lines: &[&[u8]]) -> BTreeSet<usize> {
+    let fence = |line: &[u8]| line.trim_ascii_end() == b"---";
+    if !lines.first().is_some_and(|line| fence(line)) {
+        return BTreeSet::new();
+    }
+    match lines.iter().skip(1).position(|line| fence(line)) {
+        Some(end) => (1..=end).collect(),
+        None => BTreeSet::new(),
     }
 }
 
