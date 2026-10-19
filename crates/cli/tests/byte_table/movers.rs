@@ -441,6 +441,12 @@ const fn git(args: &'static [&'static str]) -> Lead {
     Lead::Step(Step::Git(args))
 }
 
+/// A payload a lead reads with `--from-file`: a file under `outside/`, which a step
+/// started in the repository reaches as `../outside/<name>`.
+const fn payload(name: &'static str, body: &'static str) -> Lead {
+    Lead::Step(Step::File(Place::Outside(name), body))
+}
+
 /// What a planted cell's plant is aimed at.
 const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
     Some(Aim { line, kind })
@@ -1287,6 +1293,59 @@ macro_rules! a_stranded_note {
     };
 }
 
+/// **A note jigc manages at its home, and a note of the same name stranded at the prior
+/// home** — the note pack listed and a note committed at `docs/notes/`, which a task of its
+/// own writes and lands, so the file-state baseline records it; then the stranded note,
+/// committed by the user: a destination a managed instance occupies.
+macro_rules! a_managed_note_at_the_new_home {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file("note-pack/schemas/note.yaml", A_NOTE_SCHEMA),
+            file(".jigc/config/packs.yaml", PACKS_WITH_THE_NOTE_PACK),
+            file(THE_NOTES_HOME, A_MANAGED_NOTE),
+            git(&["add", "--", "note-pack", ".jigc/config/packs.yaml", "docs"]),
+            git(&["commit", "-q", "-m", "a note pack, and a note at its home"]),
+            jigc(&["start", "--workflow", "single-task", "touch a note"]),
+            payload("body", "Benchmarked again.\n"),
+            jigc(&[
+                "doc",
+                "set-slot",
+                "note:cache-benchmarks#body",
+                "--from-file",
+                "../outside/body",
+                "--task",
+                "touch-a-note",
+            ]),
+            jigc(&[
+                "doc",
+                "set-field",
+                "commit:touch-a-note#type",
+                "--value",
+                "docs",
+                "--task",
+                "touch-a-note",
+            ]),
+            payload("summary", "touch a note\n"),
+            jigc(&[
+                "doc",
+                "set-slot",
+                "commit:touch-a-note#summary",
+                "--from-file",
+                "../outside/summary",
+                "--task",
+                "touch-a-note",
+            ]),
+            jigc(&["task", "finalize", "touch-a-note"]),
+            file(STRANDED, A_NOTE),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a note at its old home"]),
+            $($after,)*
+        ]
+    };
+}
+/// The note jigc manages at its home.
+const A_MANAGED_NOTE: &str = "# Cache benchmarks\n\n## Body\n\nThe managed one.\n";
+
 const RELOCATE_IT: &[&str] = &["relocate", "note", "--from", "docs/legacy-notes/"];
 
 /// One cell of `jigc relocate`.
@@ -1313,9 +1372,12 @@ const fn relocates(
 ///   a file of the user's, a link, a directory, its files with it; **a file the user
 ///   committed** there blocks the move, naming the home — the reading of the record's §6,
 ///   entry 23, marked, where `design/reconciliation.md` parks it and
-///   `design/corpus-migration.md` blocks it;
+///   `design/corpus-migration.md` blocks it; **a note jigc manages** there blocks it, under
+///   the code the run gives — *"A *managed* instance already at the destination … the
+///   relocation **surfaces the collision as a block** (never a clobber)"*
+///   (`design/reconciliation.md` → *Relocation collisions*);
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 23] = [
+const RELOCATE_CELLS: [Cell; 24] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1439,6 +1501,13 @@ const RELOCATE_CELLS: [Cell; 23] = [
         a_stranded_note!(Lead::Plant(Plant::Dir(THE_NOTES_HOME))),
         Listed::Acts,
         at("RL3", Kind::DirForAFile),
+    ),
+    // A managed note at the new home: no squatter, and nothing parked.
+    relocates(
+        "relocate-a-note-a-task-landed-at-the-notes-new-home",
+        a_managed_note_at_the_new_home!(),
+        refuses(1, "write.already-present"),
+        None,
     ),
     // `RL4`, the baseline.
     relocates(
@@ -1567,9 +1636,10 @@ const fn sets(
 ///   home**, what squats it parked (`CS3`) — *"so a foreign file squatting the new home is
 ///   parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"*
 ///   (`design/storage.md` → *Placement*) — and a file the user committed blocks it, as
-///   `relocate`'s;
+///   `relocate`'s; **a decision jigc manages** there blocks it, as it blocks `relocate`
+///   (`design/reconciliation.md` → *Relocation collisions*);
 /// - **a file of the user's beside the baseline** stays.
-const CONFIG_SET_CELLS: [Cell; 34] = [
+const CONFIG_SET_CELLS: [Cell; 35] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -1783,6 +1853,33 @@ const CONFIG_SET_CELLS: [Cell; 34] = [
         a_committed_decision!(Lead::Plant(Plant::Dir(THE_DECISIONS_NEW_HOME))),
         Listed::Acts,
         at("CS3", Kind::DirForAFile),
+    ),
+    // A decision jigc manages at the new home — landed by a task while the docs root was
+    // `notes`, set by hand and set back — and one of the same name at the old: no squatter,
+    // and nothing parked.
+    sets(
+        "config-set-a-decision-a-task-landed-at-the-decisions-new-home",
+        &[
+            file(THE_MANIFEST, "scalar:\n  docs-root: notes\n"),
+            A_TASK_THAT_RECORDS_ONE_WAY[0],
+            A_TASK_THAT_RECORDS_ONE_WAY[1],
+            A_TASK_THAT_RECORDS_ONE_WAY[2],
+            A_TASK_THAT_RECORDS_ONE_WAY[3],
+            A_TASK_THAT_RECORDS_ONE_WAY[4],
+            A_TASK_THAT_RECORDS_ONE_WAY[5],
+            A_TASK_THAT_RECORDS_ONE_WAY[6],
+            A_TASK_THAT_RECORDS_ONE_WAY[7],
+            A_TASK_THAT_RECORDS_ONE_WAY[8],
+            A_TASK_THAT_RECORDS_ONE_WAY[9],
+            A_TASK_THAT_RECORDS_ONE_WAY[10],
+            jigc(&["task", "finalize", "record-a-decision"]),
+            file(THE_MANIFEST, "scalar:\n  docs-root: docs\n"),
+            file(ONE_WAY, A_DECISION),
+            git(&["add", "--", ".jigc/config", "docs"]),
+            git(&["commit", "-q", "-m", "the docs root back, and a decision"]),
+        ],
+        refuses(1, "config.repoint-failed"),
+        None,
     ),
     // `CS4`, the baseline.
     sets(

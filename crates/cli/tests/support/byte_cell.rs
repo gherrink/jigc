@@ -487,6 +487,19 @@ pub enum May {
     /// `.jigc/displaced/<sub-task>`, by the human's ruling of 2026-10-19 on the rows'
     /// record's §6, entry 18, and to no other unit's place there. *What it does not ask*:
     /// that the sub-task a file arrives under is the one whose worktree it left.
+    ///
+    /// **At one file's place** ([`Where::Path`] — a mover's destination, `RL3`, `CS3`) it
+    /// moves aside **only the foreign occupant of a destination a move landed on**
+    /// ([`Tally::squatted`]): an entry that stood at the path before the command, which the
+    /// file-state baseline the command found records nothing at, where a doc stands after
+    /// that arrived by a move into its home ([`May::IntoItsHome`]) — *"A *foreign*
+    /// (untracked/unmanaged) file at the destination → move-into-workbench"*, and *"A
+    /// *managed* instance already at the destination … **surfaces the collision as a
+    /// block**"*, *"Classification is by **baseline**"* (`design/reconciliation.md` →
+    /// *Relocation collisions*). A doc of the store gone from a path nothing arrived at — the
+    /// doc a re-point should have moved, a doc no move concerns — and a managed occupant are
+    /// none of it. Narrowed 2026-10-19, after the review of the task `B8` (H1, H2): the line
+    /// covered any doc of the store gone into the workbench.
     MovedAsideTo(&'static str),
     /// **Gone from its name, and standing under another in the same unit** — a staged doc
     /// re-slugged: its unit's base pin stands, and the unit's `docs/` gained a doc it did
@@ -1135,6 +1148,13 @@ struct Acting {
     /// The title the command's `--to` gives — what [`May::Retitled`] asks the new `# `
     /// line to be.
     to: Option<String>,
+    /// **What the file-state baseline records before the command**, by path from the
+    /// repository's root — the keys of `.jigc/state/file-state.json`'s `hashes`: a managed
+    /// doc is one recorded there, a foreign file one that is not (`design/reconciliation.md`
+    /// → *Relocation collisions*: *"Classification is by **baseline**"*). Empty where no
+    /// record stands; `None` where one stands that does not read as one, and then no
+    /// occupant is foreign ([`Tally::squatted`]).
+    baselined: Option<BTreeSet<String>>,
 }
 
 impl Acting {
@@ -1262,6 +1282,7 @@ impl Acting {
             the_doc,
             from,
             to: word_after("--to"),
+            baselined: baselined(before),
             unit,
             sub_tasks,
             settled,
@@ -1718,6 +1739,23 @@ fn committed<'m>(manifest: &'m Manifest, rel: &str) -> Option<&'m Entry> {
     None
 }
 
+/// **The paths the file-state baseline records in `manifest`** ([`Acting::baselined`]): the
+/// keys of the `hashes` map of `.jigc/state/file-state.json` — none where the file does not
+/// stand, and `None` where an entry stands there that is no record.
+fn baselined(manifest: &Manifest) -> Option<BTreeSet<String>> {
+    match manifest
+        .files
+        .get(&format!("{REPO}/.jigc/state/file-state.json"))
+    {
+        None => Some(BTreeSet::new()),
+        Some(Entry::File { bytes, .. }) => {
+            let record: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+            Some(record.get("hashes")?.as_object()?.keys().cloned().collect())
+        }
+        Some(_) => None,
+    }
+}
+
 /// Whether `path` is `pattern`, component for component, a `*` standing for any one — and,
 /// for a command that acts on a unit, [`OWN`], [`ITS_SUB_TASKS`] and [`ITS_MILESTONE`] for
 /// what [`Acting`] reads, and a leading [`DOCS_ROOT`] for the docs root.
@@ -1930,14 +1968,15 @@ impl<'a> Tally<'a> {
                 if let May::MovedAsideTo(dir) = may
                     && aside(dir, diff.path)
                 {
-                    // The arrival: a directory, or an entry that left a place of the line —
-                    // gone from it, or something else standing there now.
+                    // The arrival: a directory, or an entry that left a place the line parks
+                    // from — gone from it, or something else standing there now; at one
+                    // file's place, only a destination's foreign occupant.
                     return diff.before.is_none()
                         && diff.after.is_some_and(|arrived| {
                             matches!(arrived, Entry::Dir(_))
                                 || self.seen.before.files.iter().any(|(from, left)| {
                                     left.same(arrived)
-                                        && self.placed(place, from)
+                                        && self.parks(place, from)
                                         && self
                                             .seen
                                             .after
@@ -2019,11 +2058,12 @@ impl<'a> Tally<'a> {
                         is.blob().is_some_and(|blob| self.staged.contains(blob))
                     }
                     (May::MovedAsideTo(dir), Some(left), None) => {
-                        self.seen.after.files.iter().any(|(to, arrived)| {
-                            aside(dir, to)
-                                && arrived.same(left)
-                                && !self.seen.before.files.contains_key(to)
-                        })
+                        self.parks(place, diff.path)
+                            && self.seen.after.files.iter().any(|(to, arrived)| {
+                                aside(dir, to)
+                                    && arrived.same(left)
+                                    && !self.seen.before.files.contains_key(to)
+                            })
                     }
                     _ => false,
                 }
@@ -2194,7 +2234,9 @@ impl<'a> Tally<'a> {
 
     /// **Whether `is`, at `rel` after the command, arrived there by a move into its home**
     /// ([`May::IntoItsHome`]) from a path of the line's place that held the same entry and
-    /// is gone — and what stood at `rel` before, if anything did, stands moved aside under
+    /// is gone — and what stood at `rel` before, if anything did, was foreign (the file-state
+    /// baseline records nothing at `rel`: a managed occupant blocks the move,
+    /// `design/reconciliation.md` → *Relocation collisions*) and stands moved aside under
     /// `.jigc/displaced/` after it.
     fn arrived_home(&self, place: Where, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
         let from = self.seen.before.files.iter().any(|(from, left)| {
@@ -2207,13 +2249,53 @@ impl<'a> Tally<'a> {
                     == Some(rel)
         });
         let parked = was.is_none_or(|was| {
-            self.seen.after.files.iter().any(|(at, now)| {
-                in_repo(at).is_some_and(|at| under(".jigc/displaced", at))
-                    && now.same(was)
-                    && !self.seen.before.files.contains_key(at)
-            })
+            self.foreign(rel)
+                && self.seen.after.files.iter().any(|(at, now)| {
+                    in_repo(at).is_some_and(|at| under(".jigc/displaced", at))
+                        && now.same(was)
+                        && !self.seen.before.files.contains_key(at)
+                })
         });
         from && parked
+    }
+
+    /// Whether the file-state baseline the command found records nothing at `rel`, from the
+    /// repository's root — a foreign entry there, by *"Classification is by **baseline**"*
+    /// (`design/reconciliation.md` → *Relocation collisions*). Where the record does not
+    /// read, nothing is foreign.
+    fn foreign(&self, rel: &str) -> bool {
+        self.acting
+            .baselined
+            .as_ref()
+            .is_some_and(|baselined| !baselined.contains(rel))
+    }
+
+    /// **Whether `rel` is a destination a move landed on over a foreign occupant** — what
+    /// [`May::MovedAsideTo`] at one file's place moves aside: an entry stood at `rel` before
+    /// the command and one stands there after, which arrived by a move into its home under a
+    /// line in force ([`Tally::arrived_home`], which asks the occupant to be foreign and
+    /// parked).
+    fn squatted(&self, rel: &str) -> bool {
+        let key = format!("{REPO}/{rel}");
+        let (Some(was), Some(is)) = (
+            self.seen.before.files.get(&key),
+            self.seen.after.files.get(&key),
+        ) else {
+            return false;
+        };
+        self.in_force().any(|(_, line)| {
+            matches!(line.allows, Allows::Files(place, May::IntoItsHome)
+                if self.arrived_home(place, rel, Some(was), is))
+        })
+    }
+
+    /// **Whether `path`, from the sandbox's root, is where a line that moves aside parks
+    /// from** ([`May::MovedAsideTo`]): any path of its place under a directory, and at one
+    /// file's place only a destination's foreign occupant ([`Tally::squatted`]).
+    fn parks(&self, place: Where, path: &str) -> bool {
+        self.placed(place, path)
+            && (matches!(place, Where::Under(_))
+                || in_repo(path).is_some_and(|rel| self.squatted(rel)))
     }
 
     /// **The doc a migration rewrote at `rel`, and whether it is `is` migrated**
@@ -2412,7 +2494,8 @@ impl<'a> Tally<'a> {
                     return false;
                 }
                 match (may, entry) {
-                    (May::Removed | May::MovedAsideTo(_), None) => true,
+                    (May::Removed, None) => true,
+                    (May::MovedAsideTo(_), None) => self.parks(place, &key),
                     (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
                     (May::Retitled, None) => self
                         .retitle()
@@ -2744,7 +2827,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             std::iter::successors(Some(plant.at.as_str()), |at| {
                 at.rsplit_once('/').map(|(up, _)| up)
             })
-            .any(|at| tally.placed(place, at))
+            .any(|at| tally.parks(place, at))
         };
         let aside = tally.in_force().find_map(|(at, line)| match line.allows {
             Allows::Files(place, May::MovedAsideTo(dir)) if in_a_parked_place(place) => {

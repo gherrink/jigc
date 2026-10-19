@@ -8,7 +8,7 @@
 //! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, and the movers family's four (`rename`,
-//! `relocate`, `migrate-corpus`, `config set`) — and 657 cells: the acceptance's
+//! `relocate`, `migrate-corpus`, `config set`) — and 659 cells: the acceptance's
 //! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -17,7 +17,7 @@
 //! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), **its
 //! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
 //! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
-//! carryover gate's cell under `squash: false`), **and the movers family's fifty-seven
+//! carryover gate's cell under `squash: false`), **and the movers family's fifty-nine
 //! and seventy** (`relocate`, `config set`; `rename`, `migrate-corpus`), of which a hundred
 //! and fifty-six run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
@@ -3769,7 +3769,10 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
 /// for it, staged and committed by nobody, holds — and so does the same move over a file
 /// of the user's at the destination parked under `.jigc/displaced/`; moved anywhere else,
 /// with other bytes, over a file left nowhere, or from outside `--from`, it is red; a line
-/// of the user's planted in the doc moves with it, and holds. A
+/// of the user's planted in the doc moves with it, and holds. **What is parked is a
+/// destination's foreign occupant and nothing else**: a committed doc no move concerns
+/// parked beside the move, an occupant the file-state baseline records (a managed doc)
+/// parked, and a `docs-root` re-point that parks the doc it should move are each red. A
 /// `placement-root` re-point moving the roadmap under the new root, the knob set, holds;
 /// to another directory, it is red.
 #[test]
@@ -3942,6 +3945,138 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         class,
         Classification::Holds,
         "the squatting directory parked: {why:#?}"
+    );
+
+    // **What a move parks is the foreign occupant of a destination it lands on, and nothing
+    // else** (the review of the task `B8`, H1 and H2, red first: each came out *holds*). A
+    // committed decision no move concerns, parked beside the note's honest move, is red;
+    // so is an occupant of the note's new home that the file-state baseline records — a
+    // managed doc, whose collision `design/reconciliation.md` blocks — where the same
+    // occupant with no baseline, parked, holds as it did.
+    const DECISION: &str =
+        "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe chose.\n";
+    const MANAGED: &str = "# Cache benchmarks\n\n## Body\n\nThe managed one.\n";
+    let with_the_note_pack = |files: &[(&str, &str)], baseline: Option<&str>| {
+        then(&with_committed(files), |m| {
+            written(
+                m,
+                ".jigc/config/packs.yaml",
+                "packs:\n  - .jigc/note-pack\n",
+            );
+            written(m, ".jigc/note-pack/schemas/note.yaml", SCHEMA);
+            if let Some(path) = baseline {
+                written(
+                    m,
+                    ".jigc/state/file-state.json",
+                    &format!("{{\n  \"hashes\": {{\n    \"{path}\": \"0\"\n  }}\n}}\n"),
+                );
+            }
+        })
+    };
+    let beside = with_the_note_pack(
+        &[
+            ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+            ("docs/decisions/one-way.md", DECISION),
+        ],
+        None,
+    );
+    let parked_beside = then(&beside, |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "docs/notes/cache-benchmarks.md",
+            NOTE,
+        );
+        m.files.remove(&format!("{REPO}/docs/decisions/one-way.md"));
+        written(m, ".jigc/displaced/one-way.md", DECISION);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index.remove("docs/decisions/one-way.md");
+    });
+    let (class, why) = Cell {
+        argv,
+        ..Cell::of(movers::RELOCATE, &beside, &parked_beside)
+    }
+    .came_to();
+    assert!(
+        class.is_red(),
+        "a decision no move concerns, parked: came out {class}, {why:#?}"
+    );
+    for (case, baseline, red) in [
+        ("an occupant with no baseline", None, false),
+        (
+            "a managed occupant",
+            Some("docs/notes/cache-benchmarks.md"),
+            true,
+        ),
+    ] {
+        let occupied = with_the_note_pack(
+            &[
+                ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+                ("docs/notes/cache-benchmarks.md", MANAGED),
+            ],
+            baseline,
+        );
+        let parked = then(&occupied, |m| {
+            git_mv(
+                m,
+                "docs/legacy-notes/cache-benchmarks.md",
+                "docs/notes/cache-benchmarks.md",
+                NOTE,
+            );
+            written(m, ".jigc/displaced/cache-benchmarks.md", MANAGED);
+        });
+        let (class, why) = Cell {
+            argv,
+            ..Cell::of(movers::RELOCATE, &occupied, &parked)
+        }
+        .came_to();
+        assert_eq!(
+            class.is_red(),
+            red,
+            "{case}, parked: came out {class}, {why:#?}"
+        );
+    }
+
+    // A `docs-root` re-point: the decision moved under the new root holds; parked in the
+    // workbench in place of its move, the knob set, it is red.
+    let before = with_committed(&[("docs/decisions/one-way.md", DECISION)]);
+    let argv: &[&str] = &["config", "set", "docs-root", "notes"];
+    let knob_set = |m: &mut Manifest| {
+        written(
+            m,
+            ".jigc/config/manifest.yaml",
+            "scalar:\n  docs-root: notes\n",
+        );
+    };
+    let moved = then(&before, |m| {
+        git_mv(
+            m,
+            "docs/decisions/one-way.md",
+            "notes/decisions/one-way.md",
+            DECISION,
+        );
+        knob_set(m);
+    });
+    let parked = then(&before, |m| {
+        m.files.remove(&format!("{REPO}/docs/decisions/one-way.md"));
+        written(m, ".jigc/displaced/one-way.md", DECISION);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index.remove("docs/decisions/one-way.md");
+        knob_set(m);
+    });
+    let came = |after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(movers::CONFIG_SET, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&moved);
+    assert_eq!(class, Classification::Holds, "the docs-root move: {why:#?}");
+    let (class, why) = came(&parked);
+    assert!(
+        class.is_red(),
+        "the doc to move parked instead: came out {class}, {why:#?}"
     );
 
     // A root knob's re-point: the roadmap under the new root, and the knob set.
@@ -9858,6 +9993,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "relocate-a-link-to-a-file-in-the-repository-in-the-stranded-notes-place",
             "relocate-a-link-to-a-file-outside-in-the-stranded-notes-place",
             "relocate-a-directory-in-the-stranded-notes-place",
+            "relocate-a-note-a-task-landed-at-the-notes-new-home",
         ],
     ),
     // The rows' record's §6, entry 23 — the cell marked.
@@ -10347,7 +10483,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (657, 501, 156),
+        (659, 503, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -10360,8 +10496,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy, `rename`'s thirty-one and \
          `migrate-corpus`'s thirty-nine: fifty-eight in the gate, twelve on demand — and its \
-         movers fifty-seven, `relocate`'s twenty-three and `config set`'s thirty-four: \
-         forty-five in the gate, twelve on demand"
+         movers fifty-nine, `relocate`'s twenty-four and `config set`'s thirty-five: \
+         forty-seven in the gate, twelve on demand"
     );
 }
 
