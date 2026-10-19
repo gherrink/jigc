@@ -2,13 +2,29 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
-## 2026-10-19 — The milestone family's terminals have their cells — `discard`, and `milestone finalize`'s plain spelling — 53 in the gate and 12 on demand; five are red, four under the record doors' keys and one marked with a new entry of the record's §6: a landed boundary takes a file nobody staged from a sub-task's worktree, which the design narrates and the exit rule forbids; and `M6` gains the moved-aside half its sentence gives the milestone's own area (the byte table, task `B7`, its second part: the fourth of its commits)
+## 2026-10-19 — The milestone family's numbers are on record: 165 cells, 117 in the gate and 48 on demand, twelve red under four keys and the same twelve on the previous release, where 27 more are red that the fix pass fixed; a fan-out cell in six to twelve seconds inside a gate; the family adds about 83 s to the gate's chain; and the whole table — 519 cells — is printed on the previous release and committed (the byte table, task `B7`, its second part: the last of its commits)
+
+**What.** The family's record — [byte-table-milestone-family.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-milestone-family.md) — and beside it **the whole table** as the arm on a named binary printed it, [byte-table-milestone-family-cells.tsv](completions/artifacts/M55/stabilization-build/reshape/byte-table-milestone-family-cells.tsv): all 519 cells on the previous release (`1.0.0-rc.24`, the rebuild from `91834b5e`, sha256 `accf3996…ab5d`, checked — not an installed `jigc`) and on this tree's debug build, 303 s. No cell, row, frame or product source changes.
+
+**The numbers, each with its source in the record.** 165 cells — 117 in the gate, 48 on demand; **12 red** in the gate under four keys, none on demand; **the same twelve on the previous release**, cell for cell, and 27 more red there — the record doors over a link or a directory at the record's home or in its place, a change staged at the home before `create` (lost), the user's own worktree moved away under `discard`, and at a created doc's home under the boundary a link written through (lost) or a staged change (lost): `(R6, D-7)`, CPL-5, `L-22` and `(R6, D-1)`, each fixed by the pass the table was built to hold. **No regression.** The whole table on the previous release: 165 of 519 red and two that do not build — 167 not clean — where 84 are red on this tree. A cell of the family costs 1.0 to 15.2 s inside the gate of its fourth commit, a fan-out of two code-carrying sub-tasks 6 to 12 s; the arm of `fresh` ran 102.6 s there, about 72 s more than with the doc family, and `vendored` 11.5 s: **the four arms are 163.5 s of the chain**. The whole table under the ruling, projected: about 530 gate cells and 3.4 minutes — arithmetic, not a measurement.
+
+**Slips of the day's entries, corrected where they stand** — the fourth commit's entry counted five red cells where the print has four, the expected-red list 81 where it is 80, and 48 holding where 49 do; its commit message read the same and was corrected before the push; the findings' §19 heading likewise.
+
+**The plan's pattern at `B7`'s family**: the rows from the docs in a commit of their own, then the cells in the three parts the docs' own split gave — the record doors (`design/team-ready-state.md` → *The commit model*), the fan-out doors (the re-seed, the worktrees), the terminals (*The lifecycle*, *`fan-out` finalize*) — each in one commit, since a gate of this day took about twenty minutes.
+
+**What `B8` and `B9` need that the plan does not name** — for the human, and decided by nobody here:
+
+1. **Entry 18 of the rows' record** decides how a landed boundary's cell over a worktree's unstaged bytes reads; the robust answer (move them aside) is a product change.
+2. **`<minted>`** is there for `B9`'s mints — `start` mints a task from an intent, `migrate` one too — and **`Allows::Registered`** for any door that adds a worktree.
+3. **A cell whose state needs a committed spec** stands in `vendored`, now an arm of its own.
+
+## 2026-10-19 — The milestone family's terminals have their cells — `discard`, and `milestone finalize`'s plain spelling — 53 in the gate and 12 on demand; four are red, three under the record doors' keys and one marked with a new entry of the record's §6: a landed boundary takes a file nobody staged from a sub-task's worktree, which the design narrates and the exit rule forbids; and `M6` gains the moved-aside half its sentence gives the milestone's own area (the byte table, task `B7`, its second part: the fourth of its commits)
 
 **What.** The last of the family's three parts of cells ([milestone.rs](crates/cli/tests/byte_table/milestone.rs)): `discard`'s 28 and `milestone finalize`'s plain spelling's 37, beside its acceptance's three, with the carryover gate's cell under `squash: false`; one line of `milestone finalize`'s row, from its own sentence; one entry of the record's §6; two scheduled needs. No product source changes. **Every leaf with a row has its cells**: the list of leaves whose cells are owed is empty, and stays so — `B8` and `B9` bring their cells with their rows.
 
 ### The cells, on this tree's binary
 
-Each listed from the row's doc ([the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §19). **Five are red**:
+Each listed from the row's doc ([the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §19). **Four are red** *(corrected the same day, by the family's numbers commit: the entry read "five", 81 on the expected-red list and 48 that hold — the print counts four, 80 and 49)*:
 
 | key | cells | came to |
 |---|---:|---|
@@ -16,7 +32,7 @@ Each listed from the row's doc ([the findings](completions/artifacts/M55/stabili
 | `r1-milestone-record-doors-replace-a-change-staged-at-the-record` (§17) | 2 more | **lost** — `discard`'s and `finalize`'s record flips write over a change the user staged at the record |
 | `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area` (§17) | 1 more | *refused, and changed what a refusal may not* — `discard`'s rejected commit |
 
-Everything else holds or refuses having changed nothing — 48 of the gate's 53 new, and the twelve on demand. **The leads of 2026-10-18 are cells**: a change staged before `milestone create` is refused by the boundary under both spellings (`finalize.carried-staged`, as `design/command-output-contract.md` says the carryover gate does); every plain cell of `land-it` re-enters its sub-tasks, which builds the edge index, and the boundary takes its file away under `M10`'s *invalidated*; and a pending config delta rides the aggregate under `M3, the config` and holds. *Listed from the docs and corrected from a first run before any cell was committed*: a link or a directory at a created doc's home is `store.home-not-regular-file`, the one code the human's ruling of 2026-10-06 gives the state, where the first draft listed `finalize.promote-clobber`; and three refusals whose words no doc gives are a run's (§19's bare refusals). *Seconds*: a cell of the two leaves 0.8 to 9.5 s in the arm of `fresh` (mean about 6), load not measured.
+Everything else holds or refuses having changed nothing — 49 of the gate's 53 new, and the twelve on demand. **The leads of 2026-10-18 are cells**: a change staged before `milestone create` is refused by the boundary under both spellings (`finalize.carried-staged`, as `design/command-output-contract.md` says the carryover gate does); every plain cell of `land-it` re-enters its sub-tasks, which builds the edge index, and the boundary takes its file away under `M10`'s *invalidated*; and a pending config delta rides the aggregate under `M3, the config` and holds. *Listed from the docs and corrected from a first run before any cell was committed*: a link or a directory at a created doc's home is `store.home-not-regular-file`, the one code the human's ruling of 2026-10-06 gives the state, where the first draft listed `finalize.promote-clobber`; and three refusals whose words no doc gives are a run's (§19's bare refusals). *Seconds*: a cell of the two leaves 0.8 to 9.5 s in the arm of `fresh` (mean about 6), load not measured.
 
 ### One line, from its own sentence
 
@@ -34,7 +50,7 @@ Everything else holds or refuses having changed nothing — 48 of the gate's 53 
 
 ### The lists
 
-519 cells — 387 in the gate in four arms, 132 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 120 that stood, byte for byte, and these 12). The expected-red list: **81 cells under twenty keys**. Marked cells: **three, in three lines**. Scheduled needs: eight, where six.
+519 cells — 387 in the gate in four arms, 132 on demand ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the 120 that stood, byte for byte, and these 12). The expected-red list: **80 cells under twenty keys**. Marked cells: **three, in three lines**. Scheduled needs: eight, where six.
 
 ## 2026-10-19 — The milestone family's fan-out doors have their cells — `provision`, `execute`, `join`, 13 in the gate and 18 on demand — and none is red (the byte table, task `B7`, its second part: the third of its commits)
 

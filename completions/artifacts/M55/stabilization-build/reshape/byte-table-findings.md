@@ -782,7 +782,7 @@ $JIGC milestone add-task ship-it "do another" > /dev/null 2>&1; echo "exit=$?"  
 
 **Every cell holds or refuses having changed nothing.** `provision` makes a worktree a sub-task and registers it at `.jigc/worktrees/<sub-task>` (`MP1`, `MP2`, the word *a worktree's registration added*), and refuses a file of the user's where a worktree goes (`milestone.leftover-holds-work`), nothing changed; `execute` composes the walk and writes nothing; `join` merges the two sub-tasks' commit docs and persists nothing (`MJ3`); a file of the user's in the milestone's area or a sub-task's stays at all three. Over a milestone that is not there each refuses `milestone.unknown`; `join`'s refusal builds the edge index on its way — `C1`'s cache, which a refusal may rebuild by the human's ruling of 2026-10-12. In a repository with no `jigc setup` each refuses, nothing changed; in the five other states each acts and holds. No key is minted. **Not run here**: the previous release — the whole table's print on it is the family's numbers commit's.
 
-## 19. The milestone family's terminals — `discard` and `milestone finalize`'s plain spelling: 65 cells, 53 in the gate and 12 on demand, and the carryover gate's cell under `squash: false`; five red on this tree's binary, four under keys §17 holds and one under a key of its own
+## 19. The milestone family's terminals — `discard` and `milestone finalize`'s plain spelling: 65 cells, 53 in the gate and 12 on demand, and the carryover gate's cell under `squash: false`; four red on this tree's binary, three under keys §17 holds and one under a key of its own
 
 *2026-10-19, this tree's debug build, macOS arm64; the fourth commit of the milestone family's own (the task `B7`, its second part), the last of its three parts of cells. On the previous release: the family's numbers commit, whose whole-table print holds every cell on both binaries.*
 
@@ -807,7 +807,7 @@ $JIGC milestone join land-it > /dev/null
 $JIGC milestone finalize land-it; echo "exit=$?"   # exit=0 — "notes.txt (never staged)" named as not recoverable
 ```
 
-### Four more cells under §17's keys
+### Three more cells under §17's keys
 
 - `milestone-discard-a-change-staged-at-the-record` and `milestone-finalize-a-change-staged-at-the-record` — **lost**, under `r1-milestone-record-doors-replace-a-change-staged-at-the-record`: the abandon's record flip and the boundary's record flip each write the record over the user's staged change at it, which `design/team-ready-state.md` counts among the record's rewrites that *"conflict-block"* — *"`add-task`, `add-from-spec`, `milestone discard`, a sub-task's `task discard`, the finalize flip"*.
 - `milestone-discard-a-hook-that-rejects` — **refused, and changed what a refusal may not**, under `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`: the rejected record commit rewrites `record-commit-msg.txt` in the milestone's area.
