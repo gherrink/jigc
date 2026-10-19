@@ -238,7 +238,9 @@ pub struct Quote {
 /// reaches its own sub-tasks' areas and no other task's; and [`ITS_MILESTONE`], the
 /// milestone whose committed record names the unit as one of its tasks. **A place may open
 /// with [`DOCS_ROOT`]**, the directory the cascade resolves `docs-root` to. And a fourth
-/// stands for a unit the command mints and does not name by its id ([`MINTED`]).
+/// stands for a unit the command mints and does not name by its id ([`MINTED`]). Two more
+/// stand for a sub-task of the unit where a thing of it did not stand: [`RE_SEEDED`], a
+/// live one whose area did not, and [`UNPROVISIONED`], one whose worktree no checkout was.
 #[derive(Clone, Copy, Debug)]
 pub enum Where {
     /// One path.
@@ -290,6 +292,32 @@ pub const ITS_MILESTONE: &str = "<its-milestone>";
 /// spec's criteria. **What it cannot tell apart**: one mint from two — a command that minted
 /// a second unit beside its own is not seen here.
 pub const MINTED: &str = "<minted>";
+
+/// **The component of a place that stands for a sub-task whose area the re-seed rebuilds**:
+/// a sub-task the committed record of the unit the command acts on names
+/// ([`ITS_SUB_TASKS`]), whose item that record has not settled, and at which nothing stood
+/// before the command — the path up to and with this component held no entry in the
+/// manifest taken before it, as under [`MINTED`]. *"one standard working area per sub-task
+/// the record names"*, and *"A sub-task whose area already exists is skipped untouched, so a
+/// live session is never clobbered — **and so is one the record has settled**"*
+/// (`design/team-ready-state.md` → *Engine capability 2 (read-back)*): the re-seed makes
+/// an area where none stood and touches none that did. An item is settled where its
+/// `status` leaf is `joined` or `discarded`. Added 2026-10-19, after the review of the task
+/// `B7`'s second part, its second finding: the re-seed's lines read [`ITS_SUB_TASKS`], so a
+/// rewrite of a standing sub-task's staged prose or base pin held.
+pub const RE_SEEDED: &str = "<re-seeded>";
+
+/// **The component of a place that stands for a sub-task whose worktree `provision` adds**:
+/// a sub-task the committed record of the unit the command acts on names
+/// ([`ITS_SUB_TASKS`]), at whose path no linked checkout stood before the command — *"a
+/// **registered** worktree is reused untouched and never probed at all"*
+/// (`design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling
+/// op*). A directory that stood there and is no checkout is a leftover the door clears
+/// before it adds the worktree — *"`provision` (it clears a leftover before `git worktree
+/// add`)"*, the same section — so the place stands for it: only a checkout is reused, and
+/// only a checkout is left untouched. The same review, the same finding: `MP1` read
+/// [`ITS_SUB_TASKS`], so a rewrite inside a live sub-task's worktree held.
+pub const UNPROVISIONED: &str = "<unprovisioned>";
 
 /// **The leading component of a place that stands for the directory the cascade resolves
 /// `docs-root` to** — *"The resolved `docs-root` is prepended to every persisted doctype's
@@ -874,6 +902,9 @@ impl Verdict {
 struct Acting {
     unit: Option<String>,
     sub_tasks: BTreeSet<String>,
+    /// The sub-tasks of `sub_tasks` whose item the record has settled — what
+    /// [`RE_SEEDED`] leaves out.
+    settled: BTreeSet<String>,
     milestone: Option<String>,
     /// From the repository's root, `""` for the root itself; `None` where a layer that
     /// stands does not read.
@@ -882,6 +913,9 @@ struct Acting {
     /// what [`MINTED`] asks a place against; `None` where no manifest was read, and then a
     /// place that holds the word is nowhere.
     stood: Option<BTreeSet<String>>,
+    /// Every linked checkout whose directory stood before the command, by that directory
+    /// from the repository's root — what [`UNPROVISIONED`] asks a place against.
+    checked_out: BTreeSet<String>,
 }
 
 impl Acting {
@@ -924,7 +958,10 @@ impl Acting {
         let docs_root = docs_root(before);
         // Every committed record at the home, by its milestone: the sub-task ids its items
         // name, `### <id>  {#<id>}`, the sub-task's id its anchor.
-        let records: BTreeMap<String, BTreeSet<String>> = docs_root
+        // And of each, the items the record has settled: a `- status: ` leaf of the item,
+        // `joined` or `discarded` — *"active / joined / discarded"*, the two that are over
+        // (`design/team-ready-state.md` → *The lifecycle*).
+        let records: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)> = docs_root
             .as_deref()
             .map(|root| {
                 let home = match root {
@@ -943,22 +980,32 @@ impl Acting {
                         (!id.contains('/')).then_some((id.to_string(), committed(before, rel)?))
                     })
                     .map(|(id, entry)| {
-                        let items = entry
-                            .lines()
-                            .unwrap_or_default()
-                            .into_iter()
-                            .filter_map(|line| {
-                                let line = std::str::from_utf8(line).ok()?.trim_end();
-                                let anchor = line.strip_prefix("### ")?.rsplit_once("{#")?.1;
-                                Some(anchor.strip_suffix('}')?.to_string())
-                            })
-                            .collect();
-                        (id, items)
+                        let (mut items, mut settled) = (BTreeSet::new(), BTreeSet::new());
+                        let mut item: Option<String> = None;
+                        for line in entry.lines().unwrap_or_default() {
+                            let Ok(line) = std::str::from_utf8(line) else {
+                                continue;
+                            };
+                            let line = line.trim_end();
+                            if let Some(heading) = line.strip_prefix("### ") {
+                                item = heading
+                                    .rsplit_once("{#")
+                                    .and_then(|(_, anchor)| anchor.strip_suffix('}'))
+                                    .map(str::to_string);
+                                items.extend(item.clone());
+                            } else if let (Some(at), Some(status)) =
+                                (item.as_ref(), line.strip_prefix("- status: "))
+                                && matches!(status.trim(), "joined" | "discarded")
+                            {
+                                settled.insert(at.clone());
+                            }
+                        }
+                        (id, (items, settled))
                     })
                     .collect()
             })
             .unwrap_or_default();
-        let sub_tasks = unit
+        let (sub_tasks, settled) = unit
             .as_ref()
             .and_then(|unit| records.get(unit))
             .cloned()
@@ -966,7 +1013,7 @@ impl Acting {
         let milestone = unit.as_ref().and_then(|unit| {
             let naming: Vec<&String> = records
                 .iter()
-                .filter(|(_, items)| items.contains(unit))
+                .filter(|(_, (items, _))| items.contains(unit))
                 .map(|(id, _)| id)
                 .collect();
             match naming.as_slice() {
@@ -977,6 +1024,7 @@ impl Acting {
         Acting {
             unit,
             sub_tasks,
+            settled,
             milestone,
             docs_root,
             stood: Some(
@@ -986,6 +1034,11 @@ impl Acting {
                     .filter_map(|path| in_repo(path).map(str::to_string))
                     .collect(),
             ),
+            checked_out: before
+                .checkouts
+                .keys()
+                .filter_map(|path| in_repo(path).map(str::to_string))
+                .collect(),
         }
     }
 
@@ -1111,12 +1164,19 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
         (pattern.split('/').collect(), path.split('/').collect());
     want.len() == got.len()
         && want.iter().zip(&got).enumerate().all(|(at, (want, part))| {
-            match want.strip_prefix(MINTED) {
-                Some(suffix) => {
-                    part.strip_suffix(suffix).is_some_and(|id| !id.is_empty())
-                        && acting.minted(&got_so_far(&got, at))
-                }
-                None => acting.stands_for(want, part),
+            let id_with = |word: &str| want.strip_prefix(word).and_then(|s| part.strip_suffix(s));
+            if want.starts_with(MINTED) {
+                id_with(MINTED).is_some_and(|id| !id.is_empty())
+                    && acting.minted(&got_so_far(&got, at))
+            } else if want.starts_with(RE_SEEDED) {
+                id_with(RE_SEEDED)
+                    .is_some_and(|id| acting.sub_tasks.contains(id) && !acting.settled.contains(id))
+                    && acting.minted(&got_so_far(&got, at))
+            } else if want.starts_with(UNPROVISIONED) {
+                id_with(UNPROVISIONED).is_some_and(|id| acting.sub_tasks.contains(id))
+                    && !acting.checked_out.contains(&got_so_far(&got, at))
+            } else {
+                acting.stands_for(want, part)
             }
         })
 }

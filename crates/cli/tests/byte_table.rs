@@ -1994,6 +1994,26 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (
         &["milestone", "finalize"],
+        "M11",
+        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
+    ),
+    (
+        &["milestone", "finalize"],
+        "M12",
+        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
+    ),
+    (
+        &["milestone", "discard"],
+        "MD7",
+        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
+    ),
+    (
+        &["milestone", "discard"],
+        "MD8",
+        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
+    ),
+    (
+        &["milestone", "finalize"],
         "M3, the config's ignore file",
         NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
     ),
@@ -2131,6 +2151,12 @@ const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names a
 /// before the command.
 const NO_CACHE_TO_RE_DERIVE: &str = "the milestone's cache absent or stale before the command — a fresh clone, or the cache \
      taken away by hand — which no cell of the family constructs: before the port";
+
+/// What would use a line of the re-seed at a terminal — `finalize`'s and `discard`'s, added
+/// after the review of the task `B7`'s second part (its tenth finding).
+const A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS: &str = "the milestone's cache or a sub-task's area absent before the command, which no cell of the \
+     family constructs — and what the re-seed rebuilds there the door's own teardown removes \
+     where it acts, while the line holds on no refusal: before the port";
 
 /// What would use a line of the config layer a finalize carries, `T3, the config` and
 /// `M3, the config`, each with its ignore file's half: the layer's first commit.
@@ -4970,6 +4996,200 @@ fn a_place_a_command_mints_is_one_nothing_stood_at() {
     assert!(
         class == Classification::WrittenOutside && why.iter().any(|why| why.contains("m.txt")),
         "a file the suffix does not name: {class}, {why:#?}"
+    );
+}
+
+/// **The re-seed rebuilds a sub-task's area only where none stood, and `provision` a
+/// worktree only where no checkout stood** — the review of the task `B7`'s second part, its
+/// second finding: the re-seed's lines and `MP1` let any rewrite happen under a sub-task's
+/// area or worktree, where their own sentences say *"A sub-task whose area already exists is
+/// skipped untouched, so a live session is never clobbered — **and so is one the record has
+/// settled**"* (`design/team-ready-state.md` → *Engine capability 2 (read-back)*) and *"a
+/// **registered** worktree is reused untouched and never probed at all"* (→ *`jigc
+/// milestone discard <id>` — the record-settling op*).
+///
+/// At every door of the seven that passes through the re-seed — `finalize` and `discard`
+/// among them, whose rows lacked the re-seed's lines — the area of a sub-task the record
+/// names, live, where none stood, holds; a standing sub-task's staged prose or base pin
+/// rewritten, or a file added to its area, is *written outside its allowance*, and so is
+/// an area made for a sub-task the record has settled. At `provision`, a worktree made
+/// where nothing stood, or into a leftover directory no checkout is (*"it clears a
+/// leftover before `git worktree add`"*), holds; a file of a live checkout's rewritten does
+/// not.
+#[test]
+fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
+    const DOORS: [Row; 7] = [
+        milestone::ADD_TASK,
+        milestone::ADD_FROM_SPEC,
+        milestone::PROVISION,
+        milestone::EXECUTE,
+        milestone::JOIN,
+        milestone::DISCARD,
+        milestone::FINALIZE,
+    ];
+    const S1: &str = "repo/.jigc/tasks/s1";
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/tasks");
+        dir(m, S1);
+        dir(m, &format!("{S1}/docs"));
+        put(m, &format!("{S1}/base.json"), "a pin\n");
+        put(
+            m,
+            &format!("{S1}/docs/commit:s1.md"),
+            "# s1\n\nthe prose s1 handed to jigc\n",
+        );
+        settled_records(
+            m,
+            "docs",
+            "m",
+            &[("s1", "active"), ("s2", "active"), ("s3", "discarded")],
+        );
+    });
+    let an_area = |id: &str| {
+        then(&before, |m| {
+            let area = format!("repo/.jigc/tasks/{id}");
+            dir(m, &area);
+            put(m, &format!("{area}/base.json"), "a pin\n");
+            put(m, &format!("{area}/intent"), "an intent\n");
+        })
+    };
+    for row in DOORS {
+        let leaf = row.leaf.join(" ");
+        let argv = [row.leaf[0], row.leaf[1], "m"];
+        let came = |after: &Manifest| {
+            Cell {
+                argv: &argv,
+                ..Cell::of(row, &before, after)
+            }
+            .came_to()
+        };
+        let (class, why) = came(&an_area("s2"));
+        assert_eq!(
+            class,
+            Classification::Holds,
+            "`jigc {leaf}`, a live sub-task's area where none stood: {why:#?}"
+        );
+        // A rewrite takes bytes no object holds, so no line covering it is a loss; an
+        // addition is a write no line lets happen.
+        for (what, after, says, expected) in [
+            (
+                "a standing sub-task's staged prose rewritten",
+                then(&before, |m| {
+                    put(
+                        m,
+                        &format!("{S1}/docs/commit:s1.md"),
+                        "# s1\n\nother prose\n",
+                    )
+                }),
+                "commit:s1.md",
+                Classification::Lost,
+            ),
+            (
+                "a standing sub-task's base pin rewritten",
+                then(&before, |m| {
+                    put(m, &format!("{S1}/base.json"), "another pin\n")
+                }),
+                "s1/base.json",
+                Classification::Lost,
+            ),
+            (
+                "a standing sub-task's area added to",
+                then(&before, |m| put(m, &format!("{S1}/intent"), "an intent\n")),
+                "s1/intent",
+                Classification::WrittenOutside,
+            ),
+            (
+                "an area made for a sub-task the record has settled",
+                an_area("s3"),
+                "s3/",
+                Classification::WrittenOutside,
+            ),
+        ] {
+            // At the two doors that mint a sub-task, an area where nothing stood is a mint's
+            // place too (`MA1`, `MS1`): `<minted>` cannot tell the mint from a second area,
+            // the bound its word declares — so a settled sub-task's area made there is that
+            // bound's, not the re-seed's.
+            if what.contains("settled") && row.leaf[1].starts_with("add-") {
+                continue;
+            }
+            let (class, why) = came(&after);
+            assert!(
+                class == expected && why.iter().any(|why| why.contains(says)),
+                "`jigc {leaf}`, {what}: {class}, {why:#?}"
+            );
+        }
+    }
+
+    let argv: &[&str] = &["milestone", "provision", "m"];
+    let came = |before: &Manifest, after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(milestone::PROVISION, before, after)
+        }
+        .came_to()
+    };
+    const S2: &str = "repo/.jigc/worktrees/s2";
+    let provisioned = then(&before, |m| worktree_added(m, S2, "s2"));
+    let (class, why) = came(&before, &provisioned);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a worktree where nothing stood: {why:#?}"
+    );
+    let a_leftover = then(&before, |m| {
+        dir(m, "repo/.jigc/worktrees");
+        dir(m, S2);
+    });
+    let (class, why) = came(&a_leftover, &provisioned);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a worktree into an empty leftover no checkout is: {why:#?}"
+    );
+    let rewritten = then(&provisioned, |m| {
+        put(m, &format!("{S2}/work.txt"), "other work\n")
+    });
+    let added = then(&provisioned, |m| {
+        put(m, &format!("{S2}/more.txt"), "more\n")
+    });
+    for (what, after, says) in [
+        ("a live checkout's file rewritten", &rewritten, "work.txt"),
+        ("a live checkout added to", &added, "more.txt"),
+    ] {
+        let (class, why) = came(&provisioned, after);
+        assert!(
+            class == Classification::WrittenOutside && why.iter().any(|why| why.contains(says)),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+}
+
+/// A milestone's record, committed over the `HEAD` that stands: under `root`, as
+/// [`records`] has it, each item with the `status` leaf the record carries.
+fn settled_records(manifest: &mut Manifest, root: &str, id: &str, items: &[(&str, &str)]) {
+    let home = match root {
+        "" => "milestone-records".to_string(),
+        root => format!("{root}/milestone-records"),
+    };
+    let mut at = REPO.to_string();
+    for component in home.split('/') {
+        at = format!("{at}/{component}");
+        dir(manifest, &at);
+    }
+    let mut bytes = format!("# {id}\n\n## Tasks\n");
+    for (task, status) in items {
+        bytes.push_str(&format!(
+            "\n### {task}  {{#{task}}}\n\n<!-- fields -->\n- intent: an intent\n- status: {status}\n"
+        ));
+    }
+    let path = format!("{home}/{id}.md");
+    put(manifest, &format!("{REPO}/{path}"), &bytes);
+    let commit_id = format!("records-{}", manifest.commits.len());
+    commit(
+        manifest,
+        &commit_id,
+        &[(path.as_str(), Some((0o100_644, bytes.as_str())))],
     );
 }
 

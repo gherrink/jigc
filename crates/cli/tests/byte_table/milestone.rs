@@ -55,6 +55,11 @@ const THE_CONFIG_CARRIED: [Quote; 2] = [
     super::THE_CONFIG_LAYERS_FIRST_COMMIT,
 ];
 
+/// The re-seed's two lines of `finalize` — `M11` and `M12`, added 2026-10-19 after the
+/// review of the task `B7`'s second part (its tenth finding): the sentence the re-seed's
+/// lines quote names this door among the seven, and the row lacked them.
+const FINALIZE_RE_SEEDS: [Line; 2] = the_re_seed("M11", "M12");
+
 /// **`jigc milestone finalize`** — the record's §4. The record names no consent.
 pub const FINALIZE: Row = Row {
     leaf: &["milestone", "finalize"],
@@ -321,6 +326,8 @@ pub const FINALIZE: Row = Row {
                 words: "4. **Post-commit** runs once for the whole batch.",
             }],
         ),
+        FINALIZE_RE_SEEDS[0],
+        FINALIZE_RE_SEEDS[1],
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
@@ -422,7 +429,7 @@ const EVERY_VERB_ONE_SITE: Quote = Quote {
 };
 
 /// **The re-seed's other half** — one standard area a sub-task the record names, an area
-/// that stands skipped.
+/// that stands skipped, and one the record has settled.
 const THE_AREAS_RE_SEEDED: [Quote; 3] = [
     Quote {
         doc: "design/team-ready-state.md",
@@ -432,7 +439,7 @@ const THE_AREAS_RE_SEEDED: [Quote; 3] = [
     Quote {
         doc: "design/team-ready-state.md",
         heading: THE_READ_BACK,
-        words: "A sub-task whose area already exists is skipped untouched",
+        words: "A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**",
     },
     EVERY_VERB_ONE_SITE,
 ];
@@ -458,6 +465,21 @@ const THE_WORKTREES_DIRECTORY: Quote = Quote {
     words: "ephemeral per-sub-agent code worktrees (provisioned per fan-out; torn down on a LANDED boundary, or by `milestone discard` — an aborted finalize leaves them intact for the re-run)",
 };
 
+/// **What `provision` leaves as it stands** — a registered worktree, reused; and the
+/// leftover that is no worktree, which it clears before the add.
+const A_REGISTERED_WORKTREE_REUSED: [Quote; 2] = [
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: THE_RECORD_SETTLING_OP,
+        words: "a **registered** worktree is reused untouched and never probed at all",
+    },
+    Quote {
+        doc: "design/team-ready-state.md",
+        heading: THE_RECORD_SETTLING_OP,
+        words: "The three doors standing where **no commit has carried those bytes** refuse — `provision` (it clears a leftover before `git worktree add`), `discard` (this teardown), `uninstall` (it takes `.jigc/` and everything under it)",
+    },
+];
+
 /// **What `provision` makes** — a worktree of the base's tracked files, registered.
 const A_PROVISIONED_WORKTREE: Quote = Quote {
     doc: "design/team-ready-state.md",
@@ -469,7 +491,13 @@ const A_PROVISIONED_WORKTREE: Quote = Quote {
 const THE_RECORD_SETTLING_OP: &str = "`jigc milestone discard <id>` — the record-settling op";
 
 /// The two lines of the re-seed, under the ids a row gives them: the milestone's cache in
-/// its area, and the sub-tasks' areas.
+/// its area, and the sub-tasks' areas — **each where none stood, of a sub-task the record
+/// has not settled** (`<re-seeded>`, `byte_cell::RE_SEEDED`): an area that stands is
+/// skipped untouched. **Narrowed 2026-10-19**, after the review of the task `B7`'s second
+/// part (its second finding): the areas' line read `<sub-task>`, so a rewrite of a standing
+/// sub-task's staged prose or base pin held at every door that re-seeds. The cache's half
+/// keeps its place: its sentence re-derives the cache *"when absent or stale"*, and a
+/// stale cache stands.
 const fn the_re_seed(cache: &'static str, areas: &'static str) -> [Line; 2] {
     [
         line(
@@ -479,7 +507,7 @@ const fn the_re_seed(cache: &'static str, areas: &'static str) -> [Line; 2] {
         ),
         line(
             areas,
-            Allows::Files(Where::Under(".jigc/tasks/<sub-task>"), May::Rebuilt),
+            Allows::Files(Where::Under(".jigc/tasks/<re-seeded>"), May::Rebuilt),
             &THE_AREAS_RE_SEEDED,
         ),
     ]
@@ -665,10 +693,22 @@ pub const PROVISION: Row = Row {
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
+        // **Narrowed 2026-10-19**, after the review of the task `B7`'s second part (its
+        // second finding): where no checkout stood (`<unprovisioned>`,
+        // `byte_cell::UNPROVISIONED`) — the line read `<sub-task>`, so a rewrite inside a
+        // live sub-task's worktree held.
         line(
             "MP1",
-            Allows::Files(Where::Under(SUB_TASK_WORKTREES), May::Rebuilt),
-            &[THE_WORKTREES_DIRECTORY, A_PROVISIONED_WORKTREE],
+            Allows::Files(
+                Where::Under(".jigc/worktrees/<unprovisioned>"),
+                May::Rebuilt,
+            ),
+            &[
+                THE_WORKTREES_DIRECTORY,
+                A_PROVISIONED_WORKTREE,
+                A_REGISTERED_WORKTREE_REUSED[0],
+                A_REGISTERED_WORKTREE_REUSED[1],
+            ],
         ),
         line(
             "MP2",
@@ -733,6 +773,9 @@ const THE_WORKBENCH_REMOVED: Quote = Quote {
     words: "**The workbench is actually removed.** `discard` removes the sub-task areas **and `.jigc/milestones/<id>/`**",
 };
 
+/// The re-seed's two lines of `discard` — `MD7` and `MD8`, added as `finalize`'s were.
+const DISCARD_RE_SEEDS: [Line; 2] = the_re_seed("MD7", "MD8");
+
 /// **`jigc milestone discard`** — the record's §4b. Its consent is `--force` (`MD5`): it
 /// refuses on three subjects and removes nothing, and under the consent the command's
 /// output names what it takes.
@@ -784,6 +827,8 @@ pub const DISCARD: Row = Row {
             Allows::Files(Where::Under(SUB_TASK_WORKTREES), May::Removed),
             &[THE_WORKBENCH_REMOVED, THE_WORKTREES_DIRECTORY],
         ),
+        DISCARD_RE_SEEDS[0],
+        DISCARD_RE_SEEDS[1],
         line(
             "MD6",
             Allows::Unregistered(".jigc/worktrees"),

@@ -760,6 +760,28 @@ The worktrees are the sub-tasks' own, at the place this sentence names — `.jig
 
   The post-commit it runs is `T5`'s, and the line quotes `T5`'s sentences of the edge index's stamp with it. **Corrected 2026-10-18, with `T5`** (§6, entry 16, *answered*): the edge index's half is *invalidated* (§7), where it was *rebuilt*; under both spellings, since `squash: false` replaces `M3` alone.
 
+**M11 — the milestone's area: rebuilt — the cache re-derived where absent or stale.** As MP3. When: always. On a refusal: no (M8).
+
+**M12 — the re-seed of the sub-tasks' areas: rebuilt where absent, for a sub-task the record has not settled.** As MA6. When: always. On a refusal: no (M8).
+
+*Both added 2026-10-19, after the review of `B7`'s part B (its tenth finding): the fourth sentence, which the re-seed's lines quote at every door, names this door among the seven that pass through the re-seed, and the row lacked them. What they rebuild the boundary's own teardown (M6) removes where it lands, so in a cell they excuse nothing.*
+
+> the cache is **re-derived from the committed record when absent or stale**
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> So the re-seed has **two halves at one site**: the milestone cache, and one standard working area per sub-task the record names
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> **Every verb, one site.** `add-task` · `add-from-spec` · `provision` · `execute` · `join` · `finalize` · `discard` all pass through the reseed before their own guards
+
+— `design/team-ready-state.md` → *The terminal is terminal — a settled record has no workbench (M42 completion audit)*
+
 **What the docs do not say of `milestone finalize`:** the caches on a refusal (§6, entry 1 — ruled on 2026-10-12, and carried by `C1` to `C3`). **Declared, and not a line here:** the two worktrees the boundary makes for itself and removes on every exit — the dedicated one it commits from and the detached one its `doc-code` check reads (*2. Validate*: *torn down on both exits*) — leave no difference between the two manifests where they are removed as declared; one left behind is a registration under `.jigc/worktrees/` that M7 does not cover on a refusal, and is red. The plan's §7 lists this command's commit as *not read for this plan*: it is read now, and M3 to M5 are what the docs declare it holds.
 
 ---
@@ -894,13 +916,13 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 — `design/team-ready-state.md` → *Engine capability 1 (write) — `set: on-transition` machine-maintained leaves*
 
-**MA6 — the working area of each sub-task the record names, `.jigc/tasks/<sub-task-id>/`: rebuilt where it is absent — the re-seed.** When: always. On a refusal: no (MC5). Every operating door of the family passes through one re-seed, which rebuilds the milestone's cache — MA2 — and one area a sub-task, and skips an area that stands.
+**MA6 — the working area of each sub-task the record names, `.jigc/tasks/<sub-task-id>/`: rebuilt where it is absent — the re-seed.** When: always. On a refusal: no (MC5). Every operating door of the family passes through one re-seed, which rebuilds the milestone's cache — MA2 — and one area a sub-task, and skips an area that stands. **[Narrowed 2026-10-19, after the review of `B7`'s part B (its second finding): the line as data read `.jigc/tasks/<sub-task>` — any area of a sub-task the record names, standing or not — so a rewrite of a standing sub-task's staged prose or base pin held at every door that re-seeds, where the second sentence says the area *"is skipped untouched"*. It reads `.jigc/tasks/<re-seeded>`: an area where nothing stood, of a sub-task whose item the record has not settled — the second sentence quoted whole now, since it says the settled one is skipped too (§7). The same at MS6, MP4, ME2, MJ2, and at the two lines the terminals gain, M12 and MD8.]**
 
 > So the re-seed has **two halves at one site**: the milestone cache, and one standard working area per sub-task the record names
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
-> A sub-task whose area already exists is skipped untouched
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
@@ -976,7 +998,7 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
-> A sub-task whose area already exists is skipped untouched
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
@@ -992,7 +1014,7 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 ### `jigc milestone provision`
 
-**MP1 — each sub-task's worktree, `.jigc/worktrees/<sub-task-id>/`: made — the tracked files of the milestone's base.** When: always. On a refusal: no (MP5). `M6`'s first sentence names the directory.
+**MP1 — each sub-task's worktree, `.jigc/worktrees/<sub-task-id>/`: made — the tracked files of the milestone's base.** When: always. On a refusal: no (MP5). `M6`'s first sentence names the directory. **[Narrowed 2026-10-19, after the review of `B7`'s part B (its second finding): the line as data read `.jigc/worktrees/<sub-task>`, so a rewrite inside a live sub-task's worktree held, where MP5 has the door reuse it untouched. It reads `.jigc/worktrees/<unprovisioned>`: a sub-task's path at which no checkout stood (§7) — the third sentence. A leftover directory there that is no checkout the door clears before the add — the fourth sentence, MP5's — so the place stands for it, and the worktree made into it holds.]**
 
 > ephemeral per-sub-agent code worktrees (provisioned per fan-out; torn down on a LANDED boundary, or by `milestone discard` — an aborted finalize leaves them intact for the re-run)
 
@@ -1001,6 +1023,14 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 > **A provisioned worktree carries tracked files only.** `git worktree add --detach` populates from the pinned base's *tree*
 
 — `design/team-ready-state.md` → *What a fan-out worktree isolates — and what it does not (M45)*
+
+> a **registered** worktree is reused untouched and never probed at all
+
+— `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
+
+> The three doors standing where **no commit has carried those bytes** refuse — `provision` (it clears a leftover before `git worktree add`), `discard` (this teardown), `uninstall` (it takes `.jigc/` and everything under it)
+
+— `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
 
 **MP2 — git's registration of each of those worktrees: added, at its path, and at no other.** When: always. On a refusal: no (MP5).
 
@@ -1024,7 +1054,7 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
-> A sub-task whose area already exists is skipped untouched
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
@@ -1052,7 +1082,7 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
-> A sub-task whose area already exists is skipped untouched
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
@@ -1080,7 +1110,7 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
-> A sub-task whose area already exists is skipped untouched
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
 
 — `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
 
@@ -1155,6 +1185,28 @@ Owner docs: `design/write-commands.md` → *Minting a milestone + its task list 
 > So every other registration — live, `prunable` or locked; a human's, or jigc's own under another path (a moved repository's sub-task records name the old one, and are exactly what `git worktree repair` needs) — is left byte-identical
 
 — `design/team-ready-state.md` → *`jigc milestone discard <id>` — the record-settling op*
+
+**MD7 — the milestone's area: rebuilt — the cache re-derived where absent or stale.** As MP3. When: always. On a refusal: no (MD5).
+
+**MD8 — the re-seed of the sub-tasks' areas: rebuilt where absent, for a sub-task the record has not settled.** As MA6. When: always. On a refusal: no (MD5).
+
+*Both added 2026-10-19, as M11 and M12 were: the fourth sentence names `discard` among the seven. What they rebuild MD4 removes where the door acts.*
+
+> the cache is **re-derived from the committed record when absent or stale**
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> So the re-seed has **two halves at one site**: the milestone cache, and one standard working area per sub-task the record names
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**
+
+— `design/team-ready-state.md` → *Engine capability 2 (read-back) — the committed record is the engine's authority*
+
+> **Every verb, one site.** `add-task` · `add-from-spec` · `provision` · `execute` · `join` · `finalize` · `discard` all pass through the reseed before their own guards
+
+— `design/team-ready-state.md` → *The terminal is terminal — a settled record has no workbench (M42 completion audit)*
 
 ### What the docs do not say of the family, and what a line cannot
 
@@ -1569,9 +1621,10 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | a line says | which lines needed it |
 |---|---|
 | a place that is **one path** of the repository | S1 to S9; U2, U3, U5; T2; C3, with one component left open for a milestone's id; M5 and A5, a milestone's record, named by the words of the next line (until 2026-10-18 left open for any record's name); W4, with one left open for a staged doc's name; MC2, MA3, MS3, MD1, under the docs root |
-| a place one component of which is **the work unit the command acts on** — `<unit>`, the id the row reads off its command: `--task <id>` or else the single task that stands, for a `doc` write; the first word after the leaf, for `task finalize`, `task discard` and `milestone finalize` — or **any sub-task of that unit** — `<sub-task>`, an id the unit's committed record names among its tasks (added 2026-10-18, by the task `B7`'s second commit: a line read `.jigc/tasks/*` and reached a sibling's area, where *"a sub-agent physically cannot stage into a sibling's area"*) — or **the milestone of that unit** — `<its-milestone>`, the one milestone whose committed record names the unit among its tasks; each word a whole component or one with a fixed suffix (`<unit>.md`). A place may open with **the docs root** — `<docs-root>`, the directory the cascade resolves `docs-root` to: the project layer's value, else the team layer's, else the dev pack's default, `.` the repository's root. *A task that stands* is an area that carries its base pin (`design/storage.md` → *The per-task working area (staging)*), and a leftover directory is none; *a committed record* is `<docs-root>/milestone-records/<id>.md` with the bytes `HEAD` holds there — a record with a change nobody committed names no task, the stricter direction, since the product reads the file and conflict-blocks one edited out of band (`design/team-ready-state.md` → *Engine capability 1 (write)*, its *No-silent-overwrite discipline*: *"conflict-blocks on drift"*). (The suffix, `<its-milestone>`, the docs root and the base pin added 2026-10-18, after the review of `B7`'s part A, its fifth, sixth and seventh findings.) | W1, W4; T6; A1; M1, M6 — `<unit>`; M6's worktrees, sub-tasks' areas and what is moved aside from them — `<sub-task>`; M5 — `<docs-root>/milestone-records/<unit>.md`; A5 — `<docs-root>/milestone-records/<its-milestone>.md`; and the milestone family's (§4b): MA2, MA3, MS2, MS3, MP3, ME1, MJ1, MD1, MD4 — `<unit>`; MA6, MS6, MP1, MP2, MP4, ME2, MJ2, MD4 — `<sub-task>` |
+| a place one component of which is **the work unit the command acts on** — `<unit>`, the id the row reads off its command: `--task <id>` or else the single task that stands, for a `doc` write; the first word after the leaf, for `task finalize`, `task discard` and `milestone finalize` — or **any sub-task of that unit** — `<sub-task>`, an id the unit's committed record names among its tasks (added 2026-10-18, by the task `B7`'s second commit: a line read `.jigc/tasks/*` and reached a sibling's area, where *"a sub-agent physically cannot stage into a sibling's area"*) — or **the milestone of that unit** — `<its-milestone>`, the one milestone whose committed record names the unit among its tasks; each word a whole component or one with a fixed suffix (`<unit>.md`). A place may open with **the docs root** — `<docs-root>`, the directory the cascade resolves `docs-root` to: the project layer's value, else the team layer's, else the dev pack's default, `.` the repository's root. *A task that stands* is an area that carries its base pin (`design/storage.md` → *The per-task working area (staging)*), and a leftover directory is none; *a committed record* is `<docs-root>/milestone-records/<id>.md` with the bytes `HEAD` holds there — a record with a change nobody committed names no task, the stricter direction, since the product reads the file and conflict-blocks one edited out of band (`design/team-ready-state.md` → *Engine capability 1 (write)*, its *No-silent-overwrite discipline*: *"conflict-blocks on drift"*). (The suffix, `<its-milestone>`, the docs root and the base pin added 2026-10-18, after the review of `B7`'s part A, its fifth, sixth and seventh findings.) | W1, W4; T6; A1; M1, M6 — `<unit>`; M6's worktrees, sub-tasks' areas and what is moved aside from them — `<sub-task>`; M5 — `<docs-root>/milestone-records/<unit>.md`; A5 — `<docs-root>/milestone-records/<its-milestone>.md`; and the milestone family's (§4b): MA2, MA3, MS2, MS3, MP3, ME1, MJ1, MD1, MD4 — `<unit>`; MP2, MD4 — `<sub-task>` (and MA6, MS6, MP1, MP4, ME2, MJ2 until 2026-10-19 — the next line) |
 | a place one component of which is **a work unit the command mints** — `<minted>`, alone or with a fixed suffix: an id at which nothing stood before the command, the path up to and with that component holding no entry in the manifest taken before it — *"both mints still refuse a pre-existing id before creating anything"* (MC1's third sentence). For a unit no argv word names by its id: the milestone `create` mints from a title, the sub-task `add-task` mints from an intent, those `add-from-spec` mints from a spec's criteria. **It cannot tell one mint from two** (added 2026-10-19, with the milestone family's rows) | MC1, MC2; MA1; MS1 |
-| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2; W1, W2; MC1, MC4, MA1, MA2, MA5, MA6, MS1, MS2, MS5, MS6, MP1, MP3, MP4, ME1, ME2, MJ1, MJ2, MD3, MD4; `M3, the config` |
+| a place one component of which is **a sub-task of the unit where a thing of it did not stand** — `<re-seeded>`: a sub-task the unit's committed record names, whose item it has not settled (its `status` leaf `joined` or `discarded`), at which nothing stood before the command, the path up to and with that component holding no entry, as under `<minted>` — *"A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**"* (MA6's second sentence); and `<unprovisioned>`: a sub-task the record names at whose path no linked checkout stood — *"a **registered** worktree is reused untouched"* (MP1's third), a leftover directory that is no checkout being one the door clears (added 2026-10-19, by the second of the fixes after the review of `B7`'s part B: the re-seed's lines and MP1 read `<sub-task>`, so a rewrite under a standing area or a live worktree held) | MA6, MS6, MP4, ME2, MJ2, M12, MD8 — `<re-seeded>`; MP1 — `<unprovisioned>` |
+| a place that is **everything under a directory** | S4; U1; T5, T6; M1, M6, M10; A1, A7; C1, C2; W1, W2; MC1, MC4, MA1, MA2, MA5, MA6, MS1, MS2, MS5, MS6, MP1, MP3, MP4, ME1, ME2, MJ1, MJ2, MD3, MD4, MD7, MD8; M11, M12; `M3, the config` |
 | a place that is **the `pre-commit` hook in the hooks directory git resolves** — not a fixed path | S10; U4 |
 | a place that is **wherever a staged doc of the unit lands** — known by its bytes, since the path is the product's to compute | T1; M2; and W3, the same home before the task holds the doc |
 | **written whole** — made, or replaced by any bytes; over a directory, anything under it, a file gone included | S1, S5, S6, S8; T2; M1, M5; A5; MC2, MD1 |
@@ -1579,7 +1632,7 @@ The plan leaves the allowance's vocabulary to this record: `B1` builds what thes
 | **taken out of** — every line that stands there afterwards stood there before, in order | U2, U3, U4 |
 | **removed** | S6; U1, U4, U5; T6; M6; A1; MD4 |
 | **re-slugged** — gone from its name and standing under another in the same unit, whose base pin stands: a doc it did not hold, with the gone doc's lines but its `# ` title line; the one word under which a staged doc gone from a unit that stands is not *lost* (added 2026-10-18, after the doc family's review: `W4` was *removed*, which let any staged doc of any task go while its pin stood) | W4 |
-| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, A7, and T5's and M10's file-state halves — see the note under this table; W1, W2; and the milestone family's places it mints or re-seeds and its baselines — MC1, MC4, MA1, MA2, MA5, MA6, MS1, MS2, MS5, MS6, MP1, MP3, MP4, ME1, ME2, MJ1, MJ2, MD3 |
+| **rebuilt** — a file made or written whole, a directory made; nothing taken away (added 2026-10-13, for the ruling) | C1, C2, C3; and S4, A7, and T5's and M10's file-state halves — see the note under this table; W1, W2; and the milestone family's places it mints or re-seeds and its baselines — MC1, MC4, MA1, MA2, MA5, MA6, MS1, MS2, MS5, MS6, MP1, MP3, MP4, ME1, ME2, MJ1, MJ2, MD3, MD7, MD8; M11, M12 |
 | **invalidated** — rebuilt, or one stamped file, named by the line, taken away: a cache whose stamp the command invalidates and whose next read rebuilds it (added 2026-10-18, by the fourth of the fixes after the review of `B7`'s part A, its first finding: §6, entry 16, answered) | T5's and M10's edge-index halves, the file `.jigc/index/edges.json` |
 | **laid out** — a directory made, and no file in it (added 2026-10-18, for the ruling on §6, entry 1) | S16 |
 | **a copy of a staged doc of the unit** — staged in its own task area, a sub-task's area, or its own merged set (narrowed 2026-10-18, after the review of `B7`'s part A: it had been a doc staged in *any* unit, so a sibling's doc promoted was let land) — as a regular file | T1; M2 |
