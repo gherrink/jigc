@@ -1974,7 +1974,7 @@ impl<'a> Tally<'a> {
                         | May::ItsKeySet,
                         was,
                         Some(is @ Entry::File { .. }),
-                    ) => self.fits(may, rel, was, is),
+                    ) => self.fits(may, rel, was, is, false),
                     (May::Retitled, Some(Entry::File { .. }), Some(Entry::File { .. })) => self
                         .retitle()
                         .is_some_and(|(old, new)| old == rel && new == old),
@@ -2047,8 +2047,9 @@ impl<'a> Tally<'a> {
     /// by the content rule of a word that has one: *merged into*, *taken out of*,
     /// *repointed*, *migrated*, *its knob set*. Read over the bytes the working tree held
     /// there before the command where the working tree changed, and over the bytes `HEAD`
-    /// held where a commit holds the path.
-    fn fits(&self, may: May, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
+    /// held where a commit holds the path — `committed`, which a migration from a prior home
+    /// reads its source by too.
+    fn fits(&self, may: May, rel: &str, was: Option<&Entry>, is: &Entry, committed: bool) -> bool {
         let Some(now) = is.lines() else {
             return false;
         };
@@ -2060,7 +2061,7 @@ impl<'a> Tally<'a> {
                 .and_then(Entry::lines)
                 .is_some_and(|was| stand_in(&now, &was)),
             May::Repointed => was.is_some_and(|was| self.repointed(was, is)),
-            May::Migrated => self.migrated_into(rel, was, is),
+            May::Migrated => self.migrated_into(rel, was, is, committed),
             May::ItsKeySet => self.its_knob_set(was, is),
             _ => false,
         }
@@ -2204,31 +2205,40 @@ impl<'a> Tally<'a> {
     /// ([`May::Migrated`]): the doc that stood there before (`was`), or — at a current home
     /// where none stood — one at a home its doctype had at an earlier version, gone after,
     /// whose name lands there; below the doctype's current schema version before, at it
-    /// after, its prose in `is`, in order.
-    fn migrated_into(&self, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
+    /// after, its prose in `is`, in order. Where `committed`, the doc at the prior home is
+    /// what `HEAD` held there: a commit is read against history.
+    fn migrated_into(&self, rel: &str, was: Option<&Entry>, is: &Entry, committed: bool) -> bool {
         let (Some(homes), Some(after)) =
             (self.acting.homes.as_ref(), self.acting.homes_after.as_ref())
         else {
             return false;
         };
-        let source: Option<(&str, &Entry)> = match was {
-            Some(was) => homes.doctype_at(rel).map(|ty| (ty, was)),
+        let source: Option<(&str, Entry)> = match was {
+            Some(was) => homes.doctype_at(rel).map(|ty| (ty, was.clone())),
             None => self.seen.before.files.iter().find_map(|(from, entry)| {
                 let from = in_repo(from)?;
                 let ty = homes.prior_doctype_at(from)?;
                 let name = from.rsplit('/').next()?;
-                (after.current.get(ty)?.for_name(name) == rel
-                    && !self
+                if after.current.get(ty)?.for_name(name) != rel
+                    || self
                         .seen
                         .after
                         .files
-                        .contains_key(&format!("{REPO}/{from}")))
-                .then_some((ty, entry))
+                        .contains_key(&format!("{REPO}/{from}"))
+                {
+                    return None;
+                }
+                if committed {
+                    self.head_held(from).ok().flatten().map(|held| (ty, held))
+                } else {
+                    Some((ty, entry.clone()))
+                }
             }),
         };
         let Some((ty, source)) = source else {
             return false;
         };
+        let source = &source;
         let Some(current) = homes.versions.get(ty) else {
             return false;
         };
@@ -2246,33 +2256,25 @@ impl<'a> Tally<'a> {
         stamp(source) < *current && stamp(is) == *current && worded(from) == worded(to)
     }
 
+    /// **Where a doc at `rel`, a home its doctype had at an earlier version, is migrated
+    /// to**: the doctype's current home after the command, under the doc's name.
+    fn migrated_to(&self, rel: &str) -> Option<String> {
+        let ty = self.acting.homes.as_ref()?.prior_doctype_at(rel)?;
+        let name = rel.rsplit('/').next()?;
+        let home = self.acting.homes_after.as_ref()?.current.get(ty)?;
+        Some(home.for_name(name))
+    }
+
     /// **Whether a doc gone from `rel`, a home its doctype had at an earlier version, was
     /// migrated into its current home** ([`May::Migrated`]).
     fn migrated_away(&self, rel: &str, was: &Entry) -> bool {
-        let Some(ty) = self
-            .acting
-            .homes
-            .as_ref()
-            .and_then(|homes| homes.prior_doctype_at(rel))
-        else {
-            return false;
-        };
-        let Some(name) = rel.rsplit('/').next() else {
-            return false;
-        };
-        let Some(to) = self
-            .acting
-            .homes_after
-            .as_ref()
-            .and_then(|homes| homes.current.get(ty))
-            .map(|home| home.for_name(name))
-        else {
+        let Some(to) = self.migrated_to(rel) else {
             return false;
         };
         let landed = self.seen.after.files.get(&format!("{REPO}/{to}"));
         let stood = self.seen.before.files.get(&format!("{REPO}/{to}"));
         stood.is_none()
-            && landed.is_some_and(|is| self.migrated_into(&to, None, is))
+            && landed.is_some_and(|is| self.migrated_into(&to, None, is, false))
             && prose(was).is_some()
     }
 
@@ -2429,7 +2431,7 @@ impl<'a> Tally<'a> {
                     ) => {
                         as_after(entry)
                             && after.is_some_and(|is| match self.head_held(path) {
-                                Ok(was) => self.fits(may, path, was.as_ref(), is),
+                                Ok(was) => self.fits(may, path, was.as_ref(), is, true),
                                 Err(()) => false,
                             })
                     }
@@ -2732,6 +2734,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             // A doc moved into its home carries what was planted in it.
             Allows::Files(place, May::IntoItsHome) if tally.placed(place, &plant.at) => {
                 let to = format!("{REPO}/{}", tally.moved_home(place, in_repo(&plant.at)?)?);
+                let to = stands.files.iter().find(|at| **at == to)?;
+                Some((at, to))
+            }
+            // So does a doc migrated from a home its doctype had at an earlier version.
+            Allows::Files(place, May::Migrated) if tally.placed(place, &plant.at) => {
+                let to = format!("{REPO}/{}", tally.migrated_to(in_repo(&plant.at)?)?);
                 let to = stands.files.iter().find(|at| **at == to)?;
                 Some((at, to))
             }
@@ -3694,7 +3702,9 @@ pub enum Lead {
     /// **The binary under test, run in the repository with these arguments, which must
     /// refuse** — any exit that is not 0. It is how a cell runs its own command a second
     /// time over what a first refusal left: the ruling on a refusal's caches is bounded
-    /// by *a refused command run again refuses again, with the plant standing*.
+    /// by *a refused command run again refuses again, with the plant standing*. And how a
+    /// lead runs a command that refuses and leaves what the cell needs: `task validate`
+    /// over a task with no write refuses, and builds the edge index first.
     Refused(&'static [&'static str]),
 }
 

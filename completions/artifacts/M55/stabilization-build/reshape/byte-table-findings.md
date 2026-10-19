@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-19, with the third commit of the movers family's task (`B8`), which brings the cells of its doors that commit: §24, `rename`'s thirty-one cells, none red, and `migrate-corpus`'s thirty-nine, seventeen red under four keys — the same on both binaries, each key saying which of the doc and the code it judges wrong; §14's two leads for `B8` answered at these doors.*
+
 *Changed 2026-10-19, with the second commit of the movers family's task (`B8`), which writes the family's rows: §23, two keys where the docs agree on what makes no sense for a user — a root knob's moves staged and the knob they follow left unstaged, and `config set`'s *"commit it with your next commit"* under the ruling on entry 19 — each driven on both binaries.*
 
 *Changed 2026-10-19, with the first commit of the movers family's task (`B8`), which records the human's three rulings of that day: §19's key is a finding of the product under the ruling on the rows' record's §6, entry 18 — a landed boundary moves a sub-task worktree's unstaged and untracked files that git does not ignore aside and names them — its doc change folded into it, the cell unmarked; §4's and §21's keys are findings of the product under the retirement of bound 2 — a `doc` write over a part that holds an uncommitted hand edit refuses at the write — one mechanism at two doors, their doc change folded into them, the cells unmarked; §1 gains the doc-only finding of the ruling on entry 20, and §22's settled sub-task is unmarked.*
@@ -667,8 +669,8 @@ $JIGC doc retitle-item roadmap:roadmap#milestones/m-alpha --title "M-Alpha, shar
 | `cli/src/task.rs`, `git_home_claims` (*"nothing was written: `git …` failed"*) | the committing doors, `task finalize` and `milestone finalize`, and `milestone create`'s guard of a record's home | **a lead for `B7`** — `design/finalize.md` → *4. Promote managed docs*, *"a git that cannot answer fails the door **before anything is written**"*; the task family's cells make no git fail |
 | `engine/src/file_state.rs`, a pin git cannot answer (*"nothing was written and nothing was adopted"*) | `reconcile_committed`, the finalize preflight | **a lead for `B7`**, as above: no cell makes git fail |
 | `cli/src/milestone.rs`, the record whose home is no regular file; `engine/src/milestone.rs`, a record's home taken, and a record missing from the worktree (*"nothing was written"*); and a settled sub-task's leftover (*"nothing was changed"*) | the `milestone` doors | **a lead for `B7`** — four sentences |
-| `engine/src/finalize.rs`, the store door's shape arm (*"nothing was written through `<destination>`"*) | `rename`, `relocate`, `migrate-corpus` | **a lead for `B8`** |
-| `cli/src/render.rs`, the dry run's header and its tail (*"dry run — nothing written"*, *"nothing was written"*) | `migrate-corpus --dry-run` | **a lead for `B8`** — two sentences |
+| `engine/src/finalize.rs`, the store door's shape arm (*"nothing was written through `<destination>`"*) | `rename`, `relocate`, `migrate-corpus` | **a lead for `B8`** — *[answered at `rename` on 2026-10-19 by the task's third commit: the four cells of a link or a directory at the decision's home print it, and refuse having changed nothing, on both binaries (§24); `migrate-corpus` never reaches it there — it reads past the entry, §24's first key; `relocate`'s is the task's fourth commit's]* |
+| `cli/src/render.rs`, the dry run's header and its tail (*"dry run — nothing written"*, *"nothing was written"*) | `migrate-corpus --dry-run` | **a lead for `B8`** — two sentences — *[answered on 2026-10-19 by the task's third commit: the spelling's eight cells print the header, the two that would migrate the tail as well, and none writes a byte, on both binaries (§24); the header's one exception, the invocation log, is a knob no prepared state sets]* |
 
 No doc-family cell reaches any sentence of the table but §12's two and the unset's ack, and no row of it but §12's is a finding of the product.
 
@@ -751,7 +753,7 @@ $JIGC milestone finalize $m > /dev/null 2>&1; echo "exit=$?"; ls .jigc/index/   
   - *A change staged before the milestone is minted.* `jigc milestone create` snapshots the shared checkout's staged set for the boundary's aggregate (`design/finalize.md` → *Dirty-tree policy*, the carryover gate: *"`jigc milestone create` for the shared checkout's aggregate index"*), so a change staged **before** `milestone create` meets that gate — a need other than the cells' plant, staged after the join, under both spellings.
   - *`M10` meets a built index.* The plain spelling's cells are the milestone rows'; a cell whose leads build the index before the boundary — as `jigc workflow sub-task` in a worktree does — is what puts `M10`'s *invalidated* to a cell under `squash: true`, as `task-finalize-a-foreign-file-under-the-edge-index` does for `T5`.
 - *[Taken up 2026-10-19, by the milestone family's cells (`B7`, its second part): the change staged before `milestone create` is a cell under each spelling, refused `finalize.carried-staged`; every plain-spelling cell of `land-it` builds the index before the boundary, which takes its file away under `M10`'s word; and the pending config delta is a cell that holds under `M3, the config` — §19.]*
-- **A lead, for `B8`.** `jigc rename` invalidates the edge index the same way (`crates/cli/src/rename.rs`, `index::invalidate`); its row's edge-index line is owed the same word, on its own doc's sentences, and a cell whose leads build the index first.
+- **A lead, for `B8`.** `jigc rename` invalidates the edge index the same way (`crates/cli/src/rename.rs`, `index::invalidate`); its row's edge-index line is owed the same word, on its own doc's sentences, and a cell whose leads build the index first. *[Answered 2026-10-19, by the task's rows and its third commit: `RN5` is *invalidated* (`.jigc/index/edges.json`), on `design/reconciliation.md`'s *"invalidate/rebuild the index"*, and `rename-one-way-with-the-edge-index-built` — its leads build the index with a `task validate` that refuses — holds on both binaries, the file taken away (§24).]*
 
 ## 16. What ruling 1's *names what stands there* asks of the cells — a lead for the fixer of §10's and §11's keys
 
@@ -1064,3 +1066,95 @@ root=$PWD
 rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
 $JIGC config set finalize.fan-out.squash false            # … uncommitted — commit it with your next commit
 ```
+
+## 24. The movers family's doors that commit — `rename` and `migrate-corpus`: 70 cells, 58 in the gate and 12 on demand, seventeen red under four keys, all `migrate-corpus`'s
+
+*2026-10-19, this tree's debug build, macOS arm64; the third commit of the movers family's task (`B8`), on the rows of [the rows' record](byte-table-acceptance-rows.md) → §4c ([movers.rs](../../../../../crates/cli/tests/byte_table/movers.rs)). Every key below is the same on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each repro run as printed on both binaries — not a regression. Read under the human's rule of that day: neither the docs nor the code is the oracle, and each key says which of the two it judges wrong.*
+
+### `r1-migrate-corpus-reads-past-a-link-or-a-directory-at-a-stale-docs-home-and-refuses-nothing`
+
+- *The cells.* Twelve: a link to nothing, a link to a file in the repository, a link to a file outside and a directory, each in the place of a committed decision below its version (`MG1`) and of the changelog at its old home (`MG1, from a prior home`), and the four at the decision under `--dry-run`.
+- *What they came to.* **Not the listed outcome**: exit 0, *"0 migrated, 0 already current, 0 blocked"* — the committed doc stays below its version in git, and the run names nothing; through a link to a file that is no doc the run reports that file *unadopted*, a foreign file at the `adr` home. No byte changes.
+- *Held against.* *"A doc the run would write — in place or by a move — whose own home's entry is not a regular file is refused under `store.home-not-regular-file`, keyed at that home … **It is a refusal of that one doc**"* (`design/corpus-migration.md` → *The corpus walk — the placement branches become a union (M42)*; the same in `design/finalize.md` → *4. Promote managed docs*), and `rename`'s cells, which refuse the same plants under that code.
+- *Which is wrong, and why.* **The code, and the doc's premise.** The walk reads a doc's home through whatever stands there, so a home whose entry is no regular file yields no doc the run *would write*, and the doc's rule is never asked — its sentence keys the refusal to what a read through the entry finds. A corpus migration whose committed doc it cannot migrate and does not name tells the user the corpus is current when it is not. *Robust*: ask the entry at every home the committed corpus holds a doc of a migrated doctype at, before reading it, and refuse that one doc where it is no regular file — the run's other docs migrate, it exits non-zero — and say in the doc that the question is asked of the committed doc's home, not of what a read through it finds.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision below its version"
+rm docs/decisions/one-way.md && ln -s nowhere docs/decisions/one-way.md
+$JIGC migrate-corpus; echo "exit=$?"                       # 0 migrated, 0 already current, 0 blocked · exit=0
+git show HEAD:docs/decisions/one-way.md | sed -n 2p        # schema-version: 1 — still below its version
+```
+
+### `r1-migrate-corpus-commits-an-uncommitted-edit-at-a-doc-it-migrates`
+
+- *The cells.* `migrate-corpus-an-edit-to-the-decision`, `migrate-corpus-an-edit-to-the-old-changelog` — the review's `(R4, F5)`, OPEN in the fix pass's ledger, held by cells now.
+- *What they came to.* **Git's state moved outside its allowance**: exit 0, the doc migrated with the user's line on disk — no byte lost — and the migration's commit carries the line, which no commit held.
+- *Held against.* `MG3`: *"`git add` over exactly the paths the migration touched … so an ambient dirty tree is never swept in"* (`design/corpus-migration.md` → *The commit boundary*); the frame reads a commit's file against what `HEAD` held (§23's commit, *a commit is no way around a word*).
+- *Which is wrong, and why.* **The code; the doc is silent at a touched path.** The sentence keeps an *ambient* change out and says nothing of an uncommitted change at a path the migration rewrites — and a commit that says *"migrate the managed corpus"* and carries a line the user had not decided to commit is unrelated content in a commit. *Robust*: refuse that one doc, naming the uncommitted change and the way out (commit it or put it aside, then re-run), as `rename` refuses a tree that is not clean; and say so in the doc. The cells are listed as acting today, and their listing moves with the ruling.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision below its version"
+printf "A line of the user's.\n" >> docs/decisions/one-way.md
+$JIGC migrate-corpus > /dev/null; echo "exit=$?"                          # exit=0
+git show HEAD:docs/decisions/one-way.md | grep -c "A line of the user"    # 1 — in the migration's commit
+```
+
+### `r1-migrate-corpus-replaces-a-change-staged-at-a-doc-it-migrates`
+
+- *The cells.* `migrate-corpus-a-change-staged-at-the-decision`, `migrate-corpus-a-change-staged-at-the-old-changelog`.
+- *What they came to.* **Lost**: exit 0, the doc migrated from its working file and committed — and the line the user staged there, kept in no working file, is in the index no longer and in no object within reach.
+- *Held against.* The exit rule's first clause; the human's ruling of 2026-10-14 on the rows' record's §6, entry 8 — the declared bound (1) is one case, and a staged change replaced elsewhere is a finding; the same mechanism is §4's and §17's keys at other doors.
+- *Which is wrong, and why.* **The code.** No doc allows it, and it destroys bytes nothing else holds. *Robust*: refuse that one doc, as above — a change staged at a path the run would stage is the user's, and not the run's to replace.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision below its version"
+cp docs/decisions/one-way.md ../was
+printf 'A line staged by its user.\n' >> docs/decisions/one-way.md && git add docs/decisions/one-way.md && cp ../was docs/decisions/one-way.md
+$JIGC migrate-corpus > /dev/null; echo "exit=$?"                          # exit=0
+git rev-list --all | while read c; do git grep -q 'staged by its user' $c -- && echo "held by $c"; done   # nothing
+```
+
+### `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged`
+
+- *The cell.* `migrate-corpus-a-hook-that-rejects`, marked with the rows' record's §6, entry 22.
+- *What it came to.* **Refused, and changed what a refusal may not**: exit 1, *"`git commit` was rejected (no commit was made)"*, and the migrated decision left written and staged.
+- *Held against.* The reading until entry 22 is ruled — a refusal that committed nothing changes nothing — beside the declared bound of `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*, *"the refused run's staged residue is **stated** by the door's rejection frame, not removed"*, the other side of the entry.
+- *Which is wrong, and why.* **The doc, and the code that follows it.** A bound a builder declared is not a ruling: the human's ruling on `setup` (*every refusal leaves the repository as it was*) and `rename`'s restore on any pre-commit failure say the opposite at the doors beside it, and a refusal that leaves the index changed surprises a user who reads *rejected*. *Robust*: roll back what the run wrote; the re-run migrates again. The human's to rule (entry 22).
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision below its version"
+printf '#!/bin/sh\nexit 1\n' > .git/hooks/pre-commit; chmod +x .git/hooks/pre-commit
+$JIGC migrate-corpus > /dev/null 2>&1; echo "exit=$?"                     # exit=1
+git status --porcelain                                                    # M  docs/decisions/one-way.md
+```
+
+### What the other cells show
+
+- **`rename`, thirty-one cells, none red.** The base cell moves the decision and repoints the doc that cites it in one commit; the retitle in place rewrites the `# ` line; with the edge index built first (§15's lead for `B8`, `index::invalidate`), the rename takes the index's file away (`RN5`, *invalidated*) and holds. Every plant at the decision's home, at the citing doc's, or staged elsewhere is refused before a write — `rename.dirty-tree`, or `store.home-not-regular-file` at a link or a directory in the decision's place, with the store door's *"nothing was written through …"* (§14), or `store.not-found` where a file stands in the place of the decisions' directory — and a hook that rejects the commit is restored: **each refuses having changed nothing.** A file of the user's under the baseline or the index stays. In every other prepared state the leaf refuses, nothing changed.
+- **`migrate-corpus`, the twenty-two that hold.** The decision migrated where it stands, the changelog from its old home to `CHANGELOG.md`, and a decision a task landed with its baseline flipped (`MG2`) — each one commit; a file of the user's in a doc's place (*"a file it calls foreign"*) or in the place of its directory, and what is staged elsewhere or under a quoted name, kept out. `--no-commit` leaves the migration unstaged — marked, the rows' record's §6, entry 21. Under `--dry-run` the header *"dry run — nothing written"* and the tail *"nothing was written"* are true at each of the spelling's cells (§14). In `bare` the leaf refuses; in the other five prepared states it finds nothing below its version.
+
+### Seen, and held by no cell
+
+- **`migrate-corpus` without a task's baseline adopts none.** A doc the user committed by hand is migrated and committed, and the file-state baseline is not written — *"an untracked doc adopts nothing"* (`migrate_corpus.rs`); `MG2` is held by the cells over a decision a task landed.
+- **`rename` answers a doc gone from the worktree with *"check the id you typed"*.** Over a file in the place of the decisions' directory — the decision committed, git holding it — `rename` refuses `store.not-found`, *"no managed doc `adr:one-way` to rename"*, routed to *"`jigc describe` lists the doctype surface — check the id you typed against it"*: the id is right, and the doc is missing from the worktree, not from the store. Law 2 of `design/surface-contract.md`, a key of words: `r1-rename-answers-a-doc-gone-from-the-worktree-with-check-the-id-you-typed`. *Which is wrong*: the code — the route should name the home and that git holds the doc there, as `milestone create`'s *"missing from the worktree but not from git"* does. The cell holds bytes.
+- **The store door's route offers a link's way out at a directory.** `rename` over a directory at the decision's home routes *"put the doc itself … as a regular file — for a link, a copy of the file it points at, in the link's place"*; harmless, and the same sentence at every store door — words, no key.

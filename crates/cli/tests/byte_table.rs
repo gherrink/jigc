@@ -8,7 +8,8 @@
 //! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, and the movers family's four (`rename`,
-//! `relocate`, `migrate-corpus`, `config set`), whose cells are owed — and 530 cells: the acceptance's
+//! `relocate`, `migrate-corpus`, `config set`), the cells of two of which are owed — and 600
+//! cells: the acceptance's
 //! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
 //! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
 //! false` four, the
@@ -17,7 +18,8 @@
 //! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), **its
 //! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
 //! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
-//! carryover gate's cell under `squash: false`), of which a hundred and thirty-two run on
+//! carryover gate's cell under `squash: false`), **and the movers family's doors that
+//! commit, seventy** (`rename`, `migrate-corpus`), of which a hundred and forty-four run on
 //! demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
 //! place of a file that stands, the plant of a file simply deleted and the doc family, and of
 //! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
@@ -1895,6 +1897,21 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         "W2",
         &[Prepared::Of(State::CommittedSingletons)],
     ),
+    (&["rename"], "RN1", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "RN2", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "RN3", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "RN4", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "RN5", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "C1", &[Prepared::Of(State::Fresh)]),
+    (&["rename"], "C2", &[Prepared::Of(State::Fresh)]),
+    (&["migrate-corpus"], "MG1", &[Prepared::Of(State::Fresh)]),
+    (
+        &["migrate-corpus"],
+        "MG1, from a prior home",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (&["migrate-corpus"], "MG2", &[Prepared::Of(State::Fresh)]),
+    (&["migrate-corpus"], "MG3", &[Prepared::Of(State::Fresh)]),
 ];
 
 /// Why the doc family's `W3` excuses nothing, and never will: it lets nothing change at
@@ -1908,15 +1925,8 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 /// a cell has met it yet. A line that is on neither list, or on both, is named
 /// ([`unaccounted`]).
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
-    (&["rename"], "RN1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "RN2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "RN3", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "RN4", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "RN5", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["rename"], "C3, the task list", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["rename"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["relocate"], "RL1", THE_FAMILYS_CELLS_ARE_OWED),
     (&["relocate"], "RL2", THE_FAMILYS_CELLS_ARE_OWED),
     (&["relocate"], "RL3", THE_FAMILYS_CELLS_ARE_OWED),
@@ -1933,26 +1943,18 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         THE_FAMILYS_CELLS_ARE_OWED,
     ),
-    (&["migrate-corpus"], "MG1", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["migrate-corpus"],
-        "MG1, from a prior home",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (&["migrate-corpus"], "MG2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate-corpus"], "MG3", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate-corpus"], "MG5", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate-corpus"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate-corpus"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate-corpus"], "MG5", A_DRY_RUN_WRITES_NOTHING),
+    (&["migrate-corpus"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["migrate-corpus"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["migrate-corpus"],
         "C3, the base pin",
-        THE_FAMILYS_CELLS_ARE_OWED,
+        NO_CELL_OF_THIS_LEAF,
     ),
     (
         &["migrate-corpus"],
         "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
+        NO_CELL_OF_THIS_LEAF,
     ),
     (&["config", "set"], "CS1", THE_FAMILYS_CELLS_ARE_OWED),
     (&["config", "set"], "CS2", THE_FAMILYS_CELLS_ARE_OWED),
@@ -2347,6 +2349,12 @@ const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed bou
 /// `B8` until the commits after its rows (`owed.rs` → `CELLS_OWED`).
 const THE_FAMILYS_CELLS_ARE_OWED: &str = "the family's cells, owed by the task `B8` (`CELLS_OWED`): its rows are written from \
      their docs a commit before any cell of them runs";
+
+/// What would use `migrate-corpus`'s `MG5`: nothing — the dry run's line names the docs it
+/// reads, which is what the plants of its spelling's cells are aimed at, and lets no
+/// difference happen there.
+const A_DRY_RUN_WRITES_NOTHING: &str = "nothing can: the dry run's line lets no difference happen at the doc it reads — it names \
+     the place, which is what the plants of the spelling's cells are aimed at";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -3944,7 +3952,10 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
 /// moved. A prose line changed or added, the stamp left behind, a doc already current
 /// rewritten, the changelog's prose dropped on its way, and a line of the user's in no
 /// commit swept into the migration's commit, are each red — and under `--dry-run` any
-/// write is.
+/// write is. A line of the user's in the old changelog moves with it, and holds under
+/// `--no-commit`; a commit that carries it is red, read against what `HEAD` held at the
+/// old home (the task `B8`'s third commit, red first: the plant came out *written
+/// outside*, then the commit *held*).
 #[test]
 fn a_migrated_doc_keeps_its_prose() {
     const V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
@@ -4101,6 +4112,52 @@ fn a_migrated_doc_keeps_its_prose() {
     assert!(
         class.is_red(),
         "the prose dropped: came out {class}, {why:#?}"
+    );
+    // A line of the user's in the old changelog, in no commit: the migration carries it to
+    // the doc's new home — under `--no-commit`, it holds there; and a commit that carries it
+    // carries what `HEAD` never held at the old home.
+    const MINE: &str = "A line of the user's.\n";
+    let edited = then(&before, |m| {
+        written(m, "docs/changelog/changelog.md", &format!("{OLD}{MINE}"))
+    });
+    let moved = |committed: bool| {
+        then(&edited, |m| {
+            let bytes = format!("{NEW}{MINE}");
+            m.files
+                .remove(&format!("{REPO}/docs/changelog/changelog.md"));
+            written(m, "CHANGELOG.md", &bytes);
+            if committed {
+                commit(
+                    m,
+                    "c2",
+                    &[
+                        ("docs/changelog/changelog.md", None),
+                        ("CHANGELOG.md", Some((0o100_644, bytes.as_str()))),
+                    ],
+                );
+            }
+        })
+    };
+    let carried = |after: &Manifest, spelling: Option<&'static str>| {
+        Cell {
+            argv: &["migrate-corpus"],
+            spelling,
+            planted: &[("repo/docs/changelog/changelog.md", "A line of the user's.")],
+            ..Cell::of(movers::MIGRATE_CORPUS, &edited, after)
+        }
+        .came_to()
+    };
+    let (class, why) = carried(&moved(false), Some("--no-commit"));
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the user's line carried with its doc: {why:#?}"
+    );
+    let (class, why) = carried(&moved(true), None);
+    assert_eq!(
+        class,
+        Classification::GitMoved,
+        "the user's line carried into the commit: {why:#?}"
     );
 }
 
@@ -9715,6 +9772,49 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::GitMoved,
         &["milestone-finalize-a-pending-config-delta"],
     ),
+    // The movers family's doors that commit (the task `B8`, its third commit): `rename`'s
+    // cells are none of them red; `migrate-corpus`'s four keys.
+    (
+        "r1-migrate-corpus-reads-past-a-link-or-a-directory-at-a-stale-docs-home-and-refuses-nothing",
+        Classification::NotTheListedOutcome,
+        &[
+            "migrate-corpus-a-link-to-nothing-in-the-decisions-place",
+            "migrate-corpus-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+            "migrate-corpus-a-link-to-a-file-outside-in-the-decisions-place",
+            "migrate-corpus-a-directory-in-the-decisions-place",
+            "migrate-corpus-a-link-to-nothing-in-the-old-changelogs-place",
+            "migrate-corpus-a-link-to-a-file-in-the-repository-in-the-old-changelogs-place",
+            "migrate-corpus-a-link-to-a-file-outside-in-the-old-changelogs-place",
+            "migrate-corpus-a-directory-in-the-old-changelogs-place",
+            "migrate-corpus-dry-run-a-link-to-nothing-in-the-decisions-place",
+            "migrate-corpus-dry-run-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+            "migrate-corpus-dry-run-a-link-to-a-file-outside-in-the-decisions-place",
+            "migrate-corpus-dry-run-a-directory-in-the-decisions-place",
+        ],
+    ),
+    // The review's `(R4, F5)`, OPEN in the fix pass's ledger: the cells that hold it.
+    (
+        "r1-migrate-corpus-commits-an-uncommitted-edit-at-a-doc-it-migrates",
+        Classification::GitMoved,
+        &[
+            "migrate-corpus-an-edit-to-the-decision",
+            "migrate-corpus-an-edit-to-the-old-changelog",
+        ],
+    ),
+    (
+        "r1-migrate-corpus-replaces-a-change-staged-at-a-doc-it-migrates",
+        Classification::Lost,
+        &[
+            "migrate-corpus-a-change-staged-at-the-decision",
+            "migrate-corpus-a-change-staged-at-the-old-changelog",
+        ],
+    ),
+    // The rows' record's §6, entry 22 — the cell marked.
+    (
+        "r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged",
+        Classification::RefusedAndChanged,
+        &["migrate-corpus-a-hook-that-rejects"],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -10140,7 +10240,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (530, 398, 132),
+        (600, 456, 144),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -10150,7 +10250,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          demand — and the milestone family's record doors seventy: fifty-two in the gate, \
          eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
          demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
-         finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand"
+         finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
+         the movers family's doors that commit seventy, `rename`'s thirty-one and \
+         `migrate-corpus`'s thirty-nine: fifty-eight in the gate, twelve on demand"
     );
 }
 

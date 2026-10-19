@@ -41,9 +41,4 @@ pub const OWED: &[(&[&str], &str)] = &[
 /// until a cell of a spelling comes. A leaf leaves this list in the commit that
 /// brings its cells — after which every need of its row is a cell or a line of
 /// `scheduled-cells.tsv` with its reason.
-pub const CELLS_OWED: &[(&[&str], &str)] = &[
-    (&["rename"], "B8"),
-    (&["relocate"], "B8"),
-    (&["migrate-corpus"], "B8"),
-    (&["config", "set"], "B8"),
-];
+pub const CELLS_OWED: &[(&[&str], &str)] = &[(&["relocate"], "B8"), (&["config", "set"], "B8")];

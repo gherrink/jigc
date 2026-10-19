@@ -12,11 +12,13 @@
 //! second spelling**, `--no-commit`, and `MG5` a third, `--dry-run`: each a flag whose doc
 //! promises fewer writes (the plan's §2), which a cell names.
 
-use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ};
+use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
+use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
-    A_DOC, A_PRIOR_DOC, Allows, Cell, Holding, Line, May, PRIOR_HOME, Prepared, Quote, Row,
-    Spelling, THE_DOC, Unit, When, Where,
+    A_DOC, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, Mark, May,
+    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, Unit, When, Where,
 };
+use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
 /// A line that holds where the command acted, whenever it did.
@@ -418,6 +420,836 @@ pub const CONFIG_SET: Row = Row {
 /// The family's rows.
 pub const ROWS: &[Row] = &[RENAME, RELOCATE, MIGRATE_CORPUS, CONFIG_SET];
 
-/// The family's cells — owed by the task `B8` until they come, in the commits after its
-/// rows (`owed.rs` → `CELLS_OWED`).
-pub const CELLS: &[&[Cell]] = &[];
+// ---------------------------------------------------------------------------
+// The cells
+// ---------------------------------------------------------------------------
+
+const FRESH: Prepared = Prepared::Of(State::Fresh);
+
+/// The binary under test, in the repository.
+const fn jigc(args: &'static [&'static str]) -> Lead {
+    Lead::Step(Step::Jigc(args))
+}
+
+/// A file a lead writes, from the repository's root.
+const fn file(path: &'static str, body: &'static str) -> Lead {
+    Lead::Step(Step::File(Place::Repo(path), body))
+}
+
+/// `git`, as the user runs it in the repository.
+const fn git(args: &'static [&'static str]) -> Lead {
+    Lead::Step(Step::Git(args))
+}
+
+/// What a planted cell's plant is aimed at.
+const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+    Some(Aim { line, kind })
+}
+
+/// One cell of the family's, plainly spelled and beside no suite.
+const fn cell(
+    name: &'static str,
+    leaf: &'static [&'static str],
+    state: Prepared,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        spelling: None,
+        name,
+        leaf,
+        state,
+        leads,
+        argv,
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+    }
+}
+
+/// The words a refusal over a repository with no `jigc setup` says; the words a run's.
+const NOT_SET_UP: Listed = refuses(1, "this project isn't set up");
+
+/// A change of the user's staged at a place the command does not write, and one under a
+/// name git quotes — kept in the working file both.
+const STAGED_ELSEWHERE: Lead = Lead::Plant(Plant::Staged {
+    at: "notes/staged-by-its-user.txt",
+    kept: true,
+});
+const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
+const STAGED_UNDER_A_QUOTED_NAME: Lead = Lead::Plant(Plant::Staged {
+    at: A_NAME_GIT_QUOTES,
+    kept: true,
+});
+
+// --- `jigc rename` -----------------------------------------------------------------
+
+/// The decision a rename moves, and the doc that cites it — a decision's home and an
+/// architecture doc's, under the docs root of `fresh`.
+const ONE_WAY: &str = "docs/decisions/one-way.md";
+const GATEWAY: &str = "docs/architecture/gateway.md";
+const A_DECISION: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Options\n\n\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+const A_DOC_THAT_CITES_IT: &str = "---\nschema-version: 1\ncites: [adr:one-way]\n---\n\n# Gateway\n\n## Overview\n\nThe gateway takes one way.\n\n## Components\n";
+
+/// **A decision, and a doc that cites it, committed** — written by hand and committed by
+/// the user, as a repository holds docs jigc was handed long ago: the rename's subject and
+/// its referrer.
+macro_rules! a_decision_and_its_citer {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(ONE_WAY, A_DECISION),
+            file(GATEWAY, A_DOC_THAT_CITES_IT),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a decision, and a doc that cites it"]),
+            $($after,)*
+        ]
+    };
+}
+
+const RENAME_IT: &[&str] = &["rename", "adr:one-way", "--to", "Single way"];
+
+/// One cell of `jigc rename`.
+const fn renames(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(name, &["rename"], FRESH, leads, RENAME_IT, listed, aim)
+}
+
+/// **The cells of `jigc rename`**, each listed from the row's doc:
+///
+/// - **the base cell** moves the decision to the slug `--to` gives and repoints the doc
+///   that cites it (`RN1`, `RN2`), in one commit (`RN3`); **a retitle in place**, where
+///   the new title slugs alike, rewrites the `# ` line and commits; and **with the edge
+///   index built first** the rename takes its file away for the next read to rebuild
+///   (`RN5`, the findings' §15 lead);
+/// - **a state the transaction refuses before it writes** — *"**Validates** up front:
+///   target exists · tree clean"* (`RN7`): a file of the user's in the doc's place or the
+///   referrer's, a link, a directory, an edit in no commit, a change staged — at either
+///   home or elsewhere — each leaves the tree not clean, and *"Every home the transaction
+///   touches is a regular file, or the door refuses"*; where the doc gives both, the code
+///   is the run's — `store.home-not-regular-file` at the doc's own home — and a file in
+///   the place of the decisions' directory leaves no target (`store.not-found`);
+/// - **a hook that rejects** the commit: *"on **any** pre-commit failure restores all
+///   captured bytes"* (`RN6`);
+/// - **a file of the user's in a cache** (`RN4`, `RN5`) stays.
+const RENAME_CELLS: [Cell; 31] = [
+    cell(
+        "rename-a-decision-the-catalog-names",
+        &["rename"],
+        FRESH,
+        &[],
+        &["rename", "adr:a-decision", "--to", "A Decision"],
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    renames(
+        "rename-one-way-to-single-way",
+        a_decision_and_its_citer!(),
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "rename-one-way-retitled-in-place",
+        &["rename"],
+        FRESH,
+        a_decision_and_its_citer!(),
+        &["rename", "adr:one-way", "--to", "One Way"],
+        Listed::Acts,
+        None,
+    ),
+    renames(
+        "rename-one-way-with-the-edge-index-built",
+        a_decision_and_its_citer!(
+            jigc(&["start", "--workflow", "single-task", "build the index"]),
+            Lead::Refused(&["task", "validate", "build-the-index"]),
+            jigc(&["task", "discard", "build-the-index", "--force"]),
+        ),
+        Listed::Acts,
+        None,
+    ),
+    // `RN1`, at the decision's home.
+    renames(
+        "rename-a-file-of-the-users-in-the-decisions-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::File(ONE_WAY)))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN1", Kind::Untracked),
+    ),
+    renames(
+        "rename-a-link-to-nothing-in-the-decisions-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            ONE_WAY
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1", Kind::LinkToNothing),
+    ),
+    renames(
+        "rename-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: false,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1", Kind::LinkInside),
+    ),
+    renames(
+        "rename-a-link-to-a-file-outside-in-the-decisions-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: true,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1", Kind::LinkOutside),
+    ),
+    renames(
+        "rename-a-directory-in-the-decisions-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
+        refuses(1, "store.home-not-regular-file"),
+        at("RN1", Kind::DirForAFile),
+    ),
+    renames(
+        "rename-a-file-in-the-place-of-the-decisions-directory",
+        a_decision_and_its_citer!(
+            Lead::MovedAway("repo/docs/decisions"),
+            Lead::Plant(Plant::File("docs/decisions")),
+        ),
+        refuses(1, "store.not-found"),
+        at("RN1", Kind::FileForADir),
+    ),
+    renames(
+        "rename-an-edit-to-the-decision",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Edit(ONE_WAY))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN1", Kind::EditAfter),
+    ),
+    renames(
+        "rename-a-change-staged-at-the-decision",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Staged {
+            at: ONE_WAY,
+            kept: false,
+        })),
+        refuses(1, "rename.dirty-tree"),
+        at("RN1", Kind::StagedThere),
+    ),
+    // `RN2`, at the citing doc's home.
+    renames(
+        "rename-a-file-of-the-users-in-the-citing-docs-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::File(GATEWAY)))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::Untracked),
+    ),
+    renames(
+        "rename-a-link-to-nothing-in-the-citing-docs-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            GATEWAY
+        )))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::LinkToNothing),
+    ),
+    renames(
+        "rename-a-link-to-a-file-in-the-repository-in-the-citing-docs-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: GATEWAY,
+            outside: false,
+        }))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::LinkInside),
+    ),
+    renames(
+        "rename-a-link-to-a-file-outside-in-the-citing-docs-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: GATEWAY,
+            outside: true,
+        }))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::LinkOutside),
+    ),
+    renames(
+        "rename-a-directory-in-the-citing-docs-place",
+        a_decision_and_its_citer!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(GATEWAY)))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::DirForAFile),
+    ),
+    renames(
+        "rename-a-file-in-the-place-of-the-citing-docs-directory",
+        a_decision_and_its_citer!(
+            Lead::MovedAway("repo/docs/architecture"),
+            Lead::Plant(Plant::File("docs/architecture")),
+        ),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::FileForADir),
+    ),
+    renames(
+        "rename-an-edit-to-the-citing-doc",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Edit(GATEWAY))),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::EditAfter),
+    ),
+    renames(
+        "rename-a-change-staged-at-the-citing-doc",
+        a_decision_and_its_citer!(Lead::Plant(Plant::Staged {
+            at: GATEWAY,
+            kept: false,
+        })),
+        refuses(1, "rename.dirty-tree"),
+        at("RN2", Kind::StagedThere),
+    ),
+    // `RN3`, the commit.
+    renames(
+        "rename-a-file-staged-elsewhere",
+        a_decision_and_its_citer!(STAGED_ELSEWHERE),
+        refuses(1, "rename.dirty-tree"),
+        at("RN3", Kind::StagedElsewhere),
+    ),
+    renames(
+        "rename-a-staged-file-whose-name-git-quotes",
+        a_decision_and_its_citer!(STAGED_UNDER_A_QUOTED_NAME),
+        refuses(1, "rename.dirty-tree"),
+        at("RN3", Kind::QuotedName),
+    ),
+    renames(
+        "rename-a-hook-that-rejects",
+        a_decision_and_its_citer!(Lead::Plant(Plant::RejectingHook)),
+        refuses(1, "`git commit` was rejected"),
+        at("RN3", Kind::RejectingHook),
+    ),
+    // `RN4`, `RN5`, the caches.
+    renames(
+        "rename-a-file-of-the-users-beside-the-baseline",
+        a_decision_and_its_citer!(Lead::Plant(Plant::File(".jigc/state/notes.md"))),
+        Listed::Acts,
+        at("RN4", Kind::Untracked),
+    ),
+    renames(
+        "rename-a-file-of-the-users-under-the-edge-index",
+        a_decision_and_its_citer!(Lead::Plant(Plant::File(".jigc/index/notes.md"))),
+        Listed::Acts,
+        at("RN5", Kind::Untracked),
+    ),
+    // The base cell in each other prepared state: the command as typed, with no lead.
+    cell(
+        "rename-one-way-in-bare",
+        &["rename"],
+        Prepared::Bare,
+        &[],
+        RENAME_IT,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "rename-one-way-in-committed-singletons",
+        &["rename"],
+        Prepared::Of(State::CommittedSingletons),
+        &[],
+        RENAME_IT,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "rename-one-way-in-migrated",
+        &["rename"],
+        Prepared::Of(State::Migrated),
+        &[],
+        RENAME_IT,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "rename-one-way-in-refs-post-hoc",
+        &["rename"],
+        Prepared::Of(State::RefsPostHoc),
+        &[],
+        RENAME_IT,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "rename-one-way-in-chatty-hooks",
+        &["rename"],
+        Prepared::Of(State::ChattyHooks),
+        &[],
+        RENAME_IT,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+    cell(
+        "rename-one-way-in-vendored",
+        &["rename"],
+        Prepared::Of(State::Vendored),
+        &[],
+        RENAME_IT,
+        refuses(1, "store.not-found"),
+        None,
+    ),
+];
+
+// --- `jigc migrate-corpus` ---------------------------------------------------------
+
+/// A decision at schema version 1 — the `adr` doctype's shape before its `## Options`
+/// section (`schema-snapshots/adr.v1.yaml`) — at its home.
+const A_DECISION_AT_V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+
+/// The changelog at schema version 1, at the home its doctype had then — `changelog/`
+/// under the docs root, its lowercase title — as `corpus_migration.rs` commits it.
+const THE_CHANGELOGS_OLD_HOME: &str = "docs/changelog/changelog.md";
+const A_CHANGELOG_AT_V1: &str =
+    "---\nschema-version: 1\n---\n\n# changelog\n\n## Unreleased Changes\n\n## Releases\n";
+
+/// **A decision below its doctype's version, committed** — written by hand and committed
+/// by the user, as a corpus jigc stamped before a schema bump stands: `migrate-corpus`'s
+/// subject.
+macro_rules! a_stale_decision {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(ONE_WAY, A_DECISION_AT_V1),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a decision below its version"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// **The changelog at the home its doctype had at version 1, committed.**
+macro_rules! a_stale_changelog {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(THE_CHANGELOGS_OLD_HOME, A_CHANGELOG_AT_V1),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "the changelog at its old home"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// **A decision jigc tracks, below its doctype's version** — landed by a task of its own,
+/// so the file-state baseline holds it, then rewritten at version 1 and committed by the
+/// user: the doc whose baseline a migration flips (`MG2`). A doc jigc never tracked adopts
+/// no baseline (`migrate_corpus.rs`: *"an untracked doc adopts nothing"*).
+macro_rules! a_tracked_stale_decision {
+    ($($after:expr),* $(,)?) => {
+        &[
+            A_TASK_THAT_RECORDS_ONE_WAY[0],
+            A_TASK_THAT_RECORDS_ONE_WAY[1],
+            A_TASK_THAT_RECORDS_ONE_WAY[2],
+            A_TASK_THAT_RECORDS_ONE_WAY[3],
+            A_TASK_THAT_RECORDS_ONE_WAY[4],
+            A_TASK_THAT_RECORDS_ONE_WAY[5],
+            A_TASK_THAT_RECORDS_ONE_WAY[6],
+            A_TASK_THAT_RECORDS_ONE_WAY[7],
+            A_TASK_THAT_RECORDS_ONE_WAY[8],
+            A_TASK_THAT_RECORDS_ONE_WAY[9],
+            A_TASK_THAT_RECORDS_ONE_WAY[10],
+            jigc(&["task", "finalize", "record-a-decision"]),
+            file(ONE_WAY, A_DECISION_AT_V1),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "the decision below its version"]),
+            $($after,)*
+        ]
+    };
+}
+
+const MIGRATE: &[&str] = &["migrate-corpus"];
+
+/// One cell of `jigc migrate-corpus`.
+const fn migrates(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(
+        name,
+        &["migrate-corpus"],
+        FRESH,
+        leads,
+        MIGRATE,
+        listed,
+        aim,
+    )
+}
+
+/// **The cells of `jigc migrate-corpus`**, each listed from the row's doc:
+///
+/// - **the base cells** migrate a decision below its version where it stands (`MG1`)
+///   and the changelog from its old home to `CHANGELOG.md` (`MG1, from a prior home`),
+///   each in one commit (`MG3`), and a decision a task landed, so that the file-state
+///   baseline holds it and the migration flips it (`MG2`); the leaf as typed in `fresh`
+///   finds nothing stale, and acts;
+/// - **at a doc's home, what is no doc of its type**: a file of the user's there is a file
+///   the verb *"is not for"* — *"a file it calls foreign never becomes a `PreparedDoc`"*
+///   (`design/corpus-migration.md` → *The foreign arm*) — and the run acts having written
+///   nothing; a link or a directory is *"refused under `store.home-not-regular-file`"*,
+///   one doc, and the run exits non-zero (`design/finalize.md` → *4. Promote managed
+///   docs*); a file in the place of the home's directory leaves no doc to find;
+/// - **an edit in no commit** at the doc, and **a change staged** at it: the migration
+///   reads the working file and lands it — and the doc of the commit says *"an ambient
+///   dirty tree is never swept in"*, so each is listed as acting, and its commit is held
+///   to what `HEAD` held;
+/// - **what is staged elsewhere** stays out of the commit, *"`git add` over exactly the
+///   paths the migration touched"*; **a hook that rejects** the commit refuses, and leaves
+///   nothing changed — the reading of the record's §6, entry 22, marked;
+/// - **a file of the user's beside the baseline** (`MG2`), over the decision a task
+///   landed, stays.
+const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
+    migrates("migrate-corpus-the-catalog-names", &[], Listed::Acts, None),
+    migrates(
+        "migrate-corpus-a-decision-below-its-version",
+        a_stale_decision!(),
+        Listed::Acts,
+        None,
+    ),
+    migrates(
+        "migrate-corpus-a-decision-jigc-tracks-below-its-version",
+        a_tracked_stale_decision!(),
+        Listed::Acts,
+        None,
+    ),
+    migrates(
+        "migrate-corpus-the-changelog-at-its-old-home",
+        a_stale_changelog!(),
+        Listed::Acts,
+        None,
+    ),
+    // The two spellings' base cells.
+    Cell {
+        spelling: Some("--no-commit"),
+        marks: &[Mark::Silence(21)],
+        ..cell(
+            "migrate-corpus-no-commit-a-decision-below-its-version",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(),
+            &["migrate-corpus", "--no-commit"],
+            Listed::Acts,
+            None,
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-decision-below-its-version",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(),
+            &["migrate-corpus", "--dry-run"],
+            Listed::Acts,
+            None,
+        )
+    },
+    // `MG1`, at the stale decision's home.
+    migrates(
+        "migrate-corpus-a-file-of-the-users-in-the-decisions-place",
+        a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::File(ONE_WAY)))),
+        Listed::Acts,
+        at("MG1", Kind::Untracked),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-nothing-in-the-decisions-place",
+        a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            ONE_WAY
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1", Kind::LinkToNothing),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+        a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: false,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1", Kind::LinkInside),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-a-file-outside-in-the-decisions-place",
+        a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: ONE_WAY,
+            outside: true,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1", Kind::LinkOutside),
+    ),
+    migrates(
+        "migrate-corpus-a-directory-in-the-decisions-place",
+        a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1", Kind::DirForAFile),
+    ),
+    migrates(
+        "migrate-corpus-a-file-in-the-place-of-the-decisions-directory",
+        a_stale_decision!(
+            Lead::MovedAway("repo/docs/decisions"),
+            Lead::Plant(Plant::File("docs/decisions")),
+        ),
+        Listed::Acts,
+        at("MG1", Kind::FileForADir),
+    ),
+    migrates(
+        "migrate-corpus-an-edit-to-the-decision",
+        a_stale_decision!(Lead::Plant(Plant::Edit(ONE_WAY))),
+        Listed::Acts,
+        at("MG1", Kind::EditAfter),
+    ),
+    migrates(
+        "migrate-corpus-a-change-staged-at-the-decision",
+        a_stale_decision!(Lead::Plant(Plant::Staged {
+            at: ONE_WAY,
+            kept: false,
+        })),
+        Listed::Acts,
+        at("MG1", Kind::StagedThere),
+    ),
+    // `MG1, from a prior home`, at the changelog's old home.
+    migrates(
+        "migrate-corpus-a-file-of-the-users-in-the-old-changelogs-place",
+        a_stale_changelog!(Lead::Plant(Plant::InPlaceOf(&Plant::File(
+            THE_CHANGELOGS_OLD_HOME
+        )))),
+        Listed::Acts,
+        at("MG1, from a prior home", Kind::Untracked),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-nothing-in-the-old-changelogs-place",
+        a_stale_changelog!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            THE_CHANGELOGS_OLD_HOME
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1, from a prior home", Kind::LinkToNothing),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-a-file-in-the-repository-in-the-old-changelogs-place",
+        a_stale_changelog!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: THE_CHANGELOGS_OLD_HOME,
+            outside: false,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1, from a prior home", Kind::LinkInside),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-a-file-outside-in-the-old-changelogs-place",
+        a_stale_changelog!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: THE_CHANGELOGS_OLD_HOME,
+            outside: true,
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1, from a prior home", Kind::LinkOutside),
+    ),
+    migrates(
+        "migrate-corpus-a-directory-in-the-old-changelogs-place",
+        a_stale_changelog!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(
+            THE_CHANGELOGS_OLD_HOME
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("MG1, from a prior home", Kind::DirForAFile),
+    ),
+    migrates(
+        "migrate-corpus-a-file-in-the-place-of-the-old-changelogs-directory",
+        a_stale_changelog!(
+            Lead::MovedAway("repo/docs/changelog"),
+            Lead::Plant(Plant::File("docs/changelog")),
+        ),
+        Listed::Acts,
+        at("MG1, from a prior home", Kind::FileForADir),
+    ),
+    migrates(
+        "migrate-corpus-an-edit-to-the-old-changelog",
+        a_stale_changelog!(Lead::Plant(Plant::Edit(THE_CHANGELOGS_OLD_HOME))),
+        Listed::Acts,
+        at("MG1, from a prior home", Kind::EditAfter),
+    ),
+    migrates(
+        "migrate-corpus-a-change-staged-at-the-old-changelog",
+        a_stale_changelog!(Lead::Plant(Plant::Staged {
+            at: THE_CHANGELOGS_OLD_HOME,
+            kept: false,
+        })),
+        Listed::Acts,
+        at("MG1, from a prior home", Kind::StagedThere),
+    ),
+    // `MG2`, `MG3`.
+    migrates(
+        "migrate-corpus-a-file-of-the-users-beside-the-baseline",
+        a_tracked_stale_decision!(Lead::Plant(Plant::File(".jigc/state/notes.md"))),
+        Listed::Acts,
+        at("MG2", Kind::Untracked),
+    ),
+    migrates(
+        "migrate-corpus-a-file-staged-elsewhere",
+        a_stale_decision!(STAGED_ELSEWHERE),
+        Listed::Acts,
+        at("MG3", Kind::StagedElsewhere),
+    ),
+    migrates(
+        "migrate-corpus-a-staged-file-whose-name-git-quotes",
+        a_stale_decision!(STAGED_UNDER_A_QUOTED_NAME),
+        Listed::Acts,
+        at("MG3", Kind::QuotedName),
+    ),
+    Cell {
+        marks: &[Mark::Silence(22)],
+        ..migrates(
+            "migrate-corpus-a-hook-that-rejects",
+            a_stale_decision!(Lead::Plant(Plant::RejectingHook)),
+            refuses(1, "`git commit` was rejected"),
+            at("MG3", Kind::RejectingHook),
+        )
+    },
+    // `MG5`, under `--dry-run`: the corpus read where a stale doc stands — what stands in
+    // the doc's place there is what the run reads, and nothing is written over it.
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-file-of-the-users-in-the-decisions-place",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::File(ONE_WAY)))),
+            &["migrate-corpus", "--dry-run"],
+            Listed::Acts,
+            at("MG5", Kind::Untracked),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-link-to-nothing-in-the-decisions-place",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+                ONE_WAY
+            )))),
+            &["migrate-corpus", "--dry-run"],
+            refuses(1, "store.home-not-regular-file"),
+            at("MG5", Kind::LinkToNothing),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-link-to-a-file-in-the-repository-in-the-decisions-place",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: ONE_WAY,
+                outside: false
+            }))),
+            &["migrate-corpus", "--dry-run"],
+            refuses(1, "store.home-not-regular-file"),
+            at("MG5", Kind::LinkInside),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-link-to-a-file-outside-in-the-decisions-place",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+                at: ONE_WAY,
+                outside: true
+            }))),
+            &["migrate-corpus", "--dry-run"],
+            refuses(1, "store.home-not-regular-file"),
+            at("MG5", Kind::LinkOutside),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-a-directory-in-the-decisions-place",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
+            &["migrate-corpus", "--dry-run"],
+            refuses(1, "store.home-not-regular-file"),
+            at("MG5", Kind::DirForAFile),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-the-decision-deleted",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::Deleted(ONE_WAY))),
+            &["migrate-corpus", "--dry-run"],
+            Listed::Acts,
+            at("MG5", Kind::EditBefore),
+        )
+    },
+    Cell {
+        spelling: Some("--dry-run"),
+        ..cell(
+            "migrate-corpus-dry-run-an-edit-to-the-decision",
+            &["migrate-corpus"],
+            FRESH,
+            a_stale_decision!(Lead::Plant(Plant::Edit(ONE_WAY))),
+            &["migrate-corpus", "--dry-run"],
+            Listed::Acts,
+            at("MG5", Kind::EditAfter),
+        )
+    },
+    cell(
+        "migrate-corpus-in-bare",
+        &["migrate-corpus"],
+        Prepared::Bare,
+        &[],
+        MIGRATE,
+        NOT_SET_UP,
+        None,
+    ),
+    cell(
+        "migrate-corpus-in-committed-singletons",
+        &["migrate-corpus"],
+        Prepared::Of(State::CommittedSingletons),
+        &[],
+        MIGRATE,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "migrate-corpus-in-migrated",
+        &["migrate-corpus"],
+        Prepared::Of(State::Migrated),
+        &[],
+        MIGRATE,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "migrate-corpus-in-refs-post-hoc",
+        &["migrate-corpus"],
+        Prepared::Of(State::RefsPostHoc),
+        &[],
+        MIGRATE,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "migrate-corpus-in-chatty-hooks",
+        &["migrate-corpus"],
+        Prepared::Of(State::ChattyHooks),
+        &[],
+        MIGRATE,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "migrate-corpus-in-vendored",
+        &["migrate-corpus"],
+        Prepared::Of(State::Vendored),
+        &[],
+        MIGRATE,
+        Listed::Acts,
+        None,
+    ),
+];
+
+/// The family's cells: the doors that commit — `rename`, `migrate-corpus` — the first of
+/// the two parts the docs split the family in; the movers' are owed (`owed.rs` →
+/// `CELLS_OWED`).
+pub const CELLS: &[&[Cell]] = &[&RENAME_CELLS, &MIGRATE_CORPUS_CELLS];

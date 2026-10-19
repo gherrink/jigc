@@ -7,6 +7,7 @@
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's fan-out doors (the task `B7`'s second part, its third commit), macOS arm64, load not measured: a hundred and twenty cells — the hundred and two above, the same lines byte for byte, and the fan-out doors' eighteen, none red.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's terminals (the task `B7`'s second part, its fourth commit), macOS arm64, load not measured: a hundred and thirty-two cells — the hundred and twenty above, the same lines byte for byte, and the terminals' twelve, none red.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the seventh of the fixes after the review of the milestone family's part B (the task `B7`), macOS arm64, at a load average of 14 at its start and 12 at its end: the same hundred and thirty-two cells, and ten lines changed — `milestone create`'s and `milestone add-task`'s five that act in a state not their home now come out *written outside its allowance*, the rendered message's file standing under no line (`byte_cell::DELETED_AFTER`), under the key `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`; every other line the same, byte for byte. Fourteen red: the four `uninstall` cells by `U9`, and these ten. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the movers family's doors that commit (the task `B8`, its third commit), macOS arm64, at a load average of about 33: a hundred and forty-four cells, the hundred and thirty-two lines before it the same, byte for byte, and twelve more — `rename`'s six and `migrate-corpus`'s six in a state not their home, none red: `rename` refuses in each (not set up in `bare`, `store.not-found` where no decision `one-way` stands), and `migrate-corpus` refuses in `bare` and acts, finding nothing below its version, in the other five. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -140,3 +141,15 @@ doc-author-the-vision-in-migrated	jigc doc author vision --from-file ../outside/
 doc-author-the-vision-in-refs-post-hoc	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	refs-post-hoc	acts	holds	exit 0
 doc-author-the-vision-in-chatty-hooks	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
 doc-author-the-vision-in-vendored	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	vendored	acts	holds	exit 0
+rename-one-way-in-bare	jigc rename adr:one-way --to Single way	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+rename-one-way-in-committed-singletons	jigc rename adr:one-way --to Single way	committed-singletons	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+rename-one-way-in-migrated	jigc rename adr:one-way --to Single way	migrated	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+rename-one-way-in-refs-post-hoc	jigc rename adr:one-way --to Single way	refs-post-hoc	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+rename-one-way-in-chatty-hooks	jigc rename adr:one-way --to Single way	chatty-hooks	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+rename-one-way-in-vendored	jigc rename adr:one-way --to Single way	vendored	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+migrate-corpus-in-bare	jigc migrate-corpus	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+migrate-corpus-in-committed-singletons	jigc migrate-corpus	committed-singletons	acts	holds	exit 0
+migrate-corpus-in-migrated	jigc migrate-corpus	migrated	acts	holds	exit 0
+migrate-corpus-in-refs-post-hoc	jigc migrate-corpus	refs-post-hoc	acts	holds	exit 0
+migrate-corpus-in-chatty-hooks	jigc migrate-corpus	chatty-hooks	acts	holds	exit 0
+migrate-corpus-in-vendored	jigc migrate-corpus	vendored	acts	holds	exit 0

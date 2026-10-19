@@ -148,7 +148,7 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *The words* — quoted in [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 21: `design/write-commands.md` has the flag leave the changes *staged*; `design/corpus-migration.md` has it leave the tree as the verb left it before it committed — an unstaged delete, an unstaged modify, an untracked relocated file — and the guide and M42's build say the same.
 - *What the product does.* It leaves them unstaged, and says so.
 - *Robust*: stage exactly the paths the migration touched, both halves of a move, and commit nothing — the second doc, the guide and the product change.
-- *Until ruled*: the stricter reading — nothing staged: the spelling takes `MG3` out of force and adds no line. *The cells* — those of the spelling `--no-commit`, marked.
+- *Until ruled*: the stricter reading — nothing staged: the spelling takes `MG3` out of force and adds no line. *The cells* — those of the spelling `--no-commit`, marked. *[2026-10-19, the task's third commit: one cell, `migrate-corpus-no-commit-a-decision-below-its-version` — it holds on both binaries, the migration left unstaged, marked.]*
 
 ## 21. Whether a `migrate-corpus` whose commit a hook rejects may leave the migration written and staged (the record's entry 22) — open: the design doc declares it, a builder's bound; the human's ruling on `setup` and the family's `rename` roll back
 
@@ -156,7 +156,7 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 
 - *The words* — quoted in [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 22: `design/corpus-migration.md`'s *"Declared bound: the refused run's staged residue is **stated** by the door's rejection frame, not removed"*; against it, the human's *"every refusal of `setup` leaves the repository as it was"* and `rename`'s restore on any pre-commit failure.
 - *Robust*: roll back what the run wrote; the re-run migrates again.
-- *Until ruled*: the refusal changes nothing — the lines that write hold on a refusal where the run committed, and on no other. *The cells* — the hook that rejects the family's commit, marked.
+- *Until ruled*: the refusal changes nothing — the lines that write hold on a refusal where the run committed, and on no other. *The cells* — the hook that rejects the family's commit, marked. *[2026-10-19, the task's third commit: `migrate-corpus-a-hook-that-rejects` is refused, and changed what a refusal may not, on both binaries — the migration left written and staged — under `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged` ([the findings](byte-table-findings.md) → §24), marked; `rename-a-hook-that-rejects` refuses having changed nothing.]*
 
 ## The marked cells
 
@@ -165,3 +165,5 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 | mark | cell |
 |---|---|
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |
+| silence 21 | `migrate-corpus-no-commit-a-decision-below-its-version` |
+| silence 22 | `migrate-corpus-a-hook-that-rejects` |

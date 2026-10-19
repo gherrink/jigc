@@ -2,6 +2,39 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-19 — The movers family's doors that commit get their cells — `rename`'s thirty-one, none red, and `migrate-corpus`'s thirty-nine, seventeen red under four keys, each saying which of the doc and the code it judges wrong; a migration from a prior home carries what was planted in its doc, and its commit is read against what `HEAD` held there, each red first (the byte table, task B8, the third of its commits)
+
+**What.** The cells of the movers family's two doors that commit, built from the rows the commit before wrote ([movers.rs](crates/cli/tests/byte_table/movers.rs); the record of what they came to, [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §24). Seventy cells: fifty-eight in the gate, in `fresh`, and twelve on demand, the base cell of each leaf in every other prepared state. **No product source changes.** `rename` and `migrate-corpus` leave the list of leaves whose cells are owed ([owed.rs](crates/cli/tests/byte_table/owed.rs)); `relocate` and `config set` stay on it, the task's next commit.
+
+### The cells
+
+- **`rename`** — over a decision and a doc that cites it, committed by hand: the rename, a retitle in place, and the rename over an edge index a refusing `task validate` built first (the findings' §15 lead: `RN5` is *invalidated*, and the file is taken away); every kind of plant at the decision's home, at the citing doc's and elsewhere; a hook that rejects; a file of the user's under each cache. **None is red**: every plant is refused before a write, a hook's rejection restored.
+- **`migrate-corpus`** — over a decision committed below its version, the changelog at the home its doctype had at version 1, and a decision a task landed so that the file-state baseline holds it (`MG2`: a doc jigc never tracked *"adopts nothing"*); the spellings `--no-commit` and `--dry-run`. **Seventeen red, under four keys**, the same on both binaries:
+  - `r1-migrate-corpus-reads-past-a-link-or-a-directory-at-a-stale-docs-home-and-refuses-nothing` — twelve cells, *not the listed outcome*. The code is wrong, and the doc's premise: the walk reads through the entry and finds no doc it *would write*, so the refusal the doc keys to that never comes.
+  - `r1-migrate-corpus-commits-an-uncommitted-edit-at-a-doc-it-migrates` — two, *git's state moved*; the review's `(R4, F5)`, held by cells now. The code is wrong where the doc is silent: *robust*, refuse that one doc, as `rename` refuses a tree that is not clean.
+  - `r1-migrate-corpus-replaces-a-change-staged-at-a-doc-it-migrates` — two, *lost*. The code.
+  - `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged` — one, marked with the rows' record's §6, entry 22: the doc's declared bound against the human's ruling on `setup` and `rename`'s restore; *robust*, roll back.
+- **Relisted by the run, where the doc gives two codes or none**: `rename` over a link or a directory at the decision's home refuses under `store.home-not-regular-file` (the store doors' sentence, *"nothing was written through …"* — the findings' §14 lead, answered), and over a file in the place of the decisions' directory under `store.not-found`, where the cells had `rename.dirty-tree`.
+
+### The frame, red first
+
+- **A doc migrated from a home its doctype had at an earlier version carries what was planted in it**, as a move into its home does: the user's line in the old changelog, in no commit, stands at `CHANGELOG.md` after. *Red first*: a case of [`a_migrated_doc_keeps_its_prose`](crates/cli/tests/byte_table.rs) came out *written outside its allowance* — the plant's bytes elsewhere.
+- **A migration's commit is read against what `HEAD` held at the prior home** — the word's content rule took the working tree's bytes there, so a commit that carried the user's uncommitted line held. *Red first*: the same fence's next case came out *holds*.
+- **`Lead::Refused` builds what a cell needs with a command that refuses**: `task validate` over a task with no write refuses, and lays the edge index out first.
+
+### The lists
+
+Six hundred cells, where five hundred and thirty: four hundred and fifty-six in the gate, a hundred and forty-four on demand; the expected-red list a hundred and nineteen cells under twenty-eight keys; three marked cells. `rename`'s `RN1`–`RN5`, `C1`, `C2` and `migrate-corpus`'s `MG1`, `MG1, from a prior home`, `MG2`, `MG3` excuse in `fresh`; `MG5` excuses nothing and never will — the dry run's line names the docs it reads; the two leaves' `C3` lines read no milestone's cache, and `migrate-corpus`'s refusals rebuild none (`C1`, `C2`). The cells on demand reprinted and committed: the hundred and thirty-two lines before them the same, byte for byte.
+
+### What moved — on both binaries
+
+The whole table run on both binaries (`the_cells_are_run_on_the_binary_a_variable_names`, the previous release's rebuild `accf3996…ab5d`, checked; 364 s): **no cell of the five hundred and thirty before moved** on either binary, and the seventy new ones come out alike on both but four. `migrate-corpus`'s seventeen red are red on both, under the same keys — not a regression. The four: `rename` over a link or a directory at the decision's home refuses on the previous release under `store.not-found` — *"no managed doc `adr:one-way` to rename"*, the read through the entry finding nothing — and on this tree under `store.home-not-regular-file`, the fix pass's store doors; *not the listed outcome* there, nothing changed on either.
+
+### Decided here — as a builder, and open to being overturned
+
+- **An uncommitted edit at a doc `migrate-corpus` migrates is listed as acting**, its commit held to what `HEAD` held — the doc says nothing of a touched path; under the robust answer the door refuses that doc, and the listing moves with the ruling. Red either way.
+- **`MG2`'s cells over a decision a task landed** rather than one committed by hand: the baseline is only flipped for a doc it holds.
+
 ## 2026-10-19 — The movers family's four rows are written from their docs before a cell of any runs — `rename`, `relocate`, `migrate-corpus`, `config set` — over a doctype's home read as the cascade resolves it and five words, each red first; a commit is no way around a word that says what a file may become; two more open questions, entries 21 and 22; and two places where the docs agree on what makes no sense for a user, findings and no lines (the byte table, task B8, the second of its commits)
 
 **What.** The rows of the four leaves of the movers family, written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4c and lifted quote for quote into [movers.rs](crates/cli/tests/byte_table/movers.rs), a family file of its own. **No cell is added, and no binary was run to learn what a command writes**; no product source changes. The four leave the owed list of leaves ([owed.rs](crates/cli/tests/byte_table/owed.rs)) and join the list of leaves whose cells are owed, under `B8`.
