@@ -6,3 +6,16 @@
 # the variable on the child it spawns (crates/cli/tests/agent_co_author.rs).
 [env]
 CLAUDECODE = { value = "", force = true }
+#
+# Every repository a test makes is still once a git command returns. A `git commit` starts
+# `git maintenance run --auto --detach` unless `maintenance.auto` is off, and that child
+# writes and deletes files under `.git/objects` after the commit has returned — a suite that
+# copies the repository then lists a file the child removes before the copy reaches it, and
+# panics (`copy_tree`, crates/cli/tests/support/trial_corpus.rs). `gc.auto` off stops the
+# `git gc --auto` other commands start the same way. Set here, as configuration git reads from
+# the environment, it holds in every repository every suite makes and in every git `jigc`
+# spawns under test, whoever built the repository. `GIT_CONFIG_PARAMETERS` rather than
+# `GIT_CONFIG_COUNT`: git reads both, and a sandbox owns the second for its identity — it sets
+# its own keys there, and a case unsets it (crates/cli/tests/support/route_case.rs). Fenced by
+# `golden_harness::a_repository_the_suite_makes_starts_no_maintenance_behind_a_commit`.
+GIT_CONFIG_PARAMETERS = { value = "'maintenance.auto'='false' 'gc.auto'='0'", force = true }
