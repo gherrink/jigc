@@ -64,6 +64,32 @@ cd "$repo_root" || exit 2
 
 tmp_root=${TMPDIR:-/tmp}
 tmp_root=${tmp_root%/}
+
+# THE WORK DIRECTORY GOES WITH THE SCAN, on every way out: an exit of any status, the end
+# of the script, and a hangup, an interrupt or a termination, which exit 128 + n through
+# the same trap. Until this it was removed on none, and the record script scans at every
+# record and the gate at every run: one machine's $TMPDIR reached more than 212,000 of
+# them (tooling-tests/dev_gate_report.rs drives every way out). Removed without any
+# recursive removal: the scan writes files only, never a directory, so its files are
+# removed one level deep and the directory by `rmdir`, which refuses one that still holds
+# anything -- and only where the path is exactly what mktemp was asked for, never an
+# empty path, never a root. Silent, because a caller reads the last line of stderr as
+# the reason the scan stopped.
+work=''
+remove_work() {
+    case "$work" in
+        "$tmp_root"/jigc-hygiene-??????)
+            if [ -d "$work" ] && [ ! -L "$work" ]; then
+                rm -f -- "$work"/* 2>/dev/null
+                rmdir -- "$work" 2>/dev/null
+            fi
+            ;;
+    esac
+}
+trap remove_work EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 work=$(mktemp -d "$tmp_root/jigc-hygiene-XXXXXX") || exit 2
 
 # A blank line in a `grep -f` file matches EVERY line, so the patterns are normalised

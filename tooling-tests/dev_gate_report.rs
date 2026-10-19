@@ -2114,7 +2114,8 @@ struct ScanRepo {
     /// The fixture repo's root, removed on drop.
     _root: ScratchDir,
     /// Beside the repo, never in it: the denylist (so it is never part of the scanned
-    /// history) and the scan's own `$TMPDIR` (its work dir stays there by design).
+    /// history) and the scan's own `$TMPDIR`, which holds the scan's work directory
+    /// while it runs and nothing of it after.
     aux: ScratchDir,
 }
 
@@ -2399,4 +2400,199 @@ fn hygiene_scan_names_a_hit_by_its_commit_whatever_a_message_or_a_line_holds() {
         [format!("  added    {}  f:2", &held[..12])],
         "stdout: {stdout}"
     );
+}
+
+/// The scan's work directories still in the `$TMPDIR` it was handed.
+fn work_dirs_left(repo: &ScanRepo) -> Vec<String> {
+    let mut left: Vec<String> = std::fs::read_dir(repo.aux.path())
+        .expect("read the scan's TMPDIR")
+        .map(|entry| {
+            entry
+                .expect("an entry of the scan's TMPDIR")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|name| name.starts_with("jigc-hygiene-"))
+        .collect();
+    left.sort();
+    left
+}
+
+/// **The work directory goes with the scan, on every way out.** The scan made one under
+/// `$TMPDIR` on every call and removed it on none; the record script scans at every record
+/// and the gate at every run, so one machine's `$TMPDIR` reached more than 212,000 of them
+/// — and a test that holds that directory open timed out under the gate. Each way out the
+/// scan has, after its work directory exists and before: clean, a hit, a pattern no matcher
+/// accepts, a list of no pattern, a range git refuses, a denylist it cannot read, and too
+/// few arguments.
+#[test]
+fn hygiene_scan_leaves_no_work_directory_behind_on_any_way_out() {
+    let repo = ScanRepo::new("hygiene-scan-leaves");
+    repo.write("f", "a zebrafixture line\n");
+    repo.commit_all("base");
+    assert_eq!(
+        work_dirs_left(&repo),
+        Vec::<String>::new(),
+        "control: the scan's TMPDIR starts with no work directory",
+    );
+
+    let ways: [(&str, &str, bool, &[&str], i32); 5] = [
+        ("clean", "zq[9]x7kw-no-such-term\n", true, &["HEAD"], 0),
+        ("a hit", "zebrafixture\n", true, &["HEAD"], 1),
+        (
+            "a pattern no matcher accepts",
+            "qx[unclosed\n",
+            false,
+            &["HEAD"],
+            2,
+        ),
+        (
+            "a list of no pattern",
+            "# only a comment\n\n",
+            false,
+            &["HEAD"],
+            2,
+        ),
+        (
+            "a range git refuses",
+            "zebrafixture\n",
+            false,
+            &["no-such-rev"],
+            2,
+        ),
+    ];
+    for (way, list, tree, args, want) in ways {
+        let (code, stdout, stderr) = repo.scan(list, tree, args);
+        assert_eq!(
+            code, want,
+            "{way}: the scan's own exit status stands.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+        assert_eq!(
+            work_dirs_left(&repo),
+            Vec::<String>::new(),
+            "{way}: the scan left its work directory in its TMPDIR",
+        );
+    }
+
+    let script = repo.dir.join("dev/hygiene-scan");
+    let missing = repo.aux.path().join("no-such-denylist");
+    for (way, args) in [
+        (
+            "a denylist it cannot read",
+            vec![missing.into_os_string(), "HEAD".into()],
+        ),
+        ("too few arguments", vec!["--tree".into()]),
+    ] {
+        let out = repo
+            .cmd(&script)
+            .args(&args)
+            .output()
+            .expect("spawn dev/hygiene-scan");
+        assert_eq!(out.status.code(), Some(2), "{way}: a usage error is exit 2");
+        assert_eq!(
+            work_dirs_left(&repo),
+            Vec::<String>::new(),
+            "{way}: the scan left its work directory in its TMPDIR",
+        );
+    }
+}
+
+/// **And on a signal.** A scan stopped mid-run — the gate's own run interrupted, a record
+/// killed — goes the same way: its work directory is removed and it exits `128 + n`. The
+/// scan is held inside its first `git log` by a `git` that waits, and its whole process
+/// group is sent the signal, as a terminal's interrupt is.
+#[cfg(unix)]
+#[test]
+fn hygiene_scan_stopped_by_a_signal_leaves_no_work_directory_behind() {
+    use std::os::unix::process::CommandExt;
+    use std::time::{Duration, Instant};
+
+    let repo = ScanRepo::new("hygiene-scan-signal");
+    repo.write("f", "a\n");
+    repo.commit_all("base");
+    let list = repo.aux.path().join("denylist");
+    std::fs::write(&list, "zebrafixture\n").expect("write the fixture denylist");
+
+    for (signal, want) in [("TERM", 143), ("INT", 130), ("HUP", 129)] {
+        let bin = ScratchDir::new(&format!("hygiene-scan-signal-{signal}-bin"));
+        let started = bin.path().join("started");
+        let fake = bin.path().join("git");
+        placed_executable::write(
+            &fake,
+            format!("#!/bin/sh\n: > '{}'\nexec sleep 60\n", started.display()),
+        );
+
+        let path = format!(
+            "{}:{}",
+            bin.path().display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        // A shell cannot trap a signal that was ignored when it started, and a gate run in
+        // the background, or under `nohup`, hands its tests INT or HUP ignored: so the scan
+        // is started through one exec that sets the three back to their defaults, and the
+        // arm asks the same question wherever it runs.
+        let mut child = repo
+            .cmd(Path::new("python3"))
+            .args([
+                "-c",
+                "import os, signal, sys\n\
+                 for s in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):\n    \
+                 signal.signal(s, signal.SIG_DFL)\n\
+                 os.execv(sys.argv[1], sys.argv[1:])",
+            ])
+            .arg(repo.dir.join("dev/hygiene-scan"))
+            .arg(&list)
+            .arg("HEAD")
+            .env("PATH", path)
+            .process_group(0)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn dev/hygiene-scan");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !started.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "{signal}: the scan never reached its git log"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(
+            work_dirs_left(&repo).len(),
+            1,
+            "{signal}: control — mid-scan, the work directory is in the TMPDIR it was handed",
+        );
+
+        let group = format!("-{}", child.id());
+        let sent = Command::new("kill")
+            .args([&format!("-{signal}"), "--", &group])
+            .status()
+            .expect("spawn kill");
+        assert!(
+            sent.success(),
+            "{signal}: the signal was sent to the scan's group"
+        );
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("wait for the scan") {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{signal}: the scan did not end after its signal"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_eq!(
+            status.code(),
+            Some(want),
+            "{signal}: the scan exits 128 + the signal's number ({status:?})",
+        );
+        assert_eq!(
+            work_dirs_left(&repo),
+            Vec::<String>::new(),
+            "{signal}: the scan left its work directory in its TMPDIR",
+        );
+    }
 }

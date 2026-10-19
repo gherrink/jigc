@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+#
+# dev/stabilize-harness — generate .claude/workflows/stabilize.js, the stabilization harness a
+# session invokes, from its commented source, .claude/workflow-sources/stabilize.js.
+#
+# WHY THE HARNESS IS GENERATED. The Workflow tool refuses a script over 524,288 bytes, by
+# `scriptPath` and inline alike — "Workflow script file <path> exceeds 524288 bytes" (observed
+# 2026-10-13). The commented harness is past that, and a third of its bytes are comments. So
+# the file a session runs is the source with its comments removed, and the source keeps every
+# word it holds.
+#
+# The transform, and nothing else:
+#   - three first lines, comments saying that the file is generated, from which file, by which
+#     command, and that it is never edited by hand;
+#   - every comment of the source removed — a `//` comment to the end of its line, a `/* … */`
+#     comment to its close:
+#       a line that holds nothing but comments and spaces or tabs goes whole, its line break
+#       with it;
+#       on a line that holds code, comments and the spaces and tabs around them after the last
+#       code go, the line break stays; a comment before the first code goes, the spaces and
+#       tabs stay; a comment between two pieces of code becomes ONE SPACE, which is what the
+#       language reads it as;
+#   - every other byte unchanged: a blank line stays, and so does a line of a string, of a
+#     template literal or of a regular expression that holds `//` or `/*` — a line of a prompt
+#     that begins with `//` is prompt text.
+# What is a comment is read by a lexer that walks the source as the language does: strings in
+# either quote, template literals with their `${…}` nested to any depth, regular expression
+# literals with their classes, and comments. A `/` begins a regular expression where the token
+# before it cannot end an expression — the start, a punctuator other than `)`, `]` and `}`, or
+# a keyword such as `return` or `typeof` — and is division everywhere else. It never guesses:
+# a source it cannot read to its end is refused, naming the line — a string, a template, a
+# regular expression or a comment left open, or a string or a regular expression that runs
+# into a line break.
+#
+# The file is committed and fenced byte for byte against this script's output, its size held
+# below the runtime's limit with room to grow, and its tokens held to the source's by a second
+# lexer that is not this one (tooling-tests/dev_stabilize_harness.rs). So edit the source and
+# run this script; never edit .claude/workflows/stabilize.js. On a merge conflict in it:
+# resolve the source, then regenerate.
+#
+# Usage:
+#   dev/stabilize-harness             write .claude/workflows/stabilize.js
+#   dev/stabilize-harness --stdout    print the transform, write nothing
+#
+# Exit status: 0 done · 1 refused, nothing written (the reason, with its line, on stderr) ·
+# 2 usage error.
+
+import os
+import sys
+import tempfile
+
+SOURCE = ".claude/workflow-sources/stabilize.js"
+GENERATED = ".claude/workflows/stabilize.js"
+HEADER = (
+    "// GENERATED — never edit this file by hand. It is " + SOURCE + "\n"
+    "// with its comments removed, written by `dev/stabilize-harness`: edit the source, then\n"
+    "// run that command (implementation/stabilization-workflow.md -> The harness's source).\n"
+)
+
+# A `/` after one of these begins a regular expression; after anything else — a word that is
+# none of REGEX_AFTER, a number, a string, a template, a regular expression, `)`, `]` or `}` —
+# it is division.
+PUNCTUATORS_BEFORE_REGEX = set("{([;,=:?!&|+-*%<>~^/")
+REGEX_AFTER = {
+    "return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case",
+    "do", "else", "yield", "await",
+}
+SPACES = " \t"
+WHITESPACE = " \t\r\n"
+
+
+class Refused(Exception):
+    pass
+
+
+def line_of(text, at):
+    return text.count("\n", 0, at) + 1
+
+
+def is_word(c):
+    return c.isalnum() or c in "_$"
+
+
+def comments(text):
+    """Every comment of `text`, in order, as (start, end): a `//` comment ends before its line
+    break, a `/* */` comment after its `*/`."""
+    found = []
+    # One entry per `${` still open: how many `{` deep its expression is, and where it opened.
+    templates = []
+    # The last token that is no comment: a word, or a punctuator's one character, or one of
+    # `'` (a string), `` ` `` (a template) and `/re/` (a regular expression).
+    previous = None
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in WHITESPACE:
+            i += 1
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            found.append((i, end))
+            i = end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            if end < 0:
+                raise Refused("line %d: a comment is left open" % line_of(text, i))
+            found.append((i, end + 2))
+            i = end + 2
+        elif c in "'\"":
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == "\n":
+                    raise Refused("line %d: a string runs into a line break" % line_of(text, i))
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                raise Refused("line %d: a string is left open" % line_of(text, i))
+            i, previous = j + 1, "'"
+        elif c == "`" or (c == "}" and templates and templates[-1][0] == 0):
+            # A template's text, from its opening backtick or from the `}` that closes one of
+            # its `${`: to its closing backtick, or to its next `${`.
+            if c == "}":
+                templates.pop()
+            j = i + 1
+            while j < n and text[j] != "`" and not text.startswith("${", j):
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                raise Refused("line %d: a template literal is left open" % line_of(text, i))
+            if text[j] == "`":
+                i, previous = j + 1, "`"
+            else:
+                templates.append([0, j])
+                i, previous = j + 2, "{"
+        elif c == "/" and (previous is None or previous in PUNCTUATORS_BEFORE_REGEX or previous in REGEX_AFTER):
+            j, in_class = i + 1, False
+            while j < n and (in_class or text[j] != "/"):
+                if text[j] == "\n":
+                    raise Refused("line %d: a regular expression runs into a line break" % line_of(text, i))
+                if text[j] == "[":
+                    in_class = True
+                elif text[j] == "]":
+                    in_class = False
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                raise Refused("line %d: a regular expression is left open" % line_of(text, i))
+            i, previous = j + 1, "/re/"
+        elif is_word(c):
+            j = i
+            while j < n and is_word(text[j]):
+                j += 1
+            i, previous = j, text[i:j]
+        else:
+            if c == "{" and templates:
+                templates[-1][0] += 1
+            elif c == "}" and templates:
+                templates[-1][0] -= 1
+            i, previous = i + 1, c
+    if templates:
+        raise Refused("line %d: a template literal is left open" % line_of(text, templates[-1][1]))
+    return found
+
+
+def strip(text):
+    """`text` with its comments removed, as this file's header says."""
+    comment = bytearray(len(text))
+    for start, end in comments(text):
+        comment[start:end] = b"\x01" * (end - start)
+    out = []
+    at = 0
+    for body in text.split("\n"):
+        start = at
+        at += len(body) + 1
+        line = body + ("\n" if at <= len(text) else "")
+        if not any(comment[start:at]):
+            out.append(line)
+            continue
+        flags = comment[start:start + len(body)]
+        code = [k for k, c in enumerate(body) if not flags[k] and c not in SPACES]
+        if not code:
+            continue
+        first, last = code[0], code[-1]
+        kept = [c for k, c in enumerate(body[:first]) if not flags[k]]
+        k = first
+        while k <= last:
+            if flags[k]:
+                while flags[k]:
+                    k += 1
+                kept.append(" ")
+            else:
+                kept.append(body[k])
+                k += 1
+        tail = body[last + 1:]
+        if not any(flags[last + 1:]):
+            kept.append(tail)
+        out.append("".join(kept) + line[len(body):])
+    return HEADER + "".join(out)
+
+
+def main(argv):
+    if argv in (["-h"], ["--help"]):
+        with open(__file__, encoding="utf-8") as file:
+            for line in file.read().split("\n")[1:]:
+                if not line.startswith("#"):
+                    break
+                print(line[2:] if line.startswith("# ") else line[1:])
+        return 0
+    if argv not in ([], ["--stdout"]):
+        sys.stderr.write("dev/stabilize-harness: usage: dev/stabilize-harness [--stdout]\n")
+        return 2
+    root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    source = os.path.join(root, SOURCE)
+    try:
+        with open(source, encoding="utf-8", newline="") as file:
+            text = file.read()
+        generated = strip(text)
+    except Refused as why:
+        sys.stderr.write("dev/stabilize-harness: refused, nothing written — %s:%s\n" % (SOURCE, str(why)[len("line "):]))
+        return 1
+    except OSError as why:
+        sys.stderr.write("dev/stabilize-harness: refused, nothing written — %s: %s\n" % (SOURCE, why.strerror))
+        return 1
+    if argv == ["--stdout"]:
+        sys.stdout.buffer.write(generated.encode("utf-8"))
+        return 0
+    dest = os.path.join(root, GENERATED)
+    handle, staged = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".stabilize.js.")
+    with os.fdopen(handle, "wb") as file:
+        file.write(generated.encode("utf-8"))
+    os.chmod(staged, 0o644)
+    os.replace(staged, dest)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

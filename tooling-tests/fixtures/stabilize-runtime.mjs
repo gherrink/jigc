@@ -8,12 +8,17 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, held, builds, unreleased, scope, agents, record, wrongBinary,
-// wrongPrevious, endings, omits, violation, garbles, relays, overwrites, meanwhile } — the
+// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile } — the
 // invocation's arguments, and what the scripted agents say (below). WHAT A HELD COMMAND
 // PRINTS is the scenario's too, and nothing else of one is: `gate` — what the candidate's
 // gate shows red ({ steps, tests }), or { void: true } for an output that holds no verdict;
 // `record.gate` — the same of a record's gate; `held` — by a held check's item, what the
-// regression tool's ONE line says ({ status: green | red | void, reason }); `builds` —
+// regression tool's ONE line says ({ status: green | red | void, reason, baseline }) — and
+// where the start names a kept baseline (`--baseline`), the line says of it what that tool's
+// does, `baseline: { dir, used, refused, detail, sha256, unkept }` — six fields, since that tool
+// says what a run built there and did not keep: the directory under the scratch root the
+// start names, nothing used, nothing kept and nothing left unkept unless the scenario says
+// so; `builds` —
 // { fails: [candidate | previous] }; `unreleased` — the names of the held commands that do
 // not end until the suite releases them. `wrongBinary` names the
 // reporters that return another hash than the one they were handed: a driver that drove
@@ -31,6 +36,17 @@
 // a stage read until 2026-10-07; `byte` — the digest with one character changed;
 // `non-ascii` — the digest with one character replaced by one outside ASCII AND ITS HASH MADE
 // TO FIT, so that nothing but the harness's own look at the line can tell it.
+// `slip` — the digest with ONE VALUE SLIPPED, as the staged canary's part 1 got the state's
+// back on three tries of three (2026-10-16): a field's value replaced by another value the
+// line holds under the same name — `"retry":"never-selected"` as the `"no-instrument"` of the
+// rows below it — the hash it ends with as printed. The first field whose own value stands
+// under its name at another place of the line too, and another value at a third. `slip-lone`
+// — the same slip of the first field whose value stands NOWHERE ELSE under its name: what
+// the line held there is not in what came back.
+// `mistypes` gives, by a git step's label, [what stands in the step's ONE command, what its
+// agent typed there]: A STEP THAT DID NOT TYPE ITS COMMAND AS IT STANDS — one word of it
+// altered on its way through an agent, a status typed `green` for `void`. The command that
+// runs is the altered one; a step whose command does not hold the first text fails the run.
 // `overwrites` gives, by an agent's label, a text that agent writes OVER its own report once
 // the record script has written it — by a plain file write, as a shell's redirect does: a
 // reporter has a shell, and a file at a report's path is whatever its last writer left.
@@ -84,10 +100,56 @@
 //   probe:required:*  milestone-code-reviewer  the return the scenario scripts, with the
 //                                  hash of the file on its binary line, measured; no
 //                                  report — a probe that hands its reviewer one fails the run
+//   guard-probe  milestone-e2e-tester  the write guard's probe (dev/stabilize-guard-probe.js):
+//                                  the attempts the scenario scripts, returned — no attempt
+//                                  is driven, and no report is written
 //   probe:payload:*   build-executor  the payload written as the prompt says, then the
 //                                  prompt's `dev/stabilize-probe hash`, its line relayed;
 //                                  a prompt that names the record script or a gate fails
 //                                  the run
+//   triage     finding-triage      THE STAGE'S ONE TRIAGE, IN A RUN WITH A QUEUE — the label
+//                                  is the bare word; a pass of the other path is `triage:p<n>`,
+//                                  a scripted reporter like any. What its definition has it do
+//                                  where the prompt spells a `dev/stabilize-record triage`
+//                                  call: the entries the scenario scripts (`entries`) written
+//                                  — ONE file, a JSON array — to the file that call names, and
+//                                  handed over by THE CALL AS THE PROMPT SPELLS IT. The prompt
+//                                  is held first: every source the call names has its findings
+//                                  in the prompt, numbered 1 to its count, or names the read
+//                                  that prints them — else the run fails. A call the script
+//                                  refuses is made again over the corrected file where the
+//                                  scenario scripts one (`then`); else it is the triage's
+//                                  HALT, the refusal's line verbatim, reported by the call of
+//                                  its `REPORT:` line. `counts` has it type the call with
+//                                  OTHER COUNTS than the prompt spells: a triage that did not
+//                                  type the call as it stands. `overwrites` is written over
+//                                  its rendered report, as over any. Its return is read off the
+//                                  ONE line the call printed, which is reported (`reads`):
+//                                  the path, the hash, what each source handed
+//   verify:*   finding-verifier    A VERIFIER THAT FILES ITS VERDICT, IN A RUN WITH A QUEUE — what
+//                                  its definition has it do where the prompt spells a
+//                                  `dev/stabilize-record verdict` call (under any other prompt
+//                                  it is a scripted reporter like any, the other path's): THE
+//                                  KIT'S CALL FIRST, as the prompt spells it — a prompt that
+//                                  spells none fails the run, and so does a kit that exits with
+//                                  anything but 0 or 27, its word for a part it does not print;
+//                                  THE READ THAT PRINTS ITS FINDING'S ROW, which must print the
+//                                  row of the key the filing's call names; the hash asserted by
+//                                  the call of its binary line; ITS REPORT, written and handed
+//                                  over; THEN THE FILING — the members the scenario scripts
+//                                  (`files`: verdict, refutation, reason, regression, contested,
+//                                  hands_on), with the key of the call, the hash it asserted as
+//                                  `candidate` and, beside a regression, the previous release's
+//                                  as `previous` — written as ONE JSON object to the file the
+//                                  call names and filed by THE CALL AS THE PROMPT SPELLS IT. Its
+//                                  return is read off the ONE line the call printed, which is
+//                                  reported (`reads`): the path, the word, `contested`. A call
+//                                  the script refuses is its HALT, the line verbatim. A script
+//                                  with NO `files` is A VERIFIER THAT FILED NOTHING AND SAYS IT
+//                                  DID: it returns the path its prompt says the return is held
+//                                  to. `returns` is laid over what it returns: a verifier that
+//                                  did not return what the call printed. A scripted halt
+//                                  (`status: halted`) reports and files nothing
 //   record:*   build-executor      the steps the prompt lists, in its order: the payload
 //                                  written to the file the prompt names — by a file write,
 //                                  as an agent's file tool writes one — and the batch
@@ -96,9 +158,9 @@
 //                                  both are git steps (`git:hold-*:record-*`, `git:record:*`)
 //
 // AND EVERY AGENT RUNS THE READS ITS PROMPT NAMES — `dev/stabilize-record item`, `item-doors`,
-// `untriaged`, `pending`, each as the prompt spells it: what a brief, a door list, the
-// untriaged rows and a pending batch's subject are, an agent reads from the record by key,
-// and a read that fails fails the run. What each read printed is reported (`reads`), and
+// `untriaged`, `pending`, `row`, each as the prompt spells it: what a brief, a door list, the
+// untriaged rows, a pending batch's subject and a finding's row are, an agent reads from the
+// record by key, and a read that fails fails the run. What each read printed is reported (`reads`), and
 // every prompt an agent was handed (`prompts`): the suite holds both.
 //
 // AND EVERY COMMAND AN AGENT RUNS IS TAKEN OUT OF ITS PROMPT, AS IT IS SPELLED THERE: a
@@ -128,8 +190,10 @@
 //     async function; how the runtime runs it is its own.
 //   - `pipeline`, `workflow` and `budget` are there and unused by the harness: the first
 //     two fail the run if called.
+//   - the runtime's limit on a script's size IS held: a script over 524,288 bytes is refused
+//     with the runtime's words and none of it runs (below, SCRIPT_LIMIT).
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -219,10 +283,15 @@ function heldEnv(command) {
     prints = said && said.void ? 'gate: mode   quick (scripted by the simulation: no gate ran)\nPRE-CHECK: PASS\n' : gateOutput(said)
     exit = said && !said.void && (said.steps || []).length ? 1 : 0
   } else if (kind === 'regression') {
-    const said = (scenario.held || {})[name.replace(/-c[0-9]+-a[0-9]+$/, '')] || { status: 'green' }
+    // A held check is named for its item, the candidate's commit and the item's own run in
+    // the round — and, where a job that stood under that name was passed over, a number.
+    const said = (scenario.held || {})[name.replace(/-[0-9a-f]{12}-a[0-9]+(-[0-9]+)?$/, '')] || { status: 'green' }
     const line = { tool: 'regression-set', status: said.status }
     if (said.status === 'void') Object.assign(line, { reason: said.reason, detail: 'scripted by the simulation: no test ran' })
     else Object.assign(line, { previous: { commit: flag('previous') }, candidate: { commit: flag('candidate') }, list: { path: flag('list'), commit: flag('candidate'), sha256: 'c'.repeat(64) }, counts: { differences: said.status === 'red' ? 1 : 0, not_on_list: said.status === 'red' ? 1 : 0, excluded: 0, excluded_by_no_row: 0 } })
+    // A run that names a kept baseline says what became of it, void or not — as that tool's
+    // line does, with the directory as an absolute path of this machine.
+    if (flag('baseline')) line.baseline = Object.assign({ dir: flag('scratch') + '/' + flag('baseline'), used: false, refused: null, detail: null, sha256: null, unkept: null }, said.baseline || {})
     prints = JSON.stringify(line) + '\n'
     exit = said.status === 'green' ? 0 : said.status === 'red' ? 1 : REGRESSION_VOID[said.reason]
     if (exit == null) fail('the scenario scripts a regression set that is void for `' + said.reason + '`, which is no reason of that tool')
@@ -261,7 +330,7 @@ function writeReport(label, prompt, said) {
 // ---- what an agent reads by key ----
 // Every read of the record its prompt names, run as spelled: the commands are the prompt's.
 function readByKey(label, prompt) {
-  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending) [^`]+)`/g)) {
+  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending|row) [^`]+)`/g)) {
     const out = sh(command)
     if (out.code !== 0) fail('the read `' + command + '` that the prompt of `' + label + '` names was refused: ' + out.stderr)
     reads.push({ label, command, printed: out.stdout.trim() })
@@ -274,6 +343,17 @@ function readByKey(label, prompt) {
 function relayed(line) {
   return line.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
 }
+// slipped — a line with ONE value slipped (`relays`: `slip`, `slip-lone`), or null where it
+// holds no field to slip so.
+function slipped(line, lone) {
+  const fields = Array.from(line.matchAll(/"([^"\\]+)":("[^"\\]*"|-?\d+|true|false|null)(?=[,}\]])/g), (m) => ({ key: m[1], value: m[2], at: m.index + m[0].length - m[2].length }))
+  for (const f of fields) {
+    const same = fields.filter((g) => g.key === f.key && g !== f)
+    const other = same.find((g) => g.value !== f.value)
+    if (other && same.some((g) => g.value === f.value) !== lone) return line.slice(0, f.at) + other.value + line.slice(f.at + f.value.length)
+  }
+  return null
+}
 function gitStep(label, prompt) {
   const first = prompt.split('\n').find((line) => line.startsWith('1. `')) || ''
   const command = first.slice(4, first.lastIndexOf('`'))
@@ -285,9 +365,14 @@ function gitStep(label, prompt) {
   if (again != null && !label.startsWith('git:probe:') && (/git (status|log|clean)/.test(again) || !again.includes('Run the ONE command above again'))) fail('the retry of the git step `' + label + '` is not told to run its one command again: ' + again)
   const how = (scenario.relays || {})[label]
   if (how) used.add(label)
+  // A step that did not type its command as it stands: the altered command is what runs.
+  const slip = (scenario.mistypes || {})[label]
+  if (slip) used.add(label)
+  if (slip && !command.includes(slip[0])) fail('the scenario has the git step `' + label + '` type `' + slip[1] + '` for `' + slip[0] + '`, and its command holds no such text: ' + command)
+  const typed = slip ? command.replace(slip[0], slip[1]) : command
   // The line the tool prints unasked: the command, without the flag that asks for a digest.
   const starts = command.startsWith('dev/stabilize-step hold-start ') ? heldEnv(command) : null
-  let out = sh(how === 'document' ? command.replace(/ --digest \S+/, '') : command, starts)
+  let out = sh(how === 'document' ? command.replace(/ --digest \S+/, '') : typed, starts)
   // A STEP THAT ASKS AFTER A HELD COMMAND asks again while its line says `running` — unless
   // its agent's turn ends on the first line.
   if (command.startsWith('dev/stabilize-step hold-wait ')) {
@@ -299,6 +384,11 @@ function gitStep(label, prompt) {
   // Handed back byte for byte: a relay that happened to be faithful is still not a digest.
   if (how === 'document') return { status: 'ran', line: out.stdout }
   if (how === 'byte') return { status: 'ran', line: out.stdout.replace('"status":"', '"status":"x') }
+  if (how === 'slip' || how === 'slip-lone') {
+    const line = slipped(out.stdout, how === 'slip-lone')
+    if (!line) fail('the scenario has the git step `' + label + '` slip a value, and its line holds no field to slip: ' + out.stdout)
+    return { status: 'ran', line }
+  }
   if (how === 'non-ascii') {
     const body = out.stdout.replace(/\n$/, '').replace(/, "sha256": "[0-9a-f]{64}"\}$/, '}').replace('"status":"', '"status":"\u2014')
     return { status: 'ran', line: body.slice(0, -1) + ', "sha256": "' + createHash('sha256').update(body).digest('hex') + '"}\n' }
@@ -430,6 +520,57 @@ function recordStep(label, prompt) {
   return { status: 'applied' }
 }
 
+// ---- the stage's one triage, in a run with a queue ----
+// A source's findings, as the prompt hands them: the lines numbered under the source's name —
+// or null where the source names the read that prints its rows.
+function numberedUnder(prompt, source) {
+  const lines = prompt.split('\n')
+  const at = lines.findIndex((line) => line.startsWith('- ' + source + ' — '))
+  if (at < 0) return undefined
+  if (/`dev\/stabilize-record untriaged /.test(lines[at])) return null
+  const numbers = []
+  for (let i = at + 1; i < lines.length && /^ {3}[0-9]+\. /.test(lines[i]); i++) numbers.push(Number(/^ {3}([0-9]+)\. /.exec(lines[i])[1]))
+  return numbers
+}
+function oneTriage(label, prompt) {
+  used.add(label)
+  const said = scripted[label]
+  if (!said) fail('no agent is scripted for the label `' + label + '`')
+  const command = span(prompt, 'dev/stabilize-record triage --run ')
+  const file = command && / --from (\S+)/.exec(command)
+  const words = command && command.includes(' -- ') ? command.split(' -- ')[1].split(' ') : null
+  if (!file || !words) fail('the prompt of `' + label + '` spells no `dev/stabilize-record triage` call fed from a file, with a word for every source')
+  // EVERY HANDED FINDING HAS A NUMBER IN THE PROMPT, under its source's name: 1 to the count
+  // the call names for that source — or the source names the read, which printed that many.
+  for (const word of words) {
+    const [source, count] = [word.slice(0, word.lastIndexOf('=')), Number(word.slice(word.lastIndexOf('=') + 1))]
+    const numbers = numberedUnder(prompt, source)
+    if (numbers === undefined) fail('the call the prompt of `' + label + '` spells names the source `' + source + '`, and the prompt hands no findings under that name')
+    const printed = numbers === null ? JSON.parse((reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record untriaged ')) || { printed: '{}' }).printed).count : null
+    if (numbers === null ? printed !== count : numbers.length !== count || numbers.some((n, i) => n !== i + 1)) fail('the prompt of `' + label + '` names ' + count + ' finding(s) of `' + source + '` in its call, and ' + (numbers === null ? 'the read it names printed ' + printed : 'numbers them ' + JSON.stringify(numbers)))
+  }
+  // The call as the triage types it: as it stands — or with the counts the scenario has it type.
+  const typed = said.counts ? command.split(' -- ')[0] + ' -- ' + Object.entries(said.counts).map(([source, count]) => source + '=' + count).join(' ') : command
+  const handOver = (entries) => {
+    fileTool(file[1], JSON.stringify(entries))
+    return sh(typed)
+  }
+  let out = handOver(said.entries)
+  // A refusal about the file is corrected in the file, and the same call made again.
+  if (out.code !== 0 && said.then) out = handOver(said.then)
+  if (out.code !== 0) {
+    const line = out.stderr.trim()
+    const report = writeReport(label, prompt, 'Halted: the entries were refused — ' + line)
+    return Object.assign({ status: 'halted', halt: { root_cause: 'the entries were refused, and the refusal is not one a corrected file answers', evidence: typed + '\n' + line, tree_state: treeState(), recommendation: 'nothing was written: the stage is invoked again, and its triage hands its entries over as the next attempt' } }, report ? { report } : {})
+  }
+  const line = JSON.parse(out.stdout)
+  reads.push({ label, command: typed, printed: out.stdout.trim() })
+  reporters.push(/ --reporter (\S+)/.exec(command)[1])
+  // A text written OVER the rendered report, once the script has written it — as over any report.
+  if ((scenario.overwrites || {})[label] != null) writeFileSync(line.triage, scenario.overwrites[label])
+  return { status: 'filed', report: line.triage, sha256: line.sha256, handed: Object.entries(line.handed).map(([source, count]) => ({ source, count })) }
+}
+
 // ---- a probe's agents ----
 // What no probe's prompt may carry: a report to write, a command of the record script or of
 // the step tool, a gate, a git command, a branch.
@@ -492,13 +633,80 @@ function reporter(label, prompt, opts) {
   return back
 }
 
+// ---- the write guard's probe (dev/stabilize-guard-probe.js): its one agent ----
+// What its six attempts did is the scenario's to say: the stand-in has no hook and no fence,
+// and drives none of the attempts. It returns the scripted attempts, and the suite holds the
+// script to launching this one agent, of a type the guard fences.
+function guardProbe(label) {
+  if (!(label in scripted)) fail('no agent is scripted for the label `' + label + '`')
+  used.add(label)
+  return Object.assign({}, scripted[label])
+}
+
+// ---- a verifier, in a run with a queue: it files its verdict ----
+// Under a prompt that spells no `dev/stabilize-record verdict` call it is the other path's: a
+// scripted reporter, whose verdict goes back in its return.
+function verifier(label, prompt, opts) {
+  if (!(label in scripted)) fail('no agent is scripted for the label `' + label + '`')
+  const command = span(prompt, 'dev/stabilize-record verdict --run ')
+  if (!command) return reporter(label, prompt, opts)
+  used.add(label)
+  const said = scripted[label]
+  const file = / --from (\S+)/.exec(command)
+  const name = / --reporter (\S+)/.exec(command)
+  if (!file || !name || !name[1].startsWith('verify-')) fail('the prompt of `' + label + '` spells a `dev/stabilize-record verdict` call that names no file to read, or no verifier\'s reporter: ' + command)
+  const key = name[1].slice('verify-'.length)
+  // THE KIT FIRST: what every verifier looks up, by the call the prompt spells. It exits 27
+  // where a part is not printed — an answer, and no halt.
+  const kit = span(prompt, 'dev/stabilize-record kit --run ')
+  if (!kit || prompt.indexOf('`' + kit + '`') > prompt.indexOf('`' + command + '`')) fail('the prompt of `' + label + '` spells no lookup kit\'s call ahead of the call that files its verdict')
+  const looked = sh(kit)
+  if (looked.code !== 0 && looked.code !== 27) fail('the kit the prompt of `' + label + '` spells was refused: ' + looked.stderr)
+  reads.push({ label, command: kit, printed: 'exit ' + looked.code })
+  // THE FINDING IS A ROW IT READ BY ITS KEY (`readByKey`): the row of the key it files for.
+  const row = reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record row '))
+  if (!row || JSON.parse(row.printed).row.key !== key) fail('the prompt of `' + label + '` names no read that prints the row of `' + key + '`, the finding its verdict is filed for')
+  const binary = /^BINARY: candidate `([^`]+)` sha256 [0-9a-f]{64} \(commit [0-9a-f]{40}, label [^)]+\); previous release `([^`]+)`/m.exec(prompt)
+  const spelled = span(prompt, 'dev/stabilize-step hash ')
+  if (!binary || !spelled) fail('the prompt of `' + label + '` hands it no two binaries, or no call that asserts the candidate\'s hash')
+  const hashed = sh(spelled)
+  if (hashed.code !== 0 || JSON.parse(hashed.stdout).content_sha256 !== sha256Of(binary[1])) fail('the hash call the prompt of `' + label + '` spells is not of the binary on its BINARY: line: ' + hashed.stderr)
+  const asserted = (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : JSON.parse(hashed.stdout).content_sha256
+  // A HALT FILES NOTHING: it is reported, and returned.
+  if (said.status === 'halted') {
+    const report = writeReport(label, prompt, 'Halted: ' + JSON.stringify(said.halt || null))
+    return Object.assign({}, said, report ? { report } : {})
+  }
+  // THE REPORT, THEN THE FILING, THEN THE RETURN.
+  const report = writeReport(label, prompt, 'Verified: ' + JSON.stringify(said.files || null))
+  let back = { status: 'filed' }
+  if (said.files) {
+    const filing = Object.assign({ key, candidate: asserted }, 'regression' in said.files ? { previous: sha256Of(binary[2]) } : {}, said.files)
+    fileTool(file[1], JSON.stringify(filing))
+    const out = sh(command)
+    if (out.code !== 0) return Object.assign({ status: 'halted', halt: { root_cause: 'the filing was refused, and the refusal is not one a corrected file answers', evidence: command + '\n' + out.stderr.trim(), tree_state: treeState(), recommendation: 'nothing was filed: the finding awaits its verdict again' } }, report ? { report } : {})
+    const line = JSON.parse(out.stdout)
+    reads.push({ label, command, printed: out.stdout.trim() })
+    back = { status: 'filed', filing: line.verdict, word: line.word, contested: line.contested }
+  } else {
+    // IT FILED NOTHING, AND SAYS IT DID: the path is the one its prompt says a return is held to.
+    const held = /held to `([^`]+\/verdicts\/[^`]+\.json)`/.exec(prompt)
+    if (!held) fail('the prompt of `' + label + '` does not say which path the return of a verifier is held to')
+    back.filing = held[1]
+  }
+  return Object.assign(back, { asserted_sha256: asserted }, report ? { report } : {}, said.returns || {})
+}
+
 const KINDS = [
   { labels: /^git:/, agentType: 'build-git', play: gitStep },
   { labels: /^preflight(-second)?$/, agentType: 'stabilize-preflight', play: preflight },
   { labels: /^scope$/, agentType: 'stabilize-scope', play: scopeStep },
+  { labels: /^triage$/, agentType: 'finding-triage', play: oneTriage },
+  { labels: /^verify:/, agentType: 'finding-verifier', play: verifier },
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
   { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
   { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },
+  { labels: /^guard-probe$/, agentType: 'milestone-e2e-tester', play: guardProbe },
 ]
 
 // ---- what a schema asks of a return ----
@@ -604,15 +812,23 @@ async function parallel(thunks) {
 }
 const unavailable = (name) => () => fail('`' + name + '` is not modelled by the stand-in')
 
-const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
-const body = vm.runInContext('(async function (agent, parallel, pipeline, log, phase, args, budget, workflow) {\n' + source + '\n})', context, { filename: script })
+// THE RUNTIME'S LIMIT ON A SCRIPT: the Workflow tool refuses one over 524,288 bytes, by path
+// and inline alike, before any of it runs — in these words (observed 2026-10-13). Until this
+// stand-in held it too, every suite passed a harness a session could not start.
+const SCRIPT_LIMIT = 524288
 let result = null
-try {
-  result = await body(agent, parallel, unavailable('pipeline'), (message) => { logs.push(String(message)) }, (title) => { note('phase ' + title) }, into(scenario.args), into({ total: null }), unavailable('workflow'))
-} catch (e) {
-  fatal.push('the script threw: ' + ((e && e.stack) || e))
+if (statSync(script).size > SCRIPT_LIMIT) {
+  fatal.push('Workflow script file ' + script + ' exceeds ' + SCRIPT_LIMIT + ' bytes')
+} else {
+  const source = readFileSync(script, 'utf8').replace(/^export const meta = /m, 'const meta = ')
+  const body = vm.runInContext('(async function (agent, parallel, pipeline, log, phase, args, budget, workflow) {\n' + source + '\n})', context, { filename: script })
+  try {
+    result = await body(agent, parallel, unavailable('pipeline'), (message) => { logs.push(String(message)) }, (title) => { note('phase ' + title) }, into(scenario.args), into({ total: null }), unavailable('workflow'))
+  } catch (e) {
+    fatal.push('the script threw: ' + ((e && e.stack) || e))
+  }
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
 process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')

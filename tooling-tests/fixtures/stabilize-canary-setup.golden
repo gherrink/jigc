@@ -1,0 +1,188 @@
+== the line, without its sha256
+{"act": "setup", "status": "ready", "root": "<root>", "clone": "<root>/clone", "origin": "<root>/origin.git", "scratch": "<root>/scratch", "results": "<root>/results", "run": "canary-small", "loop": "fix/canary-small", "run_dir": "completions/artifacts/canary-small", "candidate": "<candidate>", "head": "<head>", "previous": {"version": "1.0.0-rc.24", "commit": "<previous>"}, "door": "jigc doc list", "items": [{"item": "row-doc-list", "kind": "review-row"}, {"item": "cross-cutting", "kind": "audit-cross-cutting"}, {"item": "arm-control", "kind": "trial-arm"}, {"item": "gate", "kind": "held-gate"}, {"item": "regression-set", "kind": "held-regression"}], "seeded": "canary-seeded-claim", "remote_head": "<head>", "state": {"next": "test", "round": 1, "attempt": 1}, "session_cwd": "<root>/clone", "script_path": "<root>/clone/.claude/workflows/stabilize.js", "args": {"stage": "test", "run": "canary-small", "scratch": "<root>/scratch", "scope": {"doors": ["jigc doc list"]}}, "args_then": {"stage": "test", "run": "canary-small", "scratch": "<root>/scratch"}, "returns": {"first": "<root>/results/first.json", "then": "<root>/results/then.json"}, "check": "dev/stabilize-canary check --root <root>", "expect": {"agents": 32, "tool_steps": 19, "wall_minutes": {"from": 120, "to": 150}}
+== canary.json
+{
+ "act": "setup",
+ "root": "<root>",
+ "clone": "<root>/clone",
+ "origin": "<root>/origin.git",
+ "scratch": "<root>/scratch",
+ "results": "<root>/results",
+ "run": "canary-small",
+ "loop": "fix/canary-small",
+ "run_dir": "completions/artifacts/canary-small",
+ "candidate": "<candidate>",
+ "head": "<head>",
+ "previous": {
+  "version": "1.0.0-rc.24",
+  "commit": "<previous>"
+ },
+ "door": "jigc doc list",
+ "items": [
+  {
+   "item": "row-doc-list",
+   "kind": "review-row"
+  },
+  {
+   "item": "cross-cutting",
+   "kind": "audit-cross-cutting"
+  },
+  {
+   "item": "arm-control",
+   "kind": "trial-arm"
+  },
+  {
+   "item": "gate",
+   "kind": "held-gate"
+  },
+  {
+   "item": "regression-set",
+   "kind": "held-regression"
+  }
+ ],
+ "seeded": "canary-seeded-claim",
+ "remote_head": "<head>",
+ "state": {
+  "next": "test",
+  "round": 1,
+  "attempt": 1
+ },
+ "session_cwd": "<root>/clone",
+ "script_path": "<root>/clone/.claude/workflows/stabilize.js",
+ "args": {
+  "stage": "test",
+  "run": "canary-small",
+  "scratch": "<root>/scratch",
+  "scope": {
+   "doors": [
+    "jigc doc list"
+   ]
+  }
+ },
+ "args_then": {
+  "stage": "test",
+  "run": "canary-small",
+  "scratch": "<root>/scratch"
+ },
+ "returns": {
+  "first": "<root>/results/first.json",
+  "then": "<root>/results/then.json"
+ },
+ "check": "dev/stabilize-canary check --root <root>",
+ "expect": {
+  "agents": 32,
+  "tool_steps": 19,
+  "wall_minutes": {
+   "from": 120,
+   "to": 150
+  }
+ },
+ "status": "ready"
+}
+== the opening's commit
+The Canary <canary@example.invalid>
+docs(record): canary-small - the small canary's synthetic opening
+== completions/artifacts/canary-small/clauses.md
+# canary-small — the closing condition, clause by clause
+
+One row per clause of the closing condition, RENDERED by `dev/stabilize-record` from the results of the test set's items (each round's `results.md`) and written by no caller, never by hand: the items that judge the clause and where each one's run stands, the commit and the round of the latest of those runs, and `green`, `red` or `void` — not reached, could not run, or no longer current. A void row forbids closing; a row that differs from what the results give, or is missing, is refused the next time the state is read.
+
+| clause | instrument | last commit | scope | status |
+|---|---|---|---|---|
+| `no-lost-files` | `row-doc-list` — not selected by any tested round: it owes nothing<br>`cross-cutting` — not selected by any tested round: it owes nothing | - | - | void |
+| `working-product` | `gate` — not selected by any tested round: it owes nothing<br>`regression-set` — not selected by any tested round: it owes nothing | - | - | void |
+| `usable-by-agents` | `arm-control` — not selected by any tested round: it owes nothing | - | - | void |
+| `migration-works` | - | - | - | void |
+== completions/artifacts/canary-small/ledger.md
+# canary-small — the findings ledger
+
+One row per finding of this stabilization run. Written by `dev/stabilize-record` and never by hand; its header states the columns and the vocabularies of `grade`, `graded by` and `disposition`.
+
+| key | doctype | round | source | door | clause broken | grade | graded by | disposition | repro pointer |
+|---|---|---|---|---|---|---|---|---|---|
+| `canary-seeded-claim` | `jigc-feedback` | 0 | seeded at the opening by dev/stabilize-canary - a claim, driven by nobody | jigc doc list | no-lost-files | ungraded | - | open | completions/artifacts/canary-small/opening.md - the block under the heading `The seeded finding` |
+== completions/artifacts/canary-small/opening.md
+# canary-small - the opening record of a small canary
+
+This is a SYNTHETIC opening. dev/stabilize-canary wrote it, in a throwaway clone whose
+one remote is a bare repository beside it, so that ONE `test` stage of the stabilization
+workflow can run from its first step to its pushed record with real agents. It is not
+the human-led opening of any run, it closes nothing, and nothing of it leaves this clone.
+
+## The closing condition
+
+By reference: DECISIONS.md, the entry of 2026-10-04, "The exit rule, revised" - four
+clauses, each with its scope and one instrument. The run's census names them as:
+
+- `no-lost-files` - its first clause: no file is lost and nothing incorrect is written
+  or updated, in the scope that entry's first sharpening gives it. Instrument: the
+  review rows and the audit.
+- `working-product` - its second: a working product others can rely on. Instrument: the
+  regression set, and here the gate.
+- `usable-by-agents` - its third: it is usable by the agents. Instrument: the trial arms.
+- `migration-works` - its fourth: the planned migration of this project will work.
+  Instrument: a port rehearsal, which is not built - no item judges this clause.
+
+## The candidate, and the previous release
+
+The candidate is the tip of `fix/canary-small`: this record's commit, on <candidate>. The
+previous release is 1.0.0-rc.24, released from <previous>.
+
+## The test set
+
+One item of each kind a round's `test` stage runs, and no more: `row-doc-list` (review-row), `cross-cutting` (audit-cross-cutting), `arm-control` (trial-arm), `gate` (held-gate), `regression-set` (held-regression). The table is
+`test-set.md`, beside this file. The round's ONE door is `jigc doc list`: the invocation's
+`scope` names it.
+
+## The declared bounds, the stop mode, the scope
+
+No bound is declared. The run stops after every round. The default scope is the delta.
+
+## The ledger's opening row
+
+One row, `canary-seeded-claim`, ungraded: a claim seeded by the setup tool so that this stage's
+triage has a row to grade and a verifier a block to drive. Nobody has driven it for this
+run, and nothing here says whether it holds.
+
+### The seeded finding
+
+The claim: in a repository that `jigc setup` has run in, `jigc doc list` exits 0 and an
+untracked file in the repository's root is gone afterwards - bytes no git object holds,
+destroyed at exit 0 by a verb that only reads. If it holds, it breaks `no-lost-files`.
+
+The block, with BINARY the binary under test and a home directory that is not the
+machine's, every step in a fresh directory under the scratch root:
+
+    git init -q repo
+    git -C repo commit -q --allow-empty -m base
+    (in repo)  BINARY setup
+    (in repo)  write a file notes.md, one line, and do not add it
+    (in repo)  BINARY doc list        - the claim: this exits 0 ...
+    (in repo)  read notes.md          - ... and the file is gone
+
+Confirmed: the verb exits 0 and notes.md is gone. Refuted: it stands, as written.
+== completions/artifacts/canary-small/run.md
+# canary-small — the run's facts
+
+One row per fact the run's opening settled for every stage to read: when the run stops for the human of its own accord — after every round, or at the bound — and the bound across rounds, which only the human raises — the release it measures against, its default scope, and the clauses of its closing condition, which are written once. Written by `dev/stabilize-record` and never by hand.
+
+| fact | value |
+|---|---|
+| `stop` | `every-round` |
+| `previous` | `1.0.0-rc.24` |
+| `previous-commit` | `<previous>` |
+| `scope` | `delta` |
+| `clauses` | `no-lost-files, working-product, usable-by-agents, migration-works` |
+| `findings` | `canary-seeded-claim` |
+== completions/artifacts/canary-small/test-set.md
+# canary-small — the test set
+
+One row per instrument item: its kind, the clause of the closing condition it judges, whether it runs on every candidate or only in a round whose test set reaches it, the doors and the registries it covers, and its brief. Written by `dev/stabilize-record` and never by hand. The harness runs a fixed chain of agents per kind; which items a round runs is computed from this table and the round's doors.
+
+| item | kind | clause | runs | doors | registries | brief |
+|---|---|---|---|---|---|---|
+| `row-doc-list` | `review-row` | `no-lost-files` | in-scope | jigc doc list | - | The review row of ONE door, `jigc doc list`, kept small on purpose. The source pass: the path from the verb's dispatch in crates/cli/src/cli.rs to everything it reads - does a verb that only reads write, remove or commit anything at exit 0? The driver's table, on the binary of the BINARY line, in throwaway repositories under the scratch root: the verb in a repository `jigc setup` never ran in, and in one it ran in that holds an untracked file - per row the exit status, what it printed, and `git status --porcelain` before and after. |
+| `cross-cutting` | `audit-cross-cutting` | `no-lost-files` | every-candidate | - | - | The cross-cutting pass of the audit, bounded for a canary to ONE question over the round's doors: does any code path a door reaches write to the working tree or to git at exit 0 without the user having asked for it? Read the source; drive no more than a finding needs. |
+| `arm-control` | `trial-arm` | `usable-by-agents` | every-candidate | - | - | Walk arm 00 of the trial protocol, the positive control (completions/artifacts/RC-rc24/protocol.md, section 2, Instruments): the script completions/trial-driver/arms/walk/00-positive-control.sh, run INSIDE the trial image through completions/trial-harness/run-session.sh with --exec, on a corpus instantiated from completions/trial-corpus-template/. It is scripted: it needs no blind session and no credential. Rehearse: the image answers and the script starts. Run: the arm. Score: its pass condition, from the evidence copied out of the container. |
+| `gate` | `held-gate` | `working-product` | every-candidate | - | - | The full gate on the candidate, AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind gate`): answered from the candidate's own gate, which every stage holds once - it is not run twice. This item's result is written from that verdict's file. No agent runs a command off this brief. |
+| `regression-set` | `held-regression` | `working-product` | every-candidate | - | - | The regression set, first part - a long scripted check, about thirty-five minutes, AS A HELD COMMAND of dev/stabilize-step (`hold-start --kind regression`): the previous release's commit <previous> against the candidate's, over the list completions/artifacts/M55/stabilization-build/regression-set/intended-changes.tsv as the candidate holds it. The tool starts it, waits for it and reads the verdict out of the ONE line dev/regression-set prints; this item's result is written from that verdict's file. No agent runs a command off this brief. |

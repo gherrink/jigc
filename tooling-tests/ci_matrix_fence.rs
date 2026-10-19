@@ -9,19 +9,30 @@
 //! targets from **`cargo metadata`**, never from `tests/groups/` on disk or from a parse
 //! of `Cargo.toml`, because what cargo reports is what `cargo test` compiles.
 //!
-//! Eight properties, one arm each: **(a)** the `test` matrix equals the metadata's
-//! `test`-kind targets; **(b)** every other tested target is covered by the `unit` job;
-//! **(c)** every job S8 names exists and runs its pinned command; **(d)** every job
-//! carries `timeout-minutes`, and every leg a full-history checkout and the `CPU count`
-//! step; **(e)** every `cargo test` runs `--no-fail-fast` except the manifest-freeze
-//! fence's pinned argv; **(f)** nothing stops the other legs when one fails —
-//! `fail-fast: false` and no `needs` on any leg; **(g)** the one aggregate, `ci-ok`,
-//! `needs` exactly every other job and runs `if: always()`; **(h)** its body is green
-//! only when every needed job's result is `success`, driven over each result GitHub
-//! reports. The design is [dev-workflow.md](../implementation/dev-workflow.md) →
-//! Gate, the required check [release.md](../implementation/release.md) → The main
-//! branch; the measurement behind each `timeout-minutes` is
-//! `completions/artifacts/M54/ci-runtime.md`.
+//! Nine properties, one arm each: **(a)** the `test` matrix's rows name exactly the
+//! metadata's `test`-kind targets; **(b)** every other tested target is covered by the
+//! `unit` job; **(c)** every job S8 names exists and runs its pinned command; **(d)**
+//! every job carries `timeout-minutes`, and every leg a full-history checkout and the
+//! `CPU count` step; **(e)** every `cargo test` runs `--no-fail-fast` except the
+//! manifest-freeze fence's pinned argv; **(f)** nothing stops the other legs when one
+//! fails — `fail-fast: false` and no `needs` on any leg; **(g)** the one aggregate,
+//! `ci-ok`, `needs` exactly every other job and runs `if: always()`; **(h)** its body is
+//! green only when every needed job's result is `success`, driven over each result GitHub
+//! reports; **(i)** a group that runs in parts runs whole — every part but one names the
+//! suites it runs, and the one that is left skips exactly those. The design is
+//! [dev-workflow.md](../implementation/dev-workflow.md) → Gate, the required check
+//! [release.md](../implementation/release.md) → The main branch; the measurement behind
+//! each `timeout-minutes` is `completions/artifacts/M54/ci-runtime.md`, and behind a
+//! part's the `DECISIONS.md` entry the workflow's header names.
+//!
+//! **Why a group runs in parts (2026-10-12).** A row is one test target, and one target's
+//! tests can outgrow one leg: `g_tooling` grew past its leg's ten minutes with the
+//! stabilization build and was cancelled there on thirty pushes in a row, so nothing said
+//! its tests pass on Linux. A target is not split to shorten its leg — a target per part
+//! is a test binary more for every local gate to link — so its row is: the matrix's
+//! `include` lists the group once per part, each part with the libtest arguments that
+//! select it (`tests`) and its own bound (`minutes`). What that risks is a test no part
+//! runs, which arm (i) is for.
 
 use crate::support::ci_workflow::{CI_STEP_NAME, CI_STEP_RUN, CI_WORKFLOW, repo_root};
 use crate::support::run_then_parse::stdout_json;
@@ -33,8 +44,17 @@ use std::process::Command;
 /// The package the matrix row's command addresses with `-p`.
 const MATRIX_PACKAGE: &str = "jigc";
 
-/// The matrix row's command: one `[[test]]` group per job, every failure reported.
-const MATRIX_RUN: &str = "cargo test -p jigc --test ${{ matrix.group }} --no-fail-fast";
+/// The matrix row's command: one `[[test]]` group per job — or one part of one, by the
+/// libtest arguments its row carries, which a whole group's row has none of — and every
+/// failure reported.
+const MATRIX_RUN: &str =
+    "cargo test -p jigc --test ${{ matrix.group }} --no-fail-fast ${{ matrix.tests }}";
+
+/// The `test` job's bound: a part's own minutes, and ten for a row that names none.
+const MATRIX_TIMEOUT: &str = "${{ matrix.minutes || 10 }}";
+
+/// The floor of every leg's bound, in minutes (the workflow's header: `max(10, …)`).
+const TIMEOUT_FLOOR: u64 = 10;
 
 /// The `unit` job's two commands: the lib and bin unit tests of every workspace member,
 /// and every lib's doctests. `--workspace` is what reaches the engine.
@@ -123,6 +143,8 @@ struct Target {
     package: String,
     name: String,
     kinds: Vec<String>,
+    /// The target's root file, as cargo resolved it.
+    src_path: String,
     test: bool,
     doctest: bool,
 }
@@ -155,6 +177,10 @@ fn targets() -> Vec<Target> {
                     .iter()
                     .map(|kind| kind.as_str().expect("a kind").to_string())
                     .collect(),
+                src_path: target["src_path"]
+                    .as_str()
+                    .expect("target src_path")
+                    .to_string(),
                 test: target["test"].as_bool().expect("target test flag"),
                 doctest: target["doctest"].as_bool().expect("target doctest flag"),
             });
@@ -169,19 +195,106 @@ impl Target {
     }
 }
 
-/// **(a)** The `test` matrix is exactly the `test`-kind targets — a dropped row, an extra
-/// row, and a `[[test]]` group root the matrix was never told about each redden, naming
-/// the difference. Every one of them must also belong to the package the row's `-p`
-/// names, or its row would address a target that package does not have.
-#[test]
-fn the_matrix_equals_the_test_targets_cargo_metadata_reports() {
-    let workflow = workflow();
-    let matrix: BTreeSet<String> = job(&workflow, "test")["strategy"]["matrix"]["group"]
+/// The groups the `test` matrix runs whole: its `group` list, one row each.
+fn whole_groups(workflow: &Value) -> Vec<String> {
+    job(workflow, "test")["strategy"]["matrix"]["group"]
         .as_sequence()
         .expect("the `test` job's `strategy.matrix.group` is a list")
         .iter()
         .map(|group| group.as_str().expect("a matrix group").to_string())
+        .collect()
+}
+
+/// One row of the matrix's `include`: a part of a group.
+struct Part {
+    group: String,
+    name: String,
+    /// The suites it names — libtest's positional filters, each run where a test's name
+    /// holds it.
+    filters: Vec<String>,
+    /// The suites it leaves to the other parts — libtest's `--skip`.
+    skips: Vec<String>,
+    /// Its own bound, where it names one.
+    minutes: Option<Value>,
+}
+
+/// Every part the matrix names. A part's `tests` is read whole: `--`, then filters and
+/// `--skip <filter>` pairs and nothing else — any other libtest flag (`--exact`,
+/// `--ignored`) changes which tests a filter selects, so none is taken.
+fn parts(workflow: &Value) -> Vec<Part> {
+    let Some(include) = job(workflow, "test")["strategy"]["matrix"]["include"].as_sequence() else {
+        return Vec::new();
+    };
+    include
+        .iter()
+        .map(|row| {
+            let text = |key: &str| -> String {
+                row[key]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("an `include` row names its `{key}`: {row:?}"))
+                    .to_string()
+            };
+            let (group, name, tests) = (text("group"), text("part"), text("tests"));
+            let mut words = tests.split_whitespace();
+            assert_eq!(
+                words.next(),
+                Some("--"),
+                "`{group}` part `{name}`: `tests` opens with `--`, so that what follows is \
+                 libtest's and never cargo's: {tests:?}"
+            );
+            let (mut filters, mut skips) = (Vec::new(), Vec::new());
+            while let Some(word) = words.next() {
+                if word == "--skip" {
+                    let skipped = words.next().filter(|next| !next.starts_with('-'));
+                    let skipped = skipped.unwrap_or_else(|| {
+                        panic!("`{group}` part `{name}`: a `--skip` names what it skips: {tests:?}")
+                    });
+                    skips.push(skipped.to_string());
+                } else {
+                    assert!(
+                        !word.starts_with('-'),
+                        "`{group}` part `{name}`: `{word}` is neither a filter nor a `--skip`: \
+                         {tests:?}"
+                    );
+                    filters.push(word.to_string());
+                }
+            }
+            Part {
+                group,
+                name,
+                filters,
+                skips,
+                minutes: row.get("minutes").cloned(),
+            }
+        })
+        .collect()
+}
+
+/// **(a)** The `test` matrix's rows name exactly the `test`-kind targets — a dropped row,
+/// an extra row, and a `[[test]]` group root the matrix was never told about each redden,
+/// naming the difference. A group is named by the `group` list, which runs it whole, or
+/// by `include`, which runs it in parts (arm (i)) — never by both: GitHub adds an
+/// `include` row to a row the list already made, so the group would run once, as its
+/// last part alone. Every one of them must also belong to the package the row's `-p`
+/// names, or its row would address a target that package does not have.
+#[test]
+fn the_matrix_equals_the_test_targets_cargo_metadata_reports() {
+    let workflow = workflow();
+    let whole = whole_groups(&workflow);
+    let in_parts: BTreeSet<String> = parts(&workflow)
+        .into_iter()
+        .map(|part| part.group)
         .collect();
+    let both: Vec<&String> = whole
+        .iter()
+        .filter(|group| in_parts.contains(*group))
+        .collect();
+    assert!(
+        both.is_empty(),
+        "a group in the `group` list and in `include` runs as ONE row, its last part's: \
+         {both:?}",
+    );
+    let matrix: BTreeSet<String> = whole.into_iter().chain(in_parts).collect();
     let targets = targets();
     let test_targets: Vec<&Target> = targets.iter().filter(|t| t.is("test")).collect();
     let foreign: Vec<String> = test_targets
@@ -297,7 +410,9 @@ fn every_job_s8_names_exists_and_runs_its_pinned_command() {
 }
 
 /// **(d)** Every job is bounded, and every leg sees the whole history and prints its CPU
-/// count. The history is not only the freeze fence's need: every leg checks out the same
+/// count. A job's bound is a positive integer; the `test` matrix's may instead be its
+/// rows' — exactly `${{ matrix.minutes || 10 }}`, with every `minutes` a part names an
+/// integer no lower than the floor. The history is not only the freeze fence's need: every leg checks out the same
 /// way, so no job's result depends on a clone depth another job does not share. The
 /// aggregate is bounded too, but it checks nothing out and runs no cargo — it reads the
 /// `needs` context alone — so the checkout and the CPU count are not asked of it.
@@ -306,11 +421,31 @@ fn every_job_is_bounded_checks_out_full_history_and_prints_its_cpu_count() {
     let workflow = workflow();
     let mut wrong = Vec::new();
     for (id, job) in jobs(&workflow) {
-        if job["timeout-minutes"].as_u64().is_none_or(|m| m == 0) {
+        // The matrix's bound is its rows': a part's own minutes, ten for every other row.
+        let by_row = id == "test" && job["timeout-minutes"].as_str() == Some(MATRIX_TIMEOUT);
+        if !by_row && job["timeout-minutes"].as_u64().is_none_or(|m| m == 0) {
             wrong.push(format!(
                 "`{id}`: `timeout-minutes` is not a positive integer ({:?})",
                 job["timeout-minutes"]
             ));
+        }
+        for part in parts(&workflow).iter().filter(|_| id == "test") {
+            let Some(minutes) = &part.minutes else {
+                continue;
+            };
+            if !by_row {
+                wrong.push(format!(
+                    "`{}` part `{}` names `minutes`, and the job's `timeout-minutes` is not \
+                     `{MATRIX_TIMEOUT}`, so nothing reads them",
+                    part.group, part.name
+                ));
+            } else if minutes.as_u64().is_none_or(|m| m < TIMEOUT_FLOOR) {
+                wrong.push(format!(
+                    "`{}` part `{}`: `minutes` is not an integer of at least \
+                     {TIMEOUT_FLOOR} ({minutes:?})",
+                    part.group, part.name
+                ));
+            }
         }
         if id == AGGREGATE_JOB {
             continue;
@@ -388,6 +523,104 @@ fn no_leg_stops_another() {
     assert!(
         chained.is_empty(),
         "no job waits on another, so a red leg never hides the rest: {chained:?}",
+    );
+}
+
+/// The suites a group root registers: the `<name>` of each `#[path = "../<name>.rs"]`.
+fn registered_suites(root: &str) -> BTreeSet<String> {
+    let body = fs::read_to_string(root).unwrap_or_else(|e| panic!("read `{root}`: {e}"));
+    body.lines()
+        .filter_map(|line| {
+            line.trim()
+                .strip_prefix("#[path = \"../")?
+                .strip_suffix(".rs\"]")
+        })
+        .filter(|name| !name.contains('/'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// **(i)** A group that runs in parts runs whole. Its parts are read off the matrix's
+/// `include`: every part but one names the suites it runs (`<suite>::`, each a suite the
+/// group's root registers, none named twice), and the one part left skips exactly the
+/// suites the others name — so a test is in a named part where its name holds a named
+/// suite's, and in the last one where it holds none, and a suite added to the root runs
+/// in the last part without a line here. What reddens: a part dropped or a suite renamed
+/// while the last part still skips it (those tests would run nowhere), a suite named and
+/// not skipped (they would run twice), two parts under one name, and a group with one
+/// part, which is a group to run whole.
+///
+/// **Its bound.** It holds which suites a part names, never how long the part runs: a
+/// part that outgrows its minutes is cancelled, and `ci-ok` is red for it.
+#[test]
+fn i_a_group_that_runs_in_parts_runs_whole() {
+    let workflow = workflow();
+    let targets = targets();
+    let parts = parts(&workflow);
+    let groups: BTreeSet<&str> = parts.iter().map(|part| part.group.as_str()).collect();
+    let mut wrong = Vec::new();
+    for group in groups {
+        let of_group: Vec<&Part> = parts.iter().filter(|part| part.group == group).collect();
+        let names: BTreeSet<&str> = of_group.iter().map(|part| part.name.as_str()).collect();
+        if of_group.len() < 2 || names.len() != of_group.len() || names.contains("") {
+            wrong.push(format!(
+                "`{group}`: a group in parts has two or more, each under a name of its own \
+                 (found {:?})",
+                of_group.iter().map(|part| &part.name).collect::<Vec<_>>()
+            ));
+        }
+        let (named, left): (Vec<&Part>, Vec<&Part>) =
+            of_group.iter().partition(|part| part.skips.is_empty());
+        let [left] = left[..] else {
+            wrong.push(format!(
+                "`{group}`: exactly one part runs what the others leave, by `--skip` (found \
+                 {})",
+                left.len()
+            ));
+            continue;
+        };
+        if !left.filters.is_empty() {
+            wrong.push(format!(
+                "`{group}` part `{}`: the part that skips names no suite of its own, or a \
+                 test outside both lists runs nowhere ({:?})",
+                left.name, left.filters
+            ));
+        }
+        let ran: Vec<&String> = named.iter().flat_map(|part| &part.filters).collect();
+        let ran_once: BTreeSet<&String> = ran.iter().copied().collect();
+        let skipped: BTreeSet<&String> = left.skips.iter().collect();
+        if ran.len() != ran_once.len()
+            || left.skips.len() != skipped.len()
+            || named.iter().any(|part| part.filters.is_empty())
+            || ran_once != skipped
+        {
+            wrong.push(format!(
+                "`{group}`: part `{}` must skip exactly what the other parts name, each \
+                 once.\nNamed by a part: {ran:?}\nSkipped by `{}`: {:?}",
+                left.name, left.name, left.skips
+            ));
+        }
+        let Some(target) = targets.iter().find(|t| t.is("test") && t.name == group) else {
+            // Arm (a) names a row for a target that does not exist.
+            continue;
+        };
+        let suites = registered_suites(&target.src_path);
+        for filter in ran_once.iter().chain(&skipped) {
+            if filter
+                .strip_suffix("::")
+                .is_none_or(|suite| !suites.contains(suite))
+            {
+                wrong.push(format!(
+                    "`{group}`: `{filter}` is not `<suite>::` for a suite `{}` registers",
+                    target.src_path
+                ));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a group the `test` matrix runs in parts must run whole:\n{}",
+        wrong.join("\n"),
     );
 }
 

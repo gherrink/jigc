@@ -5,12 +5,12 @@ agent git:begin · build-git · sonnet · State
 phase Preflight and scope
 parallel 2 {
   agent preflight · stabilize-preflight · opus · Preflight and scope
-  agent git:hold-start:build-c1-a1 · build-git · sonnet · Preflight and scope
-  agent git:hold-wait:build-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-start:build-candidate-<the candidate> · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:build-candidate-<the candidate> · build-git · sonnet · Preflight and scope
   agent git:hold-start:build-previous-<its commit> · build-git · sonnet · Preflight and scope
   agent git:hold-wait:build-previous-<its commit> · build-git · sonnet · Preflight and scope
-  agent git:hold-start:gate-c1-a1 · build-git · sonnet · Preflight and scope
-  agent git:hold-wait:gate-c1-a1 · build-git · sonnet · Preflight and scope
+  agent git:hold-start:gate-<the candidate> · build-git · sonnet · Preflight and scope
+  agent git:hold-wait:gate-<the candidate> · build-git · sonnet · Preflight and scope
   agent scope · stabilize-scope · opus · Preflight and scope
 }
 agent git:state:test-2 · build-git · sonnet · State
@@ -45,19 +45,27 @@ parallel 5 {
 }
 agent git:check-reports · build-git · sonnet · Instruments
 phase Triage
-agent triage:p1 · finding-triage · opus · Triage
-parallel 3 {
-  agent verify:doc-set-drops-a-slot · finding-verifier · opus · Triage
-  agent verify:rename-loses-a-referrer · finding-verifier · opus · Triage
-  agent verify:doc-set-exit-code · finding-verifier · opus · Triage
-}
-agent advocate:doc-set-drops-a-slot · robust-advocate · opus · Triage
-agent proposal:doc-set-drops-a-slot · general-purpose · opus · Triage
-agent git:check-reports:p1 · build-git · sonnet · Triage
+agent triage · finding-triage · opus · Triage
+agent git:check-reports:triage · build-git · sonnet · Triage
 phase Record
-agent record:test:r1 · build-executor · opus · Record
+agent git:compose:test:r1 · build-git · sonnet · Record
 agent git:hold-start:record-test-r1-a1-1 · build-git · sonnet · Record
 agent git:hold-wait:record-test-r1-a1-1 · build-git · sonnet · Record
 agent git:record:test:r1 · build-git · sonnet · Record
 agent git:push · build-git · sonnet · Record
 agent git:state:test-3 · build-git · sonnet · State
+phase Verify
+parallel 3 {
+  agent verify:rename-loses-a-referrer · finding-verifier · opus · Verify
+  agent verify:doc-set-drops-a-slot · finding-verifier · opus · Verify
+  agent verify:doc-set-exit-code · finding-verifier · opus · Verify
+}
+agent git:check-reports:wave1 · build-git · sonnet · Verify
+agent git:state:test-4 · build-git · sonnet · State
+phase Record
+agent git:compose:verdicts:r1 · build-git · sonnet · Record
+agent git:hold-start:record-verdicts-r1-a1-1 · build-git · sonnet · Record
+agent git:hold-wait:record-verdicts-r1-a1-1 · build-git · sonnet · Record
+agent git:record:verdicts:r1 · build-git · sonnet · Record
+agent git:push:verdicts · build-git · sonnet · Record
+agent git:state:test-5 · build-git · sonnet · State

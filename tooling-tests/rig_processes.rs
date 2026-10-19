@@ -30,6 +30,14 @@
 //! - `dev_stabilize_step` drives it through the tool: what a test holds is ended however
 //!   the test ends, and the stand-in for a held command ends by itself.
 //!
+//! **And a group is ended by one spelling** (DECISIONS.md → 2026-10-12, *The tooling leg
+//! runs in three parts*). A test that ends a whole process group — a starter's, to show
+//! that a hold outlives it — does it through [`end_group`], because the bare spelling is
+//! the group on macOS and another group, or every process, on Linux:
+//! [`a_group_is_ended_whole_and_no_other_with_it`] drives it, and
+//! [`no_suite_names_a_group_to_kill_without_the_double_dash`] reads the suites for any
+//! other.
+//!
 //! **Its bound.** A process is the rig's by what its command line names. One that names the
 //! directory without the rig having started it — a hand's `tail` in a rig that is still
 //! there — is ended with it. And a process the rig started by a path that does not name the
@@ -39,7 +47,7 @@ use std::fs;
 use std::os::unix::process::{CommandExt as _, ExitStatusExt as _};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::support::rust_source;
@@ -133,6 +141,25 @@ fn end(dir: &Path) -> Vec<Process> {
             .output();
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// End a whole process group, named by its leader's id: `kill -9 -- -<group>`.
+///
+/// **The `--` is the act, and a suite ends a group through this function and by no
+/// spelling of its own.** The `kill` of procps — Ubuntu's, so a hosted runner's — takes
+/// `-<group>` behind a signal for a run of options. Measured 2026-10-12 on procps 4.0.4,
+/// in the runner-shaped container: `kill -9 -238` left group 238 running and exited 0,
+/// and `kill -9 -128` ended every process its caller could signal, an unrelated group and
+/// the calling shell among them. The group it signals is that of the number's FIRST
+/// DIGIT, and `-1` is everyone. macOS' `kill` reads both spellings as the group, so the
+/// bare one was green on every gate here and red, or worse, on Linux. With `--` both
+/// platforms signal the group named and no other
+/// ([`a_group_is_ended_whole_and_no_other_with_it`]).
+pub(crate) fn end_group(group: u32) -> Output {
+    Command::new("kill")
+        .args(["-9", "--", &format!("-{group}")])
+        .output()
+        .expect("run kill")
 }
 
 /// A rig's directory: fresh, of a name no other has, and — when it is dropped — rid of
@@ -247,6 +274,97 @@ fn a_rig_directory_ends_the_processes_that_name_it_and_no_other() {
     assert_eq!(naming(other.path()).len(), 1);
     drop(other);
     assert_eq!(runs_on.wait().expect("it is gone").signal(), Some(9));
+}
+
+/// **A group is ended whole, by its number, and no other group with it** — [`end_group`].
+/// Two processes, each leading a group of its own; the first group is ended: its leader
+/// died of the signal, within ten seconds, and the other's runs on.
+///
+/// **Its bound.** It cannot be red on macOS whichever way the group is spelled, so what it
+/// holds is read on Linux — in CI, and in `dev/runner-faithful`. There the bare spelling
+/// leaves the group running (red here, after the ten seconds) or, where the group's number
+/// opens with 1, ends this test run with everything else (no arm reports that).
+#[test]
+fn a_group_is_ended_whole_and_no_other_with_it() {
+    let other = RigDir::new("rig-processes-group-other");
+    let mut runs_on = detached(other.path());
+    let rig = RigDir::new("rig-processes-group");
+    let mut leader = detached(rig.path());
+    assert_eq!(
+        (naming(rig.path())[0].group, naming(other.path())[0].group),
+        (leader.id(), runs_on.id()),
+        "the control: each leads a group of its own"
+    );
+
+    let ended = end_group(leader.id());
+    assert!(ended.status.success(), "{ended:?}");
+    let asked = Instant::now();
+    let died_of = loop {
+        if let Some(status) = leader.try_wait().expect("ask after the leader") {
+            break status.signal();
+        }
+        assert!(
+            asked.elapsed() < Duration::from_secs(10),
+            "ten seconds after its group was ended, the leader still runs: the group named \
+             was not the group signalled"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(died_of, Some(9), "the leader was ended, by the signal");
+    assert_eq!(
+        runs_on.try_wait().expect("ask after the other process"),
+        None,
+        "another group is not the group named"
+    );
+}
+
+/// **No suite hands `kill` a group by a spelling of its own.** A statement that runs
+/// `kill` and formats a negative number into its arguments also hands it `--`, as
+/// [`end_group`] does — the one such statement there is. **Its bound:** it reads source,
+/// so it holds a `kill` run as `Command::new("kill")` whose group is formatted in the same
+/// statement; a group spelled inside a shell script's text is not seen.
+#[test]
+fn no_suite_names_a_group_to_kill_without_the_double_dash() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root is two levels above crates/cli");
+    // Built, never written out: this arm's own text holds no statement that runs `kill`.
+    let runs_kill = format!("Command::new({:?})", "kill");
+    // A literal that opens with a dash and a formatted value; the literal `--`.
+    let negative = ['"', '-', '{'].iter().collect::<String>();
+    let dashes = format!("{:?}", "--");
+    let mut statements = 0;
+    let mut groups = 0;
+    let mut bare = Vec::new();
+    for path in rust_source::rust_files(&root.join("tooling-tests")) {
+        let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
+        let text = rust_source::code_and_strings(&text);
+        for (at, _) in text.match_indices(&runs_kill) {
+            let statement = &text[at..];
+            let statement = &statement[..statement.find(';').unwrap_or(statement.len())];
+            statements += 1;
+            if !statement.contains(&negative) {
+                continue;
+            }
+            groups += 1;
+            if !statement.contains(&dashes) {
+                let line = text[..at].lines().count();
+                let file = path.strip_prefix(root).unwrap_or(&path);
+                bare.push(format!("{}:{line}", file.display()));
+            }
+        }
+    }
+    assert!(
+        statements > groups && groups >= 1,
+        "the control: the suites run `kill` ({statements} statements), and one that names a \
+         group is read as one ({groups})"
+    );
+    assert_eq!(
+        bare,
+        Vec::<String>::new(),
+        "a group handed to `kill` without `--` is, on Linux, another group or every process"
+    );
 }
 
 /// A directory whose name another's begins with is not that other: a rig's name ends in
