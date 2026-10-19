@@ -45,8 +45,8 @@ const SUB_TASK_WORKTREES: &str = ".jigc/worktrees/<sub-task>";
 /// part (its first finding): the line had quoted beside these the doc-only arm's sentence
 /// that an ordinary finalize commits a pending delta, and held under any `HEAD` — so a file
 /// of the user's nobody staged under `.jigc/config`, swept into a landed boundary, held.
-/// Whether a pending delta rides is the rows' record's §6, entry 19: two docs say two
-/// things.
+/// Whether a pending delta rides was the rows' record's §6, entry 19: two docs said two
+/// things, and the human ruled on 2026-10-19 that it does not — nothing nobody staged.
 const THE_CONFIG_CARRIED: [Quote; 2] = [
     Quote {
         doc: "design/finalize.md",
@@ -430,8 +430,9 @@ const EVERY_VERB_ONE_SITE: Quote = Quote {
 };
 
 /// **The re-seed's other half** — one standard area a sub-task the record names, an area
-/// that stands skipped, and one the record has settled.
-const THE_AREAS_RE_SEEDED: [Quote; 3] = [
+/// that stands skipped, and one the record has settled; rebuilt before a door's own guards,
+/// for the re-entry a refusal routes to.
+const THE_AREAS_RE_SEEDED: [Quote; 4] = [
     Quote {
         doc: "design/team-ready-state.md",
         heading: THE_READ_BACK,
@@ -443,7 +444,16 @@ const THE_AREAS_RE_SEEDED: [Quote; 3] = [
         words: "A sub-task whose area already exists is skipped untouched, so a live session is never clobbered — **and so is one the record has settled**",
     },
     EVERY_VERB_ONE_SITE,
+    THE_AREAS_SERVE_A_REFUSAL,
 ];
+
+/// **What the re-seed's areas are for, at a door that refuses** — the loop the
+/// zero-contribution refusal routed a fresh clone into, which the areas' half closes.
+const THE_AREAS_SERVE_A_REFUSAL: Quote = Quote {
+    doc: "design/team-ready-state.md",
+    heading: THE_READ_BACK,
+    words: "A **loop**, and the one the [finalize](finalize.md) zero-contribution refusal routes a fresh clone into.",
+};
 
 /// `add-task`'s mint and its append.
 const ADD_TASK_MINTS: Quote = Quote {
@@ -498,7 +508,12 @@ const THE_RECORD_SETTLING_OP: &str = "`jigc milestone discard <id>` — the reco
 /// part (its second finding): the areas' line read `<sub-task>`, so a rewrite of a standing
 /// sub-task's staged prose or base pin held at every door that re-seeds. The cache's half
 /// keeps its place: its sentence re-derives the cache *"when absent or stale"*, and a
-/// stale cache stands.
+/// stale cache stands. **The areas' half holds on a refusal too** — read so 2026-10-19,
+/// after the same review (its second finding's left-open, the seventh fix): *"all pass
+/// through the reseed before their own guards"*, and the area it rebuilds is what the
+/// zero-contribution refusal routes a fresh clone into (`THE_AREAS_SERVE_A_REFUSAL`), so a
+/// door that refuses at its own guard leaves the area the re-seed made. The cache's half
+/// needs no such word: a refusal's cache is `C3`'s.
 const fn the_re_seed(cache: &'static str, areas: &'static str) -> [Line; 2] {
     [
         line(
@@ -506,11 +521,14 @@ const fn the_re_seed(cache: &'static str, areas: &'static str) -> [Line; 2] {
             Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Rebuilt),
             &[THE_CACHE_RE_DERIVED, EVERY_VERB_ONE_SITE],
         ),
-        line(
-            areas,
-            Allows::Files(Where::Under(".jigc/tasks/<re-seeded>"), May::Rebuilt),
-            &THE_AREAS_RE_SEEDED,
-        ),
+        Line {
+            on_refusal: true,
+            ..line(
+                areas,
+                Allows::Files(Where::Under(".jigc/tasks/<re-seeded>"), May::Rebuilt),
+                &THE_AREAS_RE_SEEDED,
+            )
+        },
     ]
 }
 
@@ -702,11 +720,14 @@ pub const PROVISION: Row = Row {
         // second finding): where no checkout stood (`<unprovisioned>`,
         // `byte_cell::UNPROVISIONED`) — the line read `<sub-task>`, so a rewrite inside a
         // live sub-task's worktree held.
+        // **Narrowed 2026-10-19 again**, by the seventh fix (the sixth's left-open): what
+        // the checkout holds is the pinned base's tree (`May::FromTheBasesTree`) — the line
+        // read *rebuilt*, any bytes.
         line(
             "MP1",
             Allows::Files(
                 Where::Under(".jigc/worktrees/<unprovisioned>"),
-                May::Rebuilt,
+                May::FromTheBasesTree,
             ),
             &[
                 THE_WORKTREES_DIRECTORY,
@@ -715,9 +736,11 @@ pub const PROVISION: Row = Row {
                 A_REGISTERED_WORKTREE_REUSED[1],
             ],
         ),
+        // At a place no checkout stood, of a sub-task the record has not settled — the
+        // stricter reading of the record's §6, entry 20, as `MP1`'s.
         line(
             "MP2",
-            Allows::Registered(SUB_TASK_WORKTREES),
+            Allows::Registered(".jigc/worktrees/<unprovisioned>"),
             &[A_PROVISIONED_WORKTREE],
         ),
         PROVISION_RE_SEEDS[0],
@@ -1894,6 +1917,54 @@ const ADD_TASK_CELLS: [Cell; 24] = [
     ),
 ];
 
+/// **`spec:padding` with a second criterion, committed, and `ship-it` minted** — a task
+/// adds the criterion `keeps-the-width` and its statement and lands it, so the spec
+/// `add-from-spec` reads holds two: the door then mints two sub-tasks and *"commits the
+/// record once per sub-task"*, the first commit holding the record partway (`MS3`, `MS4`).
+const A_SECOND_CRITERION: [Lead; 9] = [
+    payload("statement", "Padding keeps the width it is given.\n"),
+    payload("summary", "add a criterion\n"),
+    jigc(&["start", "--workflow", "single-task", "add a criterion"]),
+    jigc(&[
+        "doc",
+        "add-item",
+        "spec:padding#criteria",
+        "--title",
+        "Keeps the width",
+        "--task",
+        "add-a-criterion",
+    ]),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "spec:padding#criteria/keeps-the-width/statement",
+        "--from-file",
+        "../outside/statement",
+        "--task",
+        "add-a-criterion",
+    ]),
+    jigc(&[
+        "doc",
+        "set-field",
+        "commit:add-a-criterion#type",
+        "--value",
+        "docs",
+        "--task",
+        "add-a-criterion",
+    ]),
+    jigc(&[
+        "doc",
+        "set-slot",
+        "commit:add-a-criterion#summary",
+        "--from-file",
+        "../outside/summary",
+        "--task",
+        "add-a-criterion",
+    ]),
+    jigc(&["task", "finalize", "add-a-criterion"]),
+    MINT_IT,
+];
+
 /// One cell of `jigc milestone add-from-spec` in `vendored`, its home, over `ship-it`
 /// minted first: `$after` stands after the mint, last before the command.
 macro_rules! seeds {
@@ -1914,7 +1985,7 @@ macro_rules! seeds {
 /// `vendored`'s committed spec `spec:padding`, whose one criterion mints `pads-the-input`;
 /// each listed as `add-task`'s is. In a prepared state with no spec the base cell refuses —
 /// the spec is not there, which no doc of the door's words; the words are a run's.
-const ADD_FROM_SPEC_CELLS: [Cell; 23] = [
+const ADD_FROM_SPEC_CELLS: [Cell; 24] = [
     cell(
         "milestone-add-from-spec-to-a-milestone-that-is-not-there",
         &["milestone", "add-from-spec"],
@@ -1925,6 +1996,15 @@ const ADD_FROM_SPEC_CELLS: [Cell; 23] = [
         None,
     ),
     seeds!("milestone-add-from-spec-padding", [], Listed::Acts, None),
+    cell(
+        "milestone-add-from-spec-a-spec-of-two-criteria",
+        &["milestone", "add-from-spec"],
+        VENDORED,
+        &A_SECOND_CRITERION,
+        SEED_FROM_THE_SPEC,
+        Listed::Acts,
+        None,
+    ),
     seeds!(
         "milestone-add-from-spec-a-file-of-the-users-in-the-sub-tasks-area",
         [Lead::Plant(Plant::File(
@@ -2194,8 +2274,10 @@ macro_rules! fan_out_elsewhere {
 /// is disposable"* and refuses over — `provision` *"clears a leftover before `git worktree
 /// add`"* among *"the three doors standing where **no commit has carried those bytes**"*
 /// (`MP5`); a file of the user's in the milestone's area (`MP3`) or a sub-task's (`MP4`)
-/// is where the re-seed writes nothing over an area that stands — it stays.
-const PROVISION_CELLS: [Cell; 5] = [
+/// is where the re-seed writes nothing over an area that stands — it stays. **A sub-task
+/// the record has settled** gets no worktree (`MP1`, `MP2`, the stricter reading of the
+/// record's §6, entry 20 — the cell is marked).
+const PROVISION_CELLS: [Cell; 6] = [
     cell(
         "milestone-provision-a-milestone-that-is-not-there",
         &["milestone", "provision"],
@@ -2256,6 +2338,23 @@ const PROVISION_CELLS: [Cell; 5] = [
         Listed::Acts,
         at("MP4", Kind::Untracked),
     ),
+    Cell {
+        marks: &[Mark::Silence(20)],
+        ..cell(
+            "milestone-provision-a-sub-task-the-record-has-settled",
+            &["milestone", "provision"],
+            FRESH,
+            &[
+                TWO_SUB_TASKS[0],
+                TWO_SUB_TASKS[1],
+                TWO_SUB_TASKS[2],
+                jigc(&["task", "discard", "add-beta"]),
+            ],
+            PROVISION_IT,
+            Listed::Acts,
+            None,
+        )
+    },
 ];
 
 const PROVISION_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
@@ -2267,8 +2366,10 @@ const PROVISION_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
 
 /// **The cells of `jigc milestone execute`**: the base cell composes the walk over a
 /// provisioned milestone and mints nothing (`ME3`); a file of the user's in the milestone's
-/// area (`ME1`) or a sub-task's (`ME2`) stays.
-const EXECUTE_CELLS: [Cell; 4] = [
+/// area (`ME1`) or a sub-task's (`ME2`) stays; **the cache's task list gone** is re-derived
+/// (`ME1`), and **a sub-task's area gone** is rebuilt where none stood (`ME2`) — the re-seed
+/// of what was absent, which no cell built before.
+const EXECUTE_CELLS: [Cell; 6] = [
     cell(
         "milestone-execute-a-milestone-that-is-not-there",
         &["milestone", "execute"],
@@ -2321,6 +2422,36 @@ const EXECUTE_CELLS: [Cell; 4] = [
         EXECUTE_IT,
         Listed::Acts,
         at("ME2", Kind::Untracked),
+    ),
+    cell(
+        "milestone-execute-the-caches-task-list-gone",
+        &["milestone", "execute"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            Lead::MovedAway("repo/.jigc/milestones/ship-it/tasks.json"),
+        ],
+        EXECUTE_IT,
+        Listed::Acts,
+        None,
+    ),
+    cell(
+        "milestone-execute-a-sub-tasks-area-gone",
+        &["milestone", "execute"],
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            PROVISIONED,
+            Lead::MovedAway("repo/.jigc/tasks/add-alpha"),
+        ],
+        EXECUTE_IT,
+        Listed::Acts,
+        None,
     ),
 ];
 
@@ -2766,8 +2897,8 @@ const fn finalizes(
 ///   before the milestone was created** meets the carryover gate, *"`jigc milestone
 ///   create` for the shared checkout's aggregate index"* — the boundary refuses over it
 ///   (`finalize.carried-staged`); and **a pending config delta** rides the aggregate,
-///   which `M3, the config` carries on the layer's first commit alone — whether it may
-///   ride a later one is the rows' record's §6, entry 19, and until ruled it may not;
+///   which `M3, the config` carries on the layer's first commit alone — a later one it
+///   may not ride, by the human's ruling on the rows' record's §6, entry 19;
 /// - **at the record** (`M5`), what stands in its place and an edit or a change staged at
 ///   it are refused as at the other record doors;
 /// - **a file jigc did not write in a sub-task's area or the milestone's** is moved aside
@@ -2776,8 +2907,11 @@ const fn finalizes(
 ///   refuses on a dirty worktree*), which the row lists as acting and the plant rule reads
 ///   as lost: the rows' record's §6, entry 18;
 /// - **the user's own worktree** (`M7`) and **a file of the user's in a cache** (`M10`)
-///   stay.
-const FINALIZE_CELLS: [Cell; 30] = [
+///   stay;
+/// - **a sub-task's area gone, at a milestone with no work to land**: the re-seed rebuilds
+///   the area before the door's own guard refuses (`milestone.zero-contribution`), and the
+///   area stays — the areas' half of the re-seed holds on a refusal (`M12`).
+const FINALIZE_CELLS: [Cell; 31] = [
     finalizes(
         "milestone-finalize-a-milestone-that-is-not-there",
         FRESH,
@@ -2804,22 +2938,20 @@ const FINALIZE_CELLS: [Cell; 30] = [
         Listed::Acts,
         None,
     ),
-    // The record's §6, entry 19: the docs say two things of a pending config delta at a
-    // commit that is not the layer's first; until ruled, it may not ride.
-    Cell {
-        marks: &[Mark::Silence(19)],
-        ..finalizes(
-            "milestone-finalize-a-pending-config-delta",
-            FRESH,
-            two_sub_tasks_joined!(
-                [],
-                [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
-            ),
-            FINALIZE_IT,
-            Listed::Acts,
-            None,
-        )
-    },
+    // The record's §6, entry 19, ruled by the human on 2026-10-19 (option A): a finalize
+    // never carries a change under `.jigc/config` that nobody staged. Red under its key
+    // until the product's fix; no mark.
+    finalizes(
+        "milestone-finalize-a-pending-config-delta",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
+        ),
+        FINALIZE_IT,
+        Listed::Acts,
+        None,
+    ),
     finalizes(
         "milestone-finalize-a-file-of-the-users-in-the-merged-set",
         FRESH,
@@ -3110,6 +3242,19 @@ const FINALIZE_CELLS: [Cell; 30] = [
         FINALIZE_IT,
         Listed::Acts,
         at("M10, the file-state hashes", Kind::Untracked),
+    ),
+    finalizes(
+        "milestone-finalize-a-sub-tasks-area-gone-and-no-work-to-land",
+        FRESH,
+        &[
+            TWO_SUB_TASKS[0],
+            TWO_SUB_TASKS[1],
+            TWO_SUB_TASKS[2],
+            Lead::MovedAway("repo/.jigc/tasks/add-alpha"),
+        ],
+        &["milestone", "finalize", "ship-it"],
+        refuses(3, "milestone.zero-contribution"),
+        None,
     ),
 ];
 

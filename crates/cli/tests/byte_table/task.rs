@@ -113,8 +113,8 @@ pub const FINALIZE: Row = Row {
         // first commit — `T3`'s second sentence, read as `M3, the config` reads it, and
         // the per-task commit set's *"docs + first-commit config"*. Added 2026-10-19, after
         // the review of the task `B7`'s second part (its first finding): the two rows read
-        // one sentence two ways. Whether a pending delta rides a later commit is the rows'
-        // record's §6, entry 19.
+        // one sentence two ways. Whether a pending delta rides a later commit was the rows'
+        // record's §6, entry 19, ruled by the human on 2026-10-19: not unless it is staged.
         Line {
             when: When::FirstCommitOfItsPlace,
             ..line(
@@ -818,23 +818,21 @@ const FINALIZE_CELLS: [Cell; 26] = [
         Listed::Acts,
         None,
     ),
-    // The record's §6, entry 19: the docs say two things of a pending config delta at a
-    // commit that is not the layer's first; until ruled, it may not ride — the cell
-    // `milestone-finalize-a-pending-config-delta` is the same question at the boundary.
-    Cell {
-        marks: &[Mark::Silence(19)],
-        ..finalize(
-            "task-finalize-a-pending-config-delta",
-            FRESH,
-            a_decision!(
-                [],
-                [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
-            ),
-            FINALIZE_THE_DECISION,
-            Listed::Acts,
-            None,
-        )
-    },
+    // The record's §6, entry 19, ruled by the human on 2026-10-19 (option A): a finalize
+    // never carries a change under `.jigc/config` that nobody staged — it names it among
+    // what it left out; the cell `milestone-finalize-a-pending-config-delta` is the same
+    // ruling at the boundary. Red under its key until the product's fix; no mark.
+    finalize(
+        "task-finalize-a-pending-config-delta",
+        FRESH,
+        a_decision!(
+            [],
+            [jigc(&["config", "set", "finalize.fan-out.squash", "true"])]
+        ),
+        FINALIZE_THE_DECISION,
+        Listed::Acts,
+        None,
+    ),
     finalize(
         "task-finalize-an-untracked-file-at-the-created-docs-home",
         FRESH,

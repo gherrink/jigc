@@ -6,6 +6,7 @@
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's record doors (the task `B7`'s second part, its second commit), macOS arm64, load not measured: a hundred and two cells — the eighty-four above, the same lines byte for byte, and the record doors' eighteen, none red.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's fan-out doors (the task `B7`'s second part, its third commit), macOS arm64, load not measured: a hundred and twenty cells — the hundred and two above, the same lines byte for byte, and the fan-out doors' eighteen, none red.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's terminals (the task `B7`'s second part, its fourth commit), macOS arm64, load not measured: a hundred and thirty-two cells — the hundred and twenty above, the same lines byte for byte, and the terminals' twelve, none red.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the seventh of the fixes after the review of the milestone family's part B (the task `B7`), macOS arm64, at a load average of 14 at its start and 12 at its end: the same hundred and thirty-two cells, and ten lines changed — `milestone create`'s and `milestone add-task`'s five that act in a state not their home now come out *written outside its allowance*, the rendered message's file standing under no line (`byte_cell::DELETED_AFTER`), under the key `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`; every other line the same, byte for byte. Fourteen red: the four `uninstall` cells by `U9`, and these ten. The block below is that run's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -44,17 +45,17 @@ task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-
 task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	holds	exit 0
 task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	holds	exit 0
 milestone-create-ship-it-in-bare	jigc milestone create ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-milestone-create-ship-it-in-committed-singletons	jigc milestone create ship-it	committed-singletons	acts	holds	exit 0
-milestone-create-ship-it-in-migrated	jigc milestone create ship-it	migrated	acts	holds	exit 0
-milestone-create-ship-it-in-refs-post-hoc	jigc milestone create ship-it	refs-post-hoc	acts	holds	exit 0
-milestone-create-ship-it-in-chatty-hooks	jigc milestone create ship-it	chatty-hooks	acts	holds	exit 0
-milestone-create-ship-it-in-vendored	jigc milestone create ship-it	vendored	acts	holds	exit 0
+milestone-create-ship-it-in-committed-singletons	jigc milestone create ship-it	committed-singletons	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-migrated	jigc milestone create ship-it	migrated	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-refs-post-hoc	jigc milestone create ship-it	refs-post-hoc	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-chatty-hooks	jigc milestone create ship-it	chatty-hooks	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-vendored	jigc milestone create ship-it	vendored	acts	written outside its allowance	exit 0
 milestone-add-task-do-the-thing-in-bare	jigc milestone add-task ship-it do the thing	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-milestone-add-task-do-the-thing-in-committed-singletons	jigc milestone add-task ship-it do the thing	committed-singletons	acts	holds	exit 0
-milestone-add-task-do-the-thing-in-migrated	jigc milestone add-task ship-it do the thing	migrated	acts	holds	exit 0
-milestone-add-task-do-the-thing-in-refs-post-hoc	jigc milestone add-task ship-it do the thing	refs-post-hoc	acts	holds	exit 0
-milestone-add-task-do-the-thing-in-chatty-hooks	jigc milestone add-task ship-it do the thing	chatty-hooks	acts	holds	exit 0
-milestone-add-task-do-the-thing-in-vendored	jigc milestone add-task ship-it do the thing	vendored	acts	holds	exit 0
+milestone-add-task-do-the-thing-in-committed-singletons	jigc milestone add-task ship-it do the thing	committed-singletons	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-migrated	jigc milestone add-task ship-it do the thing	migrated	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-refs-post-hoc	jigc milestone add-task ship-it do the thing	refs-post-hoc	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-chatty-hooks	jigc milestone add-task ship-it do the thing	chatty-hooks	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-vendored	jigc milestone add-task ship-it do the thing	vendored	acts	written outside its allowance	exit 0
 milestone-add-from-spec-padding-in-bare	jigc milestone add-from-spec ship-it spec:padding	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
 milestone-add-from-spec-padding-in-fresh	jigc milestone add-from-spec ship-it spec:padding	fresh	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
 milestone-add-from-spec-padding-in-committed-singletons	jigc milestone add-from-spec ship-it spec:padding	committed-singletons	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1

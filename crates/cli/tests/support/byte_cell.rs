@@ -200,6 +200,12 @@ pub struct Manifest {
     pub held: BTreeSet<String>,
     /// The commits within that reach, by id.
     pub commits: BTreeMap<String, Commit>,
+    /// **The bytes of every regular file a commit within reach changed a path to**, by the
+    /// id of its blob — what a line that merges into a file asks of a commit the command
+    /// made before its last ([`May::MergeInto`]): `add-from-spec`'s *"commits the record
+    /// once per sub-task"*. Added 2026-10-19, after the review of the task `B7`'s second
+    /// part (its tenth finding).
+    pub blobs: BTreeMap<String, Vec<u8>>,
     /// Where each plant's marker stands.
     pub markers: BTreeMap<String, Stands>,
 }
@@ -342,7 +348,12 @@ pub const RE_SEEDED: &str = "<re-seeded>";
 /// before it adds the worktree — *"`provision` (it clears a leftover before `git worktree
 /// add`)"*, the same section — so the place stands for it: only a checkout is reused, and
 /// only a checkout is left untouched. The same review, the same finding: `MP1` read
-/// [`ITS_SUB_TASKS`], so a rewrite inside a live sub-task's worktree held.
+/// [`ITS_SUB_TASKS`], so a rewrite inside a live sub-task's worktree held. **And whose item
+/// the record has not settled** — read so 2026-10-19 under the record's §6, entry 20, open:
+/// no sentence says `provision` skips a sub-task the record has settled, and the one that
+/// names the case narrates it as the defect the abandon's teardown was built against
+/// (*"`milestone provision` will happily re-provision a worktree for a sub-task that was
+/// discarded"*); until it is ruled, the stricter reading, as [`RE_SEEDED`] has it.
 pub const UNPROVISIONED: &str = "<unprovisioned>";
 
 /// **The leading component of a place that stands for the directory the cascade resolves
@@ -432,6 +443,18 @@ pub enum May {
     /// [`When::FirstCommitOfItsPlace`]: the word says what a commit may hold, and the
     /// condition which commit.
     Carried,
+    /// **A checkout populated from the pinned base's tree** — what `git worktree add
+    /// --detach` leaves at a place no checkout stood: a directory made; the checkout's own
+    /// `.git` file at its root, which names its admin directory; and a regular file whose
+    /// path under the checkout and whose bytes are the ones the tree of the base the unit's
+    /// committed record pins holds there, its executable bit with them — *"`git worktree add
+    /// --detach` populates from the pinned base's *tree*"* (`design/team-ready-state.md` →
+    /// *What a fan-out worktree isolates — and what it does not (M45)*). The checkout's root
+    /// is the place's directory: a line of this word names it with [`Where::Under`]. A file
+    /// the base does not hold there, other bytes, a link and anything changed or gone are
+    /// none of it. `MP1`; added 2026-10-19, after the review of the task `B7`'s second part
+    /// (its ninth finding, the sixth fix's left-open): the line read *rebuilt*, any bytes.
+    FromTheBasesTree,
     /// Gone from its place and standing, the same entry, under this directory of the
     /// repository.
     MovedAsideTo(&'static str),
@@ -453,6 +476,29 @@ pub enum May {
 /// A file here is covered by no [`May::Rebuilt`] line, at exit 0 or on a refusal; where
 /// the record moves to, no line of a cache's covers it either.
 pub const NO_CACHE: &[&str] = &[".jigc/state/setup-install-footprint"];
+
+/// **The rendered message's temporary file, by its name — which no line covers where it
+/// stands after the command, made or rewritten**: the record-only commit's
+/// `record-commit-msg.txt` and the finalize's `finalize-message.tmp`, the two names
+/// `engine` declares (`RECORD_COMMIT_MSG_FILE`, `state::FINALIZE_MESSAGE_FILE`), under
+/// `.jigc/`. *"`git commit -F <rendered-message-file>` (a temp file, deleted after)"*
+/// (`design/finalize.md` → *6. Commit*), and the human's ruling of 2026-10-14 on the
+/// record's §6, entry 6: **the file is deleted whether or not the commit landed**. So a
+/// line whose place holds the file — a directory a line lets be rebuilt — lets nothing of
+/// it stand, at exit 0 or on a refusal; the file gone is as the place's line has it.
+/// Added 2026-10-19, after the review of the task `B7`'s second part (its tenth finding):
+/// the milestone's area is the record doors' lines whole, so the file a landed record
+/// commit left stood unseen at exit 0.
+pub const DELETED_AFTER: &[&str] = &["record-commit-msg.txt", "finalize-message.tmp"];
+
+/// Whether `rel`, from the repository's root, is a file [`DELETED_AFTER`] names.
+fn deleted_after(rel: &str) -> bool {
+    rel.starts_with(".jigc/")
+        && rel
+            .rsplit('/')
+            .next()
+            .is_some_and(|name| DELETED_AFTER.contains(&name))
+}
 
 /// What a commit the command makes may hold, beside what the row's lines of the file
 /// layer wrote.
@@ -715,7 +761,11 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     let lands = |may: May| {
         matches!(
             may,
-            May::WriteWhole | May::Rebuilt | May::Invalidated(_) | May::CopyOfAStagedDoc
+            May::WriteWhole
+                | May::Rebuilt
+                | May::Invalidated(_)
+                | May::CopyOfAStagedDoc
+                | May::FromTheBasesTree
         )
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
@@ -1294,7 +1344,8 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
                     .is_some_and(|id| acting.sub_tasks.contains(id) && !acting.settled.contains(id))
                     && acting.nothing_stood(&got_so_far(&got, at))
             } else if want.starts_with(UNPROVISIONED) {
-                id_with(UNPROVISIONED).is_some_and(|id| acting.sub_tasks.contains(id))
+                id_with(UNPROVISIONED)
+                    .is_some_and(|id| acting.sub_tasks.contains(id) && !acting.settled.contains(id))
                     && !acting.checked_out.contains(&got_so_far(&got, at))
             } else {
                 acting.stands_for(want, part)
@@ -1441,6 +1492,11 @@ impl<'a> Tally<'a> {
                 {
                     return false;
                 }
+                if matches!(diff.after, Some(Entry::File { .. }))
+                    && in_repo(diff.path).is_some_and(deleted_after)
+                {
+                    return false;
+                }
                 match (may, diff.before, diff.after) {
                     (May::WriteWhole, _, Some(Entry::File { .. })) => true,
                     (May::WriteWhole, _, _) => matches!(place, Where::Under(_)),
@@ -1464,6 +1520,10 @@ impl<'a> Tally<'a> {
                     (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
                         in_repo(diff.path) == Some(stamped)
                     }
+                    (May::FromTheBasesTree, None, Some(Entry::Dir(_))) => true,
+                    (May::FromTheBasesTree, None, Some(Entry::File { mode, blob, .. })) => {
+                        self.of_the_bases_tree(place, diff.path, *mode, blob)
+                    }
                     (May::CopyOfAStagedDoc, _, Some(is)) => {
                         is.blob().is_some_and(|blob| self.staged.contains(blob))
                     }
@@ -1478,6 +1538,38 @@ impl<'a> Tally<'a> {
                 }
             })
             .map(|(at, _)| at)
+    }
+
+    /// **Whether the regular file at `path`, from the sandbox's root, is one the pinned
+    /// base's tree holds** at its path under the checkout `place` names — the directory a
+    /// [`Where::Under`] place stands for — with these bytes and this executable bit; or the
+    /// checkout's own `.git` file at its root ([`May::FromTheBasesTree`]).
+    fn of_the_bases_tree(&self, place: Where, path: &str, mode: u32, blob: &str) -> bool {
+        let (Where::Under(pattern), Some(rel)) = (place, in_repo(path)) else {
+            return false;
+        };
+        let Some(pattern) = self.acting.rooted(pattern) else {
+            return false;
+        };
+        let depth = pattern.split('/').count();
+        let inner: Vec<&str> = rel.split('/').skip(depth).collect();
+        if inner.is_empty() {
+            return false;
+        }
+        let inner = inner.join("/");
+        if inner == ".git" {
+            return true;
+        }
+        let Some(base) = self.acting.base.as_deref().filter(|base| !base.is_empty()) else {
+            return false;
+        };
+        tree_of(self.seen.before, base)
+            .get(&inner)
+            .is_some_and(|(held, id)| {
+                held & 0o170_000 == 0o100_000
+                    && id == blob
+                    && (held & 0o111 != 0) == (mode & 0o111 != 0)
+            })
     }
 
     /// The line in force that lets the commit hold `entry` at `path`, from the
@@ -1513,6 +1605,39 @@ impl<'a> Tally<'a> {
                             && after.and_then(Entry::blob) == Some(blob.as_str())
                     }
                 }
+            })
+            .map(|(at, _)| at)
+    }
+
+    /// **The line in force that lets a commit the command made before its last hold
+    /// `blob` at `path`** — from the repository's root — because the line merges into the
+    /// file there and that commit is a step of the merge: every line the working file held
+    /// before the command stands in the blob, in order, and every line of the blob stands
+    /// in the working file after it. `add-from-spec` *"commits the record once per
+    /// sub-task"*, so each commit but the last holds the record partway. The commit's
+    /// bytes are read off [`Manifest::blobs`]; a blob the manifest holds no bytes of is
+    /// none of it.
+    fn merged_on_the_way(&self, path: &str, entry: Option<&(u32, String)>) -> Option<usize> {
+        let (mode, blob) = entry?;
+        if mode & 0o170_000 != 0o100_000 {
+            return None;
+        }
+        let key = format!("{REPO}/{path}");
+        let lines =
+            |bytes: &'a [u8]| -> Vec<&'a [u8]> { bytes.split_inclusive(|b| *b == b'\n').collect() };
+        let midway = lines(self.seen.after.blobs.get(blob)?);
+        let after = self.seen.after.files.get(&key)?.lines()?;
+        let before = match self.seen.before.files.get(&key) {
+            Some(entry) => entry.lines()?,
+            None => Vec::new(),
+        };
+        if !(stand_in(&before, &midway) && stand_in(&midway, &after)) {
+            return None;
+        }
+        self.in_force()
+            .find(|(_, line)| {
+                matches!(line.allows, Allows::Files(place, May::MergeInto)
+                    if self.placed(place, &key))
             })
             .map(|(at, _)| at)
     }
@@ -1971,7 +2096,16 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 }
                 _ => false,
             };
-            if let Some(at) = tally.written_by_a_line(path, entry) {
+            // A commit a newer one the command made changes this path in again is a step
+            // on the way to what the newest holds there.
+            let on_the_way = made[..newest]
+                .iter()
+                .any(|newer| newer.changed.contains_key(path));
+            if let Some(at) = tally.written_by_a_line(path, entry).or_else(|| {
+                on_the_way
+                    .then(|| tally.merged_on_the_way(path, entry))
+                    .flatten()
+            }) {
                 tally.excused[at] += 1;
             } else if as_it_stood {
                 tally.excused[commits.expect("a commit was let in by a line")] += 1;
@@ -2893,6 +3027,7 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
         markers,
         commits: BTreeMap::new(),
         holding: BTreeMap::new(),
+        blobs: BTreeMap::new(),
         lists: 0,
     };
 
@@ -3320,6 +3455,8 @@ struct Reader<'a> {
     commits: BTreeMap<String, Commit>,
     /// Which of the markers each blob of the store holds. A blob does not change either.
     holding: BTreeMap<String, Vec<bool>>,
+    /// The bytes of each blob a commit changed a regular file to, read once a cell.
+    blobs: BTreeMap<String, Vec<u8>>,
     /// How many lists the reader has handed a child as its stdin.
     lists: usize,
 }
@@ -3686,6 +3823,44 @@ impl Reader<'_> {
                 manifest
                     .commits
                     .insert(id.to_string(), self.commits[id].clone());
+            }
+
+            // The bytes of every regular file a commit within reach changed a path to.
+            let mut unread: Vec<String> = manifest
+                .commits
+                .values()
+                .flat_map(|commit| commit.changed.values().flatten())
+                .filter(|(mode, _)| mode & 0o170_000 == 0o100_000)
+                .map(|(_, blob)| blob.clone())
+                .filter(|blob| !self.blobs.contains_key(blob))
+                .collect();
+            unread.sort();
+            unread.dedup();
+            if !unread.is_empty() {
+                let list = unread.join("\n") + "\n";
+                let out =
+                    self.asked(&repo, &["cat-file", "--batch"], Some(list.as_bytes()), None)?;
+                let mut rest = &out[..];
+                for id in &unread {
+                    let read = (|| {
+                        let end = rest.iter().position(|byte| *byte == b'\n')?;
+                        let size: usize = text(&rest[..end]).rsplit(' ').next()?.parse().ok()?;
+                        let body = rest.get(end + 1..end + 1 + size)?;
+                        rest = rest.get(end + 2 + size..).unwrap_or_default();
+                        Some(body.to_vec())
+                    })();
+                    let Some(body) = read else {
+                        return Err(format!("git handed the reader no blob `{id}`"));
+                    };
+                    self.blobs.insert(id.clone(), body);
+                }
+            }
+            for commit in manifest.commits.values() {
+                for (_, blob) in commit.changed.values().flatten() {
+                    if let Some(bytes) = self.blobs.get(blob) {
+                        manifest.blobs.insert(blob.clone(), bytes.clone());
+                    }
+                }
             }
 
             // Which blobs of the store hold a marker.

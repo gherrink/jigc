@@ -1682,7 +1682,27 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         "MP2",
         &[Prepared::Of(State::Fresh)],
     ),
+    (
+        &["milestone", "execute"],
+        "ME1",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "execute"],
+        "ME2",
+        &[Prepared::Of(State::Fresh)],
+    ),
     (&["milestone", "join"], "C1", &[Prepared::Of(State::Fresh)]),
+    (
+        &["milestone", "finalize"],
+        "M12",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (
+        &["milestone", "finalize"],
+        "C1",
+        &[Prepared::Of(State::Fresh)],
+    ),
     (
         &["milestone", "join"],
         "MJ4, the edge index",
@@ -1903,7 +1923,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "finalize"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["milestone", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
         &["milestone", "finalize"],
@@ -1983,8 +2002,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "execute"], "ME1", NO_CACHE_TO_RE_DERIVE),
-    (&["milestone", "execute"], "ME2", NO_AREA_TO_RE_SEED),
     (&["milestone", "execute"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["milestone", "execute"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (
@@ -2033,11 +2050,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
     ),
     (
-        &["milestone", "finalize"],
-        "M12",
-        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
-    ),
-    (
         &["milestone", "discard"],
         "MD7",
         A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
@@ -2045,7 +2057,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (
         &["milestone", "discard"],
         "MD8",
-        A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS,
+        NO_DISCARD_OVER_AN_ABSENT_AREA,
     ),
     (
         &["milestone", "finalize"],
@@ -2180,18 +2192,26 @@ const A_REFUSAL_THAT_REBUILDS_IT: &str =
 /// What would use a line of the re-seed of the sub-tasks' areas: an area the record names
 /// that is absent before the command.
 const NO_AREA_TO_RE_SEED: &str = "a sub-task's area the committed record names and the workbench lacks — a fresh clone, or the \
-     area taken away by hand — which no cell of the family constructs: before the port";
+     area taken away by hand — which the family's cells construct at `execute` and at the \
+     boundary's refusal alone: at this door, before the port";
 
 /// What would use a line of the re-seed of the milestone's cache: the cache absent, or stale,
 /// before the command.
 const NO_CACHE_TO_RE_DERIVE: &str = "the milestone's cache absent or stale before the command — a fresh clone, or the cache \
-     taken away by hand — which no cell of the family constructs: before the port";
+     taken away by hand — which the family's cells construct at `execute` alone: at this door, \
+     before the port";
 
 /// What would use a line of the re-seed at a terminal — `finalize`'s and `discard`'s, added
 /// after the review of the task `B7`'s second part (its tenth finding).
-const A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS: &str = "the milestone's cache or a sub-task's area absent before the command, which no cell of the \
-     family constructs — and what the re-seed rebuilds there the door's own teardown removes \
-     where it acts, while the line holds on no refusal: before the port";
+const A_TERMINAL_TEARS_DOWN_WHAT_IT_RE_SEEDS: &str = "the milestone's cache absent or stale before the command, which no cell of this door \
+     constructs — and what the re-seed rebuilds there the door's own teardown removes where it \
+     acts, and a refusal's cache is `C3`'s: before the port";
+
+/// What would use `discard`'s line of the re-seed of the sub-tasks' areas, which holds on a
+/// refusal too since the seventh fix after that review.
+const NO_DISCARD_OVER_AN_ABSENT_AREA: &str = "a sub-task's area absent before `discard`, which no cell of the door constructs — where \
+     the door acts its teardown removes the area the re-seed rebuilt, and where it refuses the \
+     area stays, as at the boundary's cell of a refusal: before the port";
 
 /// What would use a line of the config layer a finalize carries, `T3, the config` and
 /// `M3, the config`, each with its ignore file's half: the layer's first commit.
@@ -2953,6 +2973,16 @@ fn commit(manifest: &mut Manifest, id: &str, changed: &[(&str, Option<(u32, &str
             )
         })
         .collect();
+    for (_, entry) in changed.iter() {
+        if let Some((mode, blob)) = entry
+            && mode & 0o170_000 == 0o100_000
+        {
+            let bytes = blob.strip_prefix("blob:").unwrap_or_default();
+            manifest
+                .blobs
+                .insert(blob.clone(), bytes.as_bytes().to_vec());
+        }
+    }
     for id in changed
         .iter()
         .filter_map(|(_, entry)| Some(entry.as_ref()?.1.clone()))
@@ -5249,6 +5279,15 @@ fn a_place_a_command_mints_is_one_nothing_stood_at() {
 /// where nothing stood, or into a leftover directory no checkout is (*"it clears a
 /// leftover before `git worktree add`"*), holds; a file of a live checkout's rewritten does
 /// not.
+///
+/// **And three more, by the seventh fix after that review.** A door that refuses at its own
+/// guard after the re-seed leaves the area it made where none stood — *"all pass through
+/// the reseed before their own guards"* — and that refusal changed nothing it may not; a
+/// standing area added to on a refusal did. A worktree `provision` makes holds the pinned
+/// base's tree and its own `.git` file and nothing else — *"populates from the pinned
+/// base's *tree*"* — so a file the base does not hold there, or other bytes than the
+/// base's, is written outside the allowance. And a worktree for a sub-task the record has
+/// settled is no place of the line — the stricter reading of the record's §6, entry 20.
 #[test]
 fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
     const DOORS: [Row; 7] = [
@@ -5345,6 +5384,30 @@ fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
                 "`jigc {leaf}`, {what}: {class}, {why:#?}"
             );
         }
+        // Refused at the door's own guard, after the re-seed.
+        let refused = |after: &Manifest| {
+            Cell {
+                argv: &argv,
+                code: Some(3),
+                listed: Listed::Refuses,
+                ..Cell::of(row, &before, after)
+            }
+            .came_to()
+        };
+        let (class, why) = refused(&an_area("s2"));
+        assert_eq!(
+            class,
+            Classification::RefusesNothingChanged,
+            "`jigc {leaf}` refused, a live sub-task's area where none stood: {why:#?}"
+        );
+        let (class, why) = refused(&then(&before, |m| {
+            put(m, &format!("{S1}/intent"), "an intent\n")
+        }));
+        assert!(
+            class == Classification::RefusedAndChanged
+                && why.iter().any(|why| why.contains("s1/intent")),
+            "`jigc {leaf}` refused, a standing sub-task's area added to: {class}, {why:#?}"
+        );
     }
 
     let argv: &[&str] = &["milestone", "provision", "m"];
@@ -5390,6 +5453,246 @@ fn a_re_seed_rebuilds_an_area_only_where_none_stood() {
         let (class, why) = came(&provisioned, after);
         assert!(
             class == Classification::WrittenOutside && why.iter().any(|why| why.contains(says)),
+            "{what}: {class}, {why:#?}"
+        );
+    }
+
+    // What the worktree holds: the pinned base's tree, and its own `.git` file.
+    let (class, why) = came(
+        &before,
+        &then(&provisioned, |m| {
+            put(m, &format!("{S2}/.git"), "gitdir: the admin directory\n")
+        }),
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a worktree with its own `.git` file: {why:#?}"
+    );
+    for (what, after, says) in [
+        (
+            "a file the pinned base's tree does not hold",
+            then(&provisioned, |m| {
+                put(m, &format!("{S2}/extra.txt"), "not the base's\n")
+            }),
+            "s2/extra.txt",
+        ),
+        (
+            "a file of the base's, with other bytes",
+            then(&provisioned, |m| {
+                put(m, &format!("{S2}/{README}"), "not the base's readme\n")
+            }),
+            "s2/README.md",
+        ),
+    ] {
+        let (class, why) = came(&before, &after);
+        assert!(
+            class == Classification::WrittenOutside && why.iter().any(|why| why.contains(says)),
+            "a new worktree, {what}: {class}, {why:#?}"
+        );
+    }
+    let (class, why) = came(
+        &before,
+        &then(&before, |m| {
+            worktree_added(m, "repo/.jigc/worktrees/s3", "s3")
+        }),
+    );
+    assert!(
+        class == Classification::GitMoved && why.iter().any(|why| why.contains("`s3`")),
+        "a worktree for a sub-task the record has settled: {class}, {why:#?}"
+    );
+}
+
+/// **The rendered message's temporary file stands under no line** ([`byte_cell::DELETED_AFTER`])
+/// — *"`git commit -F <rendered-message-file>` (a temp file, deleted after)"*
+/// (`design/finalize.md` → *6. Commit*), and the human's ruling of 2026-10-14 on the
+/// record's §6, entry 6: deleted whether or not the commit landed. A line that lets a
+/// milestone's or a task's area be rebuilt covers a cache made there and not the message
+/// file, made or rewritten, at exit 0 or on a refusal; the file gone is as the place's line
+/// has it; and a file of that name outside `.jigc/` is no file of jigc's. The review of the
+/// task `B7`'s second part, its tenth finding: the record doors' areas are lines whole, so
+/// the file a landed record commit left stood unseen at exit 0.
+#[test]
+fn the_rendered_messages_file_stands_under_no_line() {
+    const AREAS: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "A1",
+                Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Rebuilt),
+            ),
+            line(
+                "A2",
+                Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Removed),
+            ),
+            line("A3", Allows::Files(Where::Under("docs"), May::WriteWhole)),
+            Line {
+                when: When::Refused,
+                on_refusal: true,
+                ..line(
+                    "A4",
+                    Allows::Files(Where::Under(".jigc/milestones/<unit>"), May::Rebuilt),
+                )
+            },
+        ])
+    };
+    const AREA: &str = "repo/.jigc/milestones/m";
+    const MESSAGE: &str = "repo/.jigc/milestones/m/record-commit-msg.txt";
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/milestones");
+        dir(m, AREA);
+        dir(m, "repo/.jigc/tasks");
+        dir(m, "repo/.jigc/tasks/m");
+        dir(m, "repo/docs");
+    });
+    // The state before the lead-ins is `before`: a message file that stands before the
+    // command is a lead-in's, the product's own.
+    let came = |at: &Manifest, after: &Manifest, code: i32| {
+        Cell {
+            base: Some(&before),
+            argv: &["probe", "m"],
+            code: Some(code),
+            listed: if code == 0 {
+                Listed::Acts
+            } else {
+                Listed::Refuses
+            },
+            ..Cell::of(AREAS, at, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(
+        &before,
+        &then(&before, |m| put(m, &format!("{AREA}/tasks.json"), "[]\n")),
+        0,
+    );
+    assert_eq!(class, Classification::Holds, "a cache made: {why:#?}");
+    let (class, why) = came(
+        &before,
+        &then(&before, |m| {
+            put(m, "repo/docs/record-commit-msg.txt", "a doc of that name\n")
+        }),
+        0,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a file of that name outside `.jigc/`: {why:#?}"
+    );
+    let left = then(&before, |m| put(m, MESSAGE, "chore: a message\n"));
+    const TASKS_MESSAGE: &str = "repo/.jigc/tasks/m/finalize-message.tmp";
+    let (class, why) = came(
+        &then(&before, |m| put(m, TASKS_MESSAGE, "a message\n")),
+        &before,
+        0,
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the finalize's message file gone under a line that removes its area: {why:#?}"
+    );
+    for (what, at, after, code, expected) in [
+        (
+            "made at exit 0",
+            &before,
+            &left,
+            0,
+            Classification::WrittenOutside,
+        ),
+        (
+            "rewritten at exit 0",
+            &left,
+            &then(&left, |m| put(m, MESSAGE, "chore: another message\n")),
+            0,
+            Classification::WrittenOutside,
+        ),
+        (
+            "made on a refusal",
+            &before,
+            &left,
+            1,
+            Classification::RefusedAndChanged,
+        ),
+    ] {
+        let (class, why) = came(at, after, code);
+        assert!(
+            class == expected && why.iter().any(|why| why.contains("record-commit-msg.txt")),
+            "the record's message file {what}: {class}, {why:#?}"
+        );
+    }
+    let (class, why) = came(
+        &before,
+        &then(&before, |m| {
+            put(m, &format!("{AREA}/finalize-message.tmp"), "a message\n")
+        }),
+        0,
+    );
+    assert!(
+        class == Classification::WrittenOutside
+            && why.iter().any(|why| why.contains("finalize-message.tmp")),
+        "the finalize's message file made in a milestone's area: {class}, {why:#?}"
+    );
+}
+
+/// **A line that merges into a file lets each commit the command made on the way hold the
+/// file partway** — *"It mints one sub-task per spec criterion and commits the record once
+/// per sub-task"* (`design/team-ready-state.md` → *The commit model — path-scoped commit at
+/// each milestone op*): a commit a newer one of the command's changes the same path in
+/// again holds there what keeps every line the file held before the command and has no
+/// line the file does not hold after it ([`Manifest::blobs`]); one that drops a line of
+/// before, or holds a line the file does not end with, is git's state moved, and so is the
+/// newest commit holding the file partway. The review of the task `B7`'s second part, its
+/// tenth finding: a spec of more than one criterion was a frame bound.
+#[test]
+fn a_merge_committed_step_by_step_holds_each_step() {
+    const MERGES: Row = row(&[
+        line(
+            "G1",
+            Allows::Files(Where::Path("docs/r.md"), May::MergeInto),
+        ),
+        line("G2", Allows::Commit(Holding::OnlyTheLines)),
+    ]);
+    const RECORD: &str = "docs/r.md";
+    let at = format!("{REPO}/{RECORD}");
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/docs");
+        put(m, &at, "a\n");
+        commit(m, "c1", &[(RECORD, Some((0o100_644, "a\n")))]);
+    });
+    let stepped = |first: &str, second: Option<&str>| {
+        then(&before, |m| {
+            put(m, &at, "a\nb\nc\n");
+            commit(m, "k1", &[(RECORD, Some((0o100_644, first)))]);
+            if let Some(second) = second {
+                commit(m, "k2", &[(RECORD, Some((0o100_644, second)))]);
+            }
+        })
+    };
+    let came = |after: &Manifest| Cell::of(MERGES, &before, after).came_to();
+    let (class, why) = came(&stepped("a\nb\n", Some("a\nb\nc\n")));
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "two commits, the first partway: {why:#?}"
+    );
+    for (what, after) in [
+        (
+            "the first drops a line of before",
+            stepped("b\n", Some("a\nb\nc\n")),
+        ),
+        (
+            "the first holds a line the file does not end with",
+            stepped("a\nx\n", Some("a\nb\nc\n")),
+        ),
+        (
+            "the only commit holds the file partway",
+            stepped("a\nb\n", None),
+        ),
+    ] {
+        let (class, why) = came(&after);
+        assert!(
+            class == Classification::GitMoved && why.iter().any(|why| why.contains(RECORD)),
             "{what}: {class}, {why:#?}"
         );
     }
@@ -8461,6 +8764,41 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "milestone-discard-a-hook-that-rejects",
         ],
     ),
+    // The same key at exit 0, since the seventh fix after the review of the task `B7`'s
+    // second part: the rendered message's file stands under no line
+    // (`byte_cell::DELETED_AFTER`), and every record door that lands leaves it in the
+    // milestone's area.
+    (
+        "r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area",
+        Classification::WrittenOutside,
+        &[
+            "milestone-create-a-milestone-the-catalog-names",
+            "milestone-create-ship-it",
+            "milestone-create-a-file-staged-elsewhere",
+            "milestone-create-a-staged-file-whose-name-git-quotes",
+            "milestone-create-a-file-of-the-users-beside-the-baseline",
+            "milestone-add-task-do-the-thing",
+            "milestone-add-task-a-file-of-the-users-in-the-milestones-area",
+            "milestone-add-task-a-file-staged-elsewhere",
+            "milestone-add-task-a-staged-file-whose-name-git-quotes",
+            "milestone-add-task-a-file-of-the-users-beside-the-baseline",
+            "milestone-add-task-a-file-of-the-users-in-a-first-sub-tasks-area",
+            "milestone-add-from-spec-padding",
+            "milestone-add-from-spec-a-spec-of-two-criteria",
+            "milestone-add-from-spec-a-file-of-the-users-in-the-milestones-area",
+            "milestone-add-from-spec-a-file-staged-elsewhere",
+            "milestone-add-from-spec-a-staged-file-whose-name-git-quotes",
+            "milestone-add-from-spec-a-file-of-the-users-beside-the-baseline",
+            "milestone-add-from-spec-a-file-of-the-users-in-a-first-sub-tasks-area",
+        ],
+    ),
+    // A refusal of the boundary that leaves the directory its worktree provisioning made —
+    // the seventh fix's cell of a refusal after the re-seed met it.
+    (
+        "r1-milestone-finalize-refuses-and-leaves-the-worktrees-directory-it-made",
+        Classification::RefusedAndChanged,
+        &["milestone-finalize-a-sub-tasks-area-gone-and-no-work-to-land"],
+    ),
     (
         "r1-milestone-record-doors-refuse-and-leave-the-directories-they-made",
         Classification::RefusedAndChanged,
@@ -8495,7 +8833,8 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree"],
     ),
     // The rows' record's §6, entry 19 — one mechanism at two doors, the stage's `git add
-    // -- .jigc/config .jigc/.gitignore`; each cell marked.
+    // -- .jigc/config .jigc/.gitignore`; ruled by the human on 2026-10-19, a finalize never
+    // carries a change under the layer that nobody staged, so the cells carry no mark.
     (
         "r1-task-finalize-commits-a-change-under-the-config-layer-nobody-staged",
         Classification::GitMoved,
@@ -8931,17 +9270,17 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (525, 393, 132),
+        (530, 398, 132),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
-         demand — and the milestone family's record doors sixty-nine: fifty-one in the gate, \
-         eighteen on demand — its fan-out doors thirty-three: fifteen in the gate, eighteen on \
-         demand — and its terminals sixty-eight, `discard`'s twenty-eight and `milestone \
-         finalize`'s plain spelling's forty: fifty-six in the gate, twelve on demand"
+         demand — and the milestone family's record doors seventy: fifty-two in the gate, \
+         eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
+         demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
+         finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand"
     );
 }
 
