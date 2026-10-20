@@ -714,7 +714,7 @@ pub enum When {
     /// a refusal alone. `jigc migrate-corpus` refuses one doc while *"the run's other docs
     /// still migrate and commit, and the run exits non-zero"* (`design/finalize.md` → *4.
     /// Promote managed docs*), and a refusal that committed nothing is held to change
-    /// nothing — the reading of the rows' record's §6, entry 22, until it is ruled. **On
+    /// nothing — the human's ruling of 2026-10-19 on the rows' record's §6, entry 22. **On
     /// such a refusal, what git tracks changes only as the commit landed it**
     /// ([`Tally::as_it_landed`]): a path the main checkout's `HEAD` held before the command
     /// or after it, or its index did, stands in the working tree and in the index as the
@@ -2617,7 +2617,7 @@ impl<'a> Tally<'a> {
     /// repository's root: every component `dir` names by a unit's word ([`OWN`],
     /// [`ITS_SUB_TASKS`]) that the line's `place` names too stands in `to` for what it
     /// stands for in `from`. A word only `dir` names reads as a place's does; a place that
-    /// names none binds nothing.
+    /// names none binds nothing. **And with its relative path intact** ([`Tally::intact`]).
     fn of_its_unit(&self, place: Where, from: &str, dir: &str, to: &str) -> bool {
         let (Where::Under(pattern) | Where::Path(pattern)) = place else {
             return true;
@@ -2627,7 +2627,7 @@ impl<'a> Tally<'a> {
             return false;
         };
         let source: Vec<&str> = pattern.split('/').collect();
-        let (from, to): (Vec<&str>, Vec<&str>) =
+        let (from_at, to_at): (Vec<&str>, Vec<&str>) =
             (from.split('/').collect(), to.split('/').collect());
         dir.split('/').enumerate().all(|(at, word)| {
             if !word.starts_with('<') {
@@ -2635,9 +2635,92 @@ impl<'a> Tally<'a> {
             }
             match source.iter().position(|named| *named == word) {
                 None => true,
-                Some(left) => from.get(left).is_some_and(|unit| to.get(at) == Some(unit)),
+                Some(left) => from_at
+                    .get(left)
+                    .is_some_and(|unit| to_at.get(at) == Some(unit)),
             }
-        })
+        }) && self.intact(place, &pattern, from, &dir, to)
+    }
+
+    /// **Whether `to` keeps the relative path `from` had in the place it left**, each from the
+    /// repository's root — *"to `.jigc/displaced/<task-id>/` with its relative paths
+    /// intact"* (`design/finalize.md` → *7. Post-commit*), *"`.jigc/displaced/<unit-id>/
+    /// <relative>`"* (`design/storage.md` → *The per-task working area*): the path under
+    /// `dir` is the path `from` had under its place — under a directory, the components
+    /// after the last one of the place that `dir` names too, else after the place's fixed
+    /// head; at one file's place, the parked entry's name and what lies in it
+    /// ([`Tally::parks`], a directory parked whole). **One component may carry `.<n>`**,
+    /// `n` from 2, where the path through the same component without it stands after the
+    /// command — the no-clobber rule of both producers: *"under the first free `<name>.<n>`
+    /// where that name is already taken, so nothing parked is ever replaced"*
+    /// (`design/storage.md` → *Repository layout & state location*, the `displaced/` line;
+    /// the same in `design/reconciliation.md` → *Relocation collisions*), the product's
+    /// `free_displacement_path`. Added 2026-10-20, by the eighth of the fixes after the
+    /// review of the task `B8`, the seventh fix's left-open: a unit's file under its own
+    /// place at another name held.
+    fn intact(&self, place: Where, pattern: &str, from: &str, dir: &str, to: &str) -> bool {
+        let from: Vec<&str> = from.split('/').collect();
+        let to: Vec<&str> = to.split('/').collect();
+        let depth = dir.split('/').count();
+        let Some(moved) = to.get(depth..) else {
+            return false;
+        };
+        // Under a directory, the path below the last component of the place that `dir` names
+        // too — a unit's word, which the arrival carries in `dir` — and else below the
+        // place's fixed head: a component the line's directory does not name travels with
+        // the bytes (`.jigc/tasks/*` aside to `.jigc/displaced` keeps the task's id).
+        let source: Vec<&str> = pattern.split('/').collect();
+        let named: Vec<&str> = dir
+            .split('/')
+            .filter(|word| word.starts_with('<'))
+            .collect();
+        let below = source
+            .iter()
+            .rposition(|word| named.contains(word))
+            .map(|at| at + 1)
+            .unwrap_or_else(|| {
+                source
+                    .iter()
+                    .take_while(|word| !word.starts_with('<') && **word != "*")
+                    .count()
+            });
+        let relative: &[&str] = match place {
+            Where::Under(_) => from.get(below..).unwrap_or_default(),
+            _ => {
+                let Some(parked) = (1..=from.len())
+                    .find(|n| self.parks(place, &format!("{REPO}/{}", from[..*n].join("/"))))
+                else {
+                    return false;
+                };
+                &from[parked - 1..]
+            }
+        };
+        if moved.is_empty() || moved.len() != relative.len() {
+            return false;
+        }
+        let mut renamed = moved
+            .iter()
+            .zip(relative)
+            .enumerate()
+            .filter(|(_, (now, was))| now != was);
+        match (renamed.next(), renamed.next()) {
+            (None, _) => true,
+            (Some((at, (now, was))), None) => {
+                let numbered = now
+                    .strip_prefix(*was)
+                    .and_then(|rest| rest.strip_prefix('.'))
+                    .is_some_and(|n| !n.starts_with('0') && n.parse::<u32>().is_ok_and(|n| n >= 2));
+                let mut taken: Vec<&str> = to[..depth + at].to_vec();
+                taken.push(was);
+                numbered
+                    && self
+                        .seen
+                        .after
+                        .files
+                        .contains_key(&format!("{REPO}/{}", taken.join("/")))
+            }
+            _ => false,
+        }
     }
 
     /// **Whether `path`, from the sandbox's root, is where a line that moves aside parks

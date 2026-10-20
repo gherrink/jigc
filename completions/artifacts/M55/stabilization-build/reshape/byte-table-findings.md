@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-20, by the eighth of the fixes after the review of the movers family's task (`B8`), its first commit, which records the human's rulings of 2026-10-19 on the rows' record's §6, entries 21 and 22: §24's hook key is a finding of the product under the ruling on entry 22 — a commit a hook rejects rolls back — its doc change folded into it, the cell unmarked; §24 gains `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged`, the ruling on entry 21's product and doc change, which no cell can see, its repro run as printed on both binaries; and §25's `config set` key over a doc it strands holds a third cell, a file in the place of the decisions' directory, relisted as refusing (the fifth fix's left-open).*
+
 *Changed 2026-10-19, with the fourth commit of the movers family's task (`B8`), which brings the cells of its movers: §25, `relocate`'s twenty-three cells and `config set`'s thirty-four, twenty red under eight keys, each saying which of the doc and the code it judges wrong; one of them marked with the rows' record's §6, entry 23, a question of two docs; §14's lead for `relocate`'s store door answered.*
 
 *Changed 2026-10-19, with the third commit of the movers family's task (`B8`), which brings the cells of its doors that commit: §24, `rename`'s thirty-one cells, none red, and `migrate-corpus`'s thirty-nine, seventeen red under four keys — the same on both binaries, each key saying which of the doc and the code it judges wrong; §14's two leads for `B8` answered at these doors.*
@@ -1155,10 +1157,11 @@ git rev-list --all | while read c; do git grep -q 'staged by its user' $c -- && 
 
 ### `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged`
 
-- *The cell.* `migrate-corpus-a-hook-that-rejects`, marked with the rows' record's §6, entry 22.
+- *The cell.* `migrate-corpus-a-hook-that-rejects`, marked with the rows' record's §6, entry 22, until the human ruled it on 2026-10-19.
 - *What it came to.* **Refused, and changed what a refusal may not**: exit 1, *"`git commit` was rejected (no commit was made)"*, and the migrated decision left written and staged.
 - *Held against.* The reading until entry 22 is ruled — a refusal that committed nothing changes nothing — beside the declared bound of `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*, *"the refused run's staged residue is **stated** by the door's rejection frame, not removed"*, the other side of the entry.
 - *Which is wrong, and why.* **The doc, and the code that follows it.** A bound a builder declared is not a ruling: the human's ruling on `setup` (*every refusal leaves the repository as it was*) and `rename`'s restore on any pre-commit failure say the opposite at the doors beside it, and a refusal that leaves the index changed surprises a user who reads *rejected*. *Robust*: roll back what the run wrote; the re-run migrates again. The human's to rule (entry 22).
+- *Ruled 2026-10-19* — the human's, on the rows' record's §6, entry 22, option A: **a `migrate-corpus` whose commit a hook rejects rolls back — every migrated doc restored, nothing left staged, the repository as it was — and the refusal names the hook's output** (to inspect, re-run with `--no-commit`, which by the ruling on entry 21 stages exactly the migrated paths). The cell loses its mark and stays *refused, and changed what a refusal may not* under this key, **a finding of the product** — and its doc change folds into it, one finding: the declared bound in `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)*, its echo in `design/finalize.md` → *6. Commit* (the door's state-truth clause, *"`migrate-corpus` leaves the migrated bytes written and staged"*), and the second clause `DECISIONS.md` builds on it (*2026-09-14 — M51 Increment 2 / T5*), which a rollback makes untrue. *Why*: `CLAUDE.md`'s *writes are transactional*, the human's ruling on `setup`'s refusals, and `rename`'s restore.
 
 ```zsh
 # from the repository's root; BIN the binary under test, by an absolute path
@@ -1172,10 +1175,29 @@ $JIGC migrate-corpus > /dev/null 2>&1; echo "exit=$?"                     # exit
 git status --porcelain                                                    # M  docs/decisions/one-way.md
 ```
 
+### `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged`
+
+*Recorded 2026-10-20, by the eighth of the fixes after the review of `B8`, for the human's ruling of 2026-10-19 on the rows' record's §6, entry 21, option A. For the stabilization run's ledger: a product change and a doc change, one finding. Held by no cell.*
+
+- *What happens.* `jigc migrate-corpus --no-commit` writes the migration and stages nothing — *"written but NOT committed (`--no-commit`) — the migrated paths are on disk and unstaged; stage and commit them yourself"* — so a relocation is an untracked file beside an unstaged deletion. The same on both binaries.
+- *The ruling.* **`--no-commit` stages exactly the paths the migration touched — both halves of a move — and commits nothing.** `design/write-commands.md` → *`jigc migrate-corpus` — the commit boundary and its two opt-outs (M42)* is right (*"leaves the changes staged for the operator to commit"*); `design/corpus-migration.md` → *The commit boundary — the verb lands its own migration (M42)* (*"leave the tree exactly as the verb leaves it today"*), the guide (`crates/cli/guides/MIGRATING.md`, item 4: *"keeps the writes in the working tree instead"*) and the product are wrong, and the ack's words with them.
+- *Why no cell holds it.* A line lets a write happen and never demands one: `MG4` lets the spelling stage what the lines wrote, so a fixed product holds, and the product that stages nothing holds as well. What should have been staged is a *must*, and a manifest holds what changed — the class of §23's knob left unstaged.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs/decisions
+printf -- '---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n' > docs/decisions/one-way.md
+git add docs && git commit -qm "a decision below its version"
+$JIGC migrate-corpus --no-commit > /dev/null; echo "exit=$?"            # exit=0
+git status --porcelain -- docs                                          #  M docs/decisions/one-way.md — unstaged
+```
+
 ### What the other cells show
 
 - **`rename`, thirty-one cells, none red.** The base cell moves the decision and repoints the doc that cites it in one commit; the retitle in place rewrites the `# ` line; with the edge index built first (§15's lead for `B8`, `index::invalidate`), the rename takes the index's file away (`RN5`, *invalidated*) and holds. Every plant at the decision's home, at the citing doc's, or staged elsewhere is refused before a write — `rename.dirty-tree`, or `store.home-not-regular-file` at a link or a directory in the decision's place, with the store door's *"nothing was written through …"* (§14), or `store.not-found` where a file stands in the place of the decisions' directory — and a hook that rejects the commit is restored: **each refuses having changed nothing.** A file of the user's under the baseline or the index stays. In every other prepared state the leaf refuses, nothing changed.
-- **`migrate-corpus`, the twenty-two that hold.** The decision migrated where it stands, the changelog from its old home to `CHANGELOG.md`, and a decision a task landed with its baseline flipped (`MG2`) — each one commit; a file of the user's in a doc's place (*"a file it calls foreign"*) or in the place of its directory, and what is staged elsewhere or under a quoted name, kept out. `--no-commit` leaves the migration unstaged — marked, the rows' record's §6, entry 21. Under `--dry-run` the header *"dry run — nothing written"* and the tail *"nothing was written"* are true at each of the spelling's cells (§14). In `bare` the leaf refuses; in the other five prepared states it finds nothing below its version.
+- **`migrate-corpus`, the twenty-two that hold.** The decision migrated where it stands, the changelog from its old home to `CHANGELOG.md`, and a decision a task landed with its baseline flipped (`MG2`) — each one commit; a file of the user's in a doc's place (*"a file it calls foreign"*) or in the place of its directory, and what is staged elsewhere or under a quoted name, kept out. `--no-commit` leaves the migration unstaged — marked, the rows' record's §6, entry 21, until the human ruled it on 2026-10-19 (the key above); it holds under `MG4`, which lets the spelling stage and does not demand it. Under `--dry-run` the header *"dry run — nothing written"* and the tail *"nothing was written"* are true at each of the spelling's cells (§14). In `bare` the leaf refuses; in the other five prepared states it finds nothing below its version.
 
 ### Seen, and held by no cell
 
@@ -1273,7 +1295,7 @@ cat mine.txt                                                                  # 
 
 ### `r1-config-set-re-points-past-a-link-to-nothing-or-a-directory-at-a-doc-it-strands`
 
-- *The cells.* `config-set-a-link-to-nothing-in-the-decisions-place`, `config-set-a-directory-in-the-decisions-place`.
+- *The cells.* `config-set-a-link-to-nothing-in-the-decisions-place`, `config-set-a-directory-in-the-decisions-place`, and — since the eighth of the fixes after the review of `B8`, the fifth fix's left-open — `config-set-a-file-in-the-place-of-the-decisions-directory`, which had been listed as acting and held while the re-point stranded the decision the same way; it is listed refusing, naming the doc, as its `placement-root` twin is, which refuses whole on both binaries.
 - *What they came to.* **Not the listed outcome**: exit 0, *"relocating 1 committed doc(s) stranded by the `docs-root` re-point"* — and no move follows; the knob is set, and the committed decision stays at its old home, stranded, named nowhere.
 - *Held against.* *"A relocation lands a regular file or refuses, keyed at the source"* (`design/finalize.md`), and `rename`'s and `relocate`'s cells, which refuse the same plants.
 - *Which is wrong, and why.* **The code.** *Robust*: refuse the re-point, naming the entry — the knob unchanged, as a link to a file there is refused today.

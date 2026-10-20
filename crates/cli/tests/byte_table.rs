@@ -1938,6 +1938,7 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["rename"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["migrate-corpus"], "MG4", STAGED_UNDER_ANOTHER_LINE),
     (&["migrate-corpus"], "MG5", A_DRY_RUN_WRITES_NOTHING),
     (&["relocate"], "RL2", STAGED_UNDER_ANOTHER_LINE),
     (&["relocate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
@@ -3676,6 +3677,30 @@ fn a_file_moved_aside_lands_under_its_units_place() {
             .came_to();
             assert_eq!(class, want, "{case}, moved to `{to}`: {why:#?}");
         }
+        // **With its relative path intact** (the seventh fix's left-open, red first: each red
+        // case came out *holds*) — *"to `.jigc/displaced/<task-id>/` with its relative paths
+        // intact"*: under its own place at another name it is written outside; at its name
+        // with a `.<n>` beside it, where nothing stood at the name, the same; where an earlier
+        // displacement stood at the name — the product's no-clobber rule,
+        // `free_displacement_path` — it holds.
+        let (dir_of, _) = own.rsplit_once('/').expect("a file");
+        let renamed = format!("{dir_of}/other.txt");
+        let suffixed = format!("{own}.2");
+        let earlier = then(&before, |m| written(m, own, "an earlier displacement\n"));
+        for (before, to, want) in [
+            (&before, renamed.as_str(), Classification::WrittenOutside),
+            (&before, suffixed.as_str(), Classification::WrittenOutside),
+            (&earlier, suffixed.as_str(), Classification::Holds),
+        ] {
+            let after = moved_from(before, &area, to);
+            let (class, why) = Cell {
+                planted,
+                argv,
+                ..Cell::of(*row, before, &after)
+            }
+            .came_to();
+            assert_eq!(class, want, "{case}, moved to `{to}`: {why:#?}");
+        }
     }
 }
 
@@ -4182,6 +4207,53 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     );
     let (class, why) = over(&landed);
     assert_eq!(class, Classification::Lost, "the squatter taken: {why:#?}");
+    // Parked by its name (the seventh fix's left-open, red first: each red case came out
+    // *holds*): under another name it is written outside; at its name with a `.<n>` beside
+    // it, where nothing stood at the name, the same; where an earlier parking stood at the
+    // name — the no-clobber rule — it holds.
+    let earlier = then(&squatted, |m| {
+        written(m, ".jigc/displaced/cache-benchmarks.md", "parked before\n");
+    });
+    for (case, before, to, want) in [
+        (
+            "under another name",
+            &squatted,
+            ".jigc/displaced/other.md",
+            Classification::WrittenOutside,
+        ),
+        (
+            "beside a name nothing held",
+            &squatted,
+            ".jigc/displaced/cache-benchmarks.md.2",
+            Classification::WrittenOutside,
+        ),
+        (
+            "beside an earlier parking",
+            &earlier,
+            ".jigc/displaced/cache-benchmarks.md.2",
+            Classification::Holds,
+        ),
+    ] {
+        let after = then(before, |m| {
+            git_mv(
+                m,
+                "docs/legacy-notes/cache-benchmarks.md",
+                "docs/notes/cache-benchmarks.md",
+                NOTE,
+            );
+            written(m, to, "the user's own notes\n");
+        });
+        let (class, why) = Cell {
+            argv,
+            planted: &[(
+                "repo/docs/notes/cache-benchmarks.md",
+                "the user's own notes",
+            )],
+            ..Cell::of(movers::RELOCATE, before, &after)
+        }
+        .came_to();
+        assert_eq!(class, want, "the squatter parked {case}: {why:#?}");
+    }
     // A directory of the user's at the destination, a file of theirs in it: parked whole,
     // the file with it, the move holds (the task `B8`'s fourth commit, red first: the file
     // came out *written outside its allowance*).
@@ -4585,7 +4657,8 @@ fn a_migrated_doc_keeps_its_prose() {
     );
     // A refusal: one doc refused while another was migrated and committed holds — the
     // run's other docs still migrate and commit; a refusal that committed nothing and
-    // leaves the migration written and staged is red (the rows' record's §6, entry 22).
+    // leaves the migration written and staged is red (the rows' record's §6, entry 22, ruled
+    // by the human on 2026-10-19: such a commit rolls back).
     let refused = |after: &Manifest| {
         Cell {
             argv: &["migrate-corpus"],
@@ -4677,6 +4750,36 @@ fn a_migrated_doc_keeps_its_prose() {
     assert!(
         class.is_red(),
         "a dry run that writes: came out {class}, {why:#?}"
+    );
+    // Under `--no-commit` the migration is written and staged, and nothing is committed — the
+    // human's ruling of 2026-10-19 on the rows' record's §6, entry 21: *"stages exactly the
+    // paths the migration touched — both halves of a move — and commits nothing"* (`MG4`,
+    // red first: the staged migration came out *git's state moved*, no line staging it).
+    // Written and left unstaged, as the product does, it holds too: a line lets a write
+    // happen, and does not demand it.
+    let unstaged = then(&before, |m| {
+        written(m, "docs/decisions/one-way.md", V2);
+    });
+    let staged_too = then(&unstaged, |m| {
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/decisions/one-way.md".to_string(), staged(V2));
+    });
+    for (case, after, want) in [
+        ("staged", &staged_too, Classification::Holds),
+        ("unstaged", &unstaged, Classification::Holds),
+    ] {
+        let (class, why) = came(&before, after, Some("--no-commit"));
+        assert_eq!(class, want, "`--no-commit`, the migration {case}: {why:#?}");
+    }
+    let (class, why) = came(
+        &before,
+        &migrated("docs/decisions/one-way.md", V2),
+        Some("--no-commit"),
+    );
+    assert!(
+        class.is_red(),
+        "`--no-commit` that commits: came out {class}, {why:#?}"
     );
 
     // The v1 changelog, at its earlier home.
@@ -7745,8 +7848,8 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
         ],
     );
     // A spelling that only takes a line out of force — a flag whose doc promises fewer
-    // writes, `migrate-corpus --no-commit` under the reading until its question is ruled —
-    // stands on the line it replaces.
+    // writes, as `migrate-corpus --no-commit` was until the human's ruling on its question
+    // gave it a staging line of its own — stands on the line it replaces.
     const TAKES_ONE_AWAY: Row = Row {
         spellings: &[byte_cell::Spelling {
             name: "no-commit",
@@ -10542,7 +10645,8 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "migrate-corpus-a-change-staged-at-the-old-changelog",
         ],
     ),
-    // The rows' record's §6, entry 22 — the cell marked.
+    // The rows' record's §6, entry 22, ruled by the human on 2026-10-19: the commit a hook
+    // rejects rolls back — a finding of the product.
     (
         "r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged",
         Classification::RefusedAndChanged,
@@ -10602,6 +10706,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "config-set-a-link-to-nothing-in-the-decisions-place",
             "config-set-a-directory-in-the-decisions-place",
+            // A file in the place of the decisions' directory strands the decision the same
+            // way: the fifth of the fixes after the review of `B8`, its left-open; relisted
+            // by the eighth, as the `placement-root` twin is.
+            "config-set-a-file-in-the-place-of-the-decisions-directory",
         ],
     ),
     (

@@ -10,7 +10,8 @@
 //! **What of the record is no line.** `RN6`, `RL5` and `CS6` are where *on a refusal: no*
 //! comes from, and `RN7` names what `rename` refuses before its transaction. **`MG4` is a
 //! second spelling**, `--no-commit`, and `MG5` a third, `--dry-run`: each a flag whose doc
-//! promises fewer writes (the plan's §2), which a cell names.
+//! promises fewer writes (the plan's §2), which a cell names — and each a line of its
+//! spelling, `MG4` the staging the human's ruling on the record's §6, entry 21 gives it.
 
 use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
@@ -21,12 +22,15 @@ use crate::support::byte_cell::{
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
-/// A line that holds where the command acted, whenever it did.
+/// A line that holds where the command acted, whenever it did. (Its condition was *it
+/// committed* until the eighth of the fixes after the review of `B8`, its R9: the same
+/// reading with *on a refusal: no*, and a condition that belongs to `migrate-corpus`'s
+/// lines that hold on a refusal, [`holds_on_a_refusal`].)
 const fn line(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Line {
     Line {
         id,
         allows,
-        when: When::ItCommitted,
+        when: When::Always,
         on_refusal: false,
         quotes,
         spelling: None,
@@ -253,7 +257,8 @@ const ONE_DOC_REFUSED: Quote = Quote {
 
 /// A line of `migrate-corpus` that holds where the command refused having committed the
 /// run's other docs — MG1's second sentence; a refusal that committed nothing changes
-/// nothing, the reading of the record's §6, entry 22, until it is ruled.
+/// nothing — the reading of the record's §6, entry 22, which the human ruled on 2026-10-19:
+/// a commit a hook rejects rolls back.
 const fn holds_on_a_refusal(line: Line) -> Line {
     Line {
         on_refusal: true,
@@ -264,9 +269,10 @@ const fn holds_on_a_refusal(line: Line) -> Line {
 
 /// **`jigc migrate-corpus`** — the record's §4c. It names no unit; its home is `fresh`, with
 /// the leads that commit a doc below its doctype's current schema version. **Two
-/// spellings**: `--no-commit`, which takes `MG3` out of force — the reading until the
-/// record's §6, entry 21 is ruled, under which no line of its own stages anything — and
-/// `--dry-run`, which takes every line that writes out of force and reads the corpus.
+/// spellings**: `--no-commit`, which takes `MG3` out of force and stages what the lines
+/// wrote (`MG4`) — the human's ruling of 2026-10-19 on the record's §6, entry 21; until it,
+/// no line of its own staged anything — and `--dry-run`, which takes every line that writes
+/// out of force and reads the corpus.
 pub const MIGRATE_CORPUS: Row = Row {
     leaf: &["migrate-corpus"],
     unit: Unit::Nothing,
@@ -331,6 +337,21 @@ pub const MIGRATE_CORPUS: Row = Row {
                 ONE_DOC_REFUSED,
             ],
         )),
+        // The human's ruling of 2026-10-19 on the record's §6, entry 21: `--no-commit` stages
+        // exactly the paths the migration touched, both halves of a move, and commits
+        // nothing — the sentence of `design/write-commands.md`, which the ruling found right.
+        Line {
+            spelling: Some("--no-commit"),
+            ..line(
+                "MG4",
+                Allows::Staged,
+                &[Quote {
+                    doc: "design/write-commands.md",
+                    heading: MIGRATE_CORPUS_SECTION,
+                    words: "**`--no-commit`** performs the migration and leaves the changes staged for the operator to commit",
+                }],
+            )
+        },
         Line {
             spelling: Some("--dry-run"),
             ..line(
@@ -964,7 +985,7 @@ const fn migrates(
 ///   to what `HEAD` held;
 /// - **what is staged elsewhere** stays out of the commit, *"`git add` over exactly the
 ///   paths the migration touched"*; **a hook that rejects** the commit refuses, and leaves
-///   nothing changed — the reading of the record's §6, entry 22, marked;
+///   nothing changed — the human's ruling of 2026-10-19 on the record's §6, entry 22;
 /// - **a file of the user's beside the baseline** (`MG2`), over the decision a task
 ///   landed, stays.
 const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
@@ -990,7 +1011,6 @@ const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
     // The two spellings' base cells.
     Cell {
         spelling: Some("--no-commit"),
-        marks: &[Mark::Silence(21)],
         ..cell(
             "migrate-corpus-no-commit-a-decision-below-its-version",
             &["migrate-corpus"],
@@ -1162,15 +1182,12 @@ const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
         Listed::Acts,
         at("MG3", Kind::QuotedName),
     ),
-    Cell {
-        marks: &[Mark::Silence(22)],
-        ..migrates(
-            "migrate-corpus-a-hook-that-rejects",
-            a_stale_decision!(Lead::Plant(Plant::RejectingHook)),
-            refuses(1, "`git commit` was rejected"),
-            at("MG3", Kind::RejectingHook),
-        )
-    },
+    migrates(
+        "migrate-corpus-a-hook-that-rejects",
+        a_stale_decision!(Lead::Plant(Plant::RejectingHook)),
+        refuses(1, "`git commit` was rejected"),
+        at("MG3", Kind::RejectingHook),
+    ),
     // `MG5`, under `--dry-run`: the corpus read where a stale doc stands — what stands in
     // the doc's place there is what the run reads, and nothing is written over it.
     Cell {
@@ -1912,7 +1929,12 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
             Lead::MovedAway("repo/docs/decisions"),
             Lead::Plant(Plant::File("docs/decisions"))
         ),
-        Listed::Acts,
+        // The committed decision is stranded by the re-point, which cannot move it: the
+        // re-point refuses whole, naming the doc, the knob unchanged — as its `placement-root`
+        // twin does, and as `r1-config-set-re-points-past-a-link-to-nothing-or-a-directory-
+        // at-a-doc-it-strands` asks (the fifth of the fixes after the review of `B8`, its
+        // left-open; relisted by the eighth).
+        refuses(1, ONE_WAY),
         at("CS2", Kind::FileForADir),
     ),
     sets(
