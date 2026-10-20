@@ -14,7 +14,7 @@
 //! spelling, `MG4` the staging the human's ruling on the record's §6, entry 21 gives it.
 
 use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
-use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
+use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses, refuses_having_moved};
 use crate::support::byte_cell::{
     A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
     PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Unit, When, Where,
@@ -1406,6 +1406,8 @@ const BESIDE_THE_NOTES_HOME: &str = "docs/notes/the-users-own-notes.md";
 /// A second note stranded at the prior home, and its bytes.
 const A_SECOND_STRANDED: &str = "docs/legacy-notes/load-tests.md";
 const A_SECOND_NOTE: &str = "# Load tests\n\n## Body\n\nTwo nodes hold the load.\n";
+/// The second note moved into its home: what a sweep that blocks the first note still does.
+const THE_SECOND_NOTE_MOVED: &[(&str, &str)] = &[(A_SECOND_STRANDED, "docs/notes/load-tests.md")];
 
 /// **A note stranded at a prior home, committed** — the note pack and its listing, and a
 /// note under `docs/legacy-notes/`, committed by the user: `relocate`'s subject.
@@ -1505,8 +1507,12 @@ const fn relocates(
 ///   the code the run gives — *"A *managed* instance already at the destination … the
 ///   relocation **surfaces the collision as a block** (never a clobber)"*
 ///   (`design/reconciliation.md` → *Relocation collisions*);
+/// - **a second note beside a blocked first** — a link in the first's place, a file of the
+///   user's at its new home — is moved, and the refusal lists the move: *an acting sweep
+///   does all it can* (the human's ruling R1 of 2026-10-20), `relocate` *moves the others*
+///   (entry 23), and a refusal of the whole sweep is not that outcome;
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 26] = [
+const RELOCATE_CELLS: [Cell; 27] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1640,7 +1646,8 @@ const RELOCATE_CELLS: [Cell; 26] = [
     ),
     // A second stranded note, and a link in the first's place: the sweep blocks the first and
     // moves the second, then exits non-zero naming what it left — the human's rulings of
-    // 2026-10-20, R1 and entry 23.
+    // 2026-10-20, R1 and entry 23. The second note's move is listed: a refusal of the whole
+    // sweep is not this outcome (the review of the task `B9`, H1).
     relocates(
         "relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note",
         a_stranded_note!(
@@ -1649,8 +1656,22 @@ const RELOCATE_CELLS: [Cell; 26] = [
             git(&["commit", "-q", "-m", "a second note at its old home"]),
             Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(STRANDED)))
         ),
-        refuses(1, "store.home-not-regular-file"),
+        refuses_having_moved(1, "store.home-not-regular-file", THE_SECOND_NOTE_MOVED),
         at("RL1", Kind::LinkToNothing),
+    ),
+    // And a file of the user's at the first note's new home, beside a second note: the sweep
+    // blocks the first, naming the path to clear, and moves the second — entry 23's *moves
+    // the others*, which no cell with one note can tell from a refusal of the whole sweep.
+    relocates(
+        "relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note",
+        a_stranded_note!(
+            file(A_SECOND_STRANDED, A_SECOND_NOTE),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a second note at its old home"]),
+            Lead::Plant(Plant::File(THE_NOTES_HOME))
+        ),
+        refuses_having_moved(1, THE_NOTES_HOME, THE_SECOND_NOTE_MOVED),
+        at("RL1, at its new home", Kind::Untracked),
     ),
     // A managed note at the new home blocks the note too.
     relocates(

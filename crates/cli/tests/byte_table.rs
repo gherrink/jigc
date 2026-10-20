@@ -9,7 +9,7 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 738 cells: the acceptance's twelve, the task family's
+//! `migrate`, `task amend`) — and 739 cells: the acceptance's twelve, the task family's
 //! seventy-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
 //! spelling `doc-only`), **`milestone finalize`'s spelling `squash: false` four, the install
 //! family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`), **the doc
@@ -17,7 +17,7 @@
 //! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
-//! under `squash: false`), **the movers family's seventy-six and seventy-nine** (`rename`,
+//! under `squash: false`), **the movers family's seventy-six and eighty** (`rename`,
 //! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-one**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
@@ -184,7 +184,24 @@ fn rows() -> Vec<&'static Row> {
 /// **A refusal a cell names**: the exit code, and words the command's output holds — the
 /// finding's code, or a run of the sentence that says why.
 const fn refuses(exit: i32, says: &'static str) -> Listed {
-    Listed::RefusesWith(Refusal { exit, says })
+    Listed::RefusesWith(Refusal {
+        exit,
+        says,
+        moved: &[],
+    })
+}
+
+/// **A refusal of an acting sweep that moved what it could first** — the exit code, the
+/// words, and each doc it moved, from its place to its home: the human's rulings of
+/// 2026-10-20, R1 (*does all it can, then exits non-zero*) and the rows' record's §6, entry
+/// 23 (`jigc relocate` *blocks that doc, moves the others*). A refusal of the whole sweep
+/// is not this outcome ([`Refusal`]).
+const fn refuses_having_moved(
+    exit: i32,
+    says: &'static str,
+    moved: &'static [(&'static str, &'static str)],
+) -> Listed {
+    Listed::RefusesWith(Refusal { exit, says, moved })
 }
 
 /// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused.
@@ -4468,6 +4485,149 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     assert!(class.is_red(), "another root: came out {class}, {why:#?}");
 }
 
+/// **R1's door holds what the sweep must have done** — the human's rulings of 2026-10-20: *an
+/// acting sweep does all it can, then exits non-zero*, and `jigc relocate` *blocks that doc,
+/// moves the others, names the path to clear and exits non-zero* (the rows' record's §6,
+/// entry 23). Judged under the listing of the two `relocate` cells that carry a second note
+/// — one with a link in the first note's place, one with a file of the user's at the first
+/// note's new home — a refusal that moved the second note into its home and left the first
+/// as it stood, naming it, changes nothing a refusal may not; **a refusal of the whole sweep,
+/// which moved nothing, is not the outcome they list** (red first, the review of the task
+/// `B9`, H1: the whole refusal came out *refuses, nothing changed*); and the sweep that parks
+/// the occupant and moves both notes at exit 0 is red.
+#[test]
+fn a_sweep_refused_whole_is_not_the_outcome_r1s_cells_list() {
+    const NOTE: &str = "# Cache benchmarks\n\n## Body\n\nA single node caps throughput.\n";
+    const SECOND: &str = "# Load tests\n\n## Body\n\nTwo nodes hold the load.\n";
+    const SCHEMA: &str = "type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The note.\" }\n";
+    const OCCUPANT: &str = "the user's own notes\n";
+    let cells = cells();
+    let named = |name: &str| {
+        *cells
+            .iter()
+            .find(|cell| cell.name == name)
+            .unwrap_or_else(|| panic!("`{name}` is a cell of the table"))
+    };
+    let two = then(
+        &with_committed(&[
+            ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+            ("docs/legacy-notes/load-tests.md", SECOND),
+        ]),
+        |m| {
+            written(
+                m,
+                ".jigc/config/packs.yaml",
+                "packs:\n  - .jigc/note-pack\n",
+            );
+            written(m, ".jigc/note-pack/schemas/note.yaml", SCHEMA);
+        },
+    );
+    let second_moved = |m: &mut Manifest| {
+        git_mv(
+            m,
+            "docs/legacy-notes/load-tests.md",
+            "docs/notes/load-tests.md",
+            SECOND,
+        );
+    };
+
+    // A link to nothing in the first note's place.
+    let cell = named("relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note");
+    let linked = then(&two, |m| {
+        m.files.insert(
+            format!("{REPO}/docs/legacy-notes/cache-benchmarks.md"),
+            Entry::Link("nowhere".to_string()),
+        );
+    });
+    let said = "blocking · store.home-not-regular-file — docs/legacy-notes/cache-benchmarks.md \
+                is a link\n";
+    let refused = |after: &Manifest| {
+        Cell {
+            argv: cell.argv,
+            code: Some(1),
+            said,
+            listed: cell.listed,
+            ..Cell::of(movers::RELOCATE, &linked, after)
+        }
+        .came_to()
+    };
+    let (class, why) = refused(&then(&linked, second_moved));
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "the link's cell, the second note moved: {why:#?}"
+    );
+    let (class, why) = refused(&linked);
+    assert_eq!(
+        class,
+        Classification::NotTheListedOutcome,
+        "the link's cell, the whole sweep refused: {why:#?}"
+    );
+    // A copy is no move: the second note at its home, staged, and still at its place.
+    let copied = then(&linked, |m| {
+        written(m, "docs/notes/load-tests.md", SECOND);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/notes/load-tests.md".to_string(), staged(SECOND));
+    });
+    let (class, why) = refused(&copied);
+    assert!(
+        class.is_red(),
+        "the link's cell, the second note copied: came out {class}, {why:#?}"
+    );
+
+    // A file of the user's at the first note's new home.
+    let cell = named("relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note");
+    let occupied = then(&two, |m| {
+        written(m, "docs/notes/cache-benchmarks.md", OCCUPANT);
+    });
+    let planted = [(
+        "repo/docs/notes/cache-benchmarks.md",
+        "the user's own notes",
+    )];
+    let said = "blocked · docs/notes/cache-benchmarks.md stands at the destination — clear it \
+                or adopt it, then re-run\n";
+    let came = |code: i32, after: &Manifest| {
+        Cell {
+            argv: cell.argv,
+            planted: &planted,
+            code: Some(code),
+            said,
+            listed: cell.listed,
+            ..Cell::of(movers::RELOCATE, &occupied, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(1, &then(&occupied, second_moved));
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "the occupant's cell, the second note moved: {why:#?}"
+    );
+    let (class, why) = came(1, &occupied);
+    assert_eq!(
+        class,
+        Classification::NotTheListedOutcome,
+        "the occupant's cell, the whole sweep refused: {why:#?}"
+    );
+    let parked = then(&occupied, |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "docs/notes/cache-benchmarks.md",
+            NOTE,
+        );
+        written(m, ".jigc/displaced/cache-benchmarks.md", OCCUPANT);
+        second_moved(m);
+    });
+    let (class, why) = came(0, &parked);
+    assert!(
+        class.is_red(),
+        "the occupant's cell, the occupant parked and both notes moved: came out {class}, \
+         {why:#?}"
+    );
+}
+
 /// **A task a command mints is one, where nothing stood** — the word `<minted-task>` of the
 /// mint family's rows (`jigc start`, `jigc migrate`, `jigc task amend`; the task `B9`): an
 /// area under `.jigc/tasks/` that carries its base pin after the command, at an id where
@@ -8600,6 +8760,7 @@ fn a_refusal_is_the_refusal_the_cell_names() {
     let named = Listed::RefusesWith(byte_cell::Refusal {
         exit: 3,
         says: "probe.refused",
+        moved: &[],
     });
     let refused = |code, said| Cell {
         code: Some(code),
@@ -10904,6 +11065,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
             "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
             "relocate-a-directory-at-the-notes-new-home",
+            "relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note",
         ],
     ),
     (
@@ -11250,7 +11412,17 @@ fn listed_as(cell: &byte_cell::Cell) -> String {
         Listed::Acts => "acts".to_string(),
         Listed::Refuses => "refuses".to_string(),
         Listed::RefusesWith(refusal) => {
-            format!("refuses: exit {}, `{}`", refusal.exit, refusal.says)
+            let moved: Vec<String> = refusal
+                .moved
+                .iter()
+                .map(|(from, to)| format!(", having moved `{from}` to `{to}`"))
+                .collect();
+            format!(
+                "refuses: exit {}, `{}`{}",
+                refusal.exit,
+                refusal.says,
+                moved.concat()
+            )
         }
     }
 }
@@ -11437,7 +11609,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (738, 558, 180),
+        (739, 559, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -11450,8 +11622,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
-         movers seventy-nine, `relocate`'s twenty-six and `config set`'s fifty-three: \
-         sixty-seven in the gate, twelve on demand — and the mint family's fifty, `start`'s \
+         movers eighty, `relocate`'s twenty-seven and `config set`'s fifty-three: \
+         sixty-eight in the gate, twelve on demand — and the mint family's fifty, `start`'s \
          fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten: twenty-seven \
          in the gate, twenty-four on demand"
     );

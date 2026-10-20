@@ -1129,10 +1129,39 @@ impl fmt::Display for Classification {
 /// the finding's code where the refusal is a finding, else a run of the sentence that
 /// says why. A cell of the table names its refusal: one that refuses for another reason
 /// than the one its plant was put in for is no answer to its plant.
+///
+/// **And the docs it moved before refusing**, where its door is an acting sweep: each pair a
+/// doc's place before the command and its home, the same entry standing at the home after it
+/// and nothing at the place — the human's rulings of 2026-10-20: *an acting sweep **does all
+/// it can**, then exits non-zero* (R1), and `jigc relocate` *blocks that doc, **moves the
+/// others***, names the path to clear and exits non-zero (the rows' record's §6, entry 23).
+/// A refusal of the whole sweep moves nothing, and is not the listed outcome. Added
+/// 2026-10-20, after the review of the task `B9` (H1): a refusal's words were all a listing
+/// held, and the whole refusal came out *refuses, nothing changed*.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Refusal {
     pub exit: i32,
     pub says: &'static str,
+    pub moved: &'static [(&'static str, &'static str)],
+}
+
+impl Refusal {
+    /// **What the refusal did not move that its listing names**: each pair whose doc does
+    /// not stand at its home after the command, the same entry it was at its place, with
+    /// nothing left at the place.
+    fn not_moved(&self, before: &Manifest, after: &Manifest) -> Vec<String> {
+        self.moved
+            .iter()
+            .filter(|(from, to)| {
+                let was = before.files.get(&format!("{REPO}/{from}"));
+                let is = after.files.get(&format!("{REPO}/{to}"));
+                !(matches!(was, Some(Entry::File { .. }))
+                    && is.is_some_and(|is| was.is_some_and(|was| was.same(is)))
+                    && !after.files.contains_key(&format!("{REPO}/{from}")))
+            })
+            .map(|(from, to)| format!("`{from}` → `{to}`"))
+            .collect()
+    }
 }
 
 /// What a cell is listed as: a command that acts, or one that refuses — and, for a cell
@@ -3931,32 +3960,41 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 .cloned()
                 .collect(),
         ));
-        let other = match seen.listed {
+        let mut other: Vec<String> = Vec::new();
+        match seen.listed {
             Listed::Acts => {
-                Some("the cell is listed as acting, and the command refused".to_string())
+                other.push("the cell is listed as acting, and the command refused".to_string())
             }
-            Listed::RefusesWith(refusal)
-                if seen.ended.code != Some(refusal.exit)
-                    || !seen.ended.said.contains(refusal.says) =>
-            {
-                Some(format!(
-                    "the cell is listed as refusing with exit {} and `{}`, and the command \
-                     ended with {} and {}",
-                    refusal.exit,
-                    refusal.says,
-                    seen.ended
-                        .code
-                        .map_or("no exit code".to_string(), |code| format!("exit {code}")),
-                    if seen.ended.said.contains(refusal.says) {
-                        "said so"
-                    } else {
-                        "did not say so"
-                    },
-                ))
+            Listed::RefusesWith(refusal) => {
+                if seen.ended.code != Some(refusal.exit) || !seen.ended.said.contains(refusal.says)
+                {
+                    other.push(format!(
+                        "the cell is listed as refusing with exit {} and `{}`, and the command \
+                         ended with {} and {}",
+                        refusal.exit,
+                        refusal.says,
+                        seen.ended
+                            .code
+                            .map_or("no exit code".to_string(), |code| format!("exit {code}")),
+                        if seen.ended.said.contains(refusal.says) {
+                            "said so"
+                        } else {
+                            "did not say so"
+                        },
+                    ));
+                }
+                let not_moved = refusal.not_moved(before, after);
+                if !not_moved.is_empty() {
+                    other.push(format!(
+                        "the cell is listed as refusing having moved what it could, and the \
+                         command did not move {}: an acting sweep does all it can",
+                        not_moved.join(", ")
+                    ));
+                }
             }
-            _ => None,
-        };
-        classes.extend(other.map(|why| (Classification::NotTheListedOutcome, vec![why])));
+            Listed::Refuses => {}
+        }
+        classes.push((Classification::NotTheListedOutcome, other));
     }
     let mut red = classes.into_iter().filter(|(_, why)| !why.is_empty());
     let (classification, why) = red.next().unwrap_or((
