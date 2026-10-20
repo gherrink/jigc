@@ -83,22 +83,22 @@
 //! rests on no sentence is none** — so a design doc that moves under a line reddens here,
 //! and a line cannot be written from what a command did.
 //!
-//! **The leaf fence** ([`every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row`]):
-//! every `Write` row of the product's own registry (`cli::cli::VERB_KINDS`) has exactly one
-//! answer — a row of the table ([`rows`]), a row of the scheduled list
-//! (`byte_table/scheduled.tsv`: the leaves the pilot leaves for before the port, each with
-//! its reason) or a row of the owed list ([`OWED`], `byte_table/owed.rs`: the leaves the pilot's tasks owe a row,
-//! each under the task that owes it, a list the later tasks empty). So a writing command
-//! the product gains tomorrow is on no list, and is named until it has its answer.
+//! **The leaf fence** ([`every_write_leaf_has_a_row_or_a_scheduled_row`]): every `Write`
+//! row of the product's own registry (`cli::cli::VERB_KINDS`) has exactly one answer — a
+//! row of the table ([`rows`]) or a row of the scheduled list (`byte_table/scheduled.tsv`:
+//! the leaves the pilot leaves for before the port, each with its reason). The owed list,
+//! the leaves the pilot's tasks owed a row, was emptied by the last of them, `B9`, and went
+//! with it. So a writing command the product gains tomorrow is on no list, and is named
+//! until it has its answer.
 //!
-//! **The cell fence** ([`every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed`], the
+//! **The cell fence** ([`every_need_of_a_row_has_a_cell_or_a_scheduled_row`], the
 //! plan's task `B3`): what a row needs a cell for is read off the row — its refusing cell,
 //! its base cell in its home state and in each other prepared state, and a planted cell
 //! for every line and every kind of plant that targets it
 //! ([`byte_cell::aimed`](crate::support::byte_cell::aimed), which also gives the reason a
 //! kind does not target a line, so that nobody types one) — and each need has exactly one
-//! answer: a cell, a line of `byte_table/scheduled-cells.tsv` with its reason, or its
-//! leaf's cells owed whole by a task of the plan ([`CELLS_OWED`]). A cell says which line
+//! answer: a cell, or a line of `byte_table/scheduled-cells.tsv` with its reason. A cell
+//! says which line
 //! its plant is aimed at, and never a path. **A base cell in a state that is not its
 //! leaf's home runs on demand** ([`the_cells_on_demand_are_run_and_printed`]), and has
 //! its line in the committed table of that arm
@@ -124,9 +124,6 @@ use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use cli::cli::{VERB_KINDS, VerbKind};
-
-#[path = "byte_table/owed.rs"]
-mod owed;
 
 /// One family's file under `byte_table/`, as the suite reads it.
 struct Family {
@@ -169,8 +166,6 @@ macro_rules! families {
 }
 
 families![install, task, milestone, doc, movers, mint];
-
-use owed::{CELLS_OWED, OWED, OWING};
 
 use crate::support::byte_cell::{
     self, Aim, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding,
@@ -332,13 +327,12 @@ fn scheduled(list: &'static str) -> Vec<(Vec<&'static str>, &'static str)> {
         .collect()
 }
 
-/// **Every way the three lists fail to answer for `leaves`, once each** — empty when every
+/// **Every way the two lists fail to answer for `leaves`, once each** — empty when every
 /// write leaf has exactly one answer and every answer is a write leaf's.
 fn unanswered(
     leaves: &[Vec<&str>],
     rows: &[&[&str]],
     scheduled: &[(Vec<&str>, &str)],
-    owed: &[(&[&str], &str)],
 ) -> Vec<String> {
     let mut out = Vec::new();
     let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
@@ -352,12 +346,6 @@ fn unanswered(
                 scheduled.iter().filter(|(row, _)| row == leaf).count(),
                 "a row of the scheduled list",
             ),
-            (
-                owed.iter()
-                    .filter(|(row, _)| *row == leaf.as_slice())
-                    .count(),
-                "a row of the owed list",
-            ),
         ]
         .into_iter()
         .flat_map(|(times, what)| std::iter::repeat_n(what, times))
@@ -365,7 +353,7 @@ fn unanswered(
         match answers.as_slice() {
             [_] => {}
             [] => out.push(format!(
-                "{} writes, and has no row, no scheduled row and no owed row",
+                "{} writes, and has no row and no scheduled row",
                 named(leaf)
             )),
             several => out.push(format!(
@@ -375,15 +363,11 @@ fn unanswered(
             )),
         }
     }
-    let listed = rows
-        .iter()
-        .map(|row| (row.to_vec(), "the table"))
-        .chain(
-            scheduled
-                .iter()
-                .map(|(row, _)| (row.clone(), "the scheduled list")),
-        )
-        .chain(owed.iter().map(|(row, _)| (row.to_vec(), "the owed list")));
+    let listed = rows.iter().map(|row| (row.to_vec(), "the table")).chain(
+        scheduled
+            .iter()
+            .map(|(row, _)| (row.clone(), "the scheduled list")),
+    );
     for (leaf, list) in listed {
         if !leaves.contains(&leaf) {
             out.push(format!(
@@ -396,14 +380,6 @@ fn unanswered(
         if reason.trim().is_empty() {
             out.push(format!(
                 "{} is on the scheduled list and does not say why it waits",
-                named(leaf)
-            ));
-        }
-    }
-    for (leaf, task) in owed {
-        if !OWING.contains(task) {
-            out.push(format!(
-                "{} is owed by `{task}`, which is no task of the plan that owes a row",
                 named(leaf)
             ));
         }
@@ -432,54 +408,47 @@ fn says(said: &[String], expected: &[(&str, &str)]) {
     }
 }
 
-/// **Every write leaf of the product has exactly one answer**: a row of the table, a row
-/// of the scheduled list, or a row of the owed list under the task that owes it.
+/// **Every write leaf of the product has exactly one answer**: a row of the table, or a row
+/// of the scheduled list. The owed list of leaves whose rows the plan's tasks owed was
+/// emptied by the last of them, the task `B9`, and went with it.
 ///
 /// On a fixture: a write leaf nobody answers for is named; so is one answered twice, an
-/// answer for a leaf the registry does not hold as a write, a scheduled row with no
-/// reason, and an owed row under no task. Then this tree, against the lists this suite
-/// holds — the registry has 36 write leaves, and none is unanswered — and this tree with
-/// one write leaf more than it has: **a writing command the product gains tomorrow is on
-/// no list, and is named until it has its answer**.
+/// answer for a leaf the registry does not hold as a write, and a scheduled row with no
+/// reason. Then this tree, against the lists this suite holds — the registry has 36 write
+/// leaves, and none is unanswered — and this tree with one write leaf more than it has: **a
+/// writing command the product gains tomorrow is on no list, and is named until it has its
+/// answer**.
 #[test]
-fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
+fn every_write_leaf_has_a_row_or_a_scheduled_row() {
     let leaves = vec![vec!["setup"], vec!["doc", "create"], vec!["relocate"]];
     let (setup, create, relocate): (&[&str], &[&str], &[&str]) =
         (&["setup"], &["doc", "create"], &["relocate"]);
     let waits = |leaf: &[&'static str], why: &'static str| (leaf.to_vec(), why);
     says(
-        &unanswered(&leaves, &[], &[], &[]),
+        &unanswered(&leaves, &[], &[]),
         &[
-            ("`jigc setup`", "no row, no scheduled row and no owed row"),
-            (
-                "`jigc doc create`",
-                "no row, no scheduled row and no owed row",
-            ),
-            (
-                "`jigc relocate`",
-                "no row, no scheduled row and no owed row",
-            ),
+            ("`jigc setup`", "no row and no scheduled row"),
+            ("`jigc doc create`", "no row and no scheduled row"),
+            ("`jigc relocate`", "no row and no scheduled row"),
         ],
     );
     let in_order = (
-        vec![setup],
+        vec![setup, create],
         vec![waits(relocate, "the count holds it untouched")],
-        vec![(create, "B6")],
     );
-    says(
-        &unanswered(&leaves, &in_order.0, &in_order.1, &in_order.2),
-        &[],
-    );
+    says(&unanswered(&leaves, &in_order.0, &in_order.1), &[]);
     says(
         &unanswered(
             &leaves,
             &in_order.0,
-            &in_order.1,
-            &[(create, "B6"), (setup, "B4")],
+            &[
+                waits(relocate, "the count holds it untouched"),
+                waits(setup, "the count holds it untouched"),
+            ],
         ),
         &[(
             "`jigc setup`",
-            "a row of the table and a row of the owed list",
+            "a row of the table and a row of the scheduled list",
         )],
     );
     says(
@@ -490,17 +459,12 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
                 waits(relocate, "the count holds it untouched"),
                 waits(&["doc", "show"], "-"),
             ],
-            &in_order.2,
         ),
         &[("`jigc doc show`", "no write leaf of that name")],
     );
     says(
-        &unanswered(&leaves, &in_order.0, &[waits(relocate, " ")], &in_order.2),
+        &unanswered(&leaves, &in_order.0, &[waits(relocate, " ")]),
         &[("`jigc relocate`", "does not say why it waits")],
-    );
-    says(
-        &unanswered(&leaves, &in_order.0, &in_order.1, &[(create, "B1")]),
-        &[("`jigc doc create`", "no task of the plan that owes a row")],
     );
 
     let here = write_leaves();
@@ -508,8 +472,8 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
         here.len(),
         36,
         "the product's registry holds 36 write leaves — the number the pilot's plan counts \
-         from; a leaf more or less is a row, a scheduled row or an owed row to write or to \
-         take away, and this number with it"
+         from; a leaf more or less is a row or a scheduled row to write or to take away, and \
+         this number with it"
     );
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
@@ -520,13 +484,12 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
          family's seven beside `milestone finalize`, the movers family's four and the mint \
          family's four: {rows:?}"
     );
-    let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
+    let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED));
     assert!(
         wrong.is_empty(),
         "the byte table does not answer for the product's write leaves as it must:\n\n  \
-         {}\n\na write leaf has a row in a file under `byte_table/`, a line of \
-         `byte_table/scheduled.tsv` with its reason, or a row of `OWED` under the task of \
-         the plan that owes it — exactly one of the three",
+         {}\n\na write leaf has a row in a file under `byte_table/`, or a line of \
+         `byte_table/scheduled.tsv` with its reason — exactly one of the two",
         wrong.join("\n  ")
     );
 
@@ -534,11 +497,8 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let mut tomorrow = here;
     tomorrow.push(vec!["doc", "merge"]);
     says(
-        &unanswered(&tomorrow, &rows, &scheduled(SCHEDULED), OWED),
-        &[(
-            "`jigc doc merge`",
-            "no row, no scheduled row and no owed row",
-        )],
+        &unanswered(&tomorrow, &rows, &scheduled(SCHEDULED)),
+        &[("`jigc doc merge`", "no row and no scheduled row")],
     );
 }
 
@@ -721,16 +681,14 @@ fn scheduled_cells(list: &'static str) -> Vec<(Vec<&'static str>, &'static str, 
         .collect()
 }
 
-/// **Every way the cells, the scheduled list of cells and the list of leaves whose cells
-/// are owed fail to answer for what the rows need** — empty when every need of every row
-/// has exactly one answer: a cell, or a scheduled row with its reason; or its leaf's
-/// cells are owed whole, by a task of the plan. A cell that cannot be read as an answer
-/// is named too ([`answers`]).
+/// **Every way the cells and the scheduled list of cells fail to answer for what the rows
+/// need** — empty when every need of every row has exactly one answer: a cell, or a
+/// scheduled row with its reason. A cell that cannot be read as an answer is named too
+/// ([`answers`]).
 fn unmet(
     rows: &[&Row],
     cells: &[&byte_cell::Cell],
     scheduled: &[(Vec<&str>, &str, &str)],
-    owed: &[(&[&str], &str)],
 ) -> Vec<String> {
     let mut out = Vec::new();
     let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
@@ -745,50 +703,12 @@ fn unmet(
         }
     }
     for row in rows {
-        let owing: Vec<&str> = owed
-            .iter()
-            .filter(|(leaf, _)| *leaf == row.leaf)
-            .map(|(_, task)| *task)
-            .collect();
         let waiting: Vec<&(Vec<&str>, &str, &str)> = scheduled
             .iter()
             .filter(|(leaf, _, _)| leaf.as_slice() == row.leaf)
             .collect();
         let needs = needs(row);
-        // A spelling's needs are answered whatever is owed of the leaf's plain spelling —
-        // once a cell of that spelling has come: a leaf whose cells are owed whole owes its
-        // spellings' with them, and a spelling begun is finished.
-        let spelling_of = |need: &Need| match need {
-            Need::BaseAs(name) => Some(*name),
-            Need::Planted(_, spelling) => *spelling,
-            _ => None,
-        };
-        let of_a_spelling = |need: &Need| {
-            spelling_of(need).is_some_and(|name| {
-                met.iter()
-                    .any(|(leaf, answer)| *leaf == row.leaf && spelling_of(answer) == Some(name))
-            })
-        };
-        if !owing.is_empty() {
-            if owing.len() > 1 {
-                out.push(format!(
-                    "the cells of {} are owed more than once",
-                    named(row.leaf)
-                ));
-            }
-            if !waiting.is_empty() {
-                out.push(format!(
-                    "{} is answered more than once: its cells are owed by `{}`, and it has \
-                     rows of the scheduled list of cells",
-                    named(row.leaf),
-                    owing[0]
-                ));
-            }
-        }
-        for need in needs
-            .iter()
-            .filter(|need| owing.is_empty() || of_a_spelling(need))
-        {
+        for need in &needs {
             let cell = met
                 .iter()
                 .any(|(leaf, answer)| *leaf == row.leaf && answer == need);
@@ -834,21 +754,6 @@ fn unmet(
             ));
         }
     }
-    for (leaf, task) in owed {
-        if !rows.iter().any(|row| row.leaf == *leaf) {
-            out.push(format!(
-                "the cells of {} are owed, and it has no row",
-                named(leaf)
-            ));
-        }
-        if !OWING.contains(task) {
-            out.push(format!(
-                "the cells of {} are owed by `{task}`, which is no task of the plan that owes \
-                 a row",
-                named(leaf)
-            ));
-        }
-    }
     out
 }
 
@@ -858,7 +763,6 @@ fn needs_table(
     rows: &[&Row],
     cells: &[&byte_cell::Cell],
     scheduled: &[(Vec<&str>, &str, &str)],
-    owed: &[(&[&str], &str)],
 ) -> String {
     let mut out = "command\tneeds a cell for\tanswered by\n".to_string();
     for row in rows {
@@ -871,12 +775,10 @@ fn needs_table(
             let waits = scheduled
                 .iter()
                 .find(|(leaf, what, _)| leaf.as_slice() == row.leaf && *what == need.named());
-            let owing = owed.iter().find(|(leaf, _)| *leaf == row.leaf);
-            let answer = match (by.is_empty(), waits, owing) {
-                (false, _, _) => by.join(" · "),
-                (true, Some((_, _, reason)), _) => format!("scheduled: {reason}"),
-                (true, None, Some((_, task))) => format!("owed by `{task}`"),
-                (true, None, None) => "nothing".to_string(),
+            let answer = match (by.is_empty(), waits) {
+                (false, _) => by.join(" · "),
+                (true, Some((_, _, reason))) => format!("scheduled: {reason}"),
+                (true, None) => "nothing".to_string(),
             };
             out.push_str(&format!(
                 "jigc {}\t{}\t{answer}\n",
@@ -888,13 +790,14 @@ fn needs_table(
     out
 }
 
-/// **Every row has, for each thing it needs a cell for, a cell, a scheduled row, or its
-/// leaf's cells owed whole by a task of the plan** — so a line a row gains tomorrow needs
-/// its planted cells that day, and a cell cannot be born aimed at nothing.
+/// **Every row has, for each thing it needs a cell for, a cell or a scheduled row** — so a
+/// line a row gains tomorrow needs its planted cells that day, and a cell cannot be born
+/// aimed at nothing. The list of leaves whose cells a task of the plan owed whole was
+/// emptied by the last of them, the task `B9`, and went with it.
 ///
 /// On a fixture: a row with no cell is named need by need — its refusing cell, its base
 /// cell, the base cell of each other prepared state, and each plant that targets one of
-/// its lines; a cell, a scheduled row, or the owed list answers each; a need answered
+/// its lines; a cell or a scheduled row answers each; a need answered
 /// twice is named, and so are a scheduled row for nothing the row needs, one with no
 /// reason, a plant aimed at no line, an aim with no plant, an aim at a line the row does
 /// not have, an aim the line's own vocabulary turns away — with **the reason the frame
@@ -902,7 +805,7 @@ fn needs_table(
 /// is unmet; and **the fence is not vacuous** — with the scheduled list taken away, every
 /// scheduled need is named, and with the `milestone` family's cells taken away, its needs.
 #[test]
-fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
+fn every_need_of_a_row_has_a_cell_or_a_scheduled_row() {
     const REPLACES: Row = Row {
         leaf: &["task", "finalize"],
         home: Prepared::Of(State::Fresh),
@@ -947,13 +850,9 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         "what a row needs a cell for is read off its lines"
     );
     assert_eq!(
-        unmet(&[&REPLACES], &[], &[], &[]).len(),
+        unmet(&[&REPLACES], &[], &[]).len(),
         names.len(),
         "a row nobody answers for is named need by need"
-    );
-    says(
-        &unmet(&[&REPLACES], &[], &[], &[(&["task", "finalize"], "B4")]),
-        &[],
     );
 
     const fn cell(
@@ -974,49 +873,13 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             beside: None,
             aim,
             marks: &[],
+            at: None,
         }
     }
     const FRESH: Prepared = Prepared::Of(State::Fresh);
     const A_STEP: &[Lead] = &[Lead::Step(Step::Jigc(&["start", "an intent"]))];
     const A_FILE: &[Lead] = &[Lead::Plant(Plant::File("a-file"))];
 
-    // A leaf whose cells are owed whole owes its spellings' too, until a cell of a spelling
-    // comes; from then on that spelling's needs are each answered — a spelling begun is
-    // finished. The task `B8`: its rows come a commit before their cells, and
-    // `migrate-corpus`'s two spellings with them.
-    const SPELLED_AND_OWED: Row = Row {
-        leaf: &["task", "finalize"],
-        home: FRESH,
-        spellings: &[byte_cell::Spelling {
-            name: "dry",
-            replaces: &["F1"],
-        }],
-        ..row(&[
-            line("F1", Allows::Files(Where::Path("a-file"), May::WriteWhole)),
-            Line {
-                spelling: Some("dry"),
-                ..line("F4", Allows::Files(Where::Path("a-file"), May::CopiedFrom))
-            },
-        ])
-    };
-    const OWED_BY_B4: &[(&[&str], &str)] = &[(&["task", "finalize"], "B4")];
-    says(&unmet(&[&SPELLED_AND_OWED], &[], &[], OWED_BY_B4), &[]);
-    const BEGUN: byte_cell::Cell = byte_cell::Cell {
-        spelling: Some("dry"),
-        ..cell("begun", FRESH, &[], &["task", "finalize", "it"], None)
-    };
-    let named = unmet(&[&SPELLED_AND_OWED], &[&BEGUN], &[], OWED_BY_B4);
-    assert_eq!(
-        named.len(),
-        7,
-        "a spelling begun has each of its needs answered: {named:#?}"
-    );
-    assert!(
-        named
-            .iter()
-            .all(|named| named.contains("F4 ×") && named.contains("as `dry`")),
-        "{named:#?}"
-    );
     const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
         Some(Aim { line, kind })
     }
@@ -1066,7 +929,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
     );
     let the_four = [&refusing, &base, &elsewhere, &planted];
     assert_eq!(
-        unmet(&[&REPLACES], &the_four, &[], &[]).len(),
+        unmet(&[&REPLACES], &the_four, &[]).len(),
         names.len() - 4,
         "a cell answers the need of its layer, and no other"
     );
@@ -1077,15 +940,15 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         .filter(|what| !["refusing", "base", "base, in `bare`", "F1 × U"].contains(&what.as_str()))
         .map(|what| waits(what.leak(), "before the port"))
         .collect();
-    says(&unmet(&[&REPLACES], &the_four, &rest, &[]), &[]);
+    says(&unmet(&[&REPLACES], &the_four, &rest), &[]);
 
-    // Answered twice; a row for nothing; a row with no reason; owed and scheduled at once.
+    // Answered twice; a row for nothing; a row with no reason; a row of a leaf with none.
     let mut twice = rest.clone();
     twice.push(waits("F1 × U", "before the port"));
     twice.push(waits("F3 × U", "before the port"));
     twice.push(waits("F2 × H", " "));
     says(
-        &unmet(&[&REPLACES], &the_four, &twice, &[]),
+        &unmet(&[&REPLACES], &the_four, &twice),
         &[
             ("`jigc task finalize`", "more than once for *F1 × U*"),
             ("`jigc task finalize`", "more than once for *F2 × H*"),
@@ -1096,34 +959,14 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             ("a scheduled row for *F2 × H*", "does not say why it waits"),
         ],
     );
+    let mut stray = rest.clone();
+    stray.push((vec!["doc", "create"], "base", "before the port"));
     says(
-        &unmet(
-            &[&REPLACES],
-            &[],
-            &[
-                waits("refusing", "before the port"),
-                (vec!["doc", "create"], "base", "before the port"),
-            ],
-            &[
-                (&["task", "finalize"], "B4"),
-                (&["task", "finalize"], "B5"),
-                (&["relocate"], "B1"),
-            ],
-        ),
-        &[
-            ("`jigc task finalize`", "owed more than once"),
-            (
-                "`jigc task finalize`",
-                "its cells are owed by `B4`, and it has rows of the scheduled list",
-            ),
-            ("`jigc doc create`", "has no row"),
-            ("the cells of `jigc relocate` are owed", "it has no row"),
-            ("`jigc relocate`", "no task of the plan that owes a row"),
-        ],
+        &unmet(&[&REPLACES], &the_four, &stray),
+        &[("`jigc doc create`", "has no row")],
     );
 
     // A cell that cannot be read as an answer.
-    let owed_whole: &[(&[&str], &str)] = &[(&["task", "finalize"], "B4")];
     for (cell, said) in [
         (
             cell("a-plant-aimed-at-nothing", FRESH, A_FILE, ACTING, None),
@@ -1180,10 +1023,9 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
             "says its plant is of the kind *T*, and puts in none that is",
         ),
     ] {
-        says(
-            &unmet(&[&REPLACES], &[&cell], &[], owed_whole),
-            &[(cell.name, said)],
-        );
+        let mut with = the_four.to_vec();
+        with.push(&cell);
+        says(&unmet(&[&REPLACES], &with, &rest), &[(cell.name, said)]);
     }
 
     // A plant in the place of a file that stands is of its inner plant's kind, but for the
@@ -1333,21 +1175,20 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
 
     // This tree.
     let (rows, cells) = (rows(), cells());
-    let wrong = unmet(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED);
+    let wrong = unmet(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS));
     assert!(
         wrong.is_empty(),
         "the byte table's cells do not answer for what its rows need:\n\n  {}\n\na row needs \
          its refusing cell, its base cell in its home state and in each other prepared state, \
          and a planted cell for every line and every kind of plant that targets it — each a \
          cell in a file under `byte_table/`, or a line of `byte_table/scheduled-cells.tsv` \
-         with its reason; or the leaf's cells are owed whole in `CELLS_OWED`, by the task of \
-         the plan that owes them",
+         with its reason",
         wrong.join("\n  ")
     );
     // Not vacuous: with nothing scheduled, every scheduled need is named and no other — the
     // cells that are there answer the rest; and with a family's cells taken away, its needs
     // are named.
-    let bare = unmet(&rows, &cells, &[], CELLS_OWED);
+    let bare = unmet(&rows, &cells, &[]);
     let needed: usize = rows.iter().map(|row| needs(row).len()).sum();
     let waiting = scheduled_cells(SCHEDULED_CELLS).len();
     assert!(
@@ -1366,12 +1207,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         .copied()
         .filter(|cell| cell.leaf.first() != Some(&"milestone"))
         .collect();
-    let taken = unmet(
-        &rows,
-        &without,
-        &scheduled_cells(SCHEDULED_CELLS),
-        CELLS_OWED,
-    );
+    let taken = unmet(&rows, &without, &scheduled_cells(SCHEDULED_CELLS));
     assert!(
         taken.iter().any(|line| line
             == "`jigc milestone finalize` needs a cell for *refusing*, and has no cell and no \
@@ -1379,7 +1215,7 @@ fn every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed() {
         "{taken:#?}"
     );
     assert_eq!(
-        needs_table(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS), CELLS_OWED)
+        needs_table(&rows, &cells, &scheduled_cells(SCHEDULED_CELLS))
             .lines()
             .count(),
         needed + 1,
@@ -1934,6 +1770,17 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
         &[Prepared::Of(State::Fresh)],
     ),
     (&["config", "set"], "CS4", &[Prepared::Of(State::Fresh)]),
+    (&["start"], "ST1", &[Prepared::Of(State::Fresh)]),
+    (&["start"], "ST2", &[Prepared::Of(State::Fresh)]),
+    (
+        &["start"],
+        "ST2, at a resume",
+        &[Prepared::Of(State::Fresh)],
+    ),
+    (&["workflow"], "WF1", &[Prepared::Of(State::Fresh)]),
+    (&["workflow"], "WF2", &[Prepared::Of(State::Fresh)]),
+    (&["migrate"], "MI1", &[Prepared::Of(State::Fresh)]),
+    (&["task", "amend"], "AM1", &[Prepared::Of(State::Fresh)]),
 ];
 
 /// Why the doc family's `W3` excuses nothing, and never will: it lets nothing change at
@@ -1947,54 +1794,32 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 /// a cell has met it yet. A line that is on neither list, or on both, is named
 /// ([`unaccounted`]).
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
-    (&["start"], "ST1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["start"], "ST2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["start"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["start"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["start"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["start"], "C3, the task list", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["workflow"], "WF1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["workflow"], "WF2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["workflow"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["workflow"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["workflow"],
-        "C3, the base pin",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (
-        &["workflow"],
-        "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (&["migrate"], "MI1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate"], "MI2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["migrate"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["migrate"],
-        "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (&["task", "amend"], "AM1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["task", "amend"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
-    (&["task", "amend"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
-    (
-        &["task", "amend"],
-        "C3, the base pin",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
-    (
-        &["task", "amend"],
-        "C3, the task list",
-        THE_FAMILYS_CELLS_ARE_OWED,
-    ),
     (&["rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["rename"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["migrate-corpus"], "MG4", STAGED_UNDER_ANOTHER_LINE),
     (&["migrate-corpus"], "MG5", A_DRY_RUN_WRITES_NOTHING),
     (&["relocate"], "RL2", STAGED_UNDER_ANOTHER_LINE),
+    (&["start"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["start"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["start"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["start"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["workflow"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["workflow"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["workflow"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["workflow"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["migrate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["migrate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["migrate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (&["migrate"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
+    (&["task", "amend"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["task", "amend"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["task", "amend"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
+    (
+        &["task", "amend"],
+        "C3, the task list",
+        NO_CELL_OF_THIS_LEAF,
+    ),
+    (&["migrate"], "MI2", READ_AND_NEVER_WRITTEN),
     (&["relocate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["relocate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["relocate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
@@ -2398,11 +2223,6 @@ const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed bou
 const A_DRY_RUN_WRITES_NOTHING: &str = "nothing can: the dry run's line lets no difference happen at the doc it reads — it names \
      the place, which is what the plants of the spelling's cells are aimed at";
 
-/// What would use a line of the mint family's rows: the family's cells, owed by the task `B9`
-/// until the commits after its rows (`owed.rs` → `CELLS_OWED`).
-const THE_FAMILYS_CELLS_ARE_OWED: &str = "the family's cells, owed by the task `B9` (`CELLS_OWED`): its rows are written from \
-     their docs a commit before any cell of them runs";
-
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
      leaf reads no milestone's cache";
@@ -2719,7 +2539,7 @@ fn uncounted(
         if under(leaf) == Some(true) {
             out.push(format!(
                 "{} is on the scheduled list, and the count holds it touched under \
-                 *{reading}*: a touched leaf is the pilot's, and is owed its row",
+                 *{reading}*: a touched leaf is the pilot's, and has its row",
                 named(leaf)
             ));
         }
@@ -2794,8 +2614,7 @@ fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
         wrong.is_empty(),
         "the count of the leaves the fix pass touched and the scheduled list:\n\n  {}\n\nthe \
          count is `…/reshape/byte-table-leaves-touched-since-rc24.md`: a line a write leaf, \
-         and a leaf it holds touched under the reading the pilot is built under has a row or \
-         is owed one",
+         and a leaf it holds touched under the reading the pilot is built under has a row",
         wrong.join("\n  ")
     );
 }
@@ -8246,6 +8065,7 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
             beside: None,
             aim,
             marks: &[],
+            at: None,
             spelling,
         }
     };
@@ -8334,14 +8154,14 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
     };
     let plain_need = "`jigc probe` needs a cell for *P2 × U*, and has no cell";
     let spelled = at_the_doc(Some("path-scoped"));
-    let unanswered = unmet(&[&SPELLED], &[&spelled], &[], &[]);
+    let unanswered = unmet(&[&SPELLED], &[&spelled], &[]);
     assert!(
         unanswered.iter().any(|line| line.starts_with(plain_need)),
         "a spelling's cell at a line of every spelling answers the plain spelling's need: \
          {unanswered:#?}"
     );
     let plain = at_the_doc(None);
-    let unanswered = unmet(&[&SPELLED], &[&plain], &[], &[]);
+    let unanswered = unmet(&[&SPELLED], &[&plain], &[]);
     assert!(
         !unanswered.iter().any(|line| line.starts_with(plain_need)),
         "the plain spelling's cell answers it: {unanswered:#?}"
@@ -9245,6 +9065,7 @@ empties-the-readme) rm -r README.md ;;
 drops-the-staged) git reset -q -- README.md ;;
 commits-nothing) git commit -q --allow-empty -m nothing ;;
 commits-what-is-staged) git commit -q -m staged ;;
+writes-here) echo here > here.txt ;;
 sleeps) exec sleep 30 ;;
 *) echo "the stand-in knows no '$1'" >&2; exit 64 ;;
 esac
@@ -9278,12 +9099,29 @@ const fn on_a_stand_in(
             beside: None,
             aim: None,
             marks: &[],
+            at: None,
         },
         row,
         expected,
         why,
     }
 }
+
+/// The stand-in writing `here.txt` where it runs, a directory `sub/` made first — run at
+/// `sub/` by the case that names the place.
+const WRITES_HERE: OnAStandIn = on_a_stand_in(
+    &["writes-here"],
+    &[Lead::Step(Step::Dir(Place::Repo("sub")))],
+    HERE,
+    Classification::Holds,
+    "",
+);
+
+/// A row that lets its command write `sub/here.txt`, and nothing else.
+const HERE: Row = row(&[line(
+    "W1",
+    Allows::Files(Where::Path("sub/here.txt"), May::WriteWhole),
+)]);
 
 /// A file somebody planted under the workbench — [`PLANT`]'s place, in a sandbox.
 const A_PLANT: &[Lead] = &[Lead::Plant(Plant::File(".jigc/logs/notes.md"))];
@@ -9336,6 +9174,15 @@ const SEEDS: Row = row(&[Line {
 /// read for the comparison to come out as it did over manifests built by hand — and then
 /// **a plant and a condition each**: what the frame puts into a state for a cell.
 const ON_A_STAND_IN: &[OnAStandIn] = &[
+    // --- where the command runs (the task `B9`, the mint family's cells: a sub-task is
+    // re-entered at its worktree): a cell run at a place of the sandbox writes there ---
+    OnAStandIn {
+        cell: byte_cell::Cell {
+            at: Some(Place::Repo("sub")),
+            ..WRITES_HERE.cell
+        },
+        ..WRITES_HERE
+    },
     // --- the plants: a committed file, a link to nothing, an edit, the user's worktree ---
     on_a_stand_in(
         &["overwrites-the-committed-plant"],
@@ -9868,6 +9715,7 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
             beside: None,
             aim: None,
             marks: &[],
+            at: None,
         },
         row: NOTHING,
         expected: Classification::RefusesNothingChanged,
@@ -10163,6 +10011,7 @@ fn the_reader_reads_what_the_comparison_reads() {
         beside: None,
         aim: None,
         marks: &[],
+        at: None,
     };
     for (cell, says) in [
         (
@@ -10435,6 +10284,7 @@ fn a_state_brought_in_and_the_state_made_in_the_sandbox_agree_in_what_can_agree(
         beside: None,
         aim: None,
         marks: &[],
+        at: None,
     };
     let brought = byte_cell::run(
         &Built::on(binary, Prepared::Of(State::Fresh)),
@@ -10623,6 +10473,7 @@ fn a_mark_names_a_question_the_list_of_readings_has() {
             beside: None,
             aim: None,
             marks,
+            at: None,
         }
     }
     let (plain, one, two) = (
@@ -11128,6 +10979,13 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
         ],
     ),
+    // The mint family (the task `B9`, its third commit): a re-entry over a file of the
+    // user's where the sub-task's commit doc is provisioned.
+    (
+        "r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc",
+        Classification::NotTheListedOutcome,
+        &["workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned"],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -11583,7 +11441,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (687, 531, 156),
+        (738, 558, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -11597,7 +11455,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
          movers seventy-nine, `relocate`'s twenty-six and `config set`'s fifty-three: \
-         sixty-seven in the gate, twelve on demand"
+         sixty-seven in the gate, twelve on demand — and the mint family's fifty, `start`'s \
+         fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten: twenty-seven \
+         in the gate, twenty-four on demand"
     );
 }
 
@@ -11946,6 +11806,7 @@ fn the_table_runs_each_binary_on_the_state_that_binary_built() {
         beside: None,
         aim: None,
         marks: &[],
+        at: None,
     };
     let (there, here) = (on(&refuses, &[&CELL]), on(&does_nothing, &[&CELL]));
     let printed = table(&[&CELL], &there, &here, &[]);
@@ -12039,12 +11900,7 @@ fn the_cells_are_run_on_the_binary_a_variable_names() {
     }
     println!(
         "\n== needs ==\n{}",
-        needs_table(
-            &rows(),
-            &cells,
-            &scheduled_cells(SCHEDULED_CELLS),
-            CELLS_OWED
-        )
+        needs_table(&rows(), &cells, &scheduled_cells(SCHEDULED_CELLS))
     );
     println!("== states ==\nstate\ton the named binary\tseconds");
     for state in State::ALL {

@@ -550,6 +550,7 @@ const fn cell(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 

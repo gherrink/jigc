@@ -1154,6 +1154,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::Untracked,
         }),
         marks: &[],
+        at: None,
     },
     Cell {
         spelling: None,
@@ -1171,6 +1172,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::Committed,
         }),
         marks: &[],
+        at: None,
     },
     Cell {
         spelling: None,
@@ -1208,6 +1210,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::WorktreeMovedAway,
         }),
         marks: &[],
+        at: None,
     },
 ];
 
@@ -1300,6 +1303,7 @@ const fn unsquashed(
         beside: None,
         aim,
         marks,
+        at: None,
         spelling: Some("squash: false"),
     }
 }
@@ -1400,6 +1404,7 @@ const fn cell(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 

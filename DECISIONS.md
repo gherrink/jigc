@@ -2,6 +2,49 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-20 — The mint family gets its cells — `start`'s fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten, twenty-seven in the gate and twenty-four on demand — and one is red, the same on both binaries: a re-entry takes a file of the user's for the sub-task's commit doc; a cell names where its command runs, red first; the owed lists are empty and go (the byte table, task B9, the third of its commits)
+
+**What.** The cells of the mint family's four leaves, built from the rows of the task's second commit ([mint.rs](crates/cli/tests/byte_table/mint.rs); what they came to, [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §26). Fifty-one cells: twenty-seven in the gate, in `fresh`, and twenty-four on demand, each leaf's base cell in every other prepared state ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the hundred and fifty-six before them the same, byte for byte, and these). No product source changes. **One commit for the four**, not the plan's split by the docs they share — the three mints and the re-entry — since a gate of this day took twenty-five minutes under load, and the cells are few: the split is the cells file's order and the entry's.
+
+### The cells
+
+- **`start`** — the catalog's bare `jigc start`, which orients; the mint; its two spellings over a minted task, the orientation and the resume, each rebuilding the edge index; a residual where the task is minted, a live task of the same id, a title that slugs to nothing, each refused before a write; a file of the user's under the index, under each spelling that rebuilds it.
+- **`workflow`** — the catalog's `--preview`; the re-entry of a provisioned sub-task **at its worktree**, which provisions the commit doc and the manifest under the main checkout and rebuilds the index; its spelling `--preview` at the worktree — of `single-task`, since a preview of the verb-routed `sub-task` is refused, `workflow.verb-routed`; a file of the user's where the commit doc is provisioned, and under the index.
+- **`migrate`** — a committed `HISTORY.md` migrated; a residual where the migration task is minted; at the source a file of the user's in its place, three links, a directory, an edit in no commit. `MI2` × *E, before the first write* is scheduled: no work unit stands between an edit of the source and the mint, so the edit last before the command is the construction of the cell aimed at *E, after*.
+- **`task amend`** — no intent, named after `HEAD`'s commit; an intent; a residual; a merge commit at `HEAD`.
+
+**One red, the same on both binaries**: `r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc` — a re-entry over a file of the user's where the commit doc goes provisions nothing, exits 0 saying it provisions on first entry, and leaves the file as the sub-task's staged commit doc, which the next write refuses and routes at a discard that takes it. *Which is wrong*: the code — the re-entry mirrors the mint, which refuses what stands at its area. Listed refusing, naming the doc; the human may take it as a question.
+
+### A line narrowed, before its cells were committed
+
+`jigc start`'s **ST2** was a line of every spelling; the mint's cell over a file of the user's under the index met no write there — the intent forms write no index — so the plant could not fail (the self-check's fifth item). It is a line of the spelling `bare` now, beside **`ST2, at a resume`** of the spelling `--task`, over the resume's sentence; a mint that wrote the index would be outside every line. Narrowed, never widened: the rows' record says so where the line stands.
+
+### The frame, red first
+
+- **A cell names where its command runs** (`Cell::at`, a place of the sandbox, `None` for the repository's root): a milestone sub-task is re-entered at its worktree, where the product provisions it, and from the repository's root it refuses the re-entry (*"run it here"*). *Red first*: a stand-in that writes `here.txt` where it runs, a cell at `sub/`, under a row that lets `sub/here.txt` be written — against the field declared and read by nobody it came out *written outside its allowance*, `repo/here.txt` made; it holds now.
+
+### The owed lists go
+
+With these cells the list of leaves whose cells are owed is empty, as the list of leaves whose rows are owed was since the task's second commit: **`byte_table/owed.rs` and its two lists go**, and the two fences that read them answer to two lists each — **`every_write_leaf_has_a_row_or_a_scheduled_row`** and **`every_need_of_a_row_has_a_cell_or_a_scheduled_row`**, renamed for what they hold; their fixtures lose the owed cases, and every other case is kept.
+
+### What moved — on both binaries
+
+The whole table on the arm of a named binary — the previous release's rebuild (`accf3996…ab5d`, checked) and this tree's debug build, 423 s — beside the print of the task's second commit: **no cell of the 687 moved**, in classification, exit, listing, mark or key, on either binary. The fifty new cells of that run came out alike on both, none red; the re-entry over the user's file was listed acting there and holds bytes on both, and is listed refusing since — its outcome re-driven on both binaries, the same (the findings' §26 repro). What each line excused in the gate's cells, in the arm of `fresh` after the narrowing below: `ST1` 9, `ST2` 5, `ST2, at a resume` 5, `WF1` 6, `WF2` 8, `MI1` 33, `AM1` 20; `MI2` nothing — the source is read — and the four `C` lines of each leaf nothing: no refusal of the family rebuilt a cache.
+
+### The lists
+
+Thirty rows. Cells **738**, where 687: **558 in the gate, 180 on demand**. The expected-red list **150 cells under forty keys**, where 149 under thirty-nine. Marks one, bound 1. Needs: the mint family's, each a cell or the one scheduled row; the scheduled list of cells **nine** rows, where eight.
+
+### Leads answered
+
+The findings' §14 lead for `start`'s mint over a leftover area — its *"nothing was changed"* is true, the cell refusing having changed nothing; §15's *"`jigc workflow sub-task` in a worktree"* builds the index — `WF2`, a line; the milestone family's *"`<minted>` … for `B9`'s mints"* — `<minted-task>`; *"`Allows::Registered` for any door that adds a worktree"* — no door of the family adds one. The rows' record's open entries 4 and 7 meet no door of the family.
+
+### Decided here — as a builder, and open to being overturned
+
+- **A file of the user's at the provisioned commit doc refuses**, by the mint's sentence the provision mirrors, as a key and not a §6 entry.
+- **`migrate` over a directory at its source is listed by the run's words** — no doc gives its code; a lead for the route catalog.
+- **`migrate`'s admitting a source whose working bytes no object holds** is the task family's `--approve` to answer; a lead, not driven to the retire.
+
 ## 2026-10-20 — The mint family's four rows are written from their docs before a cell of any runs — `jigc start`, `jigc workflow`, `jigc migrate`, `jigc task amend` — over three words, each red first: the task a command mints, *provisioned*, and the source a command reads; the list of leaves whose rows are owed is empty (the byte table, task B9, the second of its commits)
 
 **What.** The rows of the mint family's four leaves, written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4d and lifted quote for quote into [mint.rs](crates/cli/tests/byte_table/mint.rs), a family file of its own. **No cell is added, and no line was written from a run** — each leaf was driven once with nothing planted on this tree's debug build after its row was read off the docs (the self-check's sixth item), and every write it made stands under a line over a quoted sentence. No product source changes. The four leave the list of leaves whose rows are owed ([owed.rs](crates/cli/tests/byte_table/owed.rs)), which is empty now, and join the list of leaves whose cells are owed, under `B9`.

@@ -4445,6 +4445,12 @@ pub struct Cell {
     /// typed plainly. The cell builds the state the spelling stands for; the name says
     /// which lines it is compared under.
     pub spelling: Option<&'static str>,
+    /// **Where the command runs** — `None` for the repository's root, else a place of the
+    /// sandbox: a milestone sub-task is re-entered at its worktree, where its area stands
+    /// under the main checkout (`design/storage.md` → *CLI and git*). Added 2026-10-20,
+    /// with the mint family's cells (the task `B9`): `jigc workflow`'s re-entry provisions
+    /// a sub-task's area only there.
+    pub at: Option<route_case::Place>,
 }
 
 impl Cell {
@@ -4661,6 +4667,9 @@ fn ran(built: &Built, row: &Row, cell: &Cell, under_test: Duration) -> Result<Ra
         reader.read()?
     };
     let mut command = sandbox.child(&built.binary);
+    if let Some(place) = cell.at {
+        command.current_dir(sandbox.at(place));
+    }
     command.args(cell.argv);
     let ended = sandbox.run(&mut command, under_test);
     let after = reader.read()?;

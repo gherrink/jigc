@@ -1,9 +1,9 @@
 # The byte table's scheduled list — the write leaves the pilot leaves for before the port.
 #
 # A line a leaf: its words as `cli::cli::VERB_KINDS` holds them, space-separated; a tab; and
-# why it waits. `byte_table::every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row` holds
-# every write leaf of the product to exactly one of a row of the table, a line here, or a row
-# of the owed list in the suite. The ruling is the human's of 2026-10-12 — only the writing
+# why it waits. `byte_table::every_write_leaf_has_a_row_or_a_scheduled_row` holds
+# every write leaf of the product to exactly one of a row of the table or a line here (and,
+# until the task `B9` brought the last rows, a row of the owed list in the suite). The ruling is the human's of 2026-10-12 — only the writing
 # commands the fix pass touched are piloted now, the rest before the port (`DECISIONS.md` →
 # *The reshaped `test` stage is run for real in parts*, ruling 3) — and which leaves the pass
 # touched is a committed count, each leaf read against its handler

@@ -534,6 +534,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::EditAfter,
         }),
         marks: &[],
+        at: None,
     },
     Cell {
         spelling: None,
@@ -557,6 +558,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::EditAfter,
         }),
         marks: &[],
+        at: None,
     },
     Cell {
         spelling: Some("doc-only"),
@@ -589,6 +591,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::LinkToNothing,
         }),
         marks: &[],
+        at: None,
     },
 ];
 
@@ -739,6 +742,7 @@ const fn finalize(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 
@@ -761,6 +765,7 @@ const fn discard(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 

@@ -4,9 +4,9 @@
 # A line a need: the leaf, its words as `cli::cli::VERB_KINDS` holds them, space-separated; a
 # tab; the need, as the cell fence names it — `refusing`, `base`, ``base, in `<state>` ``, or
 # `<line> × <plant>` with the plan's letter and its position; a tab; and why it waits.
-# `byte_table::every_need_of_a_row_has_a_cell_a_scheduled_row_or_is_owed` holds every need of
-# every row to exactly one of a cell or a line here — but for a leaf whose cells are owed whole
-# by a task of the plan (`CELLS_OWED`, in `owed.rs`), which has no line here. What a row needs
+# `byte_table::every_need_of_a_row_has_a_cell_or_a_scheduled_row` holds every need of
+# every row to exactly one of a cell or a line here (a leaf whose cells a task of the plan owed
+# whole had no line here, until the last of them, `B9`, brought its cells). What a row needs
 # is read off its lines by the frame (`support::byte_cell::aimed`); a plant that does not
 # target a line has the reason the frame derives, and no line here.
 setup	S2 × K, a file in a directory's place	the line's file stands at the repository's root, whose place no file can take
@@ -19,3 +19,4 @@ milestone finalize	M11 × U	a file of the user's in the milestone's area at the 
 milestone finalize	M12 × U	a file of the user's in a sub-task's area at the boundary is the same construction as the cell aimed at `M6, the sub-tasks' areas` × D (`milestone-finalize-a-foreign-file-in-a-sub-tasks-area`): a plant in an area makes it stand, which the re-seed skips untouched — before the port, a second cell of it
 milestone discard	MD7 × U	a file of the user's in the milestone's area at `discard` is the same construction as the two cells aimed at `MD4, the milestone's area` × D (`milestone-discard-a-foreign-file-in-the-milestones-area`, and its consent), whose plant stands where this line's re-seed rebuilds a cache — before the port, a second cell of it
 milestone discard	MD8 × U	a file of the user's in a sub-task's area at `discard` is the same construction as the cell aimed at `MD4, the sub-tasks' areas` × D (`milestone-discard-a-foreign-file-in-a-sub-tasks-area`): a plant in an area makes it stand, which the re-seed skips untouched — before the port, a second cell of it
+migrate	MI2 × E, before the first write	no work unit stands between an edit of the source and the mint, so the edit is planted last before the command, the construction of the cell aimed at `MI2` × E, after the first write (`migrate-an-edit-to-the-source`) — before the port, a second cell of it

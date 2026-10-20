@@ -13,10 +13,12 @@
 //! `jigc workflow <W> --preview`, which writes nothing — each a spelling that only takes a
 //! line out of force.
 
-use super::ON_A_REFUSAL;
+use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Allows, Cell, Line, May, Prepared, Quote, Row, Spelling, THE_SOURCE, Unit, When, Where,
+    Aim, Allows, Cell, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, Spelling,
+    THE_SOURCE, Unit, When, Where,
 };
+use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
 
 /// A line that holds where the command acted.
@@ -55,7 +57,8 @@ const THE_COMMITTED_REBUILD: Quote = Quote {
 
 /// **`jigc start`** — the record's §4d. Its unit is the task `--task` names, and else the
 /// single task that stands; its home is `fresh`. **Two spellings**, each taking `ST1` out
-/// of force: `bare`, the orientation, which never mints, and `--task`, the resume.
+/// of force and rebuilding the edge index by a line of its own: `bare`, the orientation,
+/// which never mints, and `--task`, the resume.
 pub const START: Row = Row {
     leaf: &["start"],
     unit: Unit::TheTaskFlag,
@@ -89,18 +92,39 @@ pub const START: Row = Row {
                 THE_STAGED_SNAPSHOT,
             ],
         ),
-        line(
-            "ST2",
-            Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
-            &[
-                Quote {
-                    doc: "design/write-commands.md",
-                    heading: TASK_ORIGINATION,
-                    words: "Never mints, never composes a side-effectful workflow; reporting a live task's findings does run the task-scope sweep, so it reads git and materializes the derived edge-index cache.",
-                },
-                THE_COMMITTED_REBUILD,
-            ],
-        ),
+        // The edge index, rebuilt by the two spellings that read it — each a line of its
+        // spelling, so a mint that wrote it would be outside every line (narrowed with the
+        // family's cells, where a line of every spelling met no write of the mint's).
+        Line {
+            spelling: Some("bare"),
+            ..line(
+                "ST2",
+                Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+                &[
+                    Quote {
+                        doc: "design/write-commands.md",
+                        heading: TASK_ORIGINATION,
+                        words: "Never mints, never composes a side-effectful workflow; reporting a live task's findings does run the task-scope sweep, so it reads git and materializes the derived edge-index cache.",
+                    },
+                    THE_COMMITTED_REBUILD,
+                ],
+            )
+        },
+        Line {
+            spelling: Some("--task"),
+            ..line(
+                "ST2, at a resume",
+                Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+                &[
+                    Quote {
+                        doc: "design/write-commands.md",
+                        heading: TASK_ORIGINATION,
+                        words: "resumes an existing task: loads its working area, recomposes the task's own persisted workflow, shows where it is. No minting.",
+                    },
+                    THE_COMMITTED_REBUILD,
+                ],
+            )
+        },
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
@@ -227,6 +251,537 @@ pub const TASK_AMEND: Row = Row {
 /// The family's rows.
 pub const ROWS: &[Row] = &[START, WORKFLOW, MIGRATE, TASK_AMEND];
 
-/// The family's cells: none yet — they come with the task's next commits, and the four
-/// leaves stand on the list of leaves whose cells are owed until then.
-pub const CELLS: &[&[Cell]] = &[];
+// ---------------------------------------------------------------------------
+// The cells
+// ---------------------------------------------------------------------------
+
+const FRESH: Prepared = Prepared::Of(State::Fresh);
+
+/// The binary under test, in the repository.
+const fn jigc(args: &'static [&'static str]) -> Lead {
+    Lead::Step(Step::Jigc(args))
+}
+
+/// A file a lead writes, from the repository's root.
+const fn file(path: &'static str, body: &'static str) -> Lead {
+    Lead::Step(Step::File(Place::Repo(path), body))
+}
+
+/// `git`, as the user runs it in the repository.
+const fn git(args: &'static [&'static str]) -> Lead {
+    Lead::Step(Step::Git(args))
+}
+
+/// What a planted cell's plant is aimed at.
+const fn at(line: &'static str, kind: Kind) -> Option<Aim> {
+    Some(Aim { line, kind })
+}
+
+/// One cell of the family's, plainly spelled, its command run at the repository's root.
+const fn cell(
+    name: &'static str,
+    leaf: &'static [&'static str],
+    state: Prepared,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        spelling: None,
+        name,
+        leaf,
+        state,
+        leads,
+        argv,
+        listed,
+        beside: None,
+        aim,
+        marks: &[],
+        at: None,
+    }
+}
+
+/// The words a refusal over a repository with no `jigc setup` says; the words a run's.
+const NOT_SET_UP: Listed = refuses(1, "this project isn't set up");
+
+/// The base cell of a leaf in each prepared state but its home: the command as typed, with
+/// no lead — in `bare` refused, a project not set up, and in the others as `listed`.
+macro_rules! elsewhere {
+    ($prefix:literal, $leaf:expr, $argv:expr, $listed:expr) => {
+        [
+            cell(
+                concat!($prefix, "-in-bare"),
+                $leaf,
+                Prepared::Bare,
+                &[],
+                $argv,
+                NOT_SET_UP,
+                None,
+            ),
+            cell(
+                concat!($prefix, "-in-committed-singletons"),
+                $leaf,
+                Prepared::Of(State::CommittedSingletons),
+                &[],
+                $argv,
+                $listed,
+                None,
+            ),
+            cell(
+                concat!($prefix, "-in-migrated"),
+                $leaf,
+                Prepared::Of(State::Migrated),
+                &[],
+                $argv,
+                $listed,
+                None,
+            ),
+            cell(
+                concat!($prefix, "-in-refs-post-hoc"),
+                $leaf,
+                Prepared::Of(State::RefsPostHoc),
+                &[],
+                $argv,
+                $listed,
+                None,
+            ),
+            cell(
+                concat!($prefix, "-in-chatty-hooks"),
+                $leaf,
+                Prepared::Of(State::ChattyHooks),
+                &[],
+                $argv,
+                $listed,
+                None,
+            ),
+            cell(
+                concat!($prefix, "-in-vendored"),
+                $leaf,
+                Prepared::Of(State::Vendored),
+                &[],
+                $argv,
+                $listed,
+                None,
+            ),
+        ]
+    };
+}
+
+// --- `jigc start` ------------------------------------------------------------------
+
+/// The command of the base cell: a task minted under `single-task`.
+const ADD_A_FILE: &[&str] = &["start", "--workflow", "single-task", "add a file"];
+
+/// One cell of `jigc start`.
+const fn starts(
+    name: &'static str,
+    leads: &'static [Lead],
+    argv: &'static [&'static str],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(name, &["start"], FRESH, leads, argv, listed, aim)
+}
+
+/// **The cells of `jigc start`**, each listed from the row's doc:
+///
+/// - **the leaf as the catalog types it**, bare `jigc start` over `fresh`, orients and acts;
+///   **the base cell** mints a task (`ST1`); **its two spellings** over a task minted
+///   first — the orientation reports it, the resume recomposes it, each rebuilding the edge
+///   index (`ST2`, `ST2, at a resume`) and minting nothing;
+/// - **at the minted task's place**, a residual of the user's — a directory holding no base
+///   pin — is refused: *"→ **reject under the same code and the same stable key**"*, the
+///   serial collision's; so is a live task of the same id, and a title that slugs to
+///   nothing (`write.unslugable-title`) — *"before any write"*;
+/// - **under the edge index**, a file of the user's stays, under each spelling that rebuilds
+///   it.
+const START_CELLS: [Cell; 9] = [
+    starts(
+        "start-as-the-catalog-names-it",
+        &[],
+        &["start"],
+        Listed::Acts,
+        None,
+    ),
+    starts("start-a-task", &[], ADD_A_FILE, Listed::Acts, None),
+    Cell {
+        spelling: Some("bare"),
+        ..starts(
+            "start-bare-over-a-task-it-reports",
+            &[jigc(ADD_A_FILE)],
+            &["start"],
+            Listed::Acts,
+            None,
+        )
+    },
+    Cell {
+        spelling: Some("--task"),
+        ..starts(
+            "start-the-task-again",
+            &[jigc(ADD_A_FILE)],
+            &["start", "--task", "add-a-file"],
+            Listed::Acts,
+            None,
+        )
+    },
+    // `ST1`, at the minted task's place.
+    starts(
+        "start-a-file-of-the-users-where-the-task-is-minted",
+        &[Lead::Plant(Plant::File(".jigc/tasks/add-a-file/notes.md"))],
+        ADD_A_FILE,
+        refuses(1, "task.serial-collision"),
+        at("ST1", Kind::Untracked),
+    ),
+    starts(
+        "start-over-a-task-of-the-same-name",
+        &[jigc(ADD_A_FILE)],
+        ADD_A_FILE,
+        refuses(1, "task.serial-collision"),
+        None,
+    ),
+    starts(
+        "start-a-title-that-slugs-to-nothing",
+        &[],
+        &["start", "--workflow", "single-task", "!!!"],
+        refuses(1, "write.unslugable-title"),
+        None,
+    ),
+    // `ST2` and `ST2, at a resume`, the edge index each spelling rebuilds.
+    Cell {
+        spelling: Some("bare"),
+        ..starts(
+            "start-bare-a-file-of-the-users-under-the-edge-index",
+            &[
+                jigc(ADD_A_FILE),
+                Lead::Plant(Plant::File(".jigc/index/notes.md")),
+            ],
+            &["start"],
+            Listed::Acts,
+            at("ST2", Kind::Untracked),
+        )
+    },
+    Cell {
+        spelling: Some("--task"),
+        ..starts(
+            "start-the-task-again-a-file-of-the-users-under-the-edge-index",
+            &[
+                jigc(ADD_A_FILE),
+                Lead::Plant(Plant::File(".jigc/index/notes.md")),
+            ],
+            &["start", "--task", "add-a-file"],
+            Listed::Acts,
+            at("ST2, at a resume", Kind::Untracked),
+        )
+    },
+];
+
+// --- `jigc workflow` ---------------------------------------------------------------
+
+/// **A milestone of one sub-task, its worktree provisioned** — the state a sub-agent
+/// re-enters: the milestone minted, the sub-task added, its worktree cut from the pinned
+/// base.
+macro_rules! a_sub_task_provisioned {
+    ($($after:expr),* $(,)?) => {
+        &[
+            jigc(&["milestone", "create", "Ship it"]),
+            jigc(&["milestone", "add-task", "ship-it", "add alpha"]),
+            jigc(&["milestone", "provision", "ship-it"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// The sub-task's worktree, where its re-entry is typed.
+const ITS_WORKTREE: Place = Place::Repo(".jigc/worktrees/add-alpha");
+const RE_ENTER_IT: &[&str] = &["workflow", "sub-task", "--task", "add-alpha"];
+
+/// One cell of `jigc workflow`, its command run at the sub-task's worktree.
+const fn re_enters(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        at: Some(ITS_WORKTREE),
+        ..cell(name, &["workflow"], FRESH, leads, RE_ENTER_IT, listed, aim)
+    }
+}
+
+/// **The cells of `jigc workflow`**, each listed from the row's doc:
+///
+/// - **the leaf as the catalog types it**, `--preview` of `single-task` over `fresh`, acts
+///   and writes nothing; **the base cell** re-enters the provisioned sub-task at its
+///   worktree — its commit doc and provenance manifest provisioned in its area (`WF1`), the
+///   edge index rebuilt (`WF2`); **its spelling** `--preview` over the same state writes
+///   nothing — of `single-task`, since a preview of the verb-routed `sub-task` is refused,
+///   `workflow.verb-routed`;
+/// - **where the commit doc is provisioned**, a file of the user's there: the provisioning
+///   makes what stood nowhere — *"mirroring how `jigc start` provisions at mint time"*, and
+///   the mint *"keeps refusing rather than adopting the directory"* — so it refuses, naming
+///   what stands there;
+/// - **under the edge index**, a file of the user's stays.
+const WORKFLOW_CELLS: [Cell; 5] = [
+    cell(
+        "workflow-as-the-catalog-names-it",
+        &["workflow"],
+        FRESH,
+        &[],
+        &["workflow", "single-task", "--preview"],
+        Listed::Acts,
+        None,
+    ),
+    re_enters(
+        "workflow-a-sub-task-re-entered",
+        a_sub_task_provisioned!(),
+        Listed::Acts,
+        None,
+    ),
+    Cell {
+        spelling: Some("--preview"),
+        argv: &["workflow", "single-task", "--preview"],
+        ..re_enters(
+            "workflow-a-preview-at-the-sub-tasks-worktree",
+            a_sub_task_provisioned!(),
+            Listed::Acts,
+            None,
+        )
+    },
+    // `WF1`, where the commit doc is provisioned: the provisioning mirrors the mint, which
+    // refuses what stands at its area rather than land jigc's files beside it — so a file of
+    // the user's where the commit doc goes is refused, naming it (the findings' §26).
+    re_enters(
+        "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::File(
+            ".jigc/tasks/add-alpha/docs/commit:add-alpha.md"
+        ))),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::Untracked),
+    ),
+    // `WF2`, the edge index.
+    re_enters(
+        "workflow-a-file-of-the-users-under-the-edge-index",
+        a_sub_task_provisioned!(Lead::Plant(Plant::File(".jigc/index/notes.md"))),
+        Listed::Acts,
+        at("WF2", Kind::Untracked),
+    ),
+];
+
+// --- `jigc migrate` ----------------------------------------------------------------
+
+/// The foreign file a migration is of, committed by the user, and the command.
+const HISTORY: &str = "HISTORY.md";
+const A_HISTORY: &str = "# History\n\n## 1.0.0\n\n- Added a thing.\n";
+const MIGRATE_IT: &[&str] = &["migrate", "HISTORY.md", "--as", "changelog"];
+
+/// **A foreign changelog, committed** — written by hand and committed by the user, as a
+/// repository holds a history file jigc never managed: the migration's source.
+macro_rules! a_foreign_history {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(HISTORY, A_HISTORY),
+            git(&["add", "--", HISTORY]),
+            git(&["commit", "-q", "-m", "a history"]),
+            $($after,)*
+        ]
+    };
+}
+
+/// One cell of `jigc migrate`.
+const fn migrates(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(name, &["migrate"], FRESH, leads, MIGRATE_IT, listed, aim)
+}
+
+/// **The cells of `jigc migrate`**, each listed from the row's doc:
+///
+/// - **the leaf as the catalog types it**, over a path that names nothing, is refused;
+///   **the base cell** migrates a committed `HISTORY.md` — the task's area made (`MI1`),
+///   the source read and left as it stands (`MI2`);
+/// - **at the migration task's place**, a residual of the user's is refused, the serial
+///   collision's code;
+/// - **at the source**, what stands in its place — a file of the user's, a link, a
+///   directory — and an edit in no commit: a link or a directory is no file git can record,
+///   *"refusing with `migrate.source-untrackable`"* (a directory refused by the read, in the
+///   run's words); whatever the door reads, it writes nothing there.
+const MIGRATE_CELLS: [Cell; 9] = [
+    cell(
+        "migrate-as-the-catalog-names-it",
+        &["migrate"],
+        FRESH,
+        &[],
+        &["migrate", "FOREIGN.md", "--as", "changelog"],
+        refuses(1, "FOREIGN.md"),
+        None,
+    ),
+    migrates(
+        "migrate-a-foreign-history",
+        a_foreign_history!(),
+        Listed::Acts,
+        None,
+    ),
+    // `MI1`, at the migration task's place.
+    migrates(
+        "migrate-a-file-of-the-users-where-the-migration-task-is-minted",
+        a_foreign_history!(Lead::Plant(Plant::File(
+            ".jigc/tasks/migrate-changelog-history-3268e06b69e1/notes.md"
+        ))),
+        refuses(1, "task.serial-collision"),
+        at("MI1", Kind::Untracked),
+    ),
+    // `MI2`, at the source.
+    migrates(
+        "migrate-a-file-of-the-users-in-the-sources-place",
+        a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::File(HISTORY)))),
+        Listed::Acts,
+        at("MI2", Kind::Untracked),
+    ),
+    migrates(
+        "migrate-a-link-to-nothing-in-the-sources-place",
+        a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            HISTORY
+        )))),
+        refuses(1, "migrate.source-untrackable"),
+        at("MI2", Kind::LinkToNothing),
+    ),
+    migrates(
+        "migrate-a-link-to-a-file-in-the-repository-in-the-sources-place",
+        a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: HISTORY,
+            outside: false
+        }))),
+        refuses(1, "migrate.source-untrackable"),
+        at("MI2", Kind::LinkInside),
+    ),
+    migrates(
+        "migrate-a-link-to-a-file-outside-in-the-sources-place",
+        a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: HISTORY,
+            outside: true
+        }))),
+        refuses(1, "migrate.source-untrackable"),
+        at("MI2", Kind::LinkOutside),
+    ),
+    // A directory is no file the door's location predicates name: it is refused by the read,
+    // in the run's words — no code, which no doc gives (the findings' §26, seen).
+    migrates(
+        "migrate-a-directory-in-the-sources-place",
+        a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(HISTORY)))),
+        refuses(
+            1,
+            "could not read the foreign `changelog` source at `HISTORY.md`",
+        ),
+        at("MI2", Kind::DirForAFile),
+    ),
+    migrates(
+        "migrate-an-edit-to-the-source",
+        a_foreign_history!(Lead::Plant(Plant::Edit(HISTORY))),
+        Listed::Acts,
+        at("MI2", Kind::EditAfter),
+    ),
+];
+
+// --- `jigc task amend` -------------------------------------------------------------
+
+const AMEND_IT: &[&str] = &["task", "amend", "fix the message"];
+
+/// One cell of `jigc task amend`.
+const fn amends(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(
+        name,
+        &["task", "amend"],
+        FRESH,
+        leads,
+        AMEND_IT,
+        listed,
+        aim,
+    )
+}
+
+/// **The cells of `jigc task amend`**, each listed from the row's doc:
+///
+/// - **the leaf as the catalog types it**, with no intent, mints a task named after
+///   `HEAD`'s commit; **the base cell** mints one named after its intent (`AM1`);
+/// - **at the amend task's place**, a residual of the user's is refused, the serial
+///   collision's code;
+/// - **a merge commit at `HEAD`** is refused *"before anything mints"*,
+///   `amend.head-shape`.
+const AMEND_CELLS: [Cell; 4] = [
+    cell(
+        "task-amend-as-the-catalog-names-it",
+        &["task", "amend"],
+        FRESH,
+        &[],
+        &["task", "amend"],
+        Listed::Acts,
+        None,
+    ),
+    amends("task-amend-the-last-commit", &[], Listed::Acts, None),
+    // `AM1`, at the amend task's place.
+    amends(
+        "task-amend-a-file-of-the-users-where-the-task-is-minted",
+        &[Lead::Plant(Plant::File(
+            ".jigc/tasks/fix-the-message/notes.md",
+        ))],
+        refuses(1, "task.serial-collision"),
+        at("AM1", Kind::Untracked),
+    ),
+    amends(
+        "task-amend-a-merge-commit",
+        &[
+            git(&["checkout", "-q", "-b", "side"]),
+            file("side.txt", "a side\n"),
+            git(&["add", "--", "side.txt"]),
+            git(&["commit", "-q", "-m", "a side"]),
+            git(&["checkout", "-q", "-"]),
+            file("main.txt", "a main\n"),
+            git(&["add", "--", "main.txt"]),
+            git(&["commit", "-q", "-m", "a main"]),
+            git(&["merge", "-q", "--no-ff", "side", "-m", "a merge"]),
+        ],
+        refuses(1, "amend.head-shape"),
+        None,
+    ),
+];
+
+const START_ELSEWHERE: [Cell; 6] = elsewhere!("start-a-task", &["start"], ADD_A_FILE, Listed::Acts);
+const WORKFLOW_ELSEWHERE: [Cell; 6] = elsewhere!(
+    "workflow-a-sub-task-re-entered",
+    &["workflow"],
+    RE_ENTER_IT,
+    refuses(1, "add-alpha")
+);
+const MIGRATE_ELSEWHERE: [Cell; 6] = elsewhere!(
+    "migrate-a-foreign-history",
+    &["migrate"],
+    MIGRATE_IT,
+    refuses(1, "HISTORY.md")
+);
+const AMEND_ELSEWHERE: [Cell; 6] = elsewhere!(
+    "task-amend-the-last-commit",
+    &["task", "amend"],
+    AMEND_IT,
+    Listed::Acts
+);
+
+/// The family's cells, a group a leaf, and its base cells in the other prepared states.
+pub const CELLS: &[&[Cell]] = &[
+    &START_CELLS,
+    &START_ELSEWHERE,
+    &WORKFLOW_CELLS,
+    &WORKFLOW_ELSEWHERE,
+    &MIGRATE_CELLS,
+    &MIGRATE_ELSEWHERE,
+    &AMEND_CELLS,
+    &AMEND_ELSEWHERE,
+];

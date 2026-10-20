@@ -455,6 +455,7 @@ const fn uninstall_over(
             kind: Kind::Foreign,
         }),
         marks: &[],
+        at: None,
     }
 }
 
@@ -485,6 +486,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::Untracked,
         }),
         marks: &[],
+        at: None,
     },
     Cell {
         spelling: None,
@@ -500,6 +502,7 @@ const ACCEPTANCE: &[Cell] = &[
             kind: Kind::Untracked,
         }),
         marks: &[],
+        at: None,
     },
     uninstall_over(
         "uninstall-a-foreign-file-under-logs",
@@ -558,6 +561,7 @@ const fn setup(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 
@@ -579,6 +583,7 @@ const fn uninstall(
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 
@@ -1511,6 +1516,7 @@ const fn ingest(name: &'static str, leads: &'static [Lead], aim: Option<Aim>) ->
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 
@@ -1527,6 +1533,7 @@ const fn unmanage(name: &'static str, leads: &'static [Lead], aim: Option<Aim>) 
         beside: None,
         aim,
         marks: &[],
+        at: None,
     }
 }
 
@@ -1596,6 +1603,7 @@ const fn elsewhere(
         beside: None,
         aim: None,
         marks: &[],
+        at: None,
     }
 }
 
