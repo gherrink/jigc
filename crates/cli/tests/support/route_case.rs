@@ -1466,7 +1466,7 @@ impl Sandbox {
         self.root.join("moved")
     }
 
-    fn at(&self, place: Place) -> PathBuf {
+    pub(super) fn at(&self, place: Place) -> PathBuf {
         match place {
             Place::Repo(path) => self.repo().join(path),
             Place::Outside(path) => self.outside().join(path),

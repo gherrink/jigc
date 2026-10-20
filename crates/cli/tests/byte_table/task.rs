@@ -354,15 +354,7 @@ const A_TASK_OVER_THE_VISION: [Lead; 6] = [
         "sharpen the open questions",
     ]),
     payload("open-questions", "What is still open, sharpened.\n"),
-    jigc(&[
-        "doc",
-        "set-slot",
-        "vision:vision#open-questions",
-        "--from-file",
-        "../outside/open-questions",
-        "--task",
-        "sharpen-the-open-questions",
-    ]),
+    jigc(WRITE_THE_OPEN_QUESTIONS),
     jigc(&[
         "doc",
         "set-field",
@@ -382,6 +374,18 @@ const A_TASK_OVER_THE_VISION: [Lead; 6] = [
         "--task",
         "sharpen-the-open-questions",
     ]),
+];
+
+/// The task's write to the vision's `open-questions` slot, its last part — the part a line
+/// added by hand at the file's end stands in.
+const WRITE_THE_OPEN_QUESTIONS: &[&str] = &[
+    "doc",
+    "set-slot",
+    "vision:vision#open-questions",
+    "--from-file",
+    "../outside/open-questions",
+    "--task",
+    "sharpen-the-open-questions",
 ];
 
 /// A line added by hand to the committed vision **after the task's first write** to it
@@ -980,6 +984,10 @@ const FINALIZE_CELLS: [Cell; 26] = [
         Listed::Acts,
         at("T1", Kind::EditBefore),
     ),
+    // The write to the part the line stands in is the lead-in the human's ruling of
+    // 2026-10-19 refuses, showing the line: it may act or refuse, and the task goes on to
+    // write another part, so the finalize meets a staged vision on both sides of the fix —
+    // the line replaced on this tree, carried on a product that refuses the write.
     finalize(
         "task-finalize-a-hand-edit-before-the-first-write-to-the-same-part",
         SINGLETONS,
@@ -987,10 +995,15 @@ const FINALIZE_CELLS: [Cell; 26] = [
             A_TASK_OVER_THE_VISION[0],
             A_HAND_EDIT,
             A_TASK_OVER_THE_VISION[1],
-            A_TASK_OVER_THE_VISION[2],
+            Lead::OverAHandEdit {
+                step: Step::Jigc(WRITE_THE_OPEN_QUESTIONS),
+                plant: 1,
+            },
             A_TASK_OVER_THE_VISION[3],
             A_TASK_OVER_THE_VISION[4],
             A_TASK_OVER_THE_VISION[5],
+            A_WRITE_TO_THE_THESIS[0],
+            A_WRITE_TO_THE_THESIS[1],
         ],
         FINALIZE_THE_VISION,
         Listed::Acts,

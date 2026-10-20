@@ -3315,14 +3315,14 @@ const FINALIZE_ELSEWHERE: [Cell; 6] = fan_out_elsewhere!(
 
 /// **A milestone of one sub-task that updates the committed vision from its worktree** —
 /// `land-it` in `committed-singletons`: the sub-task `sharpen-the-vision` re-entered in its
-/// worktree, its commit doc authored there, and one slot of `vision:vision` written —
-/// `$slot`, from `outside/prose` — which is the sub-task's first write to the doc; then the
-/// join. `$before` stands after the provision and before that first write, `$after` after
-/// the join, last before the command. The sub-task's doc-store is the main checkout's
-/// (`design/storage.md` → *CLI and git*), so its first write copies in the main checkout's
-/// `VISION.md`, whatever its worktree holds.
+/// worktree, its commit doc authored there, and slots of `vision:vision` written —
+/// `$write`, each from `outside/prose`, the first of them the sub-task's first write to the
+/// doc; then the join. `$before` stands after the provision and before that first write,
+/// `$after` after the join, last before the command. The sub-task's doc-store is the main
+/// checkout's (`design/storage.md` → *CLI and git*), so its first write copies in the main
+/// checkout's `VISION.md`, whatever its worktree holds.
 macro_rules! a_sub_task_over_the_vision {
-    ($slot:literal, [$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
+    ([$($write:expr),* $(,)?], [$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
         &[
             jigc(&["milestone", "create", "Land it"]),
             jigc(&["milestone", "add-task", "land-it", "Sharpen the vision"]),
@@ -3358,18 +3358,7 @@ macro_rules! a_sub_task_over_the_vision {
                     "sharpen-the-vision",
                 ],
             )),
-            Lead::Step(Step::JigcAt(
-                Place::Repo(".jigc/worktrees/sharpen-the-vision"),
-                &[
-                    "doc",
-                    "set-slot",
-                    concat!("vision:vision#", $slot),
-                    "--from-file",
-                    "../../../../outside/prose",
-                    "--task",
-                    "sharpen-the-vision",
-                ],
-            )),
+            $($write,)*
             jigc(&["milestone", "join", "land-it"]),
             $($after,)*
         ]
@@ -3379,6 +3368,42 @@ macro_rules! a_sub_task_over_the_vision {
 /// A line added by hand to the committed vision in the main checkout, in no commit (the
 /// plan's plant **E**). It stands in the vision's last part, `open-questions`.
 const A_HAND_EDIT_TO_THE_VISION: Lead = Lead::Plant(Plant::Edit("VISION.md"));
+
+/// Where the sub-task of [`a_sub_task_over_the_vision`] is re-entered and writes.
+const IN_THE_SUB_TASKS_WORKTREE: Place = Place::Repo(".jigc/worktrees/sharpen-the-vision");
+
+/// The sub-task's write to a slot of the vision, from its worktree — the thesis, the first
+/// of the doc's three parts, and `open-questions`, the last, where
+/// [`A_HAND_EDIT_TO_THE_VISION`] stands.
+const WRITE_THE_THESIS: &[&str] = &[
+    "doc",
+    "set-slot",
+    "vision:vision#thesis",
+    "--from-file",
+    "../../../../outside/prose",
+    "--task",
+    "sharpen-the-vision",
+];
+const WRITE_THE_OPEN_QUESTIONS: &[&str] = &[
+    "doc",
+    "set-slot",
+    "vision:vision#open-questions",
+    "--from-file",
+    "../../../../outside/prose",
+    "--task",
+    "sharpen-the-vision",
+];
+const A_WRITE_TO_THE_THESIS: Lead =
+    Lead::Step(Step::JigcAt(IN_THE_SUB_TASKS_WORKTREE, WRITE_THE_THESIS));
+
+/// **The sub-task's write to the part [`A_HAND_EDIT_TO_THE_VISION`] stands in** — the write
+/// the human's ruling of 2026-10-19 refuses, showing the line: it may act or refuse
+/// ([`Lead::OverAHandEdit`]). The edit is the cell's fourth lead, after the milestone's
+/// create, add-task and provision.
+const A_WRITE_OVER_THE_HAND_EDIT: Lead = Lead::OverAHandEdit {
+    step: Step::JigcAt(IN_THE_SUB_TASKS_WORKTREE, WRITE_THE_OPEN_QUESTIONS),
+    plant: 3,
+};
 
 const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
 
@@ -3397,14 +3422,16 @@ const SINGLETONS: Prepared = Prepared::Of(State::CommittedSingletons);
 ///   write by that same task to the slot or field the hand edit changed"*, until the human
 ///   retired the bound on 2026-10-19: such a write refuses at the write, naming the part
 ///   and showing the hand-edited text; the cell is red under its key, a finding of the
-///   product, and carries no mark;
+///   product, and carries no mark. Its write to that part is [`A_WRITE_OVER_THE_HAND_EDIT`],
+///   which may act or refuse, and the sub-task goes on to write the thesis: on a product
+///   that refuses the write, the line lands with the thesis, and the cell holds;
 /// - **after it**, *"The file is no longer what the task copied in → the caller's
 ///   `reconciliation.conflict-block`"*, and nothing is recorded.
 const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
     finalizes(
         "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-another-part",
         SINGLETONS,
-        a_sub_task_over_the_vision!("thesis", [A_HAND_EDIT_TO_THE_VISION], []),
+        a_sub_task_over_the_vision!([A_WRITE_TO_THE_THESIS], [A_HAND_EDIT_TO_THE_VISION], []),
         FINALIZE_IT,
         Listed::Acts,
         at("M2", Kind::EditBefore),
@@ -3412,7 +3439,11 @@ const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
     finalizes(
         "milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part",
         SINGLETONS,
-        a_sub_task_over_the_vision!("open-questions", [A_HAND_EDIT_TO_THE_VISION], []),
+        a_sub_task_over_the_vision!(
+            [A_WRITE_OVER_THE_HAND_EDIT, A_WRITE_TO_THE_THESIS],
+            [A_HAND_EDIT_TO_THE_VISION],
+            []
+        ),
         FINALIZE_IT,
         Listed::Acts,
         at("M2", Kind::EditBefore),
@@ -3420,7 +3451,7 @@ const FINALIZE_A_HAND_EDIT: [Cell; 3] = [
     finalizes(
         "milestone-finalize-a-hand-edit-after-a-sub-tasks-first-write",
         SINGLETONS,
-        a_sub_task_over_the_vision!("thesis", [], [A_HAND_EDIT_TO_THE_VISION]),
+        a_sub_task_over_the_vision!([A_WRITE_TO_THE_THESIS], [], [A_HAND_EDIT_TO_THE_VISION]),
         FINALIZE_IT,
         refuses(3, "reconciliation.conflict-block"),
         at("M2", Kind::EditAfter),

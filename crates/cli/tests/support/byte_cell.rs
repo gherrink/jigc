@@ -4102,6 +4102,21 @@ pub enum Lead {
     /// lead runs a command that refuses and leaves what the cell needs: `task validate`
     /// over a task with no write refuses, and builds the edge index first.
     Refused(&'static [&'static str]),
+    /// **A `doc` write to the part an uncommitted hand edit stands in** — the binary under
+    /// test as `step` runs it ([`Step::Jigc`], or [`Step::JigcAt`] from a sub-task's
+    /// worktree), writing the part the edit planted at the cell's lead `plant` changed.
+    /// The human's ruling of 2026-10-19, which retired their bound 2, has such a write
+    /// **refuse, naming the part and showing the hand-edited text**; this tree and the
+    /// previous release let it act. **Either end lets the cell go on** — it acts, or it
+    /// refuses with the plant's bytes in what it said — and the cell's command meets what
+    /// the write left: so a cell whose lead-in is that write is held to its command's
+    /// answer on a product before the ruling's fix and on one after it, and never stops on
+    /// its lead. Any other end — a refusal that does not show the edit, a step that is not
+    /// the binary's, no exit within the limit — is a fault of the cell, as a lead-in's is.
+    OverAHandEdit {
+        step: Step,
+        plant: usize,
+    },
 }
 
 /// **An open question a cell turns on, or a declared bound it stands on** — a mark. A
@@ -4732,6 +4747,33 @@ impl Lead {
                         "the lead {at} of the cell must refuse, and `jigc {}` came to {}",
                         args.join(" "),
                         ran.exit()
+                    ))
+                }
+            }
+            Lead::OverAHandEdit { step, plant } => {
+                let (place, args) = match step {
+                    Step::Jigc(args) => (sandbox.repo(), args),
+                    Step::JigcAt(place, args) => (sandbox.at(place), args),
+                    _ => {
+                        return Err(format!(
+                            "the lead {at} of the cell is a write over a hand edit, and its \
+                             step is not the binary under test"
+                        ));
+                    }
+                };
+                let mut command = sandbox.child(binary);
+                command.current_dir(place).args(args);
+                let ran = sandbox.run(&mut command, route_case::LIMIT);
+                let refused = ran.held.is_none() && ran.code.is_some_and(|code| code != 0);
+                if ran.success() || (refused && ran.said.contains(&marker(plant, "only"))) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "the lead {at} of the cell, a write over the hand edit of its lead \
+                         {plant}, acts or refuses showing that edit, and `jigc {}` came to {}: {}",
+                        args.join(" "),
+                        ran.exit(),
+                        ran.said.trim_end()
                     ))
                 }
             }

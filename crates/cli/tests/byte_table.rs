@@ -8549,6 +8549,7 @@ writes-the-exclude) mkdir -p .git/info && echo ignored >> .git/info/exclude ;;
 marks-an-entry) git update-index --assume-unchanged README.md ;;
 refuses-and-writes) echo left > left; exit 1 ;;
 refuses) exit 1 ;;
+refuses-showing-the-readme) cat README.md; exit 1 ;;
 writes-its-own) mkdir -p .jigc && echo own > .jigc/own.txt ;;
 rewrites-its-own) echo other > .jigc/own.txt ;;
 overwrites-the-committed-plant) echo other > notes.txt ;;
@@ -8909,6 +8910,34 @@ const ON_A_STAND_IN: &[OnAStandIn] = &[
     on_a_stand_in(
         &["refuses"],
         &[Lead::Refused(&["refuses"])],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    // A write over a hand edit, which the human's ruling of 2026-10-19 refuses showing the
+    // edit and this tree lets act: either way the cell goes on to its command.
+    on_a_stand_in(
+        &["refuses"],
+        &[
+            Lead::Plant(Plant::Edit("README.md")),
+            Lead::OverAHandEdit {
+                step: Step::Jigc(&["refuses-showing-the-readme"]),
+                plant: 0,
+            },
+        ],
+        NOTHING,
+        Classification::NotTheListedOutcome,
+        "the cell is listed as acting, and the command refused",
+    ),
+    on_a_stand_in(
+        &["refuses"],
+        &[
+            Lead::Plant(Plant::Edit("README.md")),
+            Lead::OverAHandEdit {
+                step: Step::Jigc(&["status-and-a-time"]),
+                plant: 0,
+            },
+        ],
         NOTHING,
         Classification::NotTheListedOutcome,
         "the cell is listed as acting, and the command refused",
@@ -9510,6 +9539,51 @@ fn the_reader_reads_what_the_comparison_reads() {
         ),
         (
             cell(
+                "a-write-over-a-hand-edit-that-refuses-and-does-not-show-it",
+                Prepared::Bare,
+                &[
+                    Lead::Plant(Plant::Edit("README.md")),
+                    Lead::OverAHandEdit {
+                        step: Step::Jigc(&["refuses"]),
+                        plant: 0,
+                    },
+                ],
+                &["probe"],
+            ),
+            "acts or refuses showing that edit, and `jigc refuses` came to exit 1",
+        ),
+        (
+            cell(
+                "a-write-over-a-hand-edit-that-shows-another-plant",
+                Prepared::Bare,
+                &[
+                    Lead::Plant(Plant::Edit("README.md")),
+                    Lead::OverAHandEdit {
+                        step: Step::Jigc(&["refuses-showing-the-readme"]),
+                        plant: 1,
+                    },
+                ],
+                &["probe"],
+            ),
+            "a write over the hand edit of its lead 1, acts or refuses showing that edit",
+        ),
+        (
+            cell(
+                "a-write-over-a-hand-edit-that-is-no-step-of-the-binary",
+                Prepared::Bare,
+                &[
+                    Lead::Plant(Plant::Edit("README.md")),
+                    Lead::OverAHandEdit {
+                        step: Step::Git(&["status"]),
+                        plant: 0,
+                    },
+                ],
+                &["probe"],
+            ),
+            "its step is not the binary under test",
+        ),
+        (
+            cell(
                 "a-directory-over-a-file",
                 Prepared::Bare,
                 &[Lead::Plant(Plant::Dir("README.md"))],
@@ -10061,6 +10135,15 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::Lost,
         &["task-finalize-a-hand-edit-before-the-first-write-to-the-same-part"],
     ),
+    // The human's ruling of 2026-10-19, which retired their bound 2, at its own door (after
+    // the review of the task `B8`, H6): the write to the part a hand edit stands in acts,
+    // where the ruling has it refuse showing the edit — one mechanism with the key above
+    // and the boundary's, one fix closes the three.
+    (
+        "r1-doc-write-acts-over-a-hand-edit-in-the-part-it-writes",
+        Classification::NotTheListedOutcome,
+        &["doc-set-the-visions-open-questions-a-hand-edit-to-the-same-part-before-the-first-write"],
+    ),
     (
         "r1-task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file-is-replaced",
         Classification::Lost,
@@ -10190,9 +10273,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "milestone-finalize-a-change-staged-at-the-record",
         ],
     ),
-    // The human's declared bound 2 of 2026-10-06, at the boundary: one mechanism with the
-    // task family's key above, the copy-in a sub-task's first write makes from the main
-    // checkout's doc-store; the cell marked.
+    // What the human's bound 2 of 2026-10-06 reached until they retired it on 2026-10-19, at
+    // the boundary: one mechanism with the task family's key above, the copy-in a sub-task's
+    // first write makes from the main checkout's doc-store; the cell carries no mark.
     (
         "r1-milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-is-replaced-by-its-write-to-the-same-part",
         Classification::Lost,
@@ -10717,6 +10800,36 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
                 cell.name
             ));
         }
+        // A write over a hand edit names the plant it writes over, and a refusal listed by a
+        // plant's bytes names a plant of the cell: an index that moved would hold a cell to
+        // another lead's bytes.
+        let is_an_edit =
+            |plant: usize| matches!(cell.leads.get(plant), Some(Lead::Plant(Plant::Edit(_))));
+        for (lead_at, lead) in cell.leads.iter().enumerate() {
+            if let Lead::OverAHandEdit { plant, .. } = lead
+                && !(*plant < lead_at && is_an_edit(*plant))
+            {
+                wrong.push(format!(
+                    "`{}`'s lead {lead_at} writes over the hand edit of its lead {plant}, which \
+                     is no hand edit before it",
+                    cell.name
+                ));
+            }
+        }
+        if let Listed::RefusesWith(refusal) = cell.listed
+            && let Some(rest) = refusal.says.strip_prefix("byte-table-plant-")
+        {
+            let named = rest
+                .strip_suffix("-only-of-its-cell")
+                .and_then(|plant| plant.parse::<usize>().ok());
+            if !named.is_some_and(is_an_edit) {
+                wrong.push(format!(
+                    "`{}` is listed as refusing with the bytes `{}`, which are no hand edit's \
+                     of the cell",
+                    cell.name, refusal.says
+                ));
+            }
+        }
         if let Some(beside) = cell.beside {
             let held = beside.split_once("::").is_some_and(|(suite, test)| {
                 fs::read_to_string(format!("{SUITES}/{suite}.rs"))
@@ -10766,13 +10879,13 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (681, 525, 156),
+        (683, 527, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
-         doc family's a hundred and thirty-seven: eighty-nine in the gate, forty-eight on \
+         doc family's a hundred and thirty-nine: ninety-one in the gate, forty-eight on \
          demand — and the milestone family's record doors seventy: fifty-two in the gate, \
          eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
          demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \

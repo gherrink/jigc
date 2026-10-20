@@ -331,6 +331,49 @@ const SET_WHAT_IT_PROVES: &[&str] = &[
     "sharpen-the-roadmap",
 ];
 
+/// **A task over the committed vision** — `sharpen-the-open-questions`, on `single-task`:
+/// the task the task family's cells over the vision write in.
+const A_TASK_FOR_THE_OPEN_QUESTIONS: Lead = jigc(&[
+    "start",
+    "--workflow",
+    "single-task",
+    "sharpen the open questions",
+]);
+
+/// **A line added by hand to the committed vision, in no commit** — the plan's plant
+/// **E**, at the end of the file: in `open-questions`, the vision's last part.
+const A_HAND_EDIT_TO_THE_VISION: Lead = Lead::Plant(Plant::Edit("VISION.md"));
+
+/// **The bytes of [`A_HAND_EDIT_TO_THE_VISION`], planted as a cell's lead 1** — the marker
+/// the frame writes for a plant at that lead. The ruling of 2026-10-19 has the refusing
+/// write show the hand-edited text, so its output holds them; the suite holds that the
+/// lead 1 of every cell listed with them is that plant.
+const THE_HAND_EDIT_SHOWN: &str = "byte-table-plant-1-only-of-its-cell";
+
+/// What `doc set-slot` writes to the vision, read with `--from-file`.
+const WHAT_IS_STILL_OPEN: Lead = payload("open-questions", "What is still open, sharpened.\n");
+const A_SHARPER_THESIS: Lead = payload("thesis", "A thesis, sharpened.\n");
+
+/// The task's first write to the vision: the part the hand edit stands in, and another.
+const SET_THE_OPEN_QUESTIONS: &[&str] = &[
+    "doc",
+    "set-slot",
+    "vision:vision#open-questions",
+    "--from-file",
+    "../outside/open-questions",
+    "--task",
+    "sharpen-the-open-questions",
+];
+const SET_THE_THESIS: &[&str] = &[
+    "doc",
+    "set-slot",
+    "vision:vision#thesis",
+    "--from-file",
+    "../outside/thesis",
+    "--task",
+    "sharpen-the-open-questions",
+];
+
 /// **A task that made a decision it has not committed** — `record-two-ways`, which
 /// created `adr:two-ways`: the never-committed arm of `doc rename`, whose re-slug moves the
 /// identity (`W4`).
@@ -461,14 +504,20 @@ const RETITLE_ONE_WAY: &[&str] = &[
 /// it found it. The code it is listed with is today's nearest, the one its siblings
 /// refuse with; and a deletion
 /// after the task's first write is not looked at, since *"a second write to an
-/// already-staged doc reads the staged copy and does not look at the home again"*.
+/// already-staged doc reads the staged copy and does not look at the home again"*. **A
+/// line added by hand at the home before the first write** is carried in where the write
+/// changes another part, as before; where it writes the part the line stands in, it
+/// refuses, naming the part and showing the hand-edited text — the human's ruling of
+/// 2026-10-19, which retired their bound 2 (`DECISIONS.md`): listed with the line's own
+/// bytes, which that refusal's output holds whatever code the product's fix mints, and
+/// exit 1, a rejected write's (`design/command-output-contract.md` → *The exit-code taxonomy*).
 /// **What a refusal's route says is no cell's**: the six of `remove-item` and `set-slot`
 /// that refuse `write.non-reparseable` print *"nothing was persisted"* over the copy they
 /// leave staged — a claim of its own, held by no cell, since a cell holds bytes and not
 /// words: the findings' key
 /// `r1-doc-write-says-nothing-was-persisted-where-its-refusal-leaves-bytes-in-the-tasks-area`
 /// (`…/reshape/byte-table-findings.md` → §12). Each stays red under its byte key.
-const EDITS: [Cell; 67] = [
+const EDITS: [Cell; 69] = [
     cell(
         "doc-add-item-with-no-task",
         &["doc", "add-item"],
@@ -1252,6 +1301,38 @@ const EDITS: [Cell; 67] = [
         SET_WHAT_IT_PROVES,
         Listed::Acts,
         at("W3", Kind::EditAfter),
+        &[],
+    ),
+    // The human's ruling of 2026-10-19, which retired their bound 2, at its own door: a
+    // write to the part an uncommitted hand edit stands in refuses, showing the edit — the
+    // plant at the cell's lead 1, whose bytes its refusal holds — and a write to another
+    // part absorbs it, as before.
+    cell(
+        "doc-set-the-visions-open-questions-a-hand-edit-to-the-same-part-before-the-first-write",
+        &["doc", "set-slot"],
+        HOME,
+        &[
+            A_TASK_FOR_THE_OPEN_QUESTIONS,
+            A_HAND_EDIT_TO_THE_VISION,
+            WHAT_IS_STILL_OPEN,
+        ],
+        SET_THE_OPEN_QUESTIONS,
+        refuses(1, THE_HAND_EDIT_SHOWN),
+        at("W3", Kind::EditBefore),
+        &[],
+    ),
+    cell(
+        "doc-set-the-visions-thesis-a-hand-edit-to-another-part-before-the-first-write",
+        &["doc", "set-slot"],
+        HOME,
+        &[
+            A_TASK_FOR_THE_OPEN_QUESTIONS,
+            A_HAND_EDIT_TO_THE_VISION,
+            A_SHARPER_THESIS,
+        ],
+        SET_THE_THESIS,
+        Listed::Acts,
+        at("W3", Kind::EditBefore),
         &[],
     ),
     cell(
