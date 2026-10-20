@@ -172,10 +172,23 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *[2026-10-20, after the review of the task `B8` (its H5): the other root knob parks it — `config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home`, a file the user committed at `notes/roadmap.md`, parked at exit 0 on both binaries, red under `r1-config-set-parks-a-file-the-user-committed-at-a-new-home`, marked. So `config set` refuses it by one knob and parks it by the other, and the cell of `docs-root` held only because that knob refuses every squatter. Under the robust answer for a root knob — refuse the re-point whole, naming the new home, the knob unchanged — the new cell, listed refusing with the new home, comes out *refuses, nothing changed*, and the cell of `docs-root` stays as it is.]*
 - *The ruling* — the human's, of 2026-10-20, as the orchestrating session handed it on, **stricter than option A**: **jigc never moves or overwrites a file to make room for its own — any file at a mover's destination, committed or untracked, managed or not, refuses**: `relocate` blocks that doc, moves the others, names the path to clear and exits non-zero; a root knob refuses its whole re-point, the knob unchanged; a file is moved aside only from a place jigc is about to remove, never from a destination; a doc occupant's refusal offers adopting it as well as clearing it; and an unmanaged doc elsewhere in the target folder blocks nothing, the output naming it with the adopt route. `design/reconciliation.md`'s settled foreign-only bound, `design/storage.md`'s *Placement* parking, `config set docs-root`'s refusal in git's words, and the product at `relocate` and `placement-root` are wrong. *The cells*: the three marked ones lose the mark — `relocate`'s and `placement-root`'s red under their keys, `docs-root`'s refusing having changed nothing — and the fifteen with an untracked occupant at a destination, listed acting until now, are listed refusing: red under a key of their own at `relocate` and at `placement-root`, and refusing having changed nothing at `docs-root`. The frame strikes the parking lines `RL3` and `CS3`, and reads the destination as a line's place. Recorded by the first commit of `B9` ([the record](byte-table-acceptance-rows.md) → §6, entry 23).
 
+## 23. Whether a migration task's approved retire may delete bytes no commit holds where git holds the path (the record's entry 24) — two sentences of one paragraph say two things; open
+
+*2026-10-20, the fifth of the fixes after the review of the task `B9` (its H6, question Q-b).*
+
+- *The words* — quoted in [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 24: `design/auto-migration.md`'s test, *"the retire deletes only a file git holds a copy of"*, asked of the path (the index or `HEAD`); its warrant, *"a guarded migrate destroys only a reviewed, in-repo, **git-recoverable** file"*, about the bytes; and M51's decision, which priced the staged-only source.
+- *What the product does.* On both binaries, `jigc task finalize <id> --approve` deletes, at exit 0, the bytes no commit holds at the source — a line added before the mint, a file of the user's in its place, a change staged there, a source never committed. A line added after the mint is refused on this tree (`reconciliation.conflict-block`, exit 3) and deleted on the previous release.
+- *Robust*: the retire deletes only bytes `HEAD` holds at that path — the working file's and the index's — and otherwise refuses before anything is promoted, naming the source, routed at committing the change first; the doc's test, the product's retire and M51's pricing of the staged-only cell are wrong. The human's to rule: it reverses a priced cell.
+- *Until ruled*: the stricter reading — the retire refuses, exit 3, naming the source. *The cells* — the four of the spelling `--approve` over bytes no commit holds, *lost* on both binaries under `r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds` ([the findings](byte-table-findings.md) → §26), each marked.
+
 ## The marked cells
 
 A line a mark of a cell, as the suite prints it. A cell with two marks has two lines.
 
 | mark | cell |
 |---|---|
+| silence 24 | `task-finalize-approve-a-change-staged-at-the-source` |
+| silence 24 | `task-finalize-approve-a-file-of-the-users-in-the-sources-place` |
+| silence 24 | `task-finalize-approve-a-source-staged-and-never-committed` |
+| silence 24 | `task-finalize-approve-an-edit-to-the-source-before-the-migration` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |

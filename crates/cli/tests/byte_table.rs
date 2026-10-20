@@ -9,11 +9,12 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 746 cells: the acceptance's twelve, the task family's
-//! seventy-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
-//! spelling `doc-only`), **`milestone finalize`'s spelling `squash: false` four, the install
-//! family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`), **the doc
-//! family's hundred and thirty-nine** (its eight leaves), **the milestone family's record
+//! `migrate`, `task amend`) — and 752 cells: the acceptance's twelve, the task family's
+//! seventy-seven** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
+//! spelling `doc-only` and six its spelling `--approve`), **`milestone finalize`'s
+//! spelling `squash: false` four, the install family's hundred and thirty-one** (`setup`,
+//! `uninstall`, `ingest`, `unmanage`), **the doc family's hundred and thirty-nine** (its
+//! eight leaves), **the milestone family's record
 //! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
@@ -1427,6 +1428,7 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     ),
     (&["task", "finalize"], "T2", &[Prepared::Of(State::Fresh)]),
     (&["task", "finalize"], "T9", &[Prepared::Of(State::Fresh)]),
+    (&["task", "finalize"], "T10", &[Prepared::Of(State::Fresh)]),
     (
         &["task", "finalize"],
         "T4",
@@ -4980,6 +4982,133 @@ fn a_provisioned_place_needs_a_link_and_a_directory_where_it_provisions() {
             "WF1 × K, a file in a directory's place",
         ],
         "what `WF1` provisions is aimed at by a link and a directory"
+    );
+}
+
+/// **A retire deletes only what `HEAD` holds there** — the word *retired* of `jigc task
+/// finalize`'s `T10`, under its spelling `--approve` (after the review of the task `B9`,
+/// H6): the foreign original a migration task recorded ([`byte_cell::THE_RETIRED`]) may go
+/// from the working tree and the index where the bytes that go are the bytes `HEAD` holds
+/// at that path — *"the retire deletes only a file git holds a copy of"*, whose warrant is
+/// *"a guarded migrate destroys only a reviewed, in-repo, **git-recoverable** file"*
+/// (`design/auto-migration.md` → *Retire-the-foreign-original*). The source as `HEAD` holds
+/// it, retired, holds; an edit in no commit retired with it, a file of the user's in its
+/// place with the index's entry gone, a change staged there, a link in its place, a removal
+/// where the area records no source, and one of the source another task's area records are
+/// each red (red first: against the word
+/// *removed* at the same place, the first four came out *holds*).
+#[test]
+fn a_retire_deletes_only_what_head_holds_there() {
+    const RETIRES: Row = Row {
+        unit: Unit::TheWordAfterTheLeaf,
+        ..row(&[
+            line(
+                "X1",
+                Allows::Files(Where::Path(byte_cell::THE_RETIRED), May::Retired),
+            ),
+            line("X2", Allows::Staged),
+        ])
+    };
+    let argv: &[&str] = &["probe", "m"];
+    let history = "# History\n\n- Added a thing.\n";
+    let before = then(&sandbox(), |m| {
+        put(m, "repo/HISTORY.md", history);
+        commit(m, "c1", &[("HISTORY.md", Some((0o100_644, history)))]);
+        put(m, "repo/.jigc/tasks/m/base.json", "a pin\n");
+        put(m, "repo/.jigc/tasks/m/source-path", "HISTORY.md");
+    });
+    let retired = |m: &mut Manifest| {
+        m.files.remove("repo/HISTORY.md");
+        if let Some(main) = m.checkouts.get_mut(REPO) {
+            main.index.remove("HISTORY.md");
+        }
+    };
+    let came = |before: &Manifest, after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(RETIRES, before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&before, &then(&before, retired));
+    assert_eq!(class, Classification::Holds, "retired: {why:#?}");
+    let edited = then(&before, |m| {
+        put(
+            m,
+            "repo/HISTORY.md",
+            "# History\n\n- Added a thing.\n- A line of the user's.\n",
+        )
+    });
+    let in_its_place = then(&before, |m| {
+        put(m, "repo/HISTORY.md", "a file of the user's\n");
+        if let Some(main) = m.checkouts.get_mut(REPO) {
+            main.index.remove("HISTORY.md");
+        }
+    });
+    let staged_there = then(&before, |m| {
+        if let Some(main) = m.checkouts.get_mut(REPO) {
+            main.index
+                .insert("HISTORY.md".to_string(), staged("# History, staged\n"));
+        }
+    });
+    let a_link = then(&before, |m| {
+        m.files.insert(
+            "repo/HISTORY.md".to_string(),
+            Entry::Link("the-users-history.md".to_string()),
+        );
+    });
+    let no_source = then(&before, |m| {
+        m.files.remove("repo/.jigc/tasks/m/source-path");
+    });
+    let anothers_source = then(&no_source, |m| {
+        put(m, "repo/.jigc/tasks/other/base.json", "a pin\n");
+        put(m, "repo/.jigc/tasks/other/source-path", "HISTORY.md");
+    });
+    for (case, before) in [
+        ("an edit in no commit, retired with the source", &edited),
+        (
+            "a file of the user's in the source's place, retired",
+            &in_its_place,
+        ),
+        (
+            "a change staged at the source, retired with it",
+            &staged_there,
+        ),
+        ("a link in the source's place, retired", &a_link),
+        ("a removal where the area records no source", &no_source),
+        (
+            "a removal of the source another task's area records",
+            &anothers_source,
+        ),
+    ] {
+        let (class, why) = came(before, &then(before, retired));
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+}
+
+/// **Where a retire deletes, the user's own change there is a need** — the review of the
+/// task `B9`, H6: `jigc task finalize`'s row had no line for the retire a migration task's
+/// `--approve` runs, so no plant could be aimed where it deletes, and the loss of an edit in
+/// no commit stood unseen. Its line, `T10`, under the spelling `--approve`, is aimed at by
+/// the user's bytes there that no commit holds: a file of the user's in the source's place,
+/// an edit before the migration copies the source in, one after it, and a change staged
+/// there (red first: the row had no `T10`).
+#[test]
+fn a_retire_needs_the_users_change_where_it_deletes() {
+    let of_t10: Vec<String> = needs(&task::FINALIZE)
+        .iter()
+        .map(Need::named)
+        .filter(|need| need.starts_with("T10 × "))
+        .collect();
+    assert_eq!(
+        of_t10,
+        [
+            "T10 × U, as `--approve`",
+            "T10 × E, before the first write, as `--approve`",
+            "T10 × E, after the first write, as `--approve`",
+            "T10 × S, where the command writes, as `--approve`",
+        ],
+        "where the retire deletes, the user's change in no commit is aimed at"
     );
 }
 
@@ -11527,6 +11656,21 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::Lost,
         &["workflow-a-link-to-nothing-where-the-commit-doc-is-provisioned"],
     ),
+    // A migration task's approved finalize retires the source where git holds a copy of its
+    // path, and so deletes bytes no commit holds — a file of the user's in the source's place,
+    // an edit made before the migration copied the source in, a change staged there, a
+    // source staged and never committed — at exit 0 (after the review of the task `B9`, H6; the rows' record's §6, entry 24). An
+    // edit after the mint is refused on this tree.
+    (
+        "r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds",
+        Classification::Lost,
+        &[
+            "task-finalize-approve-a-file-of-the-users-in-the-sources-place",
+            "task-finalize-approve-an-edit-to-the-source-before-the-migration",
+            "task-finalize-approve-a-change-staged-at-the-source",
+            "task-finalize-approve-a-source-staged-and-never-committed",
+        ],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -11992,10 +12136,10 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (746, 566, 180),
+        (752, 572, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
-         on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
+         seventy-seven — sixty-five in the gate, four of them its spelling `doc-only` and six \
+         its spelling `--approve`, twelve on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-nine: ninety-one in the gate, forty-eight on \

@@ -1493,6 +1493,32 @@ readlink ".jigc/tasks/add-alpha/docs/commit:add-alpha.md"                       
 ls -l .jigc/tasks/add-alpha/docs                                                                   # commit:add-alpha.md a regular file, provenance.json; the link gone
 ```
 
+### `r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds`
+
+*Added 2026-10-20, by the fifth of the fixes after the review of the task `B9` (its H6): the lead under* Seen *below, driven. The cells are the task family's — its spelling `--approve`, whose line `T10` the same fix gave `jigc task finalize`'s row — and stand here beside the `migrate` door whose lead they answer.*
+
+- *The cells.* Over a committed `HISTORY.md`, `jigc migrate HISTORY.md --as changelog`, the canonical changelog authored in the task, then `jigc task finalize <id> --approve`, with the user's bytes that no commit holds at the source: `task-finalize-approve-an-edit-to-the-source-before-the-migration` (a line added before the mint, so the seam records it), `task-finalize-approve-a-file-of-the-users-in-the-sources-place` (the index's entry gone with the one taken away — the shape of the lead), `task-finalize-approve-a-change-staged-at-the-source` (the working file as committed) and `task-finalize-approve-a-source-staged-and-never-committed` (M51's priced cell).
+- *What it came to.* **Lost; also not the listed outcome** — and, for the two staged ones, also *git's state moved outside its allowance*: exit 0, *"deleted HISTORY.md"*, the canonical doc promoted and the deletion committed, and the user's bytes at no path of the sandbox and in no object within reach. The same on the previous release. Beside them, `task-finalize-approve-a-migration` (the source as committed) holds on both binaries, and `task-finalize-approve-an-edit-to-the-source-after-the-authoring` is refused on this tree — exit 3, `reconciliation.conflict-block`, *"it no longer holds what the migration recorded when it was minted"* — and lost at exit 0 on the previous release, which the rc.24 fix pass's completion audit closed: no regression, and no cell of this key.
+- *Held against.* `T10` — *"the retire deletes only a file git holds a copy of"*, read by its warrant, *"a guarded migrate destroys only a reviewed, in-repo, **git-recoverable** file"* (`design/auto-migration.md` → *Retire-the-foreign-original (the first destructive write)*); the human's ruling of 2026-10-14 that the bare object store is not held ([byte-table-readings.md](byte-table-readings.md) → §1).
+- *Which is wrong, and why.* **The doc's test and the product's retire** — and M51's pricing of the staged-only cell. One mechanism: the retire asks whether git holds **the path** (the index or `HEAD`), and the task door compares the file with the seam the migration recorded, not with what `HEAD` holds — so bytes the seam recorded, or bytes in the index alone, go with it. *Robust* ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 24, open): the retire deletes only bytes `HEAD` holds at that path — the working file's and the index's — and otherwise refuses before anything is promoted, naming the source, routed at committing the change first. The cells are listed refusing, exit 3, naming `HISTORY.md`, as the same door refuses an edit after the mint, and are marked.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+printf '# History\n\n## 1.0.0\n\n- Added a thing.\n' > HISTORY.md && git add -- HISTORY.md && git commit -qm "a history"
+printf -- "- A line of the user's, only-in-the-working-file.\n" >> HISTORY.md
+command grep -l "only-in-the-working-file" HISTORY.md                                                # HISTORY.md
+$JIGC migrate HISTORY.md --as changelog >/dev/null; echo "exit=$?"                       # exit=0
+command grep -rl "only-in-the-working-file" . | sort                                      # the control: ./.jigc/tasks/<the task>/source, ./HISTORY.md
+printf 'title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: "1.0.0"\n        sections:\n          - id: changes\n            items:\n              - title: "added"\n                set:\n                  notes: |-\n                    <<- Added a thing.>>\n' > "$RIG/changelog.yaml"
+$JIGC doc author changelog --from-file "$RIG/changelog.yaml" --task migrate-changelog-history-3268e06b69e1 >/dev/null; echo "exit=$?"   # exit=0
+$JIGC task finalize migrate-changelog-history-3268e06b69e1 --approve > "$RIG/out" 2>&1; echo "exit=$?"   # exit=0
+command grep -c "deleted HISTORY.md" "$RIG/out"                                          # 1
+command grep -rl "only-in-the-working-file" .; echo "found=$?"                                       # found=1: at no path
+for o in $(git cat-file --batch-all-objects --batch-check='%(objectname)'); do git cat-file -p "$o" | command grep -q "only-in-the-working-file" && echo "in $o"; done; echo "every object read"   # every object read: in none
+```
+
 ### What the other fifty show
 
 - **`start`, fifteen cells.** The orientation over `fresh` acts and writes nothing; a mint makes the task's area — base pin, intent, workflow, the commit doc, the provenance manifest, the staged snapshot — and nothing else; the orientation and the resume over a minted task rebuild the edge index and mint nothing, and a file of the user's under the index stands; a residual where the task is minted, a live task of the same id and a title that slugs to nothing are refused before a write. In every other prepared state the mint acts, or `bare` refuses.
@@ -1510,4 +1536,4 @@ ls -l .jigc/tasks/add-alpha/docs                                                
 ### Seen, and held by no cell
 
 - **`migrate` over a directory at the source refuses in the run's words** — *"could not read the foreign `changelog` source at `HISTORY.md`"*, no code, route *"check the path"*; its links are `migrate.source-untrackable`. The cell lists the words. A lead for the route catalog, as the movers' was.
-- **`migrate` admits a source whose working bytes no git object holds.** Over a file of the user's in the committed `HISTORY.md`'s place — the index entry gone, `HEAD` still holding the committed bytes — the door's trackedness question (*"does git hold a copy"* — the index or `HEAD`) answers yes, and the mint stages the user's bytes as the source; the retire at `jigc task finalize --approve` then removes a file whose bytes are in no object. Not this family's door, and not driven to the retire (it needs an authored changelog): a lead for the task family's `--approve` spelling.
+- **`migrate` admits a source whose working bytes no git object holds.** Over a file of the user's in the committed `HISTORY.md`'s place — the index entry gone, `HEAD` still holding the committed bytes — the door's trackedness question (*"does git hold a copy"* — the index or `HEAD`) answers yes, and the mint stages the user's bytes as the source; the retire at `jigc task finalize --approve` then removes a file whose bytes are in no object. Not this family's door, and not driven to the retire (it needs an authored changelog): a lead for the task family's `--approve` spelling. *[Driven on 2026-10-20, by the fifth of the fixes after the review of the task `B9` (its H6 and N5): the authored changelog is one payload, and the retire deletes the user's bytes at exit 0 on both binaries — this shape and three more, under `r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds` above.]*

@@ -425,6 +425,15 @@ pub const PRIOR_HOME: &str = "<prior-home>";
 /// 2026-10-20, with the mint family's rows (the task `B9`).
 pub const THE_SOURCE: &str = "<the-source>";
 
+/// **The foreign original the unit's migration recorded** — the path the unit's area holds
+/// in `.jigc/tasks/<unit>/source-path` before the command, from the repository's root: the
+/// file a migration task's `jigc task finalize <id> --approve` retires — *"`jigc task
+/// finalize <id> --approve` proceeds through the retire + commit + adopt"*
+/// (`design/auto-migration.md` → *The review gate (fidelity)*). Nothing where the unit's area
+/// records no source. Added 2026-10-20, after the review of the task `B9` (H6): the task
+/// family's row had no line for the retire, so no plant could be aimed where it deletes.
+pub const THE_RETIRED: &str = "<the-retired>";
+
 /// **Where a move into a doctype's home lands a doc** — a mover's destination: for a doc that
 /// stood before the command where a move into its home ([`May::IntoItsHome`]) takes it — a
 /// `<name>.md` under the prior home `--from` names, of the doctype the command names, or a
@@ -636,6 +645,24 @@ pub enum May {
     /// config set`'s `CS1`; added 2026-10-19 (the task `B8`); the value read, and the
     /// `scalar:` line held, since the review of `B8` (its H9).
     ItsKeySet,
+    /// **Retired** — the foreign original a migration task recorded ([`THE_RETIRED`]) gone
+    /// from the working tree and from the index, **where what goes is what `HEAD` holds
+    /// there**: the working tree's regular file there the bytes `HEAD`'s tree holds at the
+    /// path, and the index there `HEAD`'s entry or nothing. *"the retire deletes only a file
+    /// git holds a copy of"*, whose warrant is *"a guarded migrate destroys only a reviewed,
+    /// in-repo, **git-recoverable** file"* (`design/auto-migration.md` →
+    /// *Retire-the-foreign-original (the first destructive write)*): the doc's test asks
+    /// whether git holds a copy **of the path**, and the warrant is about the bytes, so the
+    /// word reads the warrant — an edit in no commit, or a change staged there, is bytes no
+    /// commit holds, and a retire that takes them is a loss the word does not excuse; nor a
+    /// link or anything that is no regular file. Nothing is written. `jigc task finalize`'s
+    /// `T10`, under its spelling `--approve`; added 2026-10-20, after the review of the task
+    /// `B9` (H6), where the row had no line for the retire. Aimed at by **U** — a file of the
+    /// user's in the source's place, the index's entry gone with the one taken away — by
+    /// **E** at both its positions, before the migration copies the source in and after, and
+    /// by **S** there ([`aimed`]): the user's bytes that no commit holds, where the retire
+    /// deletes.
+    Retired,
 }
 
 /// **What no line that lets a cache be rebuilt covers**, by its path from the repository's
@@ -1013,6 +1040,11 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         )
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
+    // What a migration task's retire deletes: a file the migration copied in before — so a
+    // file of the user's in its place, an edit there before the copy or after it, and a
+    // change staged there are each the user's own bytes in no commit where the retire takes
+    // the file away.
+    let retires = |may: May| matches!(may, May::Retired);
     let read = |may: May| matches!(may, May::CopiedFrom);
     // What a re-entry provisions: named files in an area, each one file's place.
     let provisions = |may: May| matches!(may, May::Provisioned);
@@ -1030,7 +1062,7 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     };
     let aimed = match (kind, line.allows) {
         (Kind::Untracked, Allows::Files(place, may)) => {
-            lands(may) || read(may) || rewrites(place, may) || destination(place)
+            lands(may) || read(may) || rewrites(place, may) || destination(place) || retires(may)
         }
         (Kind::Committed, Allows::Files(place, may)) => {
             (lands(may) && one_file(place) && !matches!(place, Where::Hook)) || destination(place)
@@ -1053,17 +1085,17 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                     && (lands(may) || rewrites(place, may) || matches!(may, May::MergeInto)))
         }
         (Kind::EditBefore, Allows::Files(_, may)) => {
-            matches!(may, May::CopyOfAStagedDoc) || read(may)
+            matches!(may, May::CopyOfAStagedDoc) || read(may) || retires(may)
         }
         (Kind::EditAfter, Allows::Files(place, may)) => {
             one_file(place)
                 && !matches!(place, Where::Hook)
-                && (lands(may) || merges(may) || read(may) || rewrites(place, may))
+                && (lands(may) || merges(may) || read(may) || rewrites(place, may) || retires(may))
         }
         (Kind::StagedThere, Allows::Files(place, may)) => {
             one_file(place)
                 && !matches!(place, Where::Hook)
-                && (lands(may) || merges(may) || rewrites(place, may))
+                && (lands(may) || merges(may) || rewrites(place, may) || retires(may))
         }
         (Kind::UsersLine, Allows::Files(_, may)) => merges(may) || matches!(may, May::ItsKeySet),
         (Kind::Foreign, Allows::Files(place, may)) => {
@@ -1333,6 +1365,10 @@ struct Acting {
     /// from the repository's root: the destination ([`Acting::destination`]) of every doc that
     /// stood before the command.
     new_homes: BTreeSet<String>,
+    /// **What the unit's migration recorded as its source** — [`THE_RETIRED`]: the bytes of
+    /// `.jigc/tasks/<unit>/source-path` before the command, a path from the repository's
+    /// root; `None` where the unit's area holds no such file.
+    retired: Option<String>,
 }
 
 impl Acting {
@@ -1483,7 +1519,23 @@ impl Acting {
                 .filter(|slug| !slug.is_empty())?;
             Some(home.for_name(&format!("{slug}.md")))
         });
+        let retired = unit.as_ref().and_then(|unit| {
+            match before
+                .files
+                .get(&format!("{REPO}/.jigc/tasks/{unit}/source-path"))
+            {
+                Some(Entry::File { bytes, .. }) => Some(
+                    String::from_utf8_lossy(bytes)
+                        .trim()
+                        .trim_start_matches("./")
+                        .to_string(),
+                )
+                .filter(|path| !path.is_empty()),
+                _ => None,
+            }
+        });
         let mut acting = Acting {
+            retired,
             homes,
             homes_after: Homes::over(after),
             the_doc,
@@ -2110,6 +2162,7 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     match pattern {
         THE_DOC => return acting.the_doc.as_ref().is_some_and(|(_, at)| at == path),
         THE_NEW_DOC => return acting.new_doc.as_deref() == Some(path),
+        THE_RETIRED => return acting.retired.as_deref() == Some(path),
         A_NEW_HOME => return acting.new_homes.contains(path),
         A_DOC => {
             return [&acting.homes, &acting.homes_after]
@@ -2482,6 +2535,9 @@ impl<'a> Tally<'a> {
                         self.migrated_away(rel, was)
                     }
                     (May::Removed, Some(_), None) => true,
+                    (May::Retired, Some(Entry::File { blob, .. }), None) => {
+                        self.as_head_held(rel, Some(blob))
+                    }
                     (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
                     (May::Rebuilt | May::Invalidated(_), _, Some(Entry::File { .. })) => true,
                     (
@@ -2514,6 +2570,27 @@ impl<'a> Tally<'a> {
                 }
             })
             .map(|(at, _)| at)
+    }
+
+    /// **Whether what a retire takes away at `rel` is what `HEAD` holds there** — from the
+    /// repository's root, before the command ([`May::Retired`]). With a `blob`, the working
+    /// tree's regular file there: `HEAD`'s tree holds a regular file at the path with those
+    /// bytes. Without one, the index: it held at the path `HEAD`'s entry, or nothing.
+    fn as_head_held(&self, rel: &str, blob: Option<&str>) -> bool {
+        let before = self.seen.before;
+        let Some(main) = before.checkouts.get(REPO) else {
+            return false;
+        };
+        let tree = tree_of(before, &main.head);
+        let head = tree.get(rel);
+        match blob {
+            Some(blob) => {
+                head.is_some_and(|(mode, held)| mode & 0o170_000 == 0o100_000 && held == blob)
+            }
+            None => main.index.get(rel).is_none_or(|staged| {
+                head.is_some_and(|(mode, held)| *mode == staged.mode && *held == staged.blob)
+            }),
+        }
     }
 
     /// **What `HEAD` held at `rel`**, from the repository's root, before the command — a
@@ -3070,8 +3147,9 @@ impl<'a> Tally<'a> {
                 }
                 match (may, entry) {
                     (May::Removed, None) => true,
+                    (May::Retired, None) => self.as_head_held(path, None),
                     (May::MovedAsideTo(_), None) => self.parks(place, &key),
-                    (May::Removed | May::MovedAsideTo(_), Some(_)) => false,
+                    (May::Removed | May::Retired | May::MovedAsideTo(_), Some(_)) => false,
                     (May::Retitled, None) => self
                         .retitle()
                         .is_some_and(|(old, new)| old == path && new != old),

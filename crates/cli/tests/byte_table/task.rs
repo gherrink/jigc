@@ -17,7 +17,7 @@
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
-    Quote, Row, Spelling, Unit, When, Where,
+    Quote, Row, Spelling, THE_RETIRED, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -50,16 +50,26 @@ const THE_CONFIG_CARRIED: [Quote; 2] = [
 pub const FINALIZE: Row = Row {
     leaf: &["task", "finalize"],
     unit: Unit::TheWordAfterTheLeaf,
-    spellings: &[Spelling {
-        name: "doc-only",
-        replaces: &[
-            "T2",
-            "T3",
-            "T3, the config",
-            "T3, the config's ignore file",
-            "T4",
-        ],
-    }],
+    spellings: &[
+        Spelling {
+            name: "doc-only",
+            replaces: &[
+                "T2",
+                "T3",
+                "T3, the config",
+                "T3, the config's ignore file",
+                "T4",
+            ],
+        },
+        // A migration task's approved finalize, which retires the foreign original (`T10`)
+        // and takes no line out of force. Added 2026-10-20, after the review of the task
+        // `B9` (H6). Not the row's consent: a consent lets a plant the output names go, and
+        // the warrant the approval rests on is that what it retires is git-recoverable.
+        Spelling {
+            name: "--approve",
+            replaces: &[],
+        },
+    ],
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
@@ -222,12 +232,43 @@ pub const FINALIZE: Row = Row {
                 ],
             )
         },
+        // The retire a migration task's approved finalize runs (the record's `T10`): the
+        // foreign original the task recorded, gone where what goes is what `HEAD` holds
+        // there. Added 2026-10-20, after the review of the task `B9` (H6): the row had no
+        // line for it, so no plant could be aimed where it deletes.
+        Line {
+            spelling: Some("--approve"),
+            ..line(
+                "T10",
+                Allows::Files(Where::Path(THE_RETIRED), May::Retired),
+                &[
+                    Quote {
+                        doc: "design/auto-migration.md",
+                        heading: "The review gate (fidelity)",
+                        words: "`jigc task finalize <id> --approve` proceeds through the retire + commit + adopt",
+                    },
+                    Quote {
+                        doc: "design/auto-migration.md",
+                        heading: THE_RETIRE,
+                        words: "**Trackedness precondition (M51) — the retire deletes only a file git holds a copy of.**",
+                    },
+                    Quote {
+                        doc: "design/auto-migration.md",
+                        heading: THE_RETIRE,
+                        words: "(*a guarded migrate destroys only a reviewed, in-repo, **git-recoverable** file*)",
+                    },
+                ],
+            )
+        },
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
     ],
 };
+
+/// The heading of the retire's section of `design/auto-migration.md`.
+const THE_RETIRE: &str = "Retire-the-foreign-original (the first destructive write)";
 
 /// The heading of the sub-task discard's section of `design/team-ready-state.md`.
 const THE_SUB_TASK_TERMINAL: &str =
@@ -1724,6 +1765,160 @@ const FINALIZE_DOC_ONLY: [Cell; 4] = [
     ),
 ];
 
+// --- The spelling `--approve`: a migration task's retire ---------------------------
+
+/// The foreign changelog a migration is of, committed by the user, and the task `jigc
+/// migrate` mints for it.
+const THE_HISTORY: &str = "HISTORY.md";
+const A_HISTORY: &str = "# History\n\n## 1.0.0\n\n- Added a thing.\n";
+const THE_MIGRATION: &str = "migrate-changelog-history-3268e06b69e1";
+
+/// **The changelog the migration's author writes** — one release, one change-group, the
+/// foreign file's one line: read with `--from-file`.
+const THE_CHANGELOG: &str = "title: Changelog\nsections:\n  - id: releases\n    items:\n      - title: \"1.0.0\"\n        sections:\n          - id: changes\n            items:\n              - title: \"added\"\n                set:\n                  notes: |-\n                    <<- Added a thing.>>\n";
+
+/// **A migration task ready to finalize** — the user's `HISTORY.md` committed, `jigc
+/// migrate` over it, and the canonical changelog authored in the task; what is put in
+/// before the migration and after the authoring stands where the two lists say.
+macro_rules! a_migration {
+    ([$($before:expr),* $(,)?], [$($after:expr),* $(,)?]) => {
+        &[
+            Lead::Step(Step::File(Place::Repo(THE_HISTORY), A_HISTORY)),
+            Lead::Step(Step::Git(&["add", "--", THE_HISTORY])),
+            Lead::Step(Step::Git(&["commit", "-q", "-m", "a history"])),
+            $($before,)*
+            jigc(&["migrate", THE_HISTORY, "--as", "changelog"]),
+            payload("changelog", THE_CHANGELOG),
+            jigc(&[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "../outside/changelog",
+                "--task",
+                THE_MIGRATION,
+            ]),
+            $($after,)*
+        ]
+    };
+}
+
+/// One cell of `jigc task finalize`'s spelling `--approve`: the migration task, approved.
+const fn approves(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    Cell {
+        spelling: Some("--approve"),
+        ..finalize(
+            name,
+            FRESH,
+            leads,
+            &["task", "finalize", THE_MIGRATION, "--approve"],
+            listed,
+            aim,
+        )
+    }
+}
+
+/// **The cells of the spelling `--approve`** — a migration task's approved finalize, which
+/// promotes the canonical doc, retires the foreign original and commits (`T10`, after the
+/// review of the task `B9`, H6), each listed from the row's doc:
+///
+/// - **the base cell** retires a source `HEAD` holds as it stands, and acts;
+/// - **a line added to the source after the mint** is refused at exit 3,
+///   `reconciliation.conflict-block` — *"a source edited after the mint blocks"*, the source
+///   compared with the seam the migration recorded (`design/reconciliation.md` → *Conflict —
+///   block at file level*);
+/// - **a file of the user's in the source's place, a line added before the migration copies
+///   the source in, a change staged there, and a source staged and never committed** —
+///   bytes no commit holds, which the seam records or does not see — are refused at exit 3,
+///   naming the source, as the edit after the mint is; each marked: the retire
+///   *"deletes only a file git holds a copy of"* on the warrant that it *"destroys only a
+///   reviewed, in-repo, **git-recoverable** file"*. The doc's own test asks git for the
+///   path, not the bytes — the rows' record's §6, entry 24, whose *Until ruled* reading this
+///   listing is.
+const FINALIZE_APPROVED: [Cell; 6] = [
+    approves(
+        "task-finalize-approve-a-migration",
+        a_migration!([], []),
+        Listed::Acts,
+        None,
+    ),
+    Cell {
+        marks: &[Mark::Silence(24)],
+        ..approves(
+            "task-finalize-approve-a-file-of-the-users-in-the-sources-place",
+            a_migration!(
+                [Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_HISTORY)))],
+                []
+            ),
+            refuses(3, THE_HISTORY),
+            at("T10", Kind::Untracked),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(24)],
+        ..approves(
+            "task-finalize-approve-an-edit-to-the-source-before-the-migration",
+            a_migration!([Lead::Plant(Plant::Edit(THE_HISTORY))], []),
+            refuses(3, THE_HISTORY),
+            at("T10", Kind::EditBefore),
+        )
+    },
+    approves(
+        "task-finalize-approve-an-edit-to-the-source-after-the-authoring",
+        a_migration!([], [Lead::Plant(Plant::Edit(THE_HISTORY))]),
+        refuses(3, "reconciliation.conflict-block"),
+        at("T10", Kind::EditAfter),
+    ),
+    Cell {
+        marks: &[Mark::Silence(24)],
+        ..approves(
+            "task-finalize-approve-a-change-staged-at-the-source",
+            a_migration!(
+                [],
+                [Lead::Plant(Plant::Staged {
+                    at: THE_HISTORY,
+                    kept: false,
+                })]
+            ),
+            refuses(3, THE_HISTORY),
+            at("T10", Kind::StagedThere),
+        )
+    },
+    // The source `git add`ed and never committed, which `jigc migrate` admits on purpose —
+    // M51's *"staged-only cell"*, priced there (`DECISIONS.md`): the retire's commit takes
+    // the index's entry away, and the bytes it held with it.
+    Cell {
+        marks: &[Mark::Silence(24)],
+        ..approves(
+            "task-finalize-approve-a-source-staged-and-never-committed",
+            &[
+                Lead::Plant(Plant::Staged {
+                    at: THE_HISTORY,
+                    kept: true,
+                }),
+                jigc(&["migrate", THE_HISTORY, "--as", "changelog"]),
+                payload("changelog", THE_CHANGELOG),
+                jigc(&[
+                    "doc",
+                    "author",
+                    "changelog",
+                    "--from-file",
+                    "../outside/changelog",
+                    "--task",
+                    THE_MIGRATION,
+                ]),
+            ],
+            refuses(3, THE_HISTORY),
+            at("T10", Kind::StagedThere),
+        )
+    },
+];
+
 pub const CELLS: &[&[Cell]] = &[
     ACCEPTANCE,
     &FINALIZE_CELLS,
@@ -1731,6 +1926,7 @@ pub const CELLS: &[&[Cell]] = &[
     &FINALIZE_A_FILE_DELETED,
     &FINALIZE_ELSEWHERE,
     &FINALIZE_DOC_ONLY,
+    &FINALIZE_APPROVED,
     &DISCARD_CELLS,
     &DISCARD_AT_THE_RECORD,
     &DISCARD_A_FILE_DELETED,
