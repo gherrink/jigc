@@ -1917,11 +1917,19 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (&["migrate-corpus"], "MG2", &[Prepared::Of(State::Fresh)]),
     (&["migrate-corpus"], "MG3", &[Prepared::Of(State::Fresh)]),
     (&["relocate"], "RL1", &[Prepared::Of(State::Fresh)]),
-    (&["relocate"], "RL3", &[Prepared::Of(State::Fresh)]),
+    (
+        &["relocate"],
+        "RL1, at its new home",
+        &[Prepared::Of(State::Fresh)],
+    ),
     (&["relocate"], "RL4", &[Prepared::Of(State::Fresh)]),
     (&["config", "set"], "CS1", &[Prepared::Of(State::Fresh)]),
     (&["config", "set"], "CS2", &[Prepared::Of(State::Fresh)]),
-    (&["config", "set"], "CS3", &[Prepared::Of(State::Fresh)]),
+    (
+        &["config", "set"],
+        "CS2, at its new home",
+        &[Prepared::Of(State::Fresh)],
+    ),
     (&["config", "set"], "CS4", &[Prepared::Of(State::Fresh)]),
 ];
 
@@ -4065,18 +4073,26 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
 
 /// **A doc a mover moves lands at its doctype's home, the same entry** — `RL1` of `jigc
 /// relocate`'s row ([`movers::RELOCATE`]) and `CS2` of `jigc config set`'s
-/// ([`movers::CONFIG_SET`]), the word *into its home* (the task `B8`), and the foreign file a
-/// move finds at its destination, parked in the workbench (`RL3`, `CS3`). On the rows
-/// themselves: a stranded `note` under `--from` moved into the home a listed pack declares
-/// for it, staged and committed by nobody, holds — and so does the same move over a file
-/// of the user's at the destination parked under `.jigc/displaced/`; moved anywhere else,
-/// with other bytes, over a file left nowhere, or from outside `--from`, it is red; a line
-/// of the user's planted in the doc moves with it, and holds. **What is parked is a
-/// destination's foreign occupant and nothing else**: a committed doc no move concerns
-/// parked beside the move, an occupant the file-state baseline records (a managed doc)
-/// parked, and a `docs-root` re-point that parks the doc it should move are each red. A
-/// `placement-root` re-point moving the roadmap under the new root, the knob set, holds;
-/// to another directory, it is red.
+/// ([`movers::CONFIG_SET`]), the word *into its home* (the task `B8`), read at both ends since
+/// the human's ruling of 2026-10-20 on the rows' record's §6, entry 23 (the task `B9`): the
+/// departure at the line's place, the arrival at the destination, `<a-new-home>`, a line's
+/// place of its own (`RL1, at its new home`, `CS2, at its new home`). On the rows themselves:
+/// a stranded `note` under `--from` moved into the home a listed pack declares for it,
+/// staged and committed by nobody, holds; moved anywhere else, with other bytes, or from
+/// outside `--from`, it is red; a line of the user's planted in the doc moves with it, and
+/// holds. **Nothing is moved aside from a destination, and what stands there blocks the
+/// move**: a file of the user's at the destination parked — by its name, under another,
+/// beside an earlier parking — a directory parked whole, an occupant parked whether the
+/// file-state baseline records it or not, a committed doc no move concerns parked, and a
+/// move that lands where git held a file the working tree did not, are each red; a row that
+/// parks a destination's occupant is red over the parking; and a refusal that leaves the
+/// note and its occupant as they stood changes nothing. **A sweep does all it can, then
+/// refuses naming what it left** (the human's ruling R1 of that day): a refusal that moved
+/// one note and left another as it stood, naming it or the path its move would have landed
+/// at, changes nothing a refusal may not; naming nothing it left, or with the left note
+/// rewritten, it is red. A `docs-root` re-point that parks the doc it should move is red. A
+/// `placement-root` re-point moving the roadmap under the new root, the knob set, holds; to
+/// another directory, it is red.
 #[test]
 fn a_moved_doc_lands_at_its_doctypes_home() {
     const NOTE: &str = "# Cache benchmarks\n\n## Body\n\nA single node caps throughput.\n";
@@ -4165,7 +4181,12 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         "an edit moved with its doc: {why:#?}"
     );
 
-    // A file of the user's at the destination: parked, the move holds; taken, it is lost.
+    // **Nothing is moved aside from a destination, and what stands there blocks the move** —
+    // the human's ruling of 2026-10-20 on the rows' record's §6, entry 23 (the task `B9`'s
+    // first commit). A file of the user's at the note's new home parked under
+    // `.jigc/displaced/` — by its name, under another, beside an earlier parking — is red,
+    // and taken it is lost; a directory of theirs parked whole is red. A refusal that leaves
+    // the note and the occupant as they stood, naming the path, changes nothing.
     let squatted = then(&before, |m| {
         written(
             m,
@@ -4181,7 +4202,7 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
             NOTE,
         );
     });
-    let parked = then(&landed, |m| {
+    let parked_by_name = then(&landed, |m| {
         written(
             m,
             ".jigc/displaced/cache-benchmarks.md",
@@ -4199,39 +4220,27 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         }
         .came_to()
     };
-    let (class, why) = over(&parked);
-    assert_eq!(
-        class,
-        Classification::Holds,
-        "the squatter parked: {why:#?}"
+    let (class, why) = over(&parked_by_name);
+    assert!(
+        class.is_red(),
+        "the squatter parked: came out {class}, {why:#?}"
     );
     let (class, why) = over(&landed);
     assert_eq!(class, Classification::Lost, "the squatter taken: {why:#?}");
-    // Parked by its name (the seventh fix's left-open, red first: each red case came out
-    // *holds*): under another name it is written outside; at its name with a `.<n>` beside
-    // it, where nothing stood at the name, the same; where an earlier parking stood at the
-    // name — the no-clobber rule — it holds.
     let earlier = then(&squatted, |m| {
         written(m, ".jigc/displaced/cache-benchmarks.md", "parked before\n");
     });
-    for (case, before, to, want) in [
-        (
-            "under another name",
-            &squatted,
-            ".jigc/displaced/other.md",
-            Classification::WrittenOutside,
-        ),
+    for (case, before, to) in [
+        ("under another name", &squatted, ".jigc/displaced/other.md"),
         (
             "beside a name nothing held",
             &squatted,
             ".jigc/displaced/cache-benchmarks.md.2",
-            Classification::WrittenOutside,
         ),
         (
             "beside an earlier parking",
             &earlier,
             ".jigc/displaced/cache-benchmarks.md.2",
-            Classification::Holds,
         ),
     ] {
         let after = then(before, |m| {
@@ -4252,19 +4261,31 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
             ..Cell::of(movers::RELOCATE, before, &after)
         }
         .came_to();
-        assert_eq!(class, want, "the squatter parked {case}: {why:#?}");
+        assert!(
+            class.is_red(),
+            "the squatter parked {case}: came out {class}, {why:#?}"
+        );
     }
-    // A directory of the user's at the destination, a file of theirs in it: parked whole,
-    // the file with it, the move holds (the task `B8`'s fourth commit, red first: the file
-    // came out *written outside its allowance*).
-    let squatted = then(&before, |m| {
+    let blocked = Cell {
+        argv,
+        planted: &[(
+            "repo/docs/notes/cache-benchmarks.md",
+            "the user's own notes",
+        )],
+        code: Some(1),
+        said: "blocked · docs/notes/cache-benchmarks.md — clear it, then re-run\n",
+        listed: Listed::Refuses,
+        ..Cell::of(movers::RELOCATE, &squatted, &squatted)
+    };
+    comes_out(&blocked, Classification::RefusesNothingChanged);
+    let directory = then(&before, |m| {
         written(
             m,
             "docs/notes/cache-benchmarks.md/notes.txt",
             "the user's own notes\n",
         );
     });
-    let parked = then(&squatted, |m| {
+    let parked = then(&directory, |m| {
         m.files
             .remove(&format!("{REPO}/docs/notes/cache-benchmarks.md/notes.txt"));
         m.files
@@ -4287,21 +4308,19 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
             "repo/docs/notes/cache-benchmarks.md/notes.txt",
             "the user's own notes",
         )],
-        ..Cell::of(movers::RELOCATE, &squatted, &parked)
+        ..Cell::of(movers::RELOCATE, &directory, &parked)
     }
     .came_to();
-    assert_eq!(
-        class,
-        Classification::Holds,
-        "the squatting directory parked: {why:#?}"
+    assert!(
+        class.is_red(),
+        "the squatting directory parked: came out {class}, {why:#?}"
     );
 
-    // **What a move parks is the foreign occupant of a destination it lands on, and nothing
-    // else** (the review of the task `B8`, H1 and H2, red first: each came out *holds*). A
-    // committed decision no move concerns, parked beside the note's honest move, is red;
-    // so is an occupant of the note's new home that the file-state baseline records — a
-    // managed doc, whose collision `design/reconciliation.md` blocks — where the same
-    // occupant with no baseline, parked, holds as it did.
+    // A committed decision no move concerns, parked beside the note's honest move, is red;
+    // so is an occupant of the note's new home parked, the file-state baseline recording it
+    // or not; and a move that lands where git held a file the working tree did not — a
+    // destination nothing stands at on disk, which the place reads as git holds it too (red
+    // first: it came out *holds*).
     const DECISION: &str =
         "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe chose.\n";
     const MANAGED: &str = "# Cache benchmarks\n\n## Body\n\nThe managed one.\n";
@@ -4350,13 +4369,9 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         class.is_red(),
         "a decision no move concerns, parked: came out {class}, {why:#?}"
     );
-    for (case, baseline, red) in [
-        ("an occupant with no baseline", None, false),
-        (
-            "a managed occupant",
-            Some("docs/notes/cache-benchmarks.md"),
-            true,
-        ),
+    for (case, baseline) in [
+        ("an occupant with no baseline", None),
+        ("a managed occupant", Some("docs/notes/cache-benchmarks.md")),
     ] {
         let occupied = with_the_note_pack(
             &[
@@ -4379,11 +4394,133 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
             ..Cell::of(movers::RELOCATE, &occupied, &parked)
         }
         .came_to();
-        assert_eq!(
-            class.is_red(),
-            red,
-            "{case}, parked: came out {class}, {why:#?}"
+        assert!(class.is_red(), "{case}, parked: came out {class}, {why:#?}");
+    }
+    let held = then(
+        &with_the_note_pack(
+            &[
+                ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+                ("docs/notes/cache-benchmarks.md", MANAGED),
+            ],
+            None,
+        ),
+        |m| {
+            m.files
+                .remove(&format!("{REPO}/docs/notes/cache-benchmarks.md"));
+        },
+    );
+    let landed_over_it = then(&held, |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "docs/notes/cache-benchmarks.md",
+            NOTE,
         );
+    });
+    let (class, why) = Cell {
+        argv,
+        ..Cell::of(movers::RELOCATE, &held, &landed_over_it)
+    }
+    .came_to();
+    assert!(
+        class.is_red(),
+        "a move that lands where git held a file: came out {class}, {why:#?}"
+    );
+    // **A line that moves aside from one file's place covers nothing**: a row that parks a
+    // destination's occupant (`RL3` until this ruling) is red over the parking.
+    const PARKS: Row = Row {
+        lines: &[
+            movers::RELOCATE.lines[0],
+            movers::RELOCATE.lines[1],
+            movers::RELOCATE.lines[2],
+            line(
+                "RL3",
+                Allows::Files(
+                    Where::Path(byte_cell::A_DOC),
+                    May::MovedAsideTo(".jigc/displaced"),
+                ),
+            ),
+        ],
+        ..movers::RELOCATE
+    };
+    let (class, why) = Cell {
+        argv,
+        planted: &[(
+            "repo/docs/notes/cache-benchmarks.md",
+            "the user's own notes",
+        )],
+        ..Cell::of(PARKS, &squatted, &parked_by_name)
+    }
+    .came_to();
+    assert!(
+        class.is_red(),
+        "a row that parks a destination's occupant: came out {class}, {why:#?}"
+    );
+
+    // **A sweep does all it can, then refuses naming what it left** — the human's rulings of
+    // 2026-10-20, R1 and entry 23 (red first: the refusal that named the doc it left came
+    // out *refused, and changed what a refusal may not*): two stranded notes, the second
+    // moved into its home and the first left as it stood, at exit 1 — naming the first, or
+    // the path its move would have landed at, it changes nothing a refusal may not; naming
+    // nothing it left, or with the first rewritten, it is red.
+    const SECOND: &str = "# Load tests\n\n## Body\n\nTwo nodes hold the load.\n";
+    let two = with_the_note_pack(
+        &[
+            ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+            ("docs/legacy-notes/load-tests.md", SECOND),
+        ],
+        None,
+    );
+    let swept = then(&two, |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/load-tests.md",
+            "docs/notes/load-tests.md",
+            SECOND,
+        );
+    });
+    let rewritten = then(&swept, |m| {
+        written(
+            m,
+            "docs/legacy-notes/cache-benchmarks.md",
+            "# Cache benchmarks\n\nOther.\n",
+        );
+    });
+    for (case, after, said, want) in [
+        (
+            "naming the doc it left",
+            &swept,
+            "blocked · docs/legacy-notes/cache-benchmarks.md: not a regular file\n",
+            Classification::RefusesNothingChanged,
+        ),
+        (
+            "naming the path to clear",
+            &swept,
+            "blocked · docs/notes/cache-benchmarks.md stands at the destination\n",
+            Classification::RefusesNothingChanged,
+        ),
+        (
+            "naming nothing it left",
+            &swept,
+            "store.unknown-type — no doctype `note`\n",
+            Classification::RefusedAndChanged,
+        ),
+        (
+            "the doc it named, rewritten",
+            &rewritten,
+            "blocked · docs/legacy-notes/cache-benchmarks.md: not a regular file\n",
+            Classification::RefusedAndChanged,
+        ),
+    ] {
+        let (class, why) = Cell {
+            argv,
+            code: Some(1),
+            said,
+            listed: Listed::Refuses,
+            ..Cell::of(movers::RELOCATE, &two, after)
+        }
+        .came_to();
+        assert_eq!(class, want, "{case}: {why:#?}");
     }
 
     // A `docs-root` re-point: the decision moved under the new root holds; parked in the
@@ -4459,6 +4596,58 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     assert_eq!(class, Classification::Holds, "the re-point: {why:#?}");
     let (class, why) = came(&re_pointed("elsewhere/roadmap.md"));
     assert!(class.is_red(), "another root: came out {class}, {why:#?}");
+}
+
+/// **A line moves aside only from a place the command removes, never from a destination** —
+/// the human's ruling of 2026-10-20 on the rows' record's §6, entry 23: *jigc moves a file
+/// aside only from a place it is about to remove, never from a destination*. A line of the
+/// word *moved aside* at one file's place — a mover's destination, as `RL3` and `CS3` were
+/// until that ruling — is named: on a fixture, beside one under a directory, which is not;
+/// and over the table's rows, which hold none (red first: the rows as they stood named
+/// `RL3` and `CS3`).
+#[test]
+fn a_line_moves_aside_only_from_a_place_it_removes() {
+    fn from_one_file(rows: &[&Row]) -> Vec<String> {
+        rows.iter()
+            .flat_map(|row| {
+                row.lines
+                    .iter()
+                    .filter(|line| {
+                        matches!(line.allows, Allows::Files(place, May::MovedAsideTo(_))
+                            if !matches!(place, Where::Under(_)))
+                    })
+                    .map(move |line| {
+                        format!("the line `{}` of `jigc {}`", line.id, row.leaf.join(" "))
+                    })
+            })
+            .collect()
+    }
+    const FIXTURE: Row = row(&[
+        line(
+            "P1",
+            Allows::Files(
+                Where::Under(".jigc/tasks/<unit>"),
+                May::MovedAsideTo(".jigc/displaced/<unit>"),
+            ),
+        ),
+        line(
+            "P2",
+            Allows::Files(
+                Where::Path(byte_cell::A_DOC),
+                May::MovedAsideTo(".jigc/displaced"),
+            ),
+        ),
+    ]);
+    assert_eq!(
+        from_one_file(&[&FIXTURE]),
+        vec!["the line `P2` of `jigc probe`".to_string()]
+    );
+    let named = from_one_file(&rows());
+    assert!(
+        named.is_empty(),
+        "a line moves aside from one file's place — a destination, whose occupant blocks the \
+         move: {named:#?}"
+    );
 }
 
 /// **A migrated doc keeps its prose, and its stamp is its doctype's current version** —
@@ -10652,8 +10841,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::RefusedAndChanged,
         &["migrate-corpus-a-hook-that-rejects"],
     ),
-    // The movers (the task `B8`, its fourth commit): `relocate`'s two keys and `config
-    // set`'s six.
+    // The movers (the task `B8`, its fourth commit): `relocate`'s keys and `config set`'s.
+    // `relocate`'s exit is the human's ruling R1 of 2026-10-20 — an acting sweep exits
+    // non-zero where an act it was asked for did not happen — and the second note's cell
+    // holds its *does all it can* (the task `B9`'s first commit).
     (
         "r1-relocate-refuses-a-doc-and-exits-0",
         Classification::NotTheListedOutcome,
@@ -10663,13 +10854,27 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "relocate-a-link-to-a-file-outside-in-the-stranded-notes-place",
             "relocate-a-directory-in-the-stranded-notes-place",
             "relocate-a-note-a-task-landed-at-the-notes-new-home",
+            "relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note",
         ],
     ),
-    // The rows' record's §6, entry 23 — the cell marked.
+    // The rows' record's §6, entry 23, ruled by the human on 2026-10-20: any file at a
+    // mover's destination refuses — the committed one the entry asked of, and every other
+    // occupant, a key of its own: one mechanism, one fix closes both.
     (
         "r1-relocate-parks-a-file-the-user-committed-at-a-new-home",
-        Classification::NotTheListedOutcome,
+        Classification::GitMoved,
         &["relocate-a-file-the-user-committed-at-the-notes-new-home"],
+    ),
+    (
+        "r1-relocate-parks-an-untracked-occupant-of-a-new-home",
+        Classification::GitMoved,
+        &[
+            "relocate-a-file-of-the-users-at-the-notes-new-home",
+            "relocate-a-link-to-nothing-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
+            "relocate-a-directory-at-the-notes-new-home",
+        ],
     ),
     (
         "r1-config-set-drops-a-comment-of-the-users-from-the-manifest",
@@ -10720,23 +10925,25 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "config-set-a-link-to-a-file-outside-in-the-decisions-place",
         ],
     ),
-    (
-        "r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks",
-        Classification::NotTheListedOutcome,
-        &[
-            "config-set-a-file-of-the-users-at-the-decisions-new-home",
-            "config-set-a-link-to-nothing-at-the-decisions-new-home",
-            "config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home",
-            "config-set-a-link-to-a-file-outside-at-the-decisions-new-home",
-            "config-set-a-directory-at-the-decisions-new-home",
-        ],
-    ),
     // The other root knob, `placement-root` (after the review of the task `B8`, H5): the
-    // rows' record's §6, entry 23, at its second door — the cell marked.
+    // rows' record's §6, entry 23, ruled on 2026-10-20, at its second door — where
+    // `docs-root`'s refusal of every occupant is what the ruling asks, its five cells
+    // holding since.
     (
         "r1-config-set-parks-a-file-the-user-committed-at-a-new-home",
-        Classification::NotTheListedOutcome,
+        Classification::GitMoved,
         &["config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home"],
+    ),
+    (
+        "r1-config-set-parks-an-untracked-occupant-of-a-new-home",
+        Classification::GitMoved,
+        &[
+            "config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home",
+            "config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home",
+            "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
+            "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
+            "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
+        ],
     ),
 ];
 
@@ -11193,7 +11400,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (683, 527, 156),
+        (687, 531, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -11206,8 +11413,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
-         movers seventy-five, `relocate`'s twenty-four and `config set`'s fifty-one: \
-         sixty-three in the gate, twelve on demand"
+         movers seventy-nine, `relocate`'s twenty-six and `config set`'s fifty-three: \
+         sixty-seven in the gate, twelve on demand"
     );
 }
 

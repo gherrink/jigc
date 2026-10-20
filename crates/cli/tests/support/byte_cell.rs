@@ -403,6 +403,21 @@ pub const THE_NEW_DOC: &str = "<the-new-doc>";
 /// home"* (`design/corpus-migration.md` → *The freeze-exempt sibling*).
 pub const PRIOR_HOME: &str = "<prior-home>";
 
+/// **Where a move into a doctype's home lands a doc** — a mover's destination: for a doc that
+/// stood before the command where a move into its home ([`May::IntoItsHome`]) takes it — a
+/// `<name>.md` under the prior home `--from` names, of the doctype the command names, or a
+/// doc at a doctype's home whose home the command moves — the path its name stands at in
+/// that doctype's home as the cascade resolves it **after** the command, where that is
+/// another path. *"the door sweeps every committed `.md` under it into the doctype's current
+/// home"* (`design/corpus-migration.md` → *The freeze-exempt sibling*), *"`config set
+/// docs-root` now detects + routes + **auto-moves** each stranded instance"*
+/// (`design/storage.md` → *Placement*). What stands there before the command blocks the
+/// move — the human's ruling of 2026-10-20 on the rows' record's §6, entry 23: **any file
+/// at a mover's destination refuses**, and nothing is moved aside from one. Added
+/// 2026-10-20, the task `B9`'s first commit: a destination was no place, and its occupant
+/// was what the parking lines `RL3` and `CS3` were for.
+pub const A_NEW_HOME: &str = "<a-new-home>";
+
 /// Where a milestone's committed record stands under the docs root: `milestone-records/`,
 /// the `location:` the `milestone-record` doctype declares.
 const RECORD_HOME: &str = "milestone-records";
@@ -508,18 +523,12 @@ pub enum May {
     /// the task `B8` (its H10): a sub-task's leftover held under a sibling's place, and
     /// the three lines that move an area aside named `displaced/` at large.
     ///
-    /// **At one file's place** ([`Where::Path`] — a mover's destination, `RL3`, `CS3`) it
-    /// moves aside **only the foreign occupant of a destination a move landed on**
-    /// ([`Tally::squatted`]): an entry that stood at the path before the command, which the
-    /// file-state baseline the command found records nothing at, where a doc stands after
-    /// that arrived by a move into its home ([`May::IntoItsHome`]) — *"A *foreign*
-    /// (untracked/unmanaged) file at the destination → move-into-workbench"*, and *"A
-    /// *managed* instance already at the destination … **surfaces the collision as a
-    /// block**"*, *"Classification is by **baseline**"* (`design/reconciliation.md` →
-    /// *Relocation collisions*). A doc of the store gone from a path nothing arrived at — the
-    /// doc a re-point should have moved, a doc no move concerns — and a managed occupant are
-    /// none of it. Narrowed 2026-10-19, after the review of the task `B8` (H1, H2): the line
-    /// covered any doc of the store gone into the workbench.
+    /// **Only from a place under a directory** — a place the command removes: at one file's
+    /// place it moves nothing aside, since jigc moves a file aside only from a place it is
+    /// about to remove and never from a destination — the human's ruling of 2026-10-20 on the
+    /// rows' record's §6, entry 23, where `RL3` and `CS3` parked a mover's destination's
+    /// foreign occupant ([`Tally::parks`]; `byte_table::a_line_moves_aside_only_from_a_place_it_removes`
+    /// names a line that tries).
     MovedAsideTo(&'static str),
     /// **Gone from its name, and standing under another in the same unit** — a staged doc
     /// re-slugged: its unit's base pin stands, and the unit's `docs/` gained a doc it did
@@ -559,11 +568,15 @@ pub enum May {
     Repointed,
     /// **Into its home** — gone from its place, and standing, the same entry, at its
     /// doctype's home as the cascade resolves it **after** the command, under its own name
-    /// (or as a placement doctype's file); where something stood there before, it stands
-    /// moved aside under `.jigc/displaced/`. The doctype is the one the command names, for a
+    /// (or as a placement doctype's file). The doctype is the one the command names, for a
     /// place that is a prior home ([`PRIOR_HOME`], `jigc relocate`'s `RL1`), and else the
     /// one whose home held the path before the command (`jigc config set`'s `CS2`, a root
-    /// knob's re-point). Added 2026-10-19 (the task `B8`).
+    /// knob's re-point). Added 2026-10-19 (the task `B8`). **Read at both ends** since the
+    /// human's ruling of 2026-10-20 on the rows' record's §6, entry 23 (the task `B9`): the
+    /// departure at the line's place, the arrival at a mover's destination ([`A_NEW_HOME`]),
+    /// **where nothing stood before, in the working tree or in what git held** — what stands
+    /// there blocks the move, where an occupant parked under `.jigc/displaced/` had let it
+    /// land.
     IntoItsHome,
     /// **Migrated** — a doc of the store below its doctype's current schema version (its
     /// stamp, `schema-version: N`, below the version the doctype's pack manifest declares,
@@ -724,6 +737,17 @@ pub enum When {
     /// held to the commit since its review (H8): the refused doc migrated in the working
     /// tree, or staged, held.
     ItCommitted,
+    /// **A doc of the sweep left, and named** — the command exited 0, or it refused having
+    /// left a doc its sweep was asked to move where it stood, and said so: an entry with a
+    /// doc's name (`<name>.md`) stood under the prior home `--from` names before the command
+    /// and stands there after as it stood, and the command's output names its path, or the
+    /// path its move would have landed it at ([`A_NEW_HOME`]). The human's two rulings of
+    /// 2026-10-20: *an acting sweep does all it can, then exits non-zero if any act it was
+    /// asked for did not happen* (R1), and `jigc relocate` *blocks that doc, moves the
+    /// others, names the path to clear and exits non-zero* (the rows' record's §6, entry
+    /// 23). A refusal that names no doc it left — an argument's, a doctype's, taken before
+    /// the sweep — is held to change nothing. `jigc relocate`'s lines that write.
+    ADocLeftAndNamed,
 }
 
 /// **One line of an allowance.** `id` is the line's number in the committed record; a
@@ -895,17 +919,16 @@ impl Kind {
 /// the command merges a line into. **T** does not: a committed file at the place is the
 /// doc itself.
 ///
-/// **And one file's place whose occupant a move parks** ([`May::MovedAsideTo`] at a path —
-/// a mover's destination, `RL3`, `CS3`): what squats a new home is what the line is for,
-/// so **U**, **T**, **L** and **K**, *a directory in a file's place*, go there — a file of
-/// the user's, one committed, a link, a directory (`design/reconciliation.md` →
-/// *Relocation collisions*). A place under a directory that is moved aside whole is no one
-/// file's, and none goes there. **So do they to a destination a doc is moved to**
-/// ([`THE_NEW_DOC`], `RN1, at its new home`): nothing stands there before the move, so
-/// what does is a squatter, and the same four go there — and no other, since a tracked
-/// file there to edit or stage over is the committed one **T** puts, and the home's
-/// directory is the doc's own home's, which `RN1`'s place takes (added 2026-10-20, after
-/// the review of the task `B8`, H7).
+/// **And a destination a doc is moved to** — the doc an address names, at its new home
+/// ([`THE_NEW_DOC`], `RN1, at its new home`), and a mover's ([`A_NEW_HOME`], `RL1, at its
+/// new home`, `CS2, at its new home`): nothing stands there before the move, so what does is
+/// a squatter, and **U**, **T**, **L** and **K**, *a directory in a file's place*, go there
+/// — a file of the user's, one committed, a link, a directory — and no other, since a
+/// tracked file there to edit or stage over is the committed one **T** puts, and the home's
+/// directory is the doc's own home's, which the doc's own place takes (added 2026-10-20,
+/// after the review of the task `B8`, H7; a mover's since the human's ruling of that day on
+/// the rows' record's §6, entry 23, where `RL3` and `CS3`, which parked what stood there,
+/// had been the place).
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -926,8 +949,9 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
     let read = |may: May| matches!(may, May::CopiedFrom);
-    // A doc's destination: where the doc the address names stands once its identity moved.
-    let destination = |place: Where| matches!(place, Where::Path(path) if path == THE_NEW_DOC);
+    // A doc's destination: where the doc the address names stands once its identity moved,
+    // and where a mover lands a doc.
+    let destination = |place: Where| matches!(place, Where::Path(path) if path == THE_NEW_DOC || path == A_NEW_HOME);
     // A committed doc the command rewrites or moves where it stands — the movers family's
     // words. **T** does not go there: a committed file at the place is the doc itself.
     let rewrites = |place: Where, may: May| {
@@ -937,17 +961,12 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                 May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
             )
     };
-    // One file's place where what stands is a squatter: a mover's destination, whose
-    // occupant a move parks, and a doc's.
-    let parks = |place: Where, may: May| {
-        one_file(place) && (matches!(may, May::MovedAsideTo(_)) || destination(place))
-    };
     let aimed = match (kind, line.allows) {
         (Kind::Untracked, Allows::Files(place, may)) => {
-            lands(may) || read(may) || rewrites(place, may) || parks(place, may)
+            lands(may) || read(may) || rewrites(place, may) || destination(place)
         }
         (Kind::Committed, Allows::Files(place, may)) => {
-            (lands(may) && one_file(place) && !matches!(place, Where::Hook)) || parks(place, may)
+            (lands(may) && one_file(place) && !matches!(place, Where::Hook)) || destination(place)
         }
         (
             Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside | Kind::DirForAFile,
@@ -957,7 +976,7 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                 && (lands(may)
                     || read(may)
                     || rewrites(place, may)
-                    || parks(place, may)
+                    || destination(place)
                     || matches!(may, May::MergeInto))
         }
         (Kind::FileForADir, Allows::Files(place, may)) => {
@@ -1207,13 +1226,10 @@ struct Acting {
     /// **The word after the unit**, where the unit is the word after the leaf — the value
     /// `jigc config set <key> <value>` names, what [`May::ItsKeySet`] asks the knob to be.
     value: Option<String>,
-    /// **What the file-state baseline records before the command**, by path from the
-    /// repository's root — the keys of `.jigc/state/file-state.json`'s `hashes`: a managed
-    /// doc is one recorded there, a foreign file one that is not (`design/reconciliation.md`
-    /// → *Relocation collisions*: *"Classification is by **baseline**"*). Empty where no
-    /// record stands; `None` where one stands that does not read as one, and then no
-    /// occupant is foreign ([`Tally::squatted`]).
-    baselined: Option<BTreeSet<String>>,
+    /// **Where the command's moves into a doctype's home land** — [`A_NEW_HOME`], each path
+    /// from the repository's root: the destination ([`Acting::destination`]) of every doc that
+    /// stood before the command.
+    new_homes: BTreeSet<String>,
 }
 
 impl Acting {
@@ -1350,7 +1366,7 @@ impl Acting {
                 .filter(|slug| !slug.is_empty())?;
             Some(home.for_name(&format!("{slug}.md")))
         });
-        Acting {
+        let mut acting = Acting {
             homes,
             homes_after: Homes::over(after),
             the_doc,
@@ -1358,7 +1374,7 @@ impl Acting {
             to,
             new_doc,
             value,
-            baselined: baselined(before),
+            new_homes: BTreeSet::new(),
             unit,
             sub_tasks,
             settled,
@@ -1372,7 +1388,33 @@ impl Acting {
                 .keys()
                 .filter_map(|path| in_repo(path).map(str::to_string))
                 .collect(),
+        };
+        acting.new_homes = before
+            .files
+            .keys()
+            .filter_map(|path| acting.destination(in_repo(path)?))
+            .collect();
+        acting
+    }
+
+    /// **Where a move into its doctype's home takes the doc at `rel`** — from the
+    /// repository's root, before the command: a `<name>.md` under the prior home `--from`
+    /// names is the doctype the command names, and any other path the doctype whose home
+    /// held it before the command; it lands at its name in that doctype's home as the
+    /// cascade resolves it after the command, where that is another path ([`A_NEW_HOME`],
+    /// [`May::IntoItsHome`]).
+    fn destination(&self, rel: &str) -> Option<String> {
+        let name = rel.rsplit('/').next()?;
+        if !name.ends_with(".md") {
+            return None;
         }
+        let ty: &str = if is_at_for(PRIOR_HOME, rel, self) {
+            self.unit.as_deref()?
+        } else {
+            self.homes.as_ref()?.doctype_at(rel)?
+        };
+        let to = self.homes_after.as_ref()?.current.get(ty)?.for_name(name);
+        (to != rel).then_some(to)
     }
 
     /// Whether the component `want` of a place stands for `got`: `*` for any; [`OWN`] for
@@ -1943,23 +1985,6 @@ fn committed<'m>(manifest: &'m Manifest, rel: &str) -> Option<&'m Entry> {
     None
 }
 
-/// **The paths the file-state baseline records in `manifest`** ([`Acting::baselined`]): the
-/// keys of the `hashes` map of `.jigc/state/file-state.json` — none where the file does not
-/// stand, and `None` where an entry stands there that is no record.
-fn baselined(manifest: &Manifest) -> Option<BTreeSet<String>> {
-    match manifest
-        .files
-        .get(&format!("{REPO}/.jigc/state/file-state.json"))
-    {
-        None => Some(BTreeSet::new()),
-        Some(Entry::File { bytes, .. }) => {
-            let record: serde_json::Value = serde_json::from_slice(bytes).ok()?;
-            Some(record.get("hashes")?.as_object()?.keys().cloned().collect())
-        }
-        Some(_) => None,
-    }
-}
-
 /// Whether `path` is `pattern`, component for component, a `*` standing for any one — and,
 /// for a command that acts on a unit, [`OWN`], [`ITS_SUB_TASKS`] and [`ITS_MILESTONE`] for
 /// what [`Acting`] reads, and a leading [`DOCS_ROOT`] for the docs root.
@@ -1967,6 +1992,7 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     match pattern {
         THE_DOC => return acting.the_doc.as_ref().is_some_and(|(_, at)| at == path),
         THE_NEW_DOC => return acting.new_doc.as_deref() == Some(path),
+        A_NEW_HOME => return acting.new_homes.contains(path),
         A_DOC => {
             return [&acting.homes, &acting.homes_after]
                 .into_iter()
@@ -2128,7 +2154,33 @@ impl<'a> Tally<'a> {
                     When::FirstCommitOfItsPlace => first_commit_of(line.allows),
                     When::Refused => !self.acted,
                     When::ItCommitted => self.acted || self.made_a_commit(),
+                    When::ADocLeftAndNamed => self.acted || self.left_a_doc_and_named_it(),
                 }
+        })
+    }
+
+    /// **Whether the command left a doc of its sweep where it stood, and named it**
+    /// ([`When::ADocLeftAndNamed`]): an entry with a doc's name stood under the prior home
+    /// `--from` names before the command and stands there after as it stood, and what the
+    /// command said names its path, or the path its move would have landed it at.
+    fn left_a_doc_and_named_it(&self) -> bool {
+        self.seen.before.files.iter().any(|(path, was)| {
+            let Some(rel) = in_repo(path) else {
+                return false;
+            };
+            rel.ends_with(".md")
+                && is_at_for(PRIOR_HOME, rel, &self.acting)
+                && self
+                    .seen
+                    .after
+                    .files
+                    .get(path)
+                    .is_some_and(|now| now.same(was))
+                && (self.seen.ended.said.contains(rel)
+                    || self
+                        .acting
+                        .destination(rel)
+                        .is_some_and(|to| self.seen.ended.said.contains(to.as_str())))
         })
     }
 
@@ -2263,15 +2315,6 @@ impl<'a> Tally<'a> {
                                 })
                         });
                 }
-                // The arrival a word reads away from its place: a doc moved into its
-                // doctype's home. (The doc the address names, moved within its home, is read
-                // at its new home, a place of its own — [`THE_NEW_DOC`].)
-                if let (Some(rel), Some(is), May::IntoItsHome) =
-                    (in_repo(diff.path), diff.after, may)
-                    && self.arrived_home(place, rel, diff.before, is)
-                {
-                    return true;
-                }
                 if !self.placed(place, diff.path) {
                     return false;
                 }
@@ -2307,7 +2350,12 @@ impl<'a> Tally<'a> {
                     (May::Retitled, None, Some(Entry::File { .. })) => self
                         .retitle()
                         .is_some_and(|(old, new)| new == rel && new != old),
-                    (May::IntoItsHome, Some(_), None) => self.moved_home(place, rel).is_some(),
+                    // A doc moved into its home: gone from its place, and arrived at a
+                    // mover's destination, where nothing stood.
+                    (May::IntoItsHome, Some(_), None) => self.moved_home(rel).is_some(),
+                    (May::IntoItsHome, None, Some(is)) => {
+                        matches!(place, Where::Path(A_NEW_HOME)) && self.arrived_home(rel, is)
+                    }
                     (May::Migrated, Some(was @ Entry::File { .. }), None) => {
                         self.migrated_away(rel, was)
                     }
@@ -2533,83 +2581,34 @@ impl<'a> Tally<'a> {
     }
 
     /// **Where a doc moved into its doctype's home stands** ([`May::IntoItsHome`]): the path
-    /// `rel` held before the command, the same entry standing after at its doctype's home
-    /// as the cascade resolves it after the command, under its own name — the doctype the
-    /// command names, for a place that is the prior home `--from` names, and else the one
-    /// whose home held the path before.
-    fn moved_home(&self, place: Where, rel: &str) -> Option<String> {
+    /// `rel` held before the command, the same entry standing after at its destination
+    /// ([`Acting::destination`]) — its name in the home of the doctype the command names, for
+    /// a doc under the prior home `--from` names, and else of the one whose home held it,
+    /// as the cascade resolves it after the command.
+    fn moved_home(&self, rel: &str) -> Option<String> {
         let was = self.seen.before.files.get(&format!("{REPO}/{rel}"))?;
-        let ty: &str = match place {
-            Where::Path(PRIOR_HOME) => self.acting.unit.as_deref()?,
-            _ => self.acting.homes.as_ref()?.doctype_at(rel)?,
-        };
-        let name = rel.rsplit('/').next()?;
-        let to = self
-            .acting
-            .homes_after
-            .as_ref()?
-            .current
-            .get(ty)?
-            .for_name(name);
+        let to = self.acting.destination(rel)?;
         let is = self.seen.after.files.get(&format!("{REPO}/{to}"))?;
-        (to != rel && is.same(was)).then_some(to)
+        is.same(was).then_some(to)
     }
 
     /// **Whether `is`, at `rel` after the command, arrived there by a move into its home**
-    /// ([`May::IntoItsHome`]) from a path of the line's place that held the same entry and
-    /// is gone — and what stood at `rel` before, if anything did, was foreign (the file-state
-    /// baseline records nothing at `rel`: a managed occupant blocks the move,
-    /// `design/reconciliation.md` → *Relocation collisions*) and stands moved aside under
-    /// `.jigc/displaced/` after it.
-    fn arrived_home(&self, place: Where, rel: &str, was: Option<&Entry>, is: &Entry) -> bool {
-        let from = self.seen.before.files.iter().any(|(from, left)| {
-            left.same(is)
-                && !self.seen.after.files.contains_key(from)
-                && self.placed(place, from)
-                && in_repo(from)
-                    .and_then(|from| self.moved_home(place, from))
-                    .as_deref()
-                    == Some(rel)
-        });
-        let parked = was.is_none_or(|was| {
-            self.foreign(rel)
-                && self.seen.after.files.iter().any(|(at, now)| {
-                    in_repo(at).is_some_and(|at| under(".jigc/displaced", at))
-                        && now.same(was)
-                        && !self.seen.before.files.contains_key(at)
-                })
-        });
-        from && parked
-    }
-
-    /// Whether the file-state baseline the command found records nothing at `rel`, from the
-    /// repository's root — a foreign entry there, by *"Classification is by **baseline**"*
-    /// (`design/reconciliation.md` → *Relocation collisions*). Where the record does not
-    /// read, nothing is foreign.
-    fn foreign(&self, rel: &str) -> bool {
-        self.acting
-            .baselined
-            .as_ref()
-            .is_some_and(|baselined| !baselined.contains(rel))
-    }
-
-    /// **Whether `rel` is a destination a move landed on over a foreign occupant** — what
-    /// [`May::MovedAsideTo`] at one file's place moves aside: an entry stood at `rel` before
-    /// the command and one stands there after, which arrived by a move into its home under a
-    /// line in force ([`Tally::arrived_home`], which asks the occupant to be foreign and
-    /// parked).
-    fn squatted(&self, rel: &str) -> bool {
-        let key = format!("{REPO}/{rel}");
-        let (Some(was), Some(is)) = (
-            self.seen.before.files.get(&key),
-            self.seen.after.files.get(&key),
-        ) else {
-            return false;
-        };
-        self.in_force().any(|(_, line)| {
-            matches!(line.allows, Allows::Files(place, May::IntoItsHome)
-                if self.arrived_home(place, rel, Some(was), is))
-        })
+    /// ([`May::IntoItsHome`]): a path that held the same entry before the command, and is
+    /// gone after, has `rel` for its destination ([`Acting::destination`]) — **and nothing
+    /// stood at `rel` before, in the working tree or in what git held**: what stands at a
+    /// mover's destination blocks the move, and nothing is moved aside from one (the human's
+    /// ruling of 2026-10-20 on the rows' record's §6, entry 23, where a foreign occupant
+    /// parked under `.jigc/displaced/` let the move land).
+    fn arrived_home(&self, rel: &str, is: &Entry) -> bool {
+        self.acting.nothing_stood(rel)
+            && self.seen.before.files.iter().any(|(from, left)| {
+                left.same(is)
+                    && !self.seen.after.files.contains_key(from)
+                    && in_repo(from)
+                        .and_then(|from| self.acting.destination(from))
+                        .as_deref()
+                        == Some(rel)
+            })
     }
 
     /// **Whether `to` — an arrival under the directory `dir` a line moves aside to — is under
@@ -2684,17 +2683,11 @@ impl<'a> Tally<'a> {
                     .take_while(|word| !word.starts_with('<') && **word != "*")
                     .count()
             });
-        let relative: &[&str] = match place {
-            Where::Under(_) => from.get(below..).unwrap_or_default(),
-            _ => {
-                let Some(parked) = (1..=from.len())
-                    .find(|n| self.parks(place, &format!("{REPO}/{}", from[..*n].join("/"))))
-                else {
-                    return false;
-                };
-                &from[parked - 1..]
-            }
+        // One file's place parks nothing ([`Tally::parks`]).
+        let Where::Under(_) = place else {
+            return false;
         };
+        let relative: &[&str] = from.get(below..).unwrap_or_default();
         if moved.is_empty() || moved.len() != relative.len() {
             return false;
         }
@@ -2724,12 +2717,12 @@ impl<'a> Tally<'a> {
     }
 
     /// **Whether `path`, from the sandbox's root, is where a line that moves aside parks
-    /// from** ([`May::MovedAsideTo`]): any path of its place under a directory, and at one
-    /// file's place only a destination's foreign occupant ([`Tally::squatted`]).
+    /// from** ([`May::MovedAsideTo`]): any path of its place under a directory — a place the
+    /// command removes. At one file's place, nothing: jigc moves a file aside only from a
+    /// place it is about to remove, never from a destination (the human's ruling of
+    /// 2026-10-20 on the rows' record's §6, entry 23).
     fn parks(&self, place: Where, path: &str) -> bool {
-        self.placed(place, path)
-            && (matches!(place, Where::Under(_))
-                || in_repo(path).is_some_and(|rel| self.squatted(rel)))
+        matches!(place, Where::Under(_)) && self.placed(place, path)
     }
 
     /// **The doc a migration rewrote at `rel`, and whether it is `is` migrated**
@@ -2920,37 +2913,6 @@ impl<'a> Tally<'a> {
                 {
                     return false;
                 }
-                // The arrival a word reads away from its place.
-                if let (Some(entry), May::IntoItsHome) = (entry, may)
-                    && as_after(entry)
-                    && after.is_some_and(|is| {
-                        self.arrived_home(place, path, self.seen.before.files.get(&key), is)
-                    })
-                {
-                    return true;
-                }
-                // A move carries its index entry with it: what the main checkout's index held
-                // at a path of the place, gone, now at the path the move landed on.
-                if let (May::IntoItsHome, Some((mode, blob))) = (may, entry)
-                    && let Some(main) = self.seen.before.checkouts.get(REPO)
-                    && main.index.iter().any(|(from, staged)| {
-                        staged.mode == *mode
-                            && staged.blob == *blob
-                            && after.is_some_and(|is| {
-                                self.arrived_home(place, path, self.seen.before.files.get(&key), is)
-                            })
-                            && self
-                                .seen
-                                .before
-                                .files
-                                .get(&format!("{REPO}/{from}"))
-                                .is_some_and(|_| {
-                                    self.moved_home(place, from).as_deref() == Some(path)
-                                })
-                    })
-                {
-                    return true;
-                }
                 if !self.placed(place, &key) {
                     return false;
                 }
@@ -2961,7 +2923,7 @@ impl<'a> Tally<'a> {
                     (May::Retitled, None) => self
                         .retitle()
                         .is_some_and(|(old, new)| old == path && new != old),
-                    (May::IntoItsHome, None) => self.moved_home(place, path).is_some(),
+                    (May::IntoItsHome, None) => self.moved_home(path).is_some(),
                     (May::Migrated, None) => self
                         .seen
                         .before
@@ -2972,7 +2934,21 @@ impl<'a> Tally<'a> {
                     (May::Retitled, Some(entry)) => {
                         as_after(entry) && self.retitle().is_some_and(|(_, new)| new == path)
                     }
-                    (May::IntoItsHome, Some(_)) => false,
+                    // The arrival, at a mover's destination: the file the working tree holds
+                    // there after the command — or the index entry the move carried with it,
+                    // what the main checkout's index held at the path it left.
+                    (May::IntoItsHome, Some(entry @ (mode, blob))) => {
+                        matches!(place, Where::Path(A_NEW_HOME))
+                            && after.is_some_and(|is| self.arrived_home(path, is))
+                            && (as_after(entry)
+                                || self.seen.before.checkouts.get(REPO).is_some_and(|main| {
+                                    main.index.iter().any(|(from, staged)| {
+                                        staged.mode == *mode
+                                            && staged.blob == *blob
+                                            && self.moved_home(from).as_deref() == Some(path)
+                                    })
+                                }))
+                    }
                     // A word that says what a file may become: the commit holds the file the
                     // working tree holds after the command, and that file is what the word
                     // lets stand over what `HEAD` held there before it — so a commit is no
@@ -3357,16 +3333,9 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             continue;
         }
         judged.insert(&plant.at);
-        // A plant at a place a line moves aside, or in a directory standing there, which is
-        // parked whole.
-        let in_a_parked_place = |place: Where| {
-            std::iter::successors(Some(plant.at.as_str()), |at| {
-                at.rsplit_once('/').map(|(up, _)| up)
-            })
-            .any(|at| tally.parks(place, at))
-        };
+        // A plant at a place a line moves aside.
         let aside = tally.in_force().find_map(|(at, line)| match line.allows {
-            Allows::Files(place, May::MovedAsideTo(dir)) if in_a_parked_place(place) => {
+            Allows::Files(place, May::MovedAsideTo(dir)) if tally.parks(place, &plant.at) => {
                 let to = stands.files.iter().find(|to| {
                     in_repo(to).is_some_and(|rel| {
                         under_for(dir, rel, &tally.acting)
@@ -3377,7 +3346,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
             }
             // A doc moved into its home carries what was planted in it.
             Allows::Files(place, May::IntoItsHome) if tally.placed(place, &plant.at) => {
-                let to = format!("{REPO}/{}", tally.moved_home(place, in_repo(&plant.at)?)?);
+                let to = format!("{REPO}/{}", tally.moved_home(in_repo(&plant.at)?)?);
                 let to = stands.files.iter().find(|at| **at == to)?;
                 Some((at, to))
             }

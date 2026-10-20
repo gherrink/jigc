@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-20, with the first commit of the mint family's task (`B9`), which records the human's two rulings of that day — the rows' record's §6, entry 23, stricter than its option A (*any file at a mover's destination, committed or untracked, managed or not, refuses*), and the review of `B8`'s R1 (*an acting sweep exits non-zero where an act it was asked for did not happen*): in §25 the two keys of a committed file at a new home are findings of the product and of the docs that park it, their cells unmarked; each door gains a key for every other occupant of a new home, `r1-relocate-parks-an-untracked-occupant-of-a-new-home` and `r1-config-set-parks-an-untracked-occupant-of-a-new-home`, five cells each — one of the second's red on this tree and clean on the previous release, **the table's first regression in its own words**; `r1-relocate-refuses-a-doc-and-exits-0` carries the ruling, and a sixth cell, a sweep that left one note and moved another; `r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks` retires — the refusal is what the ruling asks, its five cells hold — and its words are a key of their own, held by no cell; and two keys of words, held by no cell, for the unmanaged doc beside a new home the ruling's (A) has the output name. The heading of §25 counts what it holds now: 79 cells, 67 in the gate and 12 on demand, twenty-nine red under ten keys.*
+
 *Changed 2026-10-20, by the eighth of the fixes after the review of the movers family's task (`B8`), its second commit (the review's R1, R2, R4 and R10, the fifth fix's left-open, and the numbers): §25's `r1-relocate-refuses-a-doc-and-exits-0` judges the two docs that choose exit 0 on purpose wrong, with the code that follows them — it read *the code*; the two keys of a committed squatter are reframed with the rows' record's §6, entry 23; five keys cite the fix pass's rows they repeat or sit beside; §24's hand-committed doc's baseline is answered by `design/reconciliation.md`; §25 gains the lead of `placement-root`'s refusal in the OS's words; and the headings of §10, §24 and §25 count what they hold since the fixes after the review: §10 69 cells in the gate and 36 on demand, nineteen red under three keys; §24 76 cells; §25 75 cells, twenty-three red under nine keys — every count off the suite and the whole-table print committed with the movers family's record.*
 
 *Changed 2026-10-20, by the eighth of the fixes after the review of the movers family's task (`B8`), its first commit, which records the human's rulings of 2026-10-19 on the rows' record's §6, entries 21 and 22: §24's hook key is a finding of the product under the ruling on entry 22 — a commit a hook rejects rolls back — its doc change folded into it, the cell unmarked; §24 gains `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged`, the ruling on entry 21's product and doc change, which no cell can see, its repro run as printed on both binaries; and §25's `config set` key over a doc it strands holds a third cell, a file in the place of the decisions' directory, relisted as refusing (the fifth fix's left-open).*
@@ -1208,16 +1210,17 @@ git status --porcelain -- docs                                          #  M doc
 - **`rename` answers a doc gone from the worktree with *"check the id you typed"*.** Over a file in the place of the decisions' directory — the decision committed, git holding it — `rename` refuses `store.not-found`, *"no managed doc `adr:one-way` to rename"*, routed to *"`jigc describe` lists the doctype surface — check the id you typed against it"*: the id is right, and the doc is missing from the worktree, not from the store. Law 2 of `design/surface-contract.md`, a key of words: `r1-rename-answers-a-doc-gone-from-the-worktree-with-check-the-id-you-typed`. *Which is wrong*: the code — the route should name the home and that git holds the doc there, as `milestone create`'s *"missing from the worktree but not from git"* does. The cell holds bytes.
 - **The store door's route offers a link's way out at a directory.** `rename` over a directory at the decision's home routes *"put the doc itself … as a regular file — for a link, a copy of the file it points at, in the link's place"*; harmless, and the same sentence at every store door — words, no key.
 
-## 25. The movers family's movers — `relocate` and `config set`: 75 cells, 63 in the gate and 12 on demand, twenty-three red under nine keys (57, 45 and twenty under eight until the fixes after the review of `B8`: a managed occupant at each mover by the second, `placement-root`'s sixteen by the fifth, a cell relisted by the eighth)
+## 25. The movers family's movers — `relocate` and `config set`: 79 cells, 67 in the gate and 12 on demand, twenty-nine red under ten keys (57, 45 and twenty under eight until the fixes after the review of `B8`: a managed occupant at each mover by the second, `placement-root`'s sixteen by the fifth, a cell relisted by the eighth; 75, 63 and twenty-three under nine until the human's two rulings of 2026-10-20, which relisted fifteen cells and brought four)
 
 *2026-10-19, this tree's debug build, macOS arm64; the fourth commit of the movers family's task (`B8`), on the rows of [the rows' record](byte-table-acceptance-rows.md) → §4c ([movers.rs](../../../../../crates/cli/tests/byte_table/movers.rs)). Every key below is the same on the previous release (`1.0.0-rc.24`, rebuilt from `91834b5e`, sha256 `accf3996…ab5d`, checked), each repro run as printed on both binaries — not a regression; two keys say what the previous release did instead. Read under the human's rule of 2026-10-19: neither the docs nor the code is the oracle, and each key says which of the two it judges wrong.*
 
 ### `r1-relocate-refuses-a-doc-and-exits-0`
 
-- *The cells.* Four: a link to nothing, a link to a file in the repository, a link to a file outside, a directory, each in the place of the stranded note.
+- *The cells.* Four: a link to nothing, a link to a file in the repository, a link to a file outside, a directory, each in the place of the stranded note. *[Six since 2026-10-20: the managed note at the new home (the second of the fixes after the review of `B8`), and — the first commit of `B9` — `relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note`, a sweep that leaves the first note and moves the second, which holds the ruling's *does all it can*: exit 0 on both binaries, the second note moved; on a product that exits 1 naming the note it left, it holds — `relocate`'s lines that write hold on such a refusal (the rows' record's §4c, RL5).]*
 - *What they came to.* **Not the listed outcome**: the doc is refused — *"1 blocked"*, `store.home-not-regular-file`, keyed at the source, nothing written — and the command exits **0**.
 - *Held against.* *"A relocation lands a regular file or refuses, keyed at the source"* (`design/finalize.md` → *4. Promote managed docs*), and the sibling's settled rule of what a refusal is: *"*Loud* is not a property of the prose in a route — it is the **exit code** and a **machine-readable finding**"*, *"a run that refuses any doc **exits non-zero**"* (`design/corpus-migration.md` → *What "loudly" costs, and where it is paid*).
 - *Which is wrong, and why.* **The two docs that choose exit 0 on purpose, and the code that follows them.** *[Corrected 2026-10-20, by the eighth of the fixes after the review of `B8` (its R1): it read **the code**, and held the door against the sibling's rule alone, where two docs decide this door's exit:]* *"This **`blocked` is not an exit rule** — `relocate` surfaces it and stays exit 0 — which is exactly the distinction `migrate-corpus`'s same-named key makes the other way"* (`design/command-output-contract.md` → *Every other envelope — one declaration per registry row the three shapes do not cover*), and *"**`jigc relocate` takes the identical shape and for the identical reason** … it is a sweep, the gate binds the *move* rather than the run, and the addressable instances of the same sweep still relocate. Its exit is therefore **unchanged**"* (`design/validation.md` → *The M51 registrations — Increment 9: the surface batch's mints*). Judged on the behaviour first (`implementation/working-principles.md`): the reason they give — a sweep whose other instances still move — is `migrate-corpus`'s too, and that sibling exits non-zero having migrated the rest; and a script that relocates and checks the exit code reads success while a doc stays stranded at a home the cascade no longer resolves — the infinite loop the sibling's audit named. The docs do not say two things here: they agree, on purpose, on what makes no sense for a user — the class of §23, a finding against the docs and the code that follows them, and no entry of the rows' record's §6. *Robust*: exit non-zero (1) when any doc is blocked, the other docs still moved and the `blocked` key as it is; and the two sentences say so. It reverses a decision two docs record (M52 Increment 8 / T6), which the human sees in the run's ledger. The cells stay listed as refusing, exit 1, unmarked; and the rows' record's §6, entry 23 lists `relocate`'s committed-squatter cell the same way. *On the previous release* the refusal is a bare read error through the link — *"reading the stranded doc …: No such file or directory"* — and exit 0 the same.
+- *Ruled on 2026-10-20* — the human's, R1, option A: **an acting sweep does all it can, then exits non-zero if any act it was asked for did not happen; a reporting door keeps exit 0 for what it finds.** `relocate` and `migrate-corpus` are acting sweeps; `ingest` and `jigc validate`'s store sweep are reporting doors. `design/command-output-contract.md`'s `jigc relocate` paragraph, `design/validation.md`'s *"Its exit is therefore **unchanged**"* for `relocate`, and the product are wrong — the doc and product change a finding of the run's ledger under this key. The cells were listed as the ruling has them since the eighth fix; no listing moved.
 - *The fix pass's rows* (the review of `B8`, its R4): it sits beside `5f5b273a`-4 — the move-primitive conversion, which made `relocate`, `config set docs-root` and `config set placement-root` refuse a link source where they had exited 0, *"the fixer's conversion, open to overturn"* — and is not that row: the conversion made the refusal; this key is the exit it ends with.
 
 ```zsh
@@ -1239,6 +1242,7 @@ $JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 blocked, s
 - *What it came to.* **Not the listed outcome**: exit 0, the user's committed file moved to `.jigc/displaced/`, its index entry replaced by the note's — the next commit takes the user's file out of the tree.
 - *Held against.* The reading until entry 23 is ruled: the move is blocked. *[Reframed 2026-10-20, by the eighth of the fixes after the review of `B8` (its R2): it was held against `migrate-corpus`'s walk as a second doc saying another thing; that walk is its sibling's, not this door's.]* The design answers this door on purpose — `design/reconciliation.md` → *Relocation collisions*, *"a committed-but-unmanaged squatter's tracked-path index slot is freed"*, *"the settled **foreign-only** bound"* — and the answer makes no sense for a user.
 - *Which is wrong, and why.* **The reconciliation doc's sentence and the reach of its settled bound, and the product that follows them** — the human's to rule, since it reverses a settled design (entry 23): a file the user committed is the user's content in the tree, and a move that stages it out into a workbench no commit carries is a change the user did not ask for; the bound's reason, *"a foreign file has no identity/referrers"*, is not true of a file git tracks. *Robust*: block that doc, the other docs moved, and exit non-zero (the key above). No byte is lost — the file stands in `.jigc/displaced/` and in history.
+- *Ruled on 2026-10-20* — the human's, stricter than option A (the rows' record's §6, entry 23): **any file at a mover's destination — committed or untracked, managed or not — refuses**; `relocate` blocks that doc, moves the others, names the path to clear and exits non-zero, and where the occupant is a doc the refusal's route offers adopting it as well as clearing it. `design/reconciliation.md` → *Relocation collisions* (the settled foreign-only bound) and the product are wrong — one finding, the doc's change folded in, of the run's ledger. **The cell loses its mark**, and since the frame reads the destination as a line's place (`RL1, at its new home`) it comes out *git's state moved outside its allowance* — the index entry at the new home replaced, under no line — *also written outside its allowance* and *also not the listed outcome*, on both binaries; it had read *not the listed outcome* alone.
 
 ```zsh
 # the corpus of the key above, up to its commit; then:
@@ -1246,6 +1250,36 @@ mkdir -p docs/notes && echo "the user's own notes" > docs/notes/cache-benchmarks
 git add docs/notes && git commit -qm "notes of the user's"
 $JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 moved, 1 displaced · exit=0
 git status --porcelain                                            # D  docs/legacy-notes/… · M  docs/notes/cache-benchmarks.md
+```
+
+### `r1-relocate-parks-an-untracked-occupant-of-a-new-home`
+
+*Added 2026-10-20, with the first commit of the mint family's task (`B9`), for the human's ruling of that day on the rows' record's §6, entry 23 — a key beside the committed file's, not that key widened: the case the human weighed was a file git tracks, whose harm is a deletion from the repository at the user's next commit; this one's is bytes kept at a path the user never chose, after a command that reported success. One mechanism, `relocate::relocate_stranded`'s displacement, and one fix closes both.*
+
+- *The cells.* Five, at the note's new home: a file of the user's, a link to nothing, a link to a file in the repository, a link to a file outside, a directory — each listed acting under `RL3` until the ruling, and holding.
+- *What they came to.* *Git's state moved outside its allowance*, *also written outside its allowance* and *also not the listed outcome*: exit 0, the occupant moved to `.jigc/displaced/` and named *"foreign squatter → workbench"*, the note staged over its place. On the previous release the same, but over the link to nothing, which is *not the listed outcome* alone.
+- *Held against.* The ruling: *"**Any file at a mover's destination — committed or untracked, managed or not — refuses**"* — `relocate` blocks that doc, names the path to clear, exits non-zero, and moves a file aside only from a place it is about to remove, never from a destination.
+- *Which is wrong, and why.* **`design/reconciliation.md` → *Relocation collisions*** (*"A *foreign* (untracked/unmanaged) file at the destination → move-into-workbench"*, and the parking that follows) **and the product.** *Why*, the ruling's: the invariant *"conflicts blocked and routed to a human, never silently merged"*; a parked file is the user's bytes at a path they never chose. No byte is lost — the occupant stands under `.jigc/displaced/`.
+
+```zsh
+# the corpus of `r1-relocate-refuses-a-doc-and-exits-0`, up to its commit; then:
+mkdir -p docs/notes && echo "the user's own notes" > docs/notes/cache-benchmarks.md
+$JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 moved, 1 displaced · exit=0
+ls .jigc/displaced                                                # cache-benchmarks.md
+```
+
+### `r1-relocate-names-no-unmanaged-doc-beside-a-new-home`
+
+*Added 2026-10-20, with the first commit of `B9`: the ruling on entry 23, its (A). A key of words, held by no cell.*
+
+- *The words.* The ruling: *"an unmanaged doc *elsewhere* in the target folder does not block — the output names it with the adopt route"*.
+- *What the product does.* It blocks nothing — the cell `relocate-a-doc-of-the-users-beside-the-notes-new-home`, listed acting, holds on both binaries — and names nothing: *"1 moved, 0 displaced, 0 blocked"*, the doc of the user's beside the note's new home in no line. Driven as printed on this tree's debug build and on the previous release's rebuild, the same.
+- *Which is wrong.* The product; no design sentence speaks of a doc beside a destination. *Why no cell*: a listing of an act holds no words, and the half a cell can see — that nothing blocks — the cell holds.
+
+```zsh
+# the corpus of `r1-relocate-refuses-a-doc-and-exits-0`, up to its commit; then:
+mkdir -p docs/notes && echo "the user's own notes" > docs/notes/the-users-own-notes.md
+$JIGC relocate note --from docs/legacy-notes/; echo "exit=$?"     # 1 moved, 0 displaced, 0 blocked · exit=0, the doc named nowhere
 ```
 
 ### `r1-config-set-drops-a-comment-of-the-users-from-the-manifest`
@@ -1333,7 +1367,9 @@ $JIGC config set docs-root notes > /dev/null 2>&1; echo "exit=$?"   # exit=1
 find notes -print                                                    # notes · notes/decisions — made, and left
 ```
 
-### `r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks`
+### `r1-config-set-refuses-a-squatter-at-a-new-home-its-doc-parks` — retired 2026-10-20
+
+*Retired with the first commit of `B9`, by the human's ruling of 2026-10-20 on the rows' record's §6, entry 23: the refusal this key held against the doc is what the ruling asks — **any file at a mover's destination refuses**, and a root knob refuses its whole re-point, the knob unchanged. The five cells are listed refusing, naming the new home, and come out *refuses, nothing changed* on both binaries. What the key judged wrong is reversed: the doc that parks (`design/storage.md` → *Placement*) is wrong, and the code was right but for its words — a key of its own below. The entry stands as it was written:*
 
 - *The cells.* Five: a file of the user's, a link to nothing, a link to a file in the repository, a link to a file outside, a directory, at the decision's new home.
 - *What they came to.* **Not the listed outcome**: exit 1, `config.repoint-failed` — *"`git mv … ` failed: fatal: destination exists"*, or a write through the entry refused — the re-point undone, nothing changed.
@@ -1346,6 +1382,20 @@ mkdir -p notes/decisions && echo "the user's own notes" > notes/decisions/one-wa
 $JIGC config set docs-root notes 2>&1 | grep -o "fatal: destination exists"   # fatal: destination exists
 ```
 
+### `r1-config-set-refuses-an-occupant-of-a-new-home-in-gits-words`
+
+*Added 2026-10-20, with the first commit of `B9`: the ruling on entry 23 names `docs-root`'s refusal *"in git's words (owed a jigc code and route)"*. A key of words, held by no cell — the five cells of the retired key above, and the committed file's, refuse having changed nothing and name the new home.*
+
+- *What the product says.* `config.repoint-failed` — *"`git mv docs/decisions/one-way.md notes/decisions/one-way.md` failed: fatal: destination exists, source=…, destination=notes/decisions/one-way.md — the re-point was undone"*, route *"Fix what this message names, then re-run"* — on both binaries.
+- *What the ruling asks.* A refusal under jigc's own words that names the path to clear, and — the occupant at `notes/decisions/one-way.md` being a doc by its name — a route that offers adopting it as well as clearing it.
+- *Which is wrong.* The product's words; `design/storage.md` → *Placement*, which says the re-point parks the occupant, folds into `r1-config-set-parks-an-untracked-occupant-of-a-new-home` below.
+
+```zsh
+# the corpus of `r1-config-set-re-points-past-a-link-to-nothing-or-a-directory-at-a-doc-it-strands`, up to its commit; then:
+mkdir -p notes/decisions && echo "the user's own notes" > notes/decisions/one-way.md
+$JIGC config set docs-root notes; echo "exit=$?"   # config.repoint-failed … fatal: destination exists … · exit=1
+```
+
 ### `r1-config-set-parks-a-file-the-user-committed-at-a-new-home`
 
 *Added 2026-10-20, after the review of the task `B8` (its H5): every cell of `config set` had set `docs-root`, which refuses every squatter, so the root knob that parks one was met by no cell.*
@@ -1354,6 +1404,7 @@ $JIGC config set docs-root notes 2>&1 | grep -o "fatal: destination exists"   # 
 - *What it came to.* **Not the listed outcome**: exit 0, the user's committed `notes/roadmap.md` moved to `.jigc/displaced/roadmap.md` and named *"a foreign file at the new home, parked out of the way"*, its index entry replaced by the roadmap's moved in over it, the knob set — the next commit takes the user's file out of the tree. The same on the previous release.
 - *Held against.* The reading until entry 23 is ruled: the move is blocked — for a root knob, the whole re-point refused. *[Reframed 2026-10-20, by the eighth of the fixes after the review of `B8` (its R2).]* The design answers this door on purpose — `design/reconciliation.md`'s *"a committed-but-unmanaged squatter's tracked-path index slot is freed"*, the settled foreign-only bound, and `design/storage.md`'s *"delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked"*.
 - *Which is wrong, and why.* **The docs that park it, and the product that follows them** — the human's to rule (entry 23); one mechanism with `r1-relocate-parks-a-file-the-user-committed-at-a-new-home`, `relocate::relocate_stranded`, at its second door. *Robust, for a root knob*: refuse the re-point whole, naming the new home, the knob unchanged — a re-point that blocked the one doc and let the knob land would leave it at a home the cascade no longer resolves; the door already refuses whole for every doc its sweep blocks (`config.repoint-failed`, *"the re-point was undone"*). No byte is lost: the file stands in `.jigc/displaced/` and in history.
+- *Ruled on 2026-10-20* — the human's, on entry 23, as the robust answer had it for a root knob, and stricter for what stands: any file at a new home refuses the re-point whole, the knob unchanged. `design/reconciliation.md`'s settled bound, `design/storage.md` → *Placement*'s parking and the product are wrong — one finding, the docs' change folded in. **The cell loses its mark**, and comes out *git's state moved outside its allowance*, *also written outside* and *also not the listed outcome* on both binaries, the destination a line's place now (`CS2, at its new home`).
 
 ```zsh
 # from the repository's root; BIN the binary under test, by an absolute path
@@ -1367,8 +1418,29 @@ $JIGC config set placement-root notes; echo "exit=$?"   # exit=0 · notes/roadma
 git status --porcelain                                  # D  docs/roadmap.md · M  notes/roadmap.md
 ```
 
+### `r1-config-set-parks-an-untracked-occupant-of-a-new-home`
+
+*Added 2026-10-20, with the first commit of `B9`, for the human's ruling of that day on entry 23 — beside the committed file's key, as at `relocate`, one fix closing both.*
+
+- *The cells.* Five, at the roadmap's new home under `placement-root`: a file of the user's, a link to nothing, a link to a file in the repository, a link to a file outside, a directory — each listed acting under `CS3` until the ruling.
+- *What they came to.* *Git's state moved outside its allowance*, *also written outside* and *also not the listed outcome*: exit 0, the occupant parked under `.jigc/displaced/` *"a foreign file at the new home, parked out of the way"*, the knob set, the roadmap staged over the occupant's place. **On the previous release one of them is clean**: over the link to nothing it refused the re-point, *"fatal: destination exists"*, exit 1, nothing changed — *refuses, nothing changed* under the listing the ruling gives, where this tree parks the link at exit 0. **The table's first cell red on this tree and clean on the previous release**: the rc.24 fix pass routed `placement-root`'s re-point through `relocate::relocate_stranded`, whose displacement parks what rc.24's plain `git mv` refused (the fix pass's `CPL-8` is this door's parking, its rollback). The other four are the same on both binaries.
+- *Held against.* The ruling: any file at a mover's destination refuses; a root knob refuses its whole re-point, the knob unchanged.
+- *Which is wrong, and why.* **`design/storage.md` → *Placement*** — *"delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"* — **`design/reconciliation.md`'s foreign-file arm, and the product.** *Why*: as at `relocate`, and for a root knob one more — a re-point that lands while a doc is parked or blocked strands what the cascade no longer resolves.
+
+```zsh
+# the corpus of `r1-config-set-parks-a-file-the-user-committed-at-a-new-home`, before its commit of the user's notes; then:
+git add docs && git commit -qm "a roadmap"
+echo "the user's own notes" > notes/roadmap.md
+$JIGC config set placement-root notes; echo "exit=$?"   # exit=0 · notes/roadmap.md → .jigc/displaced/roadmap.md
+```
+
+### `r1-config-set-names-no-unmanaged-doc-beside-a-new-home`
+
+*Added 2026-10-20, with the first commit of `B9`: the ruling on entry 23, its (A), at the root knobs. A key of words, held by no cell, as `relocate`'s above.* Both root knobs re-point over a doc of the user's beside the new home — `config-set-a-doc-of-the-users-beside-the-decisions-new-home`, `config-set-placement-root-a-doc-of-the-users-beside-the-roadmaps-new-home`, each listed acting and holding on both binaries — and name it nowhere. The product is wrong; no design sentence speaks of it.
+
 ### What the other cells show
 
+- *[2026-10-20, the first commit of `B9`: the two lists below are the fourth fix's; since the human's ruling on entry 23 the squatters at a new home are listed refusing — red under the keys above at `relocate` and `placement-root`, holding at `docs-root` — and four cells joined: a doc of the user's beside each new home (three, holding) and a sweep that leaves one note (under the first key).]*
 - **`relocate`, twenty-four cells, eighteen that hold or refuse having changed nothing.** The stranded note moved into its home with a staged `git mv`, the baseline re-keyed; an edit and a change staged at it moved with it; a file of the user's in its place, or in the place of its directory, left alone; every squatter at the new home but a committed file parked under `.jigc/displaced/` — a directory with its files; the frozen doctype the catalog names refused (`relocate.frozen-doctype`); in every other prepared state no `note` doctype (`store.unknown-type`), or no project.
 - **`config set`, fifty-one cells, thirty-four that hold or refuse having changed nothing** — `placement-root`'s sixteen and a managed decision at the new home among them, since the fixes after the review. `docs-root` re-pointed over a committed decision — the knob set, the decision moved with a staged `git mv` — a knob that moves nothing, the catalog's re-point to the default; a change staged at the manifest kept; an edit that breaks the YAML, a directory at the manifest, and a file in the place of the config layer's directory each refused having changed nothing; an edit and a change staged at the decision moved with it; a file the user committed at the new home refused, marked (entry 23); in every other prepared state the re-point acts, or `bare` refuses.
 

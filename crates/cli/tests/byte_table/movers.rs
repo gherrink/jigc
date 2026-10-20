@@ -16,7 +16,7 @@
 use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
-    A_DOC, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, Mark, May,
+    A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
     PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -44,10 +44,6 @@ const RENAME_SECTION: &str = "`jigc rename` — the CLI-owned identity refactor 
 const THE_FREEZE_EXEMPT_SIBLING: &str =
     "The freeze-exempt sibling — the parallel relocation path (M39 inc-5)";
 
-/// The heading of the relocation collisions' section of `design/reconciliation.md`.
-const RELOCATION_COLLISIONS: &str =
-    "Relocation collisions — two resolutions for one collision (M39)";
-
 /// The heading of `migrate-corpus`'s commit boundary in `design/corpus-migration.md`.
 const THE_COMMIT_BOUNDARY: &str = "The commit boundary — the verb lands its own migration (M42)";
 
@@ -69,23 +65,32 @@ const A_MOVE_LANDS_IN_THE_INDEX: Quote = Quote {
     words: "a `git mv` lands in the index and which commit it joins stays the user's to place",
 };
 
-/// **A foreign file at a destination is parked in the workbench** — the three sentences of
-/// `design/reconciliation.md` `RL3` and `CS3` quote.
-const A_SQUATTER_PARKED: [Quote; 3] = [
+/// The heading of `DECISIONS.md`'s entry that records the human's two rulings of
+/// 2026-10-20 — the task `B9`'s first commit.
+const B9_RULINGS: &str = "2026-10-20 — The human's two rulings of the day, recorded: jigc never moves or overwrites a file to make room for its own, so a mover refuses over anything that stands at a destination — `relocate` blocking that doc, a root knob its whole re-point — and an acting sweep exits non-zero where an act it was asked for did not happen; the parking lines go, a mover's destination is a line's place, and `relocate`'s lines hold on a refusal that names the doc it left (the byte table, task B9, the first of its commits)";
+
+/// **Nothing is moved aside from a destination** — the human's ruling of 2026-10-20 on the
+/// rows' record's §6, entry 23, as `DECISIONS.md` records it, until the design docs say it:
+/// the sentence a mover's destination line rests on beside its move's own.
+const NOTHING_MOVED_ASIDE_FROM_A_DESTINATION: Quote = Quote {
+    doc: "DECISIONS.md",
+    heading: B9_RULINGS,
+    words: "**Any file at a mover's destination — committed or untracked, managed or not — refuses**",
+};
+
+/// **`jigc relocate` blocks that doc and moves the others** — the same ruling, and the
+/// human's ruling R1 of that day: the sentences `relocate`'s lines take *on a refusal: yes*
+/// from, where the refusal names the doc it left.
+const A_SWEEP_DOES_ALL_IT_CAN: [Quote; 2] = [
     Quote {
-        doc: "design/reconciliation.md",
-        heading: RELOCATION_COLLISIONS,
-        words: "It is **relocated into the gitignored `.jigc/` workbench** (a dedicated `displaced/` subpath",
+        doc: "DECISIONS.md",
+        heading: B9_RULINGS,
+        words: "`relocate` blocks that doc, moves the others, names the path to clear and exits non-zero",
     },
     Quote {
-        doc: "design/reconciliation.md",
-        heading: RELOCATION_COLLISIONS,
-        words: "a committed-but-unmanaged squatter's tracked-path index slot is freed so the managed `git mv` into the vacated destination succeeds",
-    },
-    Quote {
-        doc: "design/reconciliation.md",
-        heading: RELOCATION_COLLISIONS,
-        words: "A name already taken in `.jigc/displaced/` gets the first free `<name>.<n>` beside it",
+        doc: "DECISIONS.md",
+        heading: B9_RULINGS,
+        words: "**An acting sweep does all it can, then exits non-zero if any act it was asked for did not happen; a reporting door keeps exit 0 for what it finds.**",
     },
 ];
 
@@ -199,9 +204,39 @@ pub const RENAME: Row = Row {
     ],
 };
 
+/// The sentences `RL1` rests on: the sweep, and its move.
+const THE_SWEEP: [Quote; 2] = [
+    Quote {
+        doc: "design/corpus-migration.md",
+        heading: THE_FREEZE_EXEMPT_SIBLING,
+        words: "the door sweeps every committed `.md` under it into the doctype's current home",
+    },
+    Quote {
+        doc: "design/corpus-migration.md",
+        heading: THE_FREEZE_EXEMPT_SIBLING,
+        words: "The move is the **T1 standalone move primitive** (`relocate::move_doc` — `git mv old→new` + file-state re-key)",
+    },
+];
+
+/// A line of `jigc relocate` that holds where the command refused having left a doc of its
+/// sweep and named it — the human's two rulings of 2026-10-20: `relocate` *blocks that doc,
+/// moves the others, names the path to clear and exits non-zero*, and *an acting sweep does
+/// all it can*. A refusal that names no doc it left changes nothing.
+const fn swept(id: &'static str, allows: Allows, quotes: &'static [Quote]) -> Line {
+    Line {
+        on_refusal: true,
+        when: When::ADocLeftAndNamed,
+        ..line(id, allows, quotes)
+    }
+}
+
 /// **`jigc relocate`** — the record's §4c. Its unit is the doctype, the first word after
 /// the leaf, and its prior home is `--from`'s; its home is `fresh`, with the leads that
 /// make the door's domain — a doctype a listed pack supplies and no manifest governs.
+/// **Its lines that write hold on a refusal that names a doc the sweep left** — the human's
+/// rulings of 2026-10-20 — and **nothing is moved aside from a destination**: what stands
+/// at a doc's new home blocks that doc (the record's §6, entry 23, ruled that day; `RL3`,
+/// the line that parked it, is gone).
 pub const RELOCATE: Row = Row {
     leaf: &["relocate"],
     unit: Unit::TheWordAfterTheLeaf,
@@ -209,36 +244,43 @@ pub const RELOCATE: Row = Row {
     consent: None,
     home: Prepared::Of(State::Fresh),
     lines: &[
-        line(
+        swept(
             "RL1",
             Allows::Files(Where::Path(PRIOR_HOME), May::IntoItsHome),
             &[
-                Quote {
-                    doc: "design/corpus-migration.md",
-                    heading: THE_FREEZE_EXEMPT_SIBLING,
-                    words: "the door sweeps every committed `.md` under it into the doctype's current home",
-                },
-                Quote {
-                    doc: "design/corpus-migration.md",
-                    heading: THE_FREEZE_EXEMPT_SIBLING,
-                    words: "The move is the **T1 standalone move primitive** (`relocate::move_doc` — `git mv old→new` + file-state re-key)",
-                },
+                THE_SWEEP[0],
+                THE_SWEEP[1],
+                A_SWEEP_DOES_ALL_IT_CAN[0],
+                A_SWEEP_DOES_ALL_IT_CAN[1],
             ],
         ),
-        line("RL2", Allows::Staged, &[A_MOVE_LANDS_IN_THE_INDEX]),
-        line(
-            "RL3",
-            Allows::Files(Where::Path(A_DOC), May::MovedAsideTo(".jigc/displaced")),
-            &A_SQUATTER_PARKED,
+        swept(
+            "RL1, at its new home",
+            Allows::Files(Where::Path(A_NEW_HOME), May::IntoItsHome),
+            &[
+                THE_SWEEP[0],
+                NOTHING_MOVED_ASIDE_FROM_A_DESTINATION,
+                A_SWEEP_DOES_ALL_IT_CAN[0],
+                A_SWEEP_DOES_ALL_IT_CAN[1],
+            ],
         ),
-        line(
+        swept(
+            "RL2",
+            Allows::Staged,
+            &[
+                A_MOVE_LANDS_IN_THE_INDEX,
+                A_SWEEP_DOES_ALL_IT_CAN[0],
+                A_SWEEP_DOES_ALL_IT_CAN[1],
+            ],
+        ),
+        swept(
             "RL4",
             Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
-            &[Quote {
-                doc: "design/corpus-migration.md",
-                heading: THE_FREEZE_EXEMPT_SIBLING,
-                words: "The move is the **T1 standalone move primitive** (`relocate::move_doc` — `git mv old→new` + file-state re-key)",
-            }],
+            &[
+                THE_SWEEP[1],
+                A_SWEEP_DOES_ALL_IT_CAN[0],
+                A_SWEEP_DOES_ALL_IT_CAN[1],
+            ],
         ),
         ON_A_REFUSAL[0],
         ON_A_REFUSAL[1],
@@ -413,17 +455,15 @@ pub const CONFIG_SET: Row = Row {
             ],
         ),
         line(
-            "CS3",
-            Allows::Files(Where::Path(A_DOC), May::MovedAsideTo(".jigc/displaced")),
+            "CS2, at its new home",
+            Allows::Files(Where::Path(A_NEW_HOME), May::IntoItsHome),
             &[
                 Quote {
                     doc: "design/storage.md",
                     heading: PLACEMENT,
-                    words: "delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked in the gitignored `.jigc/displaced/` workbench rather than clobbered",
+                    words: "`config set docs-root` now detects + routes + **auto-moves** each stranded instance",
                 },
-                A_SQUATTER_PARKED[0],
-                A_SQUATTER_PARKED[1],
-                A_SQUATTER_PARKED[2],
+                NOTHING_MOVED_ASIDE_FROM_A_DESTINATION,
             ],
         ),
         line(
@@ -1360,6 +1400,11 @@ const A_NOTE: &str = "# Cache benchmarks\n\n## Body\n\nA single node caps throug
 /// The note where it stood before its doctype's home moved, and its home now.
 const STRANDED: &str = "docs/legacy-notes/cache-benchmarks.md";
 const THE_NOTES_HOME: &str = "docs/notes/cache-benchmarks.md";
+/// A doc of the user's in the note's new home, beside the place the note lands at.
+const BESIDE_THE_NOTES_HOME: &str = "docs/notes/the-users-own-notes.md";
+/// A second note stranded at the prior home, and its bytes.
+const A_SECOND_STRANDED: &str = "docs/legacy-notes/load-tests.md";
+const A_SECOND_NOTE: &str = "# Load tests\n\n## Body\n\nTwo nodes hold the load.\n";
 
 /// **A note stranded at a prior home, committed** — the note pack and its listing, and a
 /// note under `docs/legacy-notes/`, committed by the user: `relocate`'s subject.
@@ -1460,7 +1505,7 @@ const fn relocates(
 ///   relocation **surfaces the collision as a block** (never a clobber)"*
 ///   (`design/reconciliation.md` → *Relocation collisions*);
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 24] = [
+const RELOCATE_CELLS: [Cell; 26] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1539,27 +1584,26 @@ const RELOCATE_CELLS: [Cell; 24] = [
         Listed::Acts,
         at("RL1", Kind::StagedThere),
     ),
-    // `RL3`, at the note's new home: what squats the new home is parked.
+    // `RL1, at its new home`: whatever stands at the note's new home blocks the note, and the
+    // refusal names the path to clear — nothing is moved aside from a destination (the
+    // human's ruling of 2026-10-20 on the record's §6, entry 23).
     relocates(
         "relocate-a-file-of-the-users-at-the-notes-new-home",
         a_stranded_note!(Lead::Plant(Plant::File(THE_NOTES_HOME))),
-        Listed::Acts,
-        at("RL3", Kind::Untracked),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::Untracked),
     ),
-    Cell {
-        marks: &[Mark::Silence(23)],
-        ..relocates(
-            "relocate-a-file-the-user-committed-at-the-notes-new-home",
-            a_stranded_note!(Lead::Plant(Plant::Committed(THE_NOTES_HOME))),
-            refuses(1, "docs/notes/cache-benchmarks.md"),
-            at("RL3", Kind::Committed),
-        )
-    },
+    relocates(
+        "relocate-a-file-the-user-committed-at-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::Committed(THE_NOTES_HOME))),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::Committed),
+    ),
     relocates(
         "relocate-a-link-to-nothing-at-the-notes-new-home",
         a_stranded_note!(Lead::Plant(Plant::LinkToNothing(THE_NOTES_HOME))),
-        Listed::Acts,
-        at("RL3", Kind::LinkToNothing),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::LinkToNothing),
     ),
     relocates(
         "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
@@ -1567,8 +1611,8 @@ const RELOCATE_CELLS: [Cell; 24] = [
             at: THE_NOTES_HOME,
             outside: false
         })),
-        Listed::Acts,
-        at("RL3", Kind::LinkInside),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::LinkInside),
     ),
     relocates(
         "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
@@ -1576,16 +1620,38 @@ const RELOCATE_CELLS: [Cell; 24] = [
             at: THE_NOTES_HOME,
             outside: true
         })),
-        Listed::Acts,
-        at("RL3", Kind::LinkOutside),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::LinkOutside),
     ),
     relocates(
         "relocate-a-directory-at-the-notes-new-home",
         a_stranded_note!(Lead::Plant(Plant::Dir(THE_NOTES_HOME))),
-        Listed::Acts,
-        at("RL3", Kind::DirForAFile),
+        refuses(1, THE_NOTES_HOME),
+        at("RL1, at its new home", Kind::DirForAFile),
     ),
-    // A managed note at the new home: no squatter, and nothing parked.
+    // Its twin under the same ruling's (A): a doc of the user's elsewhere in the note's new
+    // home blocks nothing — the note moves, the doc stays where it stood.
+    relocates(
+        "relocate-a-doc-of-the-users-beside-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::File(BESIDE_THE_NOTES_HOME))),
+        Listed::Acts,
+        at("RL1, at its new home", Kind::Untracked),
+    ),
+    // A second stranded note, and a link in the first's place: the sweep blocks the first and
+    // moves the second, then exits non-zero naming what it left — the human's rulings of
+    // 2026-10-20, R1 and entry 23.
+    relocates(
+        "relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note",
+        a_stranded_note!(
+            file(A_SECOND_STRANDED, A_SECOND_NOTE),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a second note at its old home"]),
+            Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(STRANDED)))
+        ),
+        refuses(1, "store.home-not-regular-file"),
+        at("RL1", Kind::LinkToNothing),
+    ),
+    // A managed note at the new home blocks the note too.
     relocates(
         "relocate-a-note-a-task-landed-at-the-notes-new-home",
         a_managed_note_at_the_new_home!(),
@@ -1666,6 +1732,8 @@ const A_MANIFEST_WITH_A_COMMENT: &str =
     "# the user's own note on the knobs below\nscalar:\n  finalize.fan-out.squash: true\n";
 /// The decision's home once `docs-root` is `notes`.
 const THE_DECISIONS_NEW_HOME: &str = "notes/decisions/one-way.md";
+/// A doc of the user's in the decision's new home, beside the place the decision lands at.
+const BESIDE_THE_DECISIONS_NEW_HOME: &str = "notes/decisions/the-users-own-notes.md";
 
 /// **A decision, committed** — written by hand and committed by the user: the doc a
 /// `docs-root` re-point strands, and moves.
@@ -1686,6 +1754,8 @@ const SET_DOCS_ROOT: &[&str] = &["config", "set", "docs-root", "notes"];
 /// its home once `placement-root` is `notes`.
 const THE_ROADMAP: &str = "docs/roadmap.md";
 const THE_ROADMAPS_NEW_HOME: &str = "notes/roadmap.md";
+/// A doc of the user's under the new root, beside the place the roadmap lands at.
+const BESIDE_THE_ROADMAPS_NEW_HOME: &str = "notes/the-users-own-notes.md";
 /// A roadmap, as `committed-singletons` holds one.
 const A_ROADMAP: &str = "---\nschema-version: 1\n---\n\n# Roadmap\n\n## Milestones\n\n### M-Alpha  {#m-alpha}\n\n#### Proves\n\nThat the composed loop lands one task end to end.\n\n#### Decomposition\n\nIncrement 1 — the enumeration seam. Increment 2 — the fixture builder.\n";
 
@@ -1778,7 +1848,7 @@ const fn sets(
 ///   manifest, the baseline and the staging are the knob's write and the move primitive's,
 ///   one for both knobs, and their plants stand at `docs-root`'s cells (added 2026-10-20,
 ///   after the review of the task `B8`, H5).
-const CONFIG_SET_CELLS: [Cell; 51] = [
+const CONFIG_SET_CELLS: [Cell; 53] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -1952,27 +2022,26 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
         Listed::Acts,
         at("CS2", Kind::StagedThere),
     ),
-    // `CS3`, at the decision's new home: what squats the new home is parked.
+    // `CS2, at its new home`: whatever stands at the decision's new home refuses the whole
+    // re-point, the knob unchanged, naming the path to clear — nothing is moved aside from a
+    // destination (the human's ruling of 2026-10-20 on the record's §6, entry 23).
     sets(
         "config-set-a-file-of-the-users-at-the-decisions-new-home",
         a_committed_decision!(Lead::Plant(Plant::File(THE_DECISIONS_NEW_HOME))),
-        Listed::Acts,
-        at("CS3", Kind::Untracked),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::Untracked),
     ),
-    Cell {
-        marks: &[Mark::Silence(23)],
-        ..sets(
-            "config-set-a-file-the-user-committed-at-the-decisions-new-home",
-            a_committed_decision!(Lead::Plant(Plant::Committed(THE_DECISIONS_NEW_HOME))),
-            refuses(1, "notes/decisions/one-way.md"),
-            at("CS3", Kind::Committed),
-        )
-    },
+    sets(
+        "config-set-a-file-the-user-committed-at-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::Committed(THE_DECISIONS_NEW_HOME))),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::Committed),
+    ),
     sets(
         "config-set-a-link-to-nothing-at-the-decisions-new-home",
         a_committed_decision!(Lead::Plant(Plant::LinkToNothing(THE_DECISIONS_NEW_HOME))),
-        Listed::Acts,
-        at("CS3", Kind::LinkToNothing),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkToNothing),
     ),
     sets(
         "config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home",
@@ -1980,8 +2049,8 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
             at: THE_DECISIONS_NEW_HOME,
             outside: false
         })),
-        Listed::Acts,
-        at("CS3", Kind::LinkInside),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkInside),
     ),
     sets(
         "config-set-a-link-to-a-file-outside-at-the-decisions-new-home",
@@ -1989,18 +2058,26 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
             at: THE_DECISIONS_NEW_HOME,
             outside: true
         })),
-        Listed::Acts,
-        at("CS3", Kind::LinkOutside),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkOutside),
     ),
     sets(
         "config-set-a-directory-at-the-decisions-new-home",
         a_committed_decision!(Lead::Plant(Plant::Dir(THE_DECISIONS_NEW_HOME))),
+        refuses(1, THE_DECISIONS_NEW_HOME),
+        at("CS2, at its new home", Kind::DirForAFile),
+    ),
+    // Its twin under the same ruling's (A): a doc of the user's elsewhere in the decision's new
+    // home blocks nothing — the re-point lands, the doc stays where it stood.
+    sets(
+        "config-set-a-doc-of-the-users-beside-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::File(BESIDE_THE_DECISIONS_NEW_HOME))),
         Listed::Acts,
-        at("CS3", Kind::DirForAFile),
+        at("CS2, at its new home", Kind::Untracked),
     ),
     // A decision jigc manages at the new home — landed by a task while the docs root was
-    // `notes`, set by hand and set back — and one of the same name at the old: no squatter,
-    // and nothing parked.
+    // `notes`, set by hand and set back — and one of the same name at the old: it refuses the
+    // re-point too.
     sets(
         "config-set-a-decision-a-task-landed-at-the-decisions-new-home",
         &[
@@ -2102,27 +2179,25 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
         Listed::Acts,
         at("CS2", Kind::StagedThere),
     ),
-    // `CS3`, at the roadmap's new home: what squats the new home is parked.
+    // `CS2, at its new home`, at the roadmap's: whatever stands there refuses the whole
+    // re-point, the knob unchanged, naming the path to clear.
     sets_the_placement_root(
         "config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home",
         a_committed_roadmap!(Lead::Plant(Plant::File(THE_ROADMAPS_NEW_HOME))),
-        Listed::Acts,
-        at("CS3", Kind::Untracked),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::Untracked),
     ),
-    Cell {
-        marks: &[Mark::Silence(23)],
-        ..sets_the_placement_root(
-            "config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home",
-            a_committed_roadmap!(Lead::Plant(Plant::Committed(THE_ROADMAPS_NEW_HOME))),
-            refuses(1, "notes/roadmap.md"),
-            at("CS3", Kind::Committed),
-        )
-    },
+    sets_the_placement_root(
+        "config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::Committed(THE_ROADMAPS_NEW_HOME))),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::Committed),
+    ),
     sets_the_placement_root(
         "config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home",
         a_committed_roadmap!(Lead::Plant(Plant::LinkToNothing(THE_ROADMAPS_NEW_HOME))),
-        Listed::Acts,
-        at("CS3", Kind::LinkToNothing),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkToNothing),
     ),
     sets_the_placement_root(
         "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
@@ -2130,8 +2205,8 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
             at: THE_ROADMAPS_NEW_HOME,
             outside: false
         })),
-        Listed::Acts,
-        at("CS3", Kind::LinkInside),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkInside),
     ),
     sets_the_placement_root(
         "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
@@ -2139,18 +2214,26 @@ const CONFIG_SET_CELLS: [Cell; 51] = [
             at: THE_ROADMAPS_NEW_HOME,
             outside: true
         })),
-        Listed::Acts,
-        at("CS3", Kind::LinkOutside),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::LinkOutside),
     ),
     sets_the_placement_root(
         "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
         a_committed_roadmap!(Lead::Plant(Plant::Dir(THE_ROADMAPS_NEW_HOME))),
+        refuses(1, THE_ROADMAPS_NEW_HOME),
+        at("CS2, at its new home", Kind::DirForAFile),
+    ),
+    // Its twin under the same ruling's (A): a doc of the user's elsewhere in the new root
+    // blocks nothing.
+    sets_the_placement_root(
+        "config-set-placement-root-a-doc-of-the-users-beside-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::File(BESIDE_THE_ROADMAPS_NEW_HOME))),
         Listed::Acts,
-        at("CS3", Kind::DirForAFile),
+        at("CS2, at its new home", Kind::Untracked),
     ),
     // A roadmap jigc manages at the new home — moved there by a re-point the user
     // committed, the knob then taken out of the manifest by hand — and one committed at the
-    // old: no squatter, and nothing parked.
+    // old: it refuses the re-point too.
     sets_the_placement_root(
         "config-set-placement-root-a-roadmap-a-re-point-moved-to-the-roadmaps-new-home",
         a_committed_roadmap!(
