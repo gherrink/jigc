@@ -1403,6 +1403,8 @@ const STRANDED: &str = "docs/legacy-notes/cache-benchmarks.md";
 const THE_NOTES_HOME: &str = "docs/notes/cache-benchmarks.md";
 /// A doc of the user's in the note's new home, beside the place the note lands at.
 const BESIDE_THE_NOTES_HOME: &str = "docs/notes/the-users-own-notes.md";
+/// A `.md` of the user's at the prior home, beside the stranded note: one git never held.
+const BESIDE_THE_STRANDED_NOTE: &str = "docs/legacy-notes/scratch.md";
 /// A second note stranded at the prior home, and its bytes.
 const A_SECOND_STRANDED: &str = "docs/legacy-notes/load-tests.md";
 const A_SECOND_NOTE: &str = "# Load tests\n\n## Body\n\nTwo nodes hold the load.\n";
@@ -1498,7 +1500,8 @@ const fn relocates(
 ///   *"A relocation lands a regular file or refuses, keyed at the source"*
 ///   (`design/finalize.md` → *4. Promote managed docs*); a file of the user's, an edit, a
 ///   change staged move with the doc, and a file in the place of its directory leaves no
-///   doc to move;
+///   doc to move; **beside it**, a `.md` of the user's git never held and a link stay
+///   where they stood — *"every **committed** `.md` under it"*;
 /// - **at the note's new home**, what squats it is parked under `.jigc/displaced/` (`RL3`):
 ///   a file of the user's, a link, a directory, its files with it; **a file the user
 ///   committed** there blocks the move, naming the home — the reading of the record's §6,
@@ -1512,7 +1515,7 @@ const fn relocates(
 ///   does all it can* (the human's ruling R1 of 2026-10-20), `relocate` *moves the others*
 ///   (entry 23), and a refusal of the whole sweep is not that outcome;
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 27] = [
+const RELOCATE_CELLS: [Cell; 29] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1590,6 +1593,22 @@ const RELOCATE_CELLS: [Cell; 27] = [
         })),
         Listed::Acts,
         at("RL1", Kind::StagedThere),
+    ),
+    // Beside the stranded note, a `.md` of the user's git never held, and a link: neither is
+    // a committed `.md`, so neither moves — *"every **committed** `.md` under it"*, *"A
+    // relocation **lands a regular file** or refuses"* (the review of the task `B9`, H2,
+    // where no cell planted either and the word that judges a move took both).
+    relocates(
+        "relocate-a-md-of-the-users-beside-the-stranded-note",
+        a_stranded_note!(Lead::Plant(Plant::File(BESIDE_THE_STRANDED_NOTE))),
+        Listed::Acts,
+        at("RL1", Kind::Untracked),
+    ),
+    relocates(
+        "relocate-a-link-to-nothing-beside-the-stranded-note",
+        a_stranded_note!(Lead::Plant(Plant::LinkToNothing(BESIDE_THE_STRANDED_NOTE))),
+        Listed::Acts,
+        at("RL1", Kind::LinkToNothing),
     ),
     // `RL1, at its new home`: whatever stands at the note's new home blocks the note, and the
     // refusal names the path to clear — nothing is moved aside from a destination (the

@@ -9,7 +9,7 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 739 cells: the acceptance's twelve, the task family's
+//! `migrate`, `task amend`) — and 741 cells: the acceptance's twelve, the task family's
 //! seventy-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
 //! spelling `doc-only`), **`milestone finalize`'s spelling `squash: false` four, the install
 //! family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`), **the doc
@@ -17,7 +17,7 @@
 //! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
-//! under `squash: false`), **the movers family's seventy-six and eighty** (`rename`,
+//! under `squash: false`), **the movers family's seventy-six and eighty-two** (`rename`,
 //! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-one**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
@@ -4068,6 +4068,127 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         "an edit moved with its doc: {why:#?}"
     );
 
+    // **What moves into its home is a doc git holds, and a regular file** — *"every
+    // **committed** `.md` under it"* (`design/corpus-migration.md`) and *"A relocation
+    // **lands a regular file** or refuses"* (`design/finalize.md`), the review of the task
+    // `B9` (H2; red first: each came out *holds*). Beside the note's honest move, a `.md` of
+    // the user's git never held swept into the home — staged there or not — is red; so is a
+    // link under `--from` carried into the home, one git never held or one standing where
+    // git holds a regular file. A doc staged and never committed is one git holds: moved, it
+    // holds.
+    const SCRATCH: &str = "the user's scratch, never committed\n";
+    let honest = |before: &Manifest| {
+        then(before, |m| {
+            git_mv(
+                m,
+                "docs/legacy-notes/cache-benchmarks.md",
+                "docs/notes/cache-benchmarks.md",
+                NOTE,
+            );
+        })
+    };
+    let untracked = then(&before, |m| {
+        written(m, "docs/legacy-notes/scratch.md", SCRATCH);
+    });
+    let swept_in = then(&honest(&untracked), |m| {
+        m.files
+            .remove(&format!("{REPO}/docs/legacy-notes/scratch.md"));
+        written(m, "docs/notes/scratch.md", SCRATCH);
+    });
+    let swept_in_and_staged = then(&swept_in, |m| {
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/notes/scratch.md".to_string(), staged(SCRATCH));
+    });
+    let a_link = |before: &Manifest| {
+        then(before, |m| {
+            m.files.insert(
+                format!("{REPO}/docs/legacy-notes/load-tests.md"),
+                Entry::Link("nowhere".to_string()),
+            );
+        })
+    };
+    let carried = |before: &Manifest| {
+        then(&honest(before), |m| {
+            m.files
+                .remove(&format!("{REPO}/docs/legacy-notes/load-tests.md"));
+            m.files.insert(
+                format!("{REPO}/docs/notes/load-tests.md"),
+                Entry::Link("nowhere".to_string()),
+            );
+            let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+            if let Some(entry) = main.index.remove("docs/legacy-notes/load-tests.md") {
+                main.index
+                    .insert("docs/notes/load-tests.md".to_string(), entry);
+            }
+        })
+    };
+    let a_link_never_held = a_link(&before);
+    let held_as_a_file = a_link(&then(
+        &with_committed(&[
+            ("docs/legacy-notes/cache-benchmarks.md", NOTE),
+            ("docs/legacy-notes/load-tests.md", NOTE),
+            ("docs/else/stays.md", NOTE),
+        ]),
+        |m| {
+            written(
+                m,
+                ".jigc/config/packs.yaml",
+                "packs:\n  - .jigc/note-pack\n",
+            );
+            written(m, ".jigc/note-pack/schemas/note.yaml", SCHEMA);
+        },
+    ));
+    for (case, before, after) in [
+        ("a `.md` git never held, swept in", &untracked, swept_in),
+        (
+            "a `.md` git never held, swept in and staged",
+            &untracked,
+            swept_in_and_staged,
+        ),
+        (
+            "a link git never held, carried",
+            &a_link_never_held,
+            carried(&a_link_never_held),
+        ),
+        (
+            "a link where git holds a file, carried",
+            &held_as_a_file,
+            carried(&held_as_a_file),
+        ),
+    ] {
+        let (class, why) = Cell {
+            argv,
+            ..Cell::of(movers::RELOCATE, before, &after)
+        }
+        .came_to();
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+    let staged_only = then(&before, |m| {
+        written(m, "docs/legacy-notes/scratch.md", SCRATCH);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/legacy-notes/scratch.md".to_string(), staged(SCRATCH));
+    });
+    let both_moved = then(&honest(&staged_only), |m| {
+        git_mv(
+            m,
+            "docs/legacy-notes/scratch.md",
+            "docs/notes/scratch.md",
+            SCRATCH,
+        );
+    });
+    let (class, why) = Cell {
+        argv,
+        ..Cell::of(movers::RELOCATE, &staged_only, &both_moved)
+    }
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a doc staged and never committed, moved: {why:#?}"
+    );
+
     // **Nothing is moved aside from a destination, and what stands there blocks the move** —
     // the human's ruling of 2026-10-20 on the rows' record's §6, entry 23 (the task `B9`'s
     // first commit). A file of the user's at the note's new home parked under
@@ -4450,6 +4571,23 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     assert!(
         class.is_red(),
         "the doc to move parked instead: came out {class}, {why:#?}"
+    );
+    // A decision of the user's git never held, at the doctype's home, moved with the
+    // re-point (the review of the task `B9`, H2; red first: it came out *holds*).
+    let drafted = then(&before, |m| {
+        written(m, "docs/decisions/draft.md", DECISION);
+    });
+    let swept_in = then(&moved, |m| {
+        written(m, "notes/decisions/draft.md", DECISION);
+    });
+    let (class, why) = Cell {
+        argv,
+        ..Cell::of(movers::CONFIG_SET, &drafted, &swept_in)
+    }
+    .came_to();
+    assert!(
+        class.is_red(),
+        "a decision git never held, moved with the re-point: came out {class}, {why:#?}"
     );
 
     // A root knob's re-point: the roadmap under the new root, and the knob set.
@@ -11609,7 +11747,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (739, 559, 180),
+        (741, 561, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -11622,8 +11760,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
-         movers eighty, `relocate`'s twenty-seven and `config set`'s fifty-three: \
-         sixty-eight in the gate, twelve on demand — and the mint family's fifty, `start`'s \
+         movers eighty-two, `relocate`'s twenty-nine and `config set`'s fifty-three: \
+         seventy in the gate, twelve on demand — and the mint family's fifty, `start`'s \
          fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten: twenty-seven \
          in the gate, twenty-four on demand"
     );

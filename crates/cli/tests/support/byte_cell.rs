@@ -607,7 +607,10 @@ pub enum May {
     /// departure at the line's place, the arrival at a mover's destination ([`A_NEW_HOME`]),
     /// **where nothing stood before, in the working tree or in what git held** — what stands
     /// there blocks the move, where an occupant parked under `.jigc/displaced/` had let it
-    /// land.
+    /// land. **What moves is a doc git held, a regular file** — in the working tree, at a
+    /// path `HEAD` or the index held as one: *"every **committed** `.md`"*, *"A relocation
+    /// **lands a regular file** or refuses"* (after the review of `B9`, H2, where a `.md`
+    /// git never held and a link each moved into a home and held).
     IntoItsHome,
     /// **Migrated** — a doc of the store below its doctype's current schema version (its
     /// stamp, `schema-version: N`, below the version the doctype's pack manifest declares,
@@ -2665,21 +2668,50 @@ impl<'a> Tally<'a> {
         changed
     }
 
+    /// **Whether what stood at `rel` before the command is a doc a move into its home takes**
+    /// ([`May::IntoItsHome`]), from the repository's root: a regular file in the working
+    /// tree, at a path where git held a regular file — `HEAD`'s tree or the index, what `git
+    /// ls-files` answers the movers' sweeps with. *"every **committed** `.md` under it"*
+    /// (`design/corpus-migration.md` → *The freeze-exempt sibling*), *"A relocation **lands
+    /// a regular file** or refuses"* (`design/finalize.md`). Added 2026-10-20, after the
+    /// review of the task `B9` (H2): a `.md` of the user's git never held, and a link, each
+    /// moved into a home, held.
+    fn a_doc_git_holds(&self, rel: &str) -> bool {
+        let before = self.seen.before;
+        let regular = |mode: u32| mode & 0o170_000 == 0o100_000;
+        matches!(
+            before.files.get(&format!("{REPO}/{rel}")),
+            Some(Entry::File { .. })
+        ) && before.checkouts.get(REPO).is_some_and(|main| {
+            main.index
+                .get(rel)
+                .is_some_and(|staged| regular(staged.mode))
+                || tree_of(before, &main.head)
+                    .get(rel)
+                    .is_some_and(|(mode, _)| regular(*mode))
+        })
+    }
+
     /// **Where a doc moved into its doctype's home stands** ([`May::IntoItsHome`]): the path
-    /// `rel` held before the command, the same entry standing after at its destination
+    /// `rel` held before the command — a regular file git held ([`Self::a_doc_git_holds`]) —
+    /// the same entry standing after at its destination
     /// ([`Acting::destination`]) — its name in the home of the doctype the command names, for
     /// a doc under the prior home `--from` names, and else of the one whose home held it,
     /// as the cascade resolves it after the command.
     fn moved_home(&self, rel: &str) -> Option<String> {
         let was = self.seen.before.files.get(&format!("{REPO}/{rel}"))?;
+        if !self.a_doc_git_holds(rel) {
+            return None;
+        }
         let to = self.acting.destination(rel)?;
         let is = self.seen.after.files.get(&format!("{REPO}/{to}"))?;
         is.same(was).then_some(to)
     }
 
     /// **Whether `is`, at `rel` after the command, arrived there by a move into its home**
-    /// ([`May::IntoItsHome`]): a path that held the same entry before the command, and is
-    /// gone after, has `rel` for its destination ([`Acting::destination`]) — **and nothing
+    /// ([`May::IntoItsHome`]): a path that held the same entry before the command — a regular
+    /// file git held ([`Self::a_doc_git_holds`]) — and is gone after, has `rel` for its
+    /// destination ([`Acting::destination`]) — **and nothing
     /// stood at `rel` before, in the working tree or in what git held**: what stands at a
     /// mover's destination blocks the move, and nothing is moved aside from one (the human's
     /// ruling of 2026-10-20 on the rows' record's §6, entry 23, where a foreign occupant
@@ -2689,10 +2721,10 @@ impl<'a> Tally<'a> {
             && self.seen.before.files.iter().any(|(from, left)| {
                 left.same(is)
                     && !self.seen.after.files.contains_key(from)
-                    && in_repo(from)
-                        .and_then(|from| self.acting.destination(from))
-                        .as_deref()
-                        == Some(rel)
+                    && in_repo(from).is_some_and(|from| {
+                        self.acting.destination(from).as_deref() == Some(rel)
+                            && self.a_doc_git_holds(from)
+                    })
             })
     }
 
