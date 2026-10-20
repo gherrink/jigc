@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-20 — The mint family's numbers are on record: 51 cells, 27 in the gate and 24 on demand, one red under one key and the same on the previous release, none a regression; ≈ 56 cell-seconds in the gate; the owed lists gone; and the whole table, 738 cells, printed on the previous release and committed (the byte table, task B9, the fourth of its commits)
+
+**What.** [byte-table-mint-family.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-mint-family.md), in the form of the movers family's record, and beside it [the whole table's print](completions/artifacts/M55/stabilization-build/reshape/byte-table-mint-family-cells.tsv) — the block `cells` of `the_cells_are_run_on_the_binary_a_variable_names` over all 738 cells, on the previous release's rebuild (`accf3996…ab5d`, checked) and on this tree's debug build, the tree of the family's third commit, 528 s. Every count is re-derived from the suite and that print; costs are labelled measured or projected. The suite's own module documentation is brought to the table's counts — it had stood at 665 cells since the movers family's fourth fix. No test, row or cell changes.
+
+**The numbers.** Four rows, twenty-four lines, three spellings; forty-nine needs, one scheduled. Fifty-one cells — 27 in the gate, 24 on demand — **one red, under one key, the same on the previous release**: `r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc`. A cell 0.8 to 4.1 s, mean 1.6, ≈ 56 cell-seconds in the gate (print); inside the gate of the third commit 1.1 to 5.6 s, ≈ 70 (gate, measured, at a load near 90). The table: thirty rows, **738 cells, 558 in the gate and 180 on demand; 150 red in the gate under forty keys, fourteen on demand; 259 red on the previous release and 164 on this tree; one marked cell**, bound 1; needs 670, eleven scheduled. **What moved since the third commit's run**: nothing but its own last changes — the re-entry over a user's file, listed refusing, *not the listed outcome* on both binaries as the findings' repro has it, and `start`'s index cell split by spelling, both holding.
+
+**A slip corrected where it stands**: the third commit's entry counted the scheduled list of cells nine rows where eight; it is eleven where ten.
+
+**The plan's pattern at `B9`'s family**: the rulings in a commit of their own, the rows from the docs in the next, then the cells — one commit for the four, the plan's split by shared docs kept as the cells file's order, since a gate of the day took twenty-five to thirty-three minutes under another lane's load — and this record. **The owed lists are gone**: the plan's last task of families emptied them, as §8 has it.
+
 ## 2026-10-20 — The mint family gets its cells — `start`'s fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten, twenty-seven in the gate and twenty-four on demand — and one is red, the same on both binaries: a re-entry takes a file of the user's for the sub-task's commit doc; a cell names where its command runs, red first; the owed lists are empty and go (the byte table, task B9, the third of its commits)
 
 **What.** The cells of the mint family's four leaves, built from the rows of the task's second commit ([mint.rs](crates/cli/tests/byte_table/mint.rs); what they came to, [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) → §26). Fifty-one cells: twenty-seven in the gate, in `fresh`, and twenty-four on demand, each leaf's base cell in every other prepared state ([the table of the cells on demand](completions/artifacts/M55/stabilization-build/reshape/byte-table-on-demand-cells.tsv), printed again: the hundred and fifty-six before them the same, byte for byte, and these). No product source changes. **One commit for the four**, not the plan's split by the docs they share — the three mints and the re-entry — since a gate of this day took twenty-five minutes under load, and the cells are few: the split is the cells file's order and the entry's.
@@ -33,7 +43,7 @@ The whole table on the arm of a named binary — the previous release's rebuild 
 
 ### The lists
 
-Thirty rows. Cells **738**, where 687: **558 in the gate, 180 on demand**. The expected-red list **150 cells under forty keys**, where 149 under thirty-nine. Marks one, bound 1. Needs: the mint family's, each a cell or the one scheduled row; the scheduled list of cells **nine** rows, where eight.
+Thirty rows. Cells **738**, where 687: **558 in the gate, 180 on demand**. The expected-red list **150 cells under forty keys**, where 149 under thirty-nine. Marks one, bound 1. Needs: the mint family's, each a cell or the one scheduled row; the scheduled list of cells **eleven** rows, where ten *(corrected the same day, by the family's numbers commit: it read nine where eight)*.
 
 ### Leads answered
 

@@ -5,27 +5,23 @@
 //!
 //! The frame is [`support::byte_cell`](crate::support::byte_cell), which says what a
 //! manifest, a row and a classification are, takes a manifest off a sandbox and runs a
-//! cell. **The table has twenty-six rows — the four of the pilot's acceptance, `jigc task
+//! cell. **The table has thirty rows — the four of the pilot's acceptance, `jigc task
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
-//! other leaves of the `milestone` family, and the movers family's four (`rename`,
-//! `relocate`, `migrate-corpus`, `config set`) — and 665 cells: the acceptance's
-//! twelve, the task family's seventy-one** (`jigc task finalize`, `jigc task discard`; four of
-//! them `task finalize`'s spelling `doc-only`), **`milestone finalize`'s spelling `squash:
-//! false` four, the
-//! install family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`)
-//! **the doc family's hundred and thirty-seven** (its eight leaves) **and the milestone
-//! family's record doors' sixty-nine** (`create`, `add-task`, `add-from-spec`), **its
-//! fan-out doors' thirty-one** (`provision`, `execute`, `join`) **and its terminals'
-//! sixty-five** (`discard`, and `milestone finalize`'s plain spelling, beside the
-//! carryover gate's cell under `squash: false`), **and the movers family's fifty-nine
-//! and seventy-six** (`relocate`, `config set`; `rename`, `migrate-corpus`), of which a hundred
-//! and fifty-six run on demand. This file is the plan's tasks `B1` to `B5`, and of `B6` the plant in the
-//! place of a file that stands, the plant of a file simply deleted and the doc family, and of
-//! `B7` a place's own unit, the spelling of a leaf a cell names and the milestone family's
-//! rows —
-//! the arms that hold the
-//! comparison, the reader and the
-//! runner to their rules, the fences, and the rows and the cells, a family a file under
+//! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
+//! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
+//! `migrate`, `task amend`) — and 738 cells: the acceptance's twelve, the task family's
+//! seventy-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
+//! spelling `doc-only`), **`milestone finalize`'s spelling `squash: false` four, the install
+//! family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`), **the doc
+//! family's hundred and thirty-nine** (its eight leaves), **the milestone family's record
+//! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
+//! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
+//! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
+//! under `squash: false`), **the movers family's seventy-six and seventy-nine** (`rename`,
+//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-one**, of which
+//! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
+//! that hold the comparison, the reader and the runner to their rules, the fences, and the
+//! rows and the cells, a family a file under
 //! `byte_table/` ([`FAMILIES`]).
 //!
 //! **A cell of the table names the refusal it expects** — the exit code, and words its
