@@ -15,7 +15,7 @@
 
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, Spelling,
+    Aim, Allows, Cell, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row, Spelling,
     THE_SOURCE, Typed, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -308,65 +308,90 @@ const fn cell(
 /// The words a refusal over a repository with no `jigc setup` says; the words a run's.
 const NOT_SET_UP: Listed = refuses(1, "this project isn't set up");
 
-/// The base cell of a leaf in each prepared state but its home: the command as typed, with
-/// no lead — in `bare` refused, a project not set up, and in the others as `listed`.
+/// The base cell of a leaf in each prepared state but its home: the command as typed — with
+/// no lead, or over the leads that make its precondition (`$leads`; in `bare`, `$bare_leads`,
+/// what can be made there without `jigc`) and run where its home cells run (`$at`, but in
+/// `bare`) — in `bare` refused, a project not set up, and in the others as `listed`.
 macro_rules! elsewhere {
     ($prefix:literal, $leaf:expr, $argv:expr, $listed:expr) => {
+        elsewhere!($prefix, $leaf, $argv, $listed; &[], &[], None)
+    };
+    ($prefix:literal, $leaf:expr, $argv:expr, $listed:expr; $bare_leads:expr, $leads:expr, $at:expr) => {
         [
-            cell(
-                concat!($prefix, "-in-bare"),
-                $leaf,
-                Prepared::Bare,
-                &[],
-                $argv,
-                NOT_SET_UP,
-                None,
-            ),
-            cell(
-                concat!($prefix, "-in-committed-singletons"),
-                $leaf,
-                Prepared::Of(State::CommittedSingletons),
-                &[],
-                $argv,
-                $listed,
-                None,
-            ),
-            cell(
-                concat!($prefix, "-in-migrated"),
-                $leaf,
-                Prepared::Of(State::Migrated),
-                &[],
-                $argv,
-                $listed,
-                None,
-            ),
-            cell(
-                concat!($prefix, "-in-refs-post-hoc"),
-                $leaf,
-                Prepared::Of(State::RefsPostHoc),
-                &[],
-                $argv,
-                $listed,
-                None,
-            ),
-            cell(
-                concat!($prefix, "-in-chatty-hooks"),
-                $leaf,
-                Prepared::Of(State::ChattyHooks),
-                &[],
-                $argv,
-                $listed,
-                None,
-            ),
-            cell(
-                concat!($prefix, "-in-vendored"),
-                $leaf,
-                Prepared::Of(State::Vendored),
-                &[],
-                $argv,
-                $listed,
-                None,
-            ),
+            // In `bare` the command runs at the repository's root: no checkout of `jigc`'s
+            // stands there.
+            Cell {
+                at: None,
+                ..cell(
+                    concat!($prefix, "-in-bare"),
+                    $leaf,
+                    Prepared::Bare,
+                    $bare_leads,
+                    $argv,
+                    NOT_SET_UP,
+                    None,
+                )
+            },
+            Cell {
+                at: $at,
+                ..cell(
+                    concat!($prefix, "-in-committed-singletons"),
+                    $leaf,
+                    Prepared::Of(State::CommittedSingletons),
+                    $leads,
+                    $argv,
+                    $listed,
+                    None,
+                )
+            },
+            Cell {
+                at: $at,
+                ..cell(
+                    concat!($prefix, "-in-migrated"),
+                    $leaf,
+                    Prepared::Of(State::Migrated),
+                    $leads,
+                    $argv,
+                    $listed,
+                    None,
+                )
+            },
+            Cell {
+                at: $at,
+                ..cell(
+                    concat!($prefix, "-in-refs-post-hoc"),
+                    $leaf,
+                    Prepared::Of(State::RefsPostHoc),
+                    $leads,
+                    $argv,
+                    $listed,
+                    None,
+                )
+            },
+            Cell {
+                at: $at,
+                ..cell(
+                    concat!($prefix, "-in-chatty-hooks"),
+                    $leaf,
+                    Prepared::Of(State::ChattyHooks),
+                    $leads,
+                    $argv,
+                    $listed,
+                    None,
+                )
+            },
+            Cell {
+                at: $at,
+                ..cell(
+                    concat!($prefix, "-in-vendored"),
+                    $leaf,
+                    Prepared::Of(State::Vendored),
+                    $leads,
+                    $argv,
+                    $listed,
+                    None,
+                )
+            },
         ]
     };
 }
@@ -537,7 +562,7 @@ const fn re_enters(
 ///   (after the review of the task `B9`, H4's lead); **a file where the commit doc's
 ///   directory goes** is refused, changing nothing;
 /// - **under the edge index**, a file of the user's stays.
-const WORKFLOW_CELLS: [Cell; 10] = [
+const WORKFLOW_CELLS: [Cell; 11] = [
     Cell {
         spelling: Some("--preview"),
         ..cell(
@@ -568,13 +593,20 @@ const WORKFLOW_CELLS: [Cell; 10] = [
     },
     // `WF1`, where the commit doc is provisioned: the provisioning mirrors the mint, which
     // refuses what stands at its area rather than land jigc's files beside it — so a file of
-    // the user's where the commit doc goes is refused, naming it (the findings' §26).
-    re_enters(
-        "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
-        a_sub_task_provisioned!(Lead::Plant(Plant::File(THE_COMMIT_DOC))),
-        refuses(1, "commit:add-alpha"),
-        at("WF1", Kind::Untracked),
-    ),
+    // the user's where the commit doc goes is refused, naming it (the findings' §26). No
+    // sentence says what the re-entry does with what stands there: the cells it takes are
+    // marked with the record's §6, entry 25, the human's question since the sixth of the fixes
+    // after the review of the task `B9` (its Q-a); the link to nothing it writes over is not —
+    // the ruling on entry 23 forbids that overwrite under either answer.
+    Cell {
+        marks: &[Mark::Silence(25)],
+        ..re_enters(
+            "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
+            a_sub_task_provisioned!(Lead::Plant(Plant::File(THE_COMMIT_DOC))),
+            refuses(1, "commit:add-alpha"),
+            at("WF1", Kind::Untracked),
+        )
+    },
     // `WF1`, a link or a directory where the commit doc is provisioned, and a file where its
     // directory goes (after the review of the task `B9`, H4's lead): what stands there is
     // refused as the user's file is.
@@ -584,35 +616,70 @@ const WORKFLOW_CELLS: [Cell; 10] = [
         refuses(1, "commit:add-alpha"),
         at("WF1", Kind::LinkToNothing),
     ),
-    re_enters(
-        "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
-        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
-            at: THE_COMMIT_DOC,
-            outside: false,
-        })),
-        refuses(1, "commit:add-alpha"),
-        at("WF1", Kind::LinkInside),
-    ),
-    re_enters(
-        "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
-        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
-            at: THE_COMMIT_DOC,
-            outside: true,
-        })),
-        refuses(1, "commit:add-alpha"),
-        at("WF1", Kind::LinkOutside),
-    ),
-    re_enters(
-        "workflow-a-directory-where-the-commit-doc-is-provisioned",
-        a_sub_task_provisioned!(Lead::Plant(Plant::Dir(THE_COMMIT_DOC))),
-        refuses(1, "commit:add-alpha"),
-        at("WF1", Kind::DirForAFile),
-    ),
+    Cell {
+        marks: &[Mark::Silence(25)],
+        ..re_enters(
+            "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
+            a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+                at: THE_COMMIT_DOC,
+                outside: false,
+            })),
+            refuses(1, "commit:add-alpha"),
+            at("WF1", Kind::LinkInside),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(25)],
+        ..re_enters(
+            "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
+            a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+                at: THE_COMMIT_DOC,
+                outside: true,
+            })),
+            refuses(1, "commit:add-alpha"),
+            at("WF1", Kind::LinkOutside),
+        )
+    },
+    Cell {
+        marks: &[Mark::Silence(25)],
+        ..re_enters(
+            "workflow-a-directory-where-the-commit-doc-is-provisioned",
+            a_sub_task_provisioned!(Lead::Plant(Plant::Dir(THE_COMMIT_DOC))),
+            refuses(1, "commit:add-alpha"),
+            at("WF1", Kind::DirForAFile),
+        )
+    },
     re_enters(
         "workflow-a-file-in-the-place-of-the-commit-docs-directory",
         a_sub_task_provisioned!(Lead::Plant(Plant::File(".jigc/tasks/add-alpha/docs"))),
         refuses(1, "add-alpha"),
         at("WF1", Kind::FileForADir),
+    ),
+    // `WF1`, a second re-entry after the sub-agent wrote its commit doc: *"so a sub-agent's
+    // in-progress edits survive a later re-entry"* (`provision_on_first_entry`) — the doc is
+    // provisioned once, and *provisioned* lets nothing that stood be rewritten (the sixth of
+    // the fixes after the review of the task `B9`, the fourth fix's left-open: no plant of
+    // the frame's is an edit under the workbench, and the sub-agent's own write through
+    // `jigc` is the edit, a lead).
+    re_enters(
+        "workflow-a-sub-tasks-commit-doc-written-then-re-entered",
+        a_sub_task_provisioned!(
+            Lead::Step(Step::JigcAt(ITS_WORKTREE, RE_ENTER_IT)),
+            Lead::Step(Step::JigcAt(
+                ITS_WORKTREE,
+                &[
+                    "doc",
+                    "set-field",
+                    "commit:add-alpha#type",
+                    "--value",
+                    "docs",
+                    "--task",
+                    "add-alpha",
+                ],
+            )),
+        ),
+        Listed::Acts,
+        None,
     ),
     // `WF2`, the edge index.
     re_enters(
@@ -723,14 +790,14 @@ const MIGRATE_CELLS: [Cell; 9] = [
         at("MI2", Kind::LinkOutside),
     ),
     // A directory is no file the door's location predicates name: it is refused by the read,
-    // in the run's words — no code, which no doc gives (the findings' §26, seen).
+    // in the run's words — no code, which no doc gives (the findings' §26, seen). The listing
+    // names the source and no more, so that a fix which gives the refusal a code of its own,
+    // naming the path, keeps the cell green (the sixth of the fixes after the review of the
+    // task `B9`, its N8: the run's words were listed, which that fix would turn red).
     migrates(
         "migrate-a-directory-in-the-sources-place",
         a_foreign_history!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(HISTORY)))),
-        refuses(
-            1,
-            "could not read the foreign `changelog` source at `HISTORY.md`",
-        ),
+        refuses(1, HISTORY),
         at("MI2", Kind::DirForAFile),
     ),
     migrates(
@@ -810,17 +877,30 @@ const AMEND_CELLS: [Cell; 4] = [
 ];
 
 const START_ELSEWHERE: [Cell; 6] = elsewhere!("start-a-task", &["start"], ADD_A_FILE, Listed::Acts);
+// `workflow` and `migrate` in each other prepared state, over the precondition their home
+// cells stand on — a milestone of one sub-task provisioned, re-entered at its worktree; a
+// foreign history committed — so that the state's character meets the door, where a base
+// cell with no lead refused for the missing sub-task or source (the sixth of the fixes after
+// the review of the task `B9`, its N9). In `bare` the history is committed, by git alone;
+// the milestone is made by `jigc`, which refuses before `jigc setup`, so the re-entry there
+// stands on nothing, and refuses for the state's own character.
 const WORKFLOW_ELSEWHERE: [Cell; 6] = elsewhere!(
     "workflow-a-sub-task-re-entered",
     &["workflow"],
     RE_ENTER_IT,
-    refuses(1, "add-alpha")
+    Listed::Acts;
+    &[],
+    a_sub_task_provisioned!(),
+    Some(ITS_WORKTREE)
 );
 const MIGRATE_ELSEWHERE: [Cell; 6] = elsewhere!(
     "migrate-a-foreign-history",
     &["migrate"],
     MIGRATE_IT,
-    refuses(1, "HISTORY.md")
+    Listed::Acts;
+    a_foreign_history!(),
+    a_foreign_history!(),
+    None
 );
 const AMEND_ELSEWHERE: [Cell; 6] = elsewhere!(
     "task-amend-the-last-commit",

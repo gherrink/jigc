@@ -14,7 +14,10 @@
 //! spelling, `MG4` the staging the human's ruling on the record's §6, entry 21 gives it.
 
 use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
-use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses, refuses_having_moved};
+use super::{
+    ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses, refuses_having_committed,
+    refuses_having_moved,
+};
 use crate::support::byte_cell::{
     A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
     PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Typed, Unit, When,
@@ -868,12 +871,16 @@ const RENAME_CELLS: [Cell; 37] = [
         Listed::Acts,
         at("RN5", Kind::Untracked),
     ),
-    // The base cell in each other prepared state: the command as typed, with no lead.
+    // The base cell in each other prepared state, over the decision and the doc that cites it
+    // its home cells stand on, so that the state's character meets the door — with no lead it
+    // refused for the missing decision, `store.not-found` (the sixth of the fixes after the
+    // review of the task `B9`, its N9, the pattern there and here); in `bare` they are
+    // committed by git alone, and the door refuses for the state's own character.
     cell(
         "rename-one-way-in-bare",
         &["rename"],
         Prepared::Bare,
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
         NOT_SET_UP,
         None,
@@ -882,45 +889,48 @@ const RENAME_CELLS: [Cell; 37] = [
         "rename-one-way-in-committed-singletons",
         &["rename"],
         Prepared::Of(State::CommittedSingletons),
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
-        refuses(1, "store.not-found"),
+        Listed::Acts,
         None,
     ),
     cell(
         "rename-one-way-in-migrated",
         &["rename"],
         Prepared::Of(State::Migrated),
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
-        refuses(1, "store.not-found"),
+        Listed::Acts,
         None,
     ),
     cell(
         "rename-one-way-in-refs-post-hoc",
         &["rename"],
         Prepared::Of(State::RefsPostHoc),
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
-        refuses(1, "store.not-found"),
+        // The state's live task: a rename is *"blocked whenever **any task working area *or*
+        // milestone is in-flight**"* (`design/write-commands.md` → `jigc rename`), the door's
+        // own refusal, `rename.in-flight`.
+        refuses(1, "rename.in-flight"),
         None,
     ),
     cell(
         "rename-one-way-in-chatty-hooks",
         &["rename"],
         Prepared::Of(State::ChattyHooks),
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
-        refuses(1, "store.not-found"),
+        Listed::Acts,
         None,
     ),
     cell(
         "rename-one-way-in-vendored",
         &["rename"],
         Prepared::Of(State::Vendored),
-        &[],
+        a_decision_and_its_citer!(),
         RENAME_IT,
-        refuses(1, "store.not-found"),
+        Listed::Acts,
         None,
     ),
 ];
@@ -934,6 +944,8 @@ const A_DECISION_AT_V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\
 /// The changelog at schema version 1, at the home its doctype had then — `changelog/`
 /// under the docs root, its lowercase title — as `corpus_migration.rs` commits it.
 const THE_CHANGELOGS_OLD_HOME: &str = "docs/changelog/changelog.md";
+/// The changelog's home at its current version, a placement at the repository's root.
+const THE_CHANGELOGS_HOME: &str = "CHANGELOG.md";
 const A_CHANGELOG_AT_V1: &str =
     "---\nschema-version: 1\n---\n\n# changelog\n\n## Unreleased Changes\n\n## Releases\n";
 
@@ -1032,7 +1044,7 @@ const fn migrates(
 ///   nothing changed — the human's ruling of 2026-10-19 on the record's §6, entry 22;
 /// - **a file of the user's beside the baseline** (`MG2`), over the decision a task
 ///   landed, stays.
-const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
+const MIGRATE_CORPUS_CELLS: [Cell; 42] = [
     migrates("migrate-corpus-the-catalog-names", &[], Listed::Acts, None),
     migrates(
         "migrate-corpus-a-decision-below-its-version",
@@ -1232,6 +1244,48 @@ const MIGRATE_CORPUS_CELLS: [Cell; 39] = [
         refuses(1, "`git commit` was rejected"),
         at("MG3", Kind::RejectingHook),
     ),
+    // Two stale docs, one blocked: the changelog at its earlier home, where `CHANGELOG.md` is
+    // a file the user committed — *"the doc is **blocked with a route**; nothing is written,
+    // nothing is removed"* — and the decision beside it, migrated and committed: *"the run's
+    // other docs still migrate and commit, and the run exits non-zero"*, the human's ruling
+    // R1 of 2026-10-20 (*an acting sweep does all it can*). The decision's migration in the
+    // commit is listed: a refusal of the whole run is not this outcome (the sixth of the fixes
+    // after the review of the task `B9`, the first fix's left-open).
+    migrates(
+        "migrate-corpus-a-file-the-user-committed-at-the-changelogs-home-and-a-decision-below-its-version",
+        &[
+            file(ONE_WAY, A_DECISION_AT_V1),
+            file(THE_CHANGELOGS_OLD_HOME, A_CHANGELOG_AT_V1),
+            file(THE_CHANGELOGS_HOME, "the user's own changelog\n"),
+            git(&["add", "--", "docs", THE_CHANGELOGS_HOME]),
+            git(&[
+                "commit",
+                "-q",
+                "-m",
+                "two docs below their versions, and a changelog of the user's",
+            ]),
+        ],
+        refuses_having_committed(1, "migrate-corpus.destination-collision", &[ONE_WAY]),
+        None,
+    ),
+    // A doc git never held, below its version, at the decision's home and at the changelog's
+    // earlier home: the walk *"enumerates a doctype's **committed** instances"* and *"re-parses
+    // every committed doc"* (`design/corpus-migration.md`), so the run leaves it as it stands
+    // and commits nothing of it — the user's bytes, never committed, are no subject of a
+    // migration's commit (the sixth of the fixes after the review of the task `B9`: the second
+    // fix's left-open, *migrated* narrowed to a doc git holds).
+    migrates(
+        "migrate-corpus-a-decision-below-its-version-git-never-held",
+        &[file(ONE_WAY, A_DECISION_AT_V1)],
+        Listed::Acts,
+        None,
+    ),
+    migrates(
+        "migrate-corpus-the-changelog-at-its-old-home-git-never-held",
+        &[file(THE_CHANGELOGS_OLD_HOME, A_CHANGELOG_AT_V1)],
+        Listed::Acts,
+        None,
+    ),
     // `MG5`, under `--dry-run`: the corpus read where a stale doc stands — what stands in
     // the doc's place there is what the run reads, and nothing is written over it.
     Cell {
@@ -1416,6 +1470,21 @@ const THE_SECOND_NOTE_MOVED: &[(&str, &str)] = &[(A_SECOND_STRANDED, "docs/notes
 
 /// **A note stranded at a prior home, committed** — the note pack and its listing, and a
 /// note under `docs/legacy-notes/`, committed by the user: `relocate`'s subject.
+/// **The note pack and a stranded note, committed by git alone** — what of
+/// [`a_stranded_note!`] stands in a repository before `jigc setup`: the project's pack list is
+/// `jigc`'s configuration, and not written.
+const A_STRANDED_NOTE_BY_GIT_ALONE: &[Lead] = &[
+    file("note-pack/schemas/note.yaml", A_NOTE_SCHEMA),
+    file(STRANDED, A_NOTE),
+    git(&["add", "--", "note-pack", "docs"]),
+    git(&[
+        "commit",
+        "-q",
+        "-m",
+        "a note pack, and a note at its old home",
+    ]),
+];
+
 macro_rules! a_stranded_note {
     ($($after:expr),* $(,)?) => {
         &[
@@ -1505,20 +1574,20 @@ const fn relocates(
 ///   change staged move with the doc, and a file in the place of its directory leaves no
 ///   doc to move; **beside it**, a `.md` of the user's git never held and a link stay
 ///   where they stood — *"every **committed** `.md` under it"*;
-/// - **at the note's new home**, what squats it is parked under `.jigc/displaced/` (`RL3`):
-///   a file of the user's, a link, a directory, its files with it; **a file the user
-///   committed** there blocks the move, naming the home — the reading of the record's §6,
-///   entry 23, marked, where `design/reconciliation.md` parks it and
-///   `design/corpus-migration.md` blocks it; **a note jigc manages** there blocks it, under
-///   the code the run gives — *"A *managed* instance already at the destination … the
-///   relocation **surfaces the collision as a block** (never a clobber)"*
-///   (`design/reconciliation.md` → *Relocation collisions*);
+/// - **at the note's new home** (`RL1, at its new home`), anything that stands blocks the
+///   move, naming the home — a file of the user's, one the user committed, a link, a
+///   directory: the human's ruling of 2026-10-20 on the record's §6, entry 23, *jigc never
+///   moves or overwrites a file to make room for its own*; **a note jigc manages** there
+///   blocks it, under the code the run gives — *"A *managed* instance already at the
+///   destination … the relocation **surfaces the collision as a block** (never a clobber)"*
+///   (`design/reconciliation.md` → *Relocation collisions*); **a doc of the user's beside
+///   the new home**, untracked or committed, blocks nothing — the ruling's (A);
 /// - **a second note beside a blocked first** — a link in the first's place, a file of the
 ///   user's at its new home — is moved, and the refusal lists the move: *an acting sweep
 ///   does all it can* (the human's ruling R1 of 2026-10-20), `relocate` *moves the others*
 ///   (entry 23), and a refusal of the whole sweep is not that outcome;
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 29] = [
+const RELOCATE_CELLS: [Cell; 30] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1666,6 +1735,14 @@ const RELOCATE_CELLS: [Cell; 29] = [
         Listed::Acts,
         at("RL1, at its new home", Kind::Untracked),
     ),
+    // And the same doc committed — the ruling's *"an unmanaged doc"*, whatever git holds of it
+    // (the sixth of the fixes after the review of the task `B9`, its N10).
+    relocates(
+        "relocate-a-doc-the-user-committed-beside-the-notes-new-home",
+        a_stranded_note!(Lead::Plant(Plant::Committed(BESIDE_THE_NOTES_HOME))),
+        Listed::Acts,
+        at("RL1, at its new home", Kind::Committed),
+    ),
     // A second stranded note, and a link in the first's place: the sweep blocks the first and
     // moves the second, then exits non-zero naming what it left — the human's rulings of
     // 2026-10-20, R1 and entry 23. The second note's move is listed: a refusal of the whole
@@ -1709,12 +1786,16 @@ const RELOCATE_CELLS: [Cell; 29] = [
         Listed::Acts,
         at("RL4", Kind::Untracked),
     ),
-    // The base cell in each other prepared state: the command as typed, with no lead.
+    // The base cell in each other prepared state, over the note pack and the stranded note its
+    // home cells stand on, so that the state's character meets the door — with no lead it
+    // refused for the missing doctype, `store.unknown-type` (the sixth of the fixes after the
+    // review of the task `B9`, its N9); in `bare` the pack and the note are committed by git
+    // alone, and the project's pack list, which is `jigc`'s configuration, is not written.
     cell(
         "relocate-a-note-in-bare",
         &["relocate"],
         Prepared::Bare,
-        &[],
+        A_STRANDED_NOTE_BY_GIT_ALONE,
         RELOCATE_IT,
         NOT_SET_UP,
         None,
@@ -1723,45 +1804,45 @@ const RELOCATE_CELLS: [Cell; 29] = [
         "relocate-a-note-in-committed-singletons",
         &["relocate"],
         Prepared::Of(State::CommittedSingletons),
-        &[],
+        a_stranded_note!(),
         RELOCATE_IT,
-        refuses(1, "store.unknown-type"),
+        Listed::Acts,
         None,
     ),
     cell(
         "relocate-a-note-in-migrated",
         &["relocate"],
         Prepared::Of(State::Migrated),
-        &[],
+        a_stranded_note!(),
         RELOCATE_IT,
-        refuses(1, "store.unknown-type"),
+        Listed::Acts,
         None,
     ),
     cell(
         "relocate-a-note-in-refs-post-hoc",
         &["relocate"],
         Prepared::Of(State::RefsPostHoc),
-        &[],
+        a_stranded_note!(),
         RELOCATE_IT,
-        refuses(1, "store.unknown-type"),
+        Listed::Acts,
         None,
     ),
     cell(
         "relocate-a-note-in-chatty-hooks",
         &["relocate"],
         Prepared::Of(State::ChattyHooks),
-        &[],
+        a_stranded_note!(),
         RELOCATE_IT,
-        refuses(1, "store.unknown-type"),
+        Listed::Acts,
         None,
     ),
     cell(
         "relocate-a-note-in-vendored",
         &["relocate"],
         Prepared::Of(State::Vendored),
-        &[],
+        a_stranded_note!(),
         RELOCATE_IT,
-        refuses(1, "store.unknown-type"),
+        Listed::Acts,
         None,
     ),
 ];
@@ -1872,11 +1953,11 @@ const fn sets(
 ///   finding where the run says otherwise); a file in the place of the config layer's
 ///   directory leaves no project set up;
 /// - **at the decision's home**, as `relocate`'s at the stranded note's; **at its new
-///   home**, what squats it parked (`CS3`) — *"so a foreign file squatting the new home is
-///   parked in the gitignored `.jigc/displaced/` workbench rather than clobbered"*
-///   (`design/storage.md` → *Placement*) — and a file the user committed blocks it, as
-///   `relocate`'s; **a decision jigc manages** there blocks it, as it blocks `relocate`
-///   (`design/reconciliation.md` → *Relocation collisions*);
+///   home** (`CS2, at its new home`), anything that stands refuses the whole re-point, the
+///   knob unchanged — the human's ruling of 2026-10-20 on the record's §6, entry 23, for a
+///   root knob; **a decision jigc manages** there blocks it, as it blocks `relocate`
+///   (`design/reconciliation.md` → *Relocation collisions*); a doc of the user's beside the
+///   new home, untracked or committed, blocks nothing — the ruling's (A);
 /// - **a file of the user's beside the baseline** stays;
 /// - **the other root knob, `placement-root`**, over a committed roadmap — its re-point
 ///   moves through `relocate::relocate_stranded`, which *"a foreign file squatting the new
@@ -1887,12 +1968,12 @@ const fn sets(
 ///   move, and a root knob that cannot move a doc it strands refuses the re-point whole,
 ///   naming it — the knob unchanged, as a link or a directory in the doc's place is refused
 ///   (a doc of the re-point blocked while the knob lands is a doc left at a home the cascade
-///   no longer resolves); a file the user committed at the new home blocks it — the reading
-///   of the record's §6, entry 23, marked — and a roadmap jigc moved there blocks it. The
+///   no longer resolves); anything at the new home refuses it whole, by the ruling on entry
+///   23 — and a roadmap jigc moved there blocks it. The
 ///   manifest, the baseline and the staging are the knob's write and the move primitive's,
 ///   one for both knobs, and their plants stand at `docs-root`'s cells (added 2026-10-20,
 ///   after the review of the task `B8`, H5).
-const CONFIG_SET_CELLS: [Cell; 53] = [
+const CONFIG_SET_CELLS: [Cell; 55] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -2119,6 +2200,13 @@ const CONFIG_SET_CELLS: [Cell; 53] = [
         Listed::Acts,
         at("CS2, at its new home", Kind::Untracked),
     ),
+    // And the same doc committed (the sixth of the fixes after the review of `B9`, N10).
+    sets(
+        "config-set-a-doc-the-user-committed-beside-the-decisions-new-home",
+        a_committed_decision!(Lead::Plant(Plant::Committed(BESIDE_THE_DECISIONS_NEW_HOME))),
+        Listed::Acts,
+        at("CS2, at its new home", Kind::Committed),
+    ),
     // A decision jigc manages at the new home — landed by a task while the docs root was
     // `notes`, set by hand and set back — and one of the same name at the old: it refuses the
     // re-point too.
@@ -2274,6 +2362,13 @@ const CONFIG_SET_CELLS: [Cell; 53] = [
         a_committed_roadmap!(Lead::Plant(Plant::File(BESIDE_THE_ROADMAPS_NEW_HOME))),
         Listed::Acts,
         at("CS2, at its new home", Kind::Untracked),
+    ),
+    // And the same doc committed (the sixth of the fixes after the review of `B9`, N10).
+    sets_the_placement_root(
+        "config-set-placement-root-a-doc-the-user-committed-beside-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::Committed(BESIDE_THE_ROADMAPS_NEW_HOME))),
+        Listed::Acts,
+        at("CS2, at its new home", Kind::Committed),
     ),
     // A roadmap jigc manages at the new home — moved there by a re-point the user
     // committed, the knob then taken out of the manifest by hand — and one committed at the

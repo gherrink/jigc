@@ -1842,7 +1842,7 @@ const fn approves(
 ///   reviewed, in-repo, **git-recoverable** file"*. The doc's own test asks git for the
 ///   path, not the bytes — the rows' record's §6, entry 24, whose *Until ruled* reading this
 ///   listing is.
-const FINALIZE_APPROVED: [Cell; 6] = [
+const FINALIZE_APPROVED: [Cell; 7] = [
     approves(
         "task-finalize-approve-a-migration",
         a_migration!([], []),
@@ -1874,6 +1874,18 @@ const FINALIZE_APPROVED: [Cell; 6] = [
         "task-finalize-approve-an-edit-to-the-source-after-the-authoring",
         a_migration!([], [Lead::Plant(Plant::Edit(THE_HISTORY))]),
         refuses(3, "reconciliation.conflict-block"),
+        at("T10", Kind::EditAfter),
+    ),
+    // **E**'s other shape, the source deleted by hand after the authoring — the user's `rm`,
+    // the index left as it stands: what the retire takes out of the index is what `HEAD`
+    // holds there, and nothing of the user's is in the working tree to lose (the sixth of the
+    // fixes after the review of the task `B9`, the fifth fix's left-open). Before the
+    // migration the same deletion leaves `jigc migrate` no source, and the cell's own lead
+    // refuses: no cell of **E** before stands on it.
+    approves(
+        "task-finalize-approve-the-source-deleted-after-the-authoring",
+        a_migration!([], [Lead::Plant(Plant::Deleted(THE_HISTORY))]),
+        Listed::Acts,
         at("T10", Kind::EditAfter),
     ),
     Cell {

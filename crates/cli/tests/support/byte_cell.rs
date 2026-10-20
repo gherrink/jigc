@@ -1225,11 +1225,21 @@ impl fmt::Display for Classification {
 /// A refusal of the whole sweep moves nothing, and is not the listed outcome. Added
 /// 2026-10-20, after the review of the task `B9` (H1): a refusal's words were all a listing
 /// held, and the whole refusal came out *refuses, nothing changed*.
+///
+/// **And the paths it committed before refusing**, where its door is an acting sweep that
+/// commits what it did: each a path of the repository that a commit the command made — one
+/// within reach after it and not before — changes. `jigc migrate-corpus` blocks one doc
+/// while *"the run's other docs still migrate and commit, and the run exits non-zero"*
+/// (`design/finalize.md` → *4. Promote managed docs*), so a refusal of the whole run commits
+/// nothing and is not the listed outcome. Added 2026-10-20, by the sixth of the fixes after
+/// the review of the task `B9`: the first fix's left-open — every cell of that door built one
+/// stale doc, and a refusal of the whole run passed each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Refusal {
     pub exit: i32,
     pub says: &'static str,
     pub moved: &'static [(&'static str, &'static str)],
+    pub committed: &'static [&'static str],
 }
 
 impl Refusal {
@@ -1247,6 +1257,22 @@ impl Refusal {
                     && !after.files.contains_key(&format!("{REPO}/{from}")))
             })
             .map(|(from, to)| format!("`{from}` → `{to}`"))
+            .collect()
+    }
+
+    /// **What the refusal did not commit that its listing names**: each path no commit the
+    /// command made changes — a commit within reach after the command that was not before it.
+    fn not_committed(&self, before: &Manifest, after: &Manifest) -> Vec<String> {
+        let changed: BTreeSet<&str> = after
+            .commits
+            .iter()
+            .filter(|(id, _)| !before.commits.contains_key(*id))
+            .flat_map(|(_, commit)| commit.changed.keys().map(String::as_str))
+            .collect();
+        self.committed
+            .iter()
+            .filter(|path| !changed.contains(**path))
+            .map(|path| format!("`{path}`"))
             .collect()
     }
 }
@@ -2974,20 +3000,31 @@ impl<'a> Tally<'a> {
     /// **The doc a migration rewrote at `rel`, and whether it is `is` migrated**
     /// ([`May::Migrated`]): the doc that stood there before (`was`), or — at a current home
     /// where none stood — one at a home its doctype had at an earlier version, gone after,
-    /// whose name lands there; below the doctype's current schema version before, at it
-    /// after, its prose in `is`, in order. Where `committed`, the doc at the prior home is
-    /// what `HEAD` held there: a commit is read against history.
+    /// whose name lands there — **in either case a doc git held** ([`Self::a_doc_git_holds`]:
+    /// *"re-parses **every committed doc**"*, `design/corpus-migration.md`; until the sixth of
+    /// the fixes after the review of the task `B9`, a doc the user never committed nor staged,
+    /// migrated, held); below the doctype's current schema version before, at it after, its prose in
+    /// `is`, in order. Where `committed`, the doc at the prior home is what `HEAD` held there:
+    /// a commit is read against history.
     fn migrated_into(&self, rel: &str, was: Option<&Entry>, is: &Entry, committed: bool) -> bool {
         let (Some(homes), Some(after)) =
             (self.acting.homes.as_ref(), self.acting.homes_after.as_ref())
         else {
             return false;
         };
+        // Only a doc git held is migrated — *"re-parses **every committed doc**"*: in place,
+        // the doc at `rel`; from an earlier home, the doc there ([`Self::a_doc_git_holds`]).
         let source: Option<(&str, Entry)> = match was {
-            Some(was) => homes.doctype_at(rel).map(|ty| (ty, was.clone())),
+            Some(was) => homes
+                .doctype_at(rel)
+                .filter(|_| self.a_doc_git_holds(rel))
+                .map(|ty| (ty, was.clone())),
             None => self.seen.before.files.iter().find_map(|(from, entry)| {
                 let from = in_repo(from)?;
                 let ty = homes.prior_doctype_at(from)?;
+                if !self.a_doc_git_holds(from) {
+                    return None;
+                }
                 let name = from.rsplit('/').next()?;
                 if after.current.get(ty)?.for_name(name) != rel
                     || self
@@ -3034,7 +3071,8 @@ impl<'a> Tally<'a> {
     }
 
     /// **Whether a doc gone from `rel`, a home its doctype had at an earlier version, was
-    /// migrated into its current home** ([`May::Migrated`]).
+    /// migrated into its current home** ([`May::Migrated`]) — a regular file git held there
+    /// ([`Self::a_doc_git_holds`]).
     fn migrated_away(&self, rel: &str, was: &Entry) -> bool {
         let Some(to) = self.migrated_to(rel) else {
             return false;
@@ -3044,6 +3082,7 @@ impl<'a> Tally<'a> {
         stood.is_none()
             && landed.is_some_and(|is| self.migrated_into(&to, None, is, false))
             && was.lines().is_some()
+            && self.a_doc_git_holds(rel)
     }
 
     /// **Whether `is` is the project manifest with its knob set** ([`May::ItsKeySet`]) over
@@ -4151,6 +4190,14 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                         "the cell is listed as refusing having moved what it could, and the \
                          command did not move {}: an acting sweep does all it can",
                         not_moved.join(", ")
+                    ));
+                }
+                let not_committed = refusal.not_committed(before, after);
+                if !not_committed.is_empty() {
+                    other.push(format!(
+                        "the cell is listed as refusing having committed what it could, and no \
+                         commit the command made changed {}: an acting sweep does all it can",
+                        not_committed.join(", ")
                     ));
                 }
             }

@@ -181,6 +181,15 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *Robust*: the retire deletes only bytes `HEAD` holds at that path — the working file's and the index's — and otherwise refuses before anything is promoted, naming the source, routed at committing the change first; the doc's test, the product's retire and M51's pricing of the staged-only cell are wrong. The human's to rule: it reverses a priced cell.
 - *Until ruled*: the stricter reading — the retire refuses, exit 3, naming the source. *The cells* — the four of the spelling `--approve` over bytes no commit holds, *lost* on both binaries under `r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds` ([the findings](byte-table-findings.md) → §26), each marked.
 
+## 24. Whether a sub-task's first re-entry may take, or write over, an entry that stands where its commit doc goes (the record's entry 25) — no sentence says; open
+
+*2026-10-20, the sixth of the fixes after the review of the task `B9` (its question Q-a).*
+
+- *The words* — quoted in [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 25: `design/write-commands.md`'s *"The first `jigc workflow <W> --task <id>` re-entry **provisions**"*, *"mirroring how `jigc start` provisions at mint time"*, and the mint's *"keeps refusing rather than adopting the directory"*; nothing on what stands at the commit doc's place, and the code's comment, *"keyed on the **absence** of the `docs/commit:<id>.md` skeleton"*.
+- *What the product does.* On both binaries the re-entry exits 0 and takes a file of the user's, a link to a file or a directory there for the sub-task's commit doc, and writes its own file over a link to nothing.
+- *Robust*: *first entry* is jigc's provenance record; a commit doc standing without its `created` entry refuses the re-entry, naming the path, asked about without following a link. The code is wrong, and the doc owes a sentence.
+- *Until ruled*: the stricter reading — the re-entry refuses, exit 1, naming `commit:add-alpha`. *The cells* — the four that take what stands, *not the listed outcome* on both binaries under `r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc` ([the findings](byte-table-findings.md) → §26), each marked; the link to nothing written over is wrong under either answer, and unmarked.
+
 ## The marked cells
 
 A line a mark of a cell, as the suite prints it. A cell with two marks has two lines.
@@ -191,4 +200,8 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 | silence 24 | `task-finalize-approve-a-file-of-the-users-in-the-sources-place` |
 | silence 24 | `task-finalize-approve-a-source-staged-and-never-committed` |
 | silence 24 | `task-finalize-approve-an-edit-to-the-source-before-the-migration` |
+| silence 25 | `workflow-a-directory-where-the-commit-doc-is-provisioned` |
+| silence 25 | `workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned` |
+| silence 25 | `workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned` |
+| silence 25 | `workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned` |
 | bound 1 | `task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file` |

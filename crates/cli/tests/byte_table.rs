@@ -9,17 +9,17 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 752 cells: the acceptance's twelve, the task family's
-//! seventy-seven** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
-//! spelling `doc-only` and six its spelling `--approve`), **`milestone finalize`'s
+//! `migrate`, `task amend`) — and 760 cells: the acceptance's twelve, the task family's
+//! seventy-eight** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
+//! spelling `doc-only` and seven its spelling `--approve`), **`milestone finalize`'s
 //! spelling `squash: false` four, the install family's hundred and thirty-one** (`setup`,
 //! `uninstall`, `ingest`, `unmanage`), **the doc family's hundred and thirty-nine** (its
 //! eight leaves), **the milestone family's record
 //! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
-//! under `squash: false`), **the movers family's seventy-six and eighty-two** (`rename`,
-//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-six**, of which
+//! under `squash: false`), **the movers family's seventy-nine and eighty-five** (`rename`,
+//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-seven**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
 //! rows and the cells, a family a file under
@@ -189,6 +189,7 @@ const fn refuses(exit: i32, says: &'static str) -> Listed {
         exit,
         says,
         moved: &[],
+        committed: &[],
     })
 }
 
@@ -202,7 +203,29 @@ const fn refuses_having_moved(
     says: &'static str,
     moved: &'static [(&'static str, &'static str)],
 ) -> Listed {
-    Listed::RefusesWith(Refusal { exit, says, moved })
+    Listed::RefusesWith(Refusal {
+        exit,
+        says,
+        moved,
+        committed: &[],
+    })
+}
+
+/// **A refusal of an acting sweep that committed what it could first** — the exit code, the
+/// words, and each path a commit the command made changes: the human's ruling R1 of
+/// 2026-10-20 at `jigc migrate-corpus`, whose blocked doc leaves *"the run's other docs"* to
+/// *"still migrate and commit"*. A refusal of the whole run is not this outcome ([`Refusal`]).
+const fn refuses_having_committed(
+    exit: i32,
+    says: &'static str,
+    committed: &'static [&'static str],
+) -> Listed {
+    Listed::RefusesWith(Refusal {
+        exit,
+        says,
+        moved: &[],
+        committed,
+    })
 }
 
 /// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused.
@@ -4807,6 +4830,79 @@ fn a_sweep_refused_whole_is_not_the_outcome_r1s_cells_list() {
     );
 }
 
+/// **A run of `migrate-corpus` refused whole is not the outcome its two-doc cell lists** —
+/// the first of the fixes after the review of the task `B9` left R1's other acting sweep with
+/// no cell a whole refusal can fail: every cell of `migrate-corpus` built one stale doc. The
+/// cell `migrate-corpus-a-file-the-user-committed-at-the-changelogs-home-and-a-decision-below-its-version`
+/// lists its refusal having committed the decision's migration: the run refused whole —
+/// nothing migrated, exit 1, the collision named — is *not the listed outcome*; the decision
+/// migrated in the working tree and staged, never committed, is red as it was; and the
+/// decision committed beside the blocked changelog is *refuses, nothing changed*.
+#[test]
+fn a_run_refused_whole_is_not_the_outcome_migrate_corpus_lists() {
+    const V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+    const V2: &str = "---\nschema-version: 2\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Options\n\n\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
+    const OLD: &str =
+        "---\nschema-version: 1\n---\n\n# changelog\n\n## Unreleased Changes\n\n## Releases\n";
+    let cells = cells();
+    let cell = *cells
+        .iter()
+        .find(|cell| {
+            cell.name
+                == "migrate-corpus-a-file-the-user-committed-at-the-changelogs-home-and-a-decision-below-its-version"
+        })
+        .expect("the two-doc cell is a cell of the table");
+    let before = with_committed(&[
+        ("docs/decisions/one-way.md", V1),
+        ("docs/changelog/changelog.md", OLD),
+        ("CHANGELOG.md", "the user's own changelog\n"),
+    ]);
+    let said = "blocked    docs/changelog/changelog.md\n    migrate-corpus.destination-collision: \
+                `docs/changelog/changelog.md` relocates to `CHANGELOG.md`, which already holds a \
+                *different* document\n";
+    let refused = |after: &Manifest| {
+        Cell {
+            argv: cell.argv,
+            code: Some(1),
+            said,
+            listed: cell.listed,
+            ..Cell::of(movers::MIGRATE_CORPUS, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = refused(&before);
+    assert_eq!(
+        class,
+        Classification::NotTheListedOutcome,
+        "the run refused whole: {why:#?}"
+    );
+    let committed = then(&before, |m| {
+        written(m, "docs/decisions/one-way.md", V2);
+        commit(
+            m,
+            "c2",
+            &[("docs/decisions/one-way.md", Some((0o100_644, V2)))],
+        );
+    });
+    let (class, why) = refused(&committed);
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "the decision committed beside the blocked changelog: {why:#?}"
+    );
+    let staged_only = then(&before, |m| {
+        written(m, "docs/decisions/one-way.md", V2);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/decisions/one-way.md".to_string(), staged(V2));
+    });
+    let (class, why) = refused(&staged_only);
+    assert!(
+        class.is_red(),
+        "the decision migrated and staged, never committed: came out {class}, {why:#?}"
+    );
+}
+
 /// **A task a command mints is one, where nothing stood** — the word `<minted-task>` of the
 /// mint family's rows (`jigc start`, `jigc migrate`, `jigc task amend`; the task `B9`): an
 /// area under `.jigc/tasks/` that carries its base pin after the command, at an id where
@@ -5566,6 +5662,87 @@ fn a_migrated_doc_keeps_its_prose() {
         class,
         Classification::GitMoved,
         "the user's line carried into the commit: {why:#?}"
+    );
+
+    // **A doc git never held is no doc the run migrates** — *"re-parses **every committed
+    // doc**"*, *"enumerates a doctype's **committed** instances"* (`design/corpus-migration.md`
+    // → *Corpus conformance*, *The corpus walk*): the sixth of the fixes after the review of
+    // the task `B9`, the second fix's left-open, as *into its home* was narrowed. A decision
+    // below its version written by the user and never committed nor staged, migrated in place
+    // in the working tree under `--no-commit`, and the changelog at its earlier home, never
+    // committed, moved to `CHANGELOG.md` the same way, are each red (red first: each came out
+    // *holds* — the word asked for a regular file, not one git held). Each committed was red
+    // before by the commit's own rule, *git's state moved*, and is red now at the file too.
+    // A doc staged and never committed is one git holds — *committed* read as git's own copy,
+    // `HEAD` or the index, as the second fix read it for the movers — and its migration in
+    // the working tree holds.
+    let untracked = then(&sandbox(), |m| written(m, "docs/decisions/one-way.md", V1));
+    let in_place = |committed: bool| {
+        then(&untracked, |m| {
+            written(m, "docs/decisions/one-way.md", V2);
+            if committed {
+                commit(
+                    m,
+                    "c2",
+                    &[("docs/decisions/one-way.md", Some((0o100_644, V2)))],
+                );
+            }
+        })
+    };
+    for (case, after, spelling) in [
+        ("in the working tree", in_place(false), Some("--no-commit")),
+        ("and committed", in_place(true), None),
+    ] {
+        let (class, why) = came(&untracked, &after, spelling);
+        assert!(
+            class.is_red(),
+            "a decision git never held, migrated {case}: came out {class}, {why:#?}"
+        );
+    }
+    let untracked_old = then(&sandbox(), |m| {
+        written(m, "docs/changelog/changelog.md", OLD)
+    });
+    let relocated_untracked = |committed: bool| {
+        then(&untracked_old, |m| {
+            m.files
+                .remove(&format!("{REPO}/docs/changelog/changelog.md"));
+            written(m, "CHANGELOG.md", NEW);
+            if committed {
+                commit(m, "c2", &[("CHANGELOG.md", Some((0o100_644, NEW)))]);
+            }
+        })
+    };
+    for (case, after, spelling) in [
+        (
+            "in the working tree",
+            relocated_untracked(false),
+            Some("--no-commit"),
+        ),
+        ("and committed", relocated_untracked(true), None),
+    ] {
+        let (class, why) = came(&untracked_old, &after, spelling);
+        assert!(
+            class.is_red(),
+            "a changelog git never held, moved from its earlier home {case}: came out \
+             {class}, {why:#?}"
+        );
+    }
+    let staged_only = then(&untracked, |m| {
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/decisions/one-way.md".to_string(), staged(V1));
+    });
+    let (class, why) = came(
+        &staged_only,
+        &then(&staged_only, |m| {
+            written(m, "docs/decisions/one-way.md", V2)
+        }),
+        Some("--no-commit"),
+    );
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "a decision staged and never committed, migrated in the working tree: {why:#?}"
     );
 }
 
@@ -9359,6 +9536,7 @@ fn a_refusal_is_the_refusal_the_cell_names() {
         exit: 3,
         says: "probe.refused",
         moved: &[],
+        committed: &[],
     });
     let refused = |code, said| Cell {
         code: Some(code),
@@ -11771,6 +11949,18 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "task-finalize-approve-a-source-staged-and-never-committed",
         ],
     ),
+    // `migrate-corpus` walks the disk, not git, and so migrates and commits a doc below its
+    // version the user never committed nor staged — at its doctype's home and at an earlier
+    // home — where the walk *"enumerates a doctype's **committed** instances"* (the sixth of
+    // the fixes after the review of the task `B9`, *migrated* narrowed to a doc git holds).
+    (
+        "r1-migrate-corpus-migrates-and-commits-a-doc-git-never-held",
+        Classification::GitMoved,
+        &[
+            "migrate-corpus-a-decision-below-its-version-git-never-held",
+            "migrate-corpus-the-changelog-at-its-old-home-git-never-held",
+        ],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -12044,11 +12234,17 @@ fn listed_as(cell: &byte_cell::Cell) -> String {
                 .iter()
                 .map(|(from, to)| format!(", having moved `{from}` to `{to}`"))
                 .collect();
+            let committed: Vec<String> = refusal
+                .committed
+                .iter()
+                .map(|path| format!(", having committed `{path}`"))
+                .collect();
             format!(
-                "refuses: exit {}, `{}`{}",
+                "refuses: exit {}, `{}`{}{}",
                 refusal.exit,
                 refusal.says,
-                moved.concat()
+                moved.concat(),
+                committed.concat()
             )
         }
     }
@@ -12236,9 +12432,9 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (752, 572, 180),
+        (760, 580, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         seventy-seven — sixty-five in the gate, four of them its spelling `doc-only` and six \
+         seventy-eight — sixty-six in the gate, four of them its spelling `doc-only` and seven \
          its spelling `--approve`, twelve on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
          hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
@@ -12247,11 +12443,11 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
          demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
-         the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
-         `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
-         movers eighty-two, `relocate`'s twenty-nine and `config set`'s fifty-three: \
-         seventy in the gate, twelve on demand — and the mint family's fifty-six, `start`'s \
-         fifteen, `workflow`'s sixteen, `migrate`'s fifteen and `task amend`'s ten: thirty-two \
+         the movers family's doors that commit seventy-nine, `rename`'s thirty-seven and \
+         `migrate-corpus`'s forty-two: sixty-seven in the gate, twelve on demand — and its \
+         movers eighty-five, `relocate`'s thirty and `config set`'s fifty-five: \
+         seventy-three in the gate, twelve on demand — and the mint family's fifty-seven, `start`'s \
+         fifteen, `workflow`'s seventeen, `migrate`'s fifteen and `task amend`'s ten: thirty-three \
          in the gate, twenty-four on demand"
     );
 }

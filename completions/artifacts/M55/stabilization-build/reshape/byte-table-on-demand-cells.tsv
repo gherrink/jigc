@@ -10,6 +10,7 @@
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the movers family's doors that commit (the task `B8`, its third commit), macOS arm64, at a load average of about 33: a hundred and forty-four cells, the hundred and thirty-two lines before it the same, byte for byte, and twelve more — `rename`'s six and `migrate-corpus`'s six in a state not their home, none red: `rename` refuses in each (not set up in `bare`, `store.not-found` where no decision `one-way` stands), and `migrate-corpus` refuses in `bare` and acts, finding nothing below its version, in the other five. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-19 by the same arm, on this tree's debug build with the movers family's movers (the task `B8`, its fourth commit), macOS arm64, at a load average of about 20: a hundred and fifty-six cells, the hundred and forty-four lines before it the same, byte for byte, and twelve more — `relocate`'s six and `config set`'s six in a state not their home, none red: `relocate` refuses in each (not set up in `bare`, `store.unknown-type` where no pack declares a `note`), and `config set docs-root` refuses in `bare` and acts in the other five. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
 # Printed again on 2026-10-20 by the same arm, on this tree's debug build with the mint family's cells (the task `B9`, its third commit), macOS arm64, load not measured: a hundred and eighty cells, the hundred and fifty-six before them the same, byte for byte, and the mint family's twenty-four after them, none red.
+# Printed again on 2026-10-20 by the same arm, on this tree's debug build with the sixth of the fixes after the review of the task `B9` (its second commit), macOS arm64, at a load average of 18 at its start and 15 at its end: the same hundred and eighty cells, and twenty lines changed — the base cells of `rename`, `relocate`, `workflow` and `migrate` in the five states that are neither `bare` nor their home, each now over the precondition its home cells stand on (a decision and its citer, the note pack and a stranded note, a milestone of one sub-task re-entered at its worktree, a foreign history), where each had refused for its absence: nineteen act and hold, and `rename` in `refs-post-hoc` refuses `rename.in-flight` over the state's live task, changing nothing; the four in `bare` refuse, not set up, as before — three of them now over what git alone makes of their precondition, and `workflow`'s over nothing, its milestone being `jigc`'s to make. Every other line the same, byte for byte. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
 cell	command	state	listed as	came to	its exit
 setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
 setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
@@ -144,11 +145,11 @@ doc-author-the-vision-in-refs-post-hoc	jigc doc author vision --from-file ../out
 doc-author-the-vision-in-chatty-hooks	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
 doc-author-the-vision-in-vendored	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	vendored	acts	holds	exit 0
 rename-one-way-in-bare	jigc rename adr:one-way --to Single way	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-rename-one-way-in-committed-singletons	jigc rename adr:one-way --to Single way	committed-singletons	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
-rename-one-way-in-migrated	jigc rename adr:one-way --to Single way	migrated	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
-rename-one-way-in-refs-post-hoc	jigc rename adr:one-way --to Single way	refs-post-hoc	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
-rename-one-way-in-chatty-hooks	jigc rename adr:one-way --to Single way	chatty-hooks	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
-rename-one-way-in-vendored	jigc rename adr:one-way --to Single way	vendored	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+rename-one-way-in-committed-singletons	jigc rename adr:one-way --to Single way	committed-singletons	acts	holds	exit 0
+rename-one-way-in-migrated	jigc rename adr:one-way --to Single way	migrated	acts	holds	exit 0
+rename-one-way-in-refs-post-hoc	jigc rename adr:one-way --to Single way	refs-post-hoc	refuses: exit 1, `rename.in-flight`	refuses, nothing changed	exit 1
+rename-one-way-in-chatty-hooks	jigc rename adr:one-way --to Single way	chatty-hooks	acts	holds	exit 0
+rename-one-way-in-vendored	jigc rename adr:one-way --to Single way	vendored	acts	holds	exit 0
 migrate-corpus-in-bare	jigc migrate-corpus	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
 migrate-corpus-in-committed-singletons	jigc migrate-corpus	committed-singletons	acts	holds	exit 0
 migrate-corpus-in-migrated	jigc migrate-corpus	migrated	acts	holds	exit 0
@@ -156,11 +157,11 @@ migrate-corpus-in-refs-post-hoc	jigc migrate-corpus	refs-post-hoc	acts	holds	exi
 migrate-corpus-in-chatty-hooks	jigc migrate-corpus	chatty-hooks	acts	holds	exit 0
 migrate-corpus-in-vendored	jigc migrate-corpus	vendored	acts	holds	exit 0
 relocate-a-note-in-bare	jigc relocate note --from docs/legacy-notes/	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-relocate-a-note-in-committed-singletons	jigc relocate note --from docs/legacy-notes/	committed-singletons	refuses: exit 1, `store.unknown-type`	refuses, nothing changed	exit 1
-relocate-a-note-in-migrated	jigc relocate note --from docs/legacy-notes/	migrated	refuses: exit 1, `store.unknown-type`	refuses, nothing changed	exit 1
-relocate-a-note-in-refs-post-hoc	jigc relocate note --from docs/legacy-notes/	refs-post-hoc	refuses: exit 1, `store.unknown-type`	refuses, nothing changed	exit 1
-relocate-a-note-in-chatty-hooks	jigc relocate note --from docs/legacy-notes/	chatty-hooks	refuses: exit 1, `store.unknown-type`	refuses, nothing changed	exit 1
-relocate-a-note-in-vendored	jigc relocate note --from docs/legacy-notes/	vendored	refuses: exit 1, `store.unknown-type`	refuses, nothing changed	exit 1
+relocate-a-note-in-committed-singletons	jigc relocate note --from docs/legacy-notes/	committed-singletons	acts	holds	exit 0
+relocate-a-note-in-migrated	jigc relocate note --from docs/legacy-notes/	migrated	acts	holds	exit 0
+relocate-a-note-in-refs-post-hoc	jigc relocate note --from docs/legacy-notes/	refs-post-hoc	acts	holds	exit 0
+relocate-a-note-in-chatty-hooks	jigc relocate note --from docs/legacy-notes/	chatty-hooks	acts	holds	exit 0
+relocate-a-note-in-vendored	jigc relocate note --from docs/legacy-notes/	vendored	acts	holds	exit 0
 config-set-docs-root-to-notes-in-bare	jigc config set docs-root notes	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
 config-set-docs-root-to-notes-in-committed-singletons	jigc config set docs-root notes	committed-singletons	acts	holds	exit 0
 config-set-docs-root-to-notes-in-migrated	jigc config set docs-root notes	migrated	acts	holds	exit 0
@@ -174,17 +175,17 @@ start-a-task-in-refs-post-hoc	jigc start --workflow single-task add a file	refs-
 start-a-task-in-chatty-hooks	jigc start --workflow single-task add a file	chatty-hooks	acts	holds	exit 0
 start-a-task-in-vendored	jigc start --workflow single-task add a file	vendored	acts	holds	exit 0
 workflow-a-sub-task-re-entered-in-bare	jigc workflow sub-task --task add-alpha	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-workflow-a-sub-task-re-entered-in-committed-singletons	jigc workflow sub-task --task add-alpha	committed-singletons	refuses: exit 1, `add-alpha`	refuses, nothing changed	exit 1
-workflow-a-sub-task-re-entered-in-migrated	jigc workflow sub-task --task add-alpha	migrated	refuses: exit 1, `add-alpha`	refuses, nothing changed	exit 1
-workflow-a-sub-task-re-entered-in-refs-post-hoc	jigc workflow sub-task --task add-alpha	refs-post-hoc	refuses: exit 1, `add-alpha`	refuses, nothing changed	exit 1
-workflow-a-sub-task-re-entered-in-chatty-hooks	jigc workflow sub-task --task add-alpha	chatty-hooks	refuses: exit 1, `add-alpha`	refuses, nothing changed	exit 1
-workflow-a-sub-task-re-entered-in-vendored	jigc workflow sub-task --task add-alpha	vendored	refuses: exit 1, `add-alpha`	refuses, nothing changed	exit 1
+workflow-a-sub-task-re-entered-in-committed-singletons	jigc workflow sub-task --task add-alpha	committed-singletons	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-migrated	jigc workflow sub-task --task add-alpha	migrated	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-refs-post-hoc	jigc workflow sub-task --task add-alpha	refs-post-hoc	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-chatty-hooks	jigc workflow sub-task --task add-alpha	chatty-hooks	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-vendored	jigc workflow sub-task --task add-alpha	vendored	acts	holds	exit 0
 migrate-a-foreign-history-in-bare	jigc migrate HISTORY.md --as changelog	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
-migrate-a-foreign-history-in-committed-singletons	jigc migrate HISTORY.md --as changelog	committed-singletons	refuses: exit 1, `HISTORY.md`	refuses, nothing changed	exit 1
-migrate-a-foreign-history-in-migrated	jigc migrate HISTORY.md --as changelog	migrated	refuses: exit 1, `HISTORY.md`	refuses, nothing changed	exit 1
-migrate-a-foreign-history-in-refs-post-hoc	jigc migrate HISTORY.md --as changelog	refs-post-hoc	refuses: exit 1, `HISTORY.md`	refuses, nothing changed	exit 1
-migrate-a-foreign-history-in-chatty-hooks	jigc migrate HISTORY.md --as changelog	chatty-hooks	refuses: exit 1, `HISTORY.md`	refuses, nothing changed	exit 1
-migrate-a-foreign-history-in-vendored	jigc migrate HISTORY.md --as changelog	vendored	refuses: exit 1, `HISTORY.md`	refuses, nothing changed	exit 1
+migrate-a-foreign-history-in-committed-singletons	jigc migrate HISTORY.md --as changelog	committed-singletons	acts	holds	exit 0
+migrate-a-foreign-history-in-migrated	jigc migrate HISTORY.md --as changelog	migrated	acts	holds	exit 0
+migrate-a-foreign-history-in-refs-post-hoc	jigc migrate HISTORY.md --as changelog	refs-post-hoc	acts	holds	exit 0
+migrate-a-foreign-history-in-chatty-hooks	jigc migrate HISTORY.md --as changelog	chatty-hooks	acts	holds	exit 0
+migrate-a-foreign-history-in-vendored	jigc migrate HISTORY.md --as changelog	vendored	acts	holds	exit 0
 task-amend-the-last-commit-in-bare	jigc task amend fix the message	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
 task-amend-the-last-commit-in-committed-singletons	jigc task amend fix the message	committed-singletons	acts	holds	exit 0
 task-amend-the-last-commit-in-migrated	jigc task amend fix the message	migrated	acts	holds	exit 0
