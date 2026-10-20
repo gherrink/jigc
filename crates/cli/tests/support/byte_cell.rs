@@ -837,27 +837,44 @@ pub struct Line {
 /// human's ruling of 2026-10-18 on the two spellings (`DECISIONS.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct Spelling {
-    /// **What the spelling is, by its name** ([`Spelling::typed_in`]): a name that begins
-    /// with `--` is the flag a command types; `bare` is the leaf typed with no word after
-    /// it; any other name is a state the cell builds, which no command's words show.
+    /// The spelling's name, which a cell and a line name it by. It says nothing of what the
+    /// spelling is: that is [`Spelling::typed`].
     pub name: &'static str,
+    /// **What the spelling is** — typed by the command, and how, or a state the cell builds
+    /// ([`Typed`]). Declared here, never read off the name.
+    pub typed: Typed,
     /// The `id`s of the row's lines this spelling takes out of force.
     pub replaces: &'static [&'static str],
 }
 
+/// **How a spelling shows in a command's words** — declared where each spelling is
+/// ([`Spelling::typed`]), and the one thing the cell fence reads to tell a spelling a
+/// command types from a state a cell builds. Until the fix after the review of the task
+/// `B9` that made it explicit, the fence read the kind off the name (`--…` a flag, `bare`
+/// the leaf alone, any other a state), so a typed spelling named otherwise escaped it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Typed {
+    /// **Typed by the command**: this word stands among the words after its leaf — a flag,
+    /// or any other word the command's doc gives the spelling.
+    Word(&'static str),
+    /// **Typed by the command**: the leaf with no word after it.
+    Bare,
+    /// **A state the cell builds**, which no command's words show — a task's workflow, a
+    /// cascade knob.
+    State,
+}
+
 impl Spelling {
-    /// **Whether the command `argv` of `leaf` types this spelling** — `None` for a spelling
-    /// no command's words show ([`Spelling::name`]). A cell whose command types a spelling
-    /// is compared under it, and names it: the review of the task `B9`, its third hole —
-    /// the catalog's bare `jigc start` and `jigc workflow … --preview` were compared under
-    /// the plain spelling's lines.
+    /// **Whether the command `argv` of `leaf` types this spelling** — `None` for a state no
+    /// command's words show ([`Typed::State`]), read off [`Spelling::typed`] and never off
+    /// the name. A cell whose command types a spelling is compared under it, and names it:
+    /// the review of the task `B9`, its third hole — the catalog's bare `jigc start` and
+    /// `jigc workflow … --preview` were compared under the plain spelling's lines.
     pub fn typed_in(&self, leaf: &[&str], argv: &[&str]) -> Option<bool> {
-        if self.name == "bare" {
-            Some(argv == leaf)
-        } else if self.name.starts_with("--") {
-            Some(argv.contains(&self.name))
-        } else {
-            None
+        match self.typed {
+            Typed::Bare => Some(argv == leaf),
+            Typed::Word(word) => Some(argv.iter().skip(leaf.len()).any(|typed| *typed == word)),
+            Typed::State => None,
         }
     }
 }
@@ -4625,8 +4642,8 @@ pub struct Cell {
     /// The open questions the cell turns on and the bounds it stands on.
     pub marks: &'static [Mark],
     /// **The spelling of its leaf the cell runs** ([`Spelling`]) — `None` for the leaf as
-    /// typed plainly. The cell builds the state the spelling stands for; the name says
-    /// which lines it is compared under.
+    /// typed plainly. The cell builds the state a spelling of [`Typed::State`] stands for,
+    /// or its command types the spelling; the name says which lines it is compared under.
     pub spelling: Option<&'static str>,
     /// **Where the command runs** — `None` for the repository's root, else a place of the
     /// sandbox: a milestone sub-task is re-entered at its worktree, where its area stands

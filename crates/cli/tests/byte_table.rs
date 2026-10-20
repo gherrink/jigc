@@ -610,7 +610,8 @@ fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
         ));
     }
     // A cell is compared under the spelling its command types, and names it — the review of
-    // the task `B9`, its third hole ([`byte_cell::Spelling::typed_in`]).
+    // the task `B9`, its third hole ([`byte_cell::Spelling::typed_in`]), by the kind each
+    // spelling declares ([`byte_cell::Typed`]).
     let typed: Vec<&str> = row
         .spellings
         .iter()
@@ -8443,6 +8444,7 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
     const SPELLED: Row = Row {
         spellings: &[byte_cell::Spelling {
             name: "path-scoped",
+            typed: byte_cell::Typed::State,
             replaces: &["P1"],
         }],
         ..row(&[
@@ -8500,6 +8502,7 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
     const ITS_OWN_ONLY: Row = Row {
         spellings: &[byte_cell::Spelling {
             name: "path-scoped",
+            typed: byte_cell::Typed::State,
             replaces: &[],
         }],
         ..row(&[
@@ -8524,10 +8527,12 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
         spellings: &[
             byte_cell::Spelling {
                 name: "path-scoped",
+                typed: byte_cell::Typed::State,
                 replaces: &["P9", "P3"],
             },
             byte_cell::Spelling {
                 name: "path-scoped",
+                typed: byte_cell::Typed::State,
                 replaces: &[],
             },
         ],
@@ -8556,6 +8561,7 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
     const TAKES_ONE_AWAY: Row = Row {
         spellings: &[byte_cell::Spelling {
             name: "no-commit",
+            typed: byte_cell::Typed::State,
             replaces: &["P3"],
         }],
         ..row(&[line("P3", Allows::Commit(Holding::OnlyTheLines))])
@@ -8815,10 +8821,104 @@ fn a_cell_is_judged_under_the_spelling_its_command_types() {
     assert_eq!(
         byte_cell::Spelling {
             name: "doc-only",
+            typed: byte_cell::Typed::State,
             replaces: &[],
         }
         .typed_in(&["task", "finalize"], &["task", "finalize", "a-task"]),
         None
+    );
+}
+
+/// **A spelling's kind is declared where the spelling is, and never read from its name** —
+/// the third fix's left-open (`71466f7b`). The fence read a spelling's kind off its name
+/// (`--…` a flag, `bare` the leaf alone, any other a state), so a spelling a command types,
+/// named otherwise, would be read as a state: a cell typing it under the plain spelling
+/// would answer its need, and be compared under lines the spelling takes out of force.
+#[test]
+fn a_spellings_kind_is_declared_and_never_read_from_its_name() {
+    // A resume of `jigc start`, its spelling named `resume`: the command types `--task`.
+    const RESUMED: Row = Row {
+        spellings: &[byte_cell::Spelling {
+            name: "resume",
+            typed: byte_cell::Typed::Word("--task"),
+            replaces: &["ST1"],
+        }],
+        ..mint::START
+    };
+    let cells = cells();
+    let resume = cells
+        .iter()
+        .find(|cell| cell.name == "start-the-task-again")
+        .expect("the table has the resume");
+    let unnamed = byte_cell::Cell {
+        spelling: None,
+        ..**resume
+    };
+    let fault = answers(&unnamed, &RESUMED);
+    assert!(
+        fault.as_ref().is_err_and(|fault| fault
+            .contains("types the spelling `resume`, and is compared under the plain spelling")),
+        "a typed spelling named neither `--…` nor `bare`, unnamed by the cell: {fault:?}"
+    );
+    let named = byte_cell::Cell {
+        spelling: Some("resume"),
+        ..**resume
+    };
+    assert_eq!(
+        answers(&named, &RESUMED),
+        Ok(Need::BaseAs("resume")),
+        "named, it answers its spelling's base need"
+    );
+    // And the name is never read: a state named like a flag, or `bare`, is typed by no
+    // command; a word named otherwise is typed where it stands after the leaf, and only
+    // there — not as the leaf's own word.
+    for name in ["--task", "bare"] {
+        let state = byte_cell::Spelling {
+            name,
+            typed: byte_cell::Typed::State,
+            replaces: &[],
+        };
+        assert_eq!(
+            state.typed_in(&["start"], &["start", "--task", "a-task"]),
+            None
+        );
+        assert_eq!(state.typed_in(&["start"], &["start"]), None);
+    }
+    let word = byte_cell::Spelling {
+        name: "finalize-it",
+        typed: byte_cell::Typed::Word("finalize"),
+        replaces: &[],
+    };
+    assert_eq!(
+        word.typed_in(&["task", "finalize"], &["task", "finalize", "a-task"]),
+        Some(false)
+    );
+    assert_eq!(
+        word.typed_in(&["task"], &["task", "finalize", "a-task"]),
+        Some(true)
+    );
+    // This tree's rows declare the kind each spelling's doc gives it.
+    let declared: Vec<(&str, byte_cell::Typed)> = rows()
+        .iter()
+        .flat_map(|row| {
+            row.spellings
+                .iter()
+                .map(|spelling| (spelling.name, spelling.typed))
+        })
+        .collect();
+    assert_eq!(
+        declared,
+        [
+            ("doc-only", byte_cell::Typed::State),
+            ("--approve", byte_cell::Typed::Word("--approve")),
+            ("squash: false", byte_cell::Typed::State),
+            ("--no-commit", byte_cell::Typed::Word("--no-commit")),
+            ("--dry-run", byte_cell::Typed::Word("--dry-run")),
+            ("bare", byte_cell::Typed::Bare),
+            ("--task", byte_cell::Typed::Word("--task")),
+            ("--preview", byte_cell::Typed::Word("--preview")),
+        ],
+        "{declared:#?}"
     );
 }
 

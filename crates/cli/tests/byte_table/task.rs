@@ -17,7 +17,7 @@
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
-    Quote, Row, Spelling, THE_RETIRED, Unit, When, Where,
+    Quote, Row, Spelling, THE_RETIRED, Typed, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -53,6 +53,7 @@ pub const FINALIZE: Row = Row {
     spellings: &[
         Spelling {
             name: "doc-only",
+            typed: Typed::State,
             replaces: &[
                 "T2",
                 "T3",
@@ -67,6 +68,7 @@ pub const FINALIZE: Row = Row {
         // the warrant the approval rests on is that what it retires is git-recoverable.
         Spelling {
             name: "--approve",
+            typed: Typed::Word("--approve"),
             replaces: &[],
         },
     ],

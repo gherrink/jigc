@@ -16,7 +16,7 @@
 use super::{ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, Spelling,
-    THE_SOURCE, Unit, When, Where,
+    THE_SOURCE, Typed, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -65,10 +65,12 @@ pub const START: Row = Row {
     spellings: &[
         Spelling {
             name: "bare",
+            typed: Typed::Bare,
             replaces: &["ST1"],
         },
         Spelling {
             name: "--task",
+            typed: Typed::Word("--task"),
             replaces: &["ST1"],
         },
     ],
@@ -141,6 +143,7 @@ pub const WORKFLOW: Row = Row {
     unit: Unit::TheTaskFlag,
     spellings: &[Spelling {
         name: "--preview",
+        typed: Typed::Word("--preview"),
         replaces: &["WF1", "WF2"],
     }],
     consent: None,

@@ -17,7 +17,8 @@ use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
 use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses, refuses_having_moved};
 use crate::support::byte_cell::{
     A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
-    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Unit, When, Where,
+    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Typed, Unit, When,
+    Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -321,10 +322,12 @@ pub const MIGRATE_CORPUS: Row = Row {
     spellings: &[
         Spelling {
             name: "--no-commit",
+            typed: Typed::Word("--no-commit"),
             replaces: &["MG3"],
         },
         Spelling {
             name: "--dry-run",
+            typed: Typed::Word("--dry-run"),
             replaces: &["MG1", "MG1, from a prior home", "MG2", "MG3"],
         },
     ],
