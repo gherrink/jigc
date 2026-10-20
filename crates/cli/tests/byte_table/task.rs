@@ -186,7 +186,7 @@ pub const FINALIZE: Row = Row {
             "T6, moved aside",
             Allows::Files(
                 Where::Under(".jigc/tasks/<unit>"),
-                May::MovedAsideTo(".jigc/displaced"),
+                May::MovedAsideTo(".jigc/displaced/<unit>"),
             ),
             &[Quote {
                 doc: "design/finalize.md",

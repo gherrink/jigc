@@ -498,8 +498,15 @@ pub enum May {
     /// repository — whose components may stand for the acting unit and its sub-tasks as a
     /// place's do ([`OWN`], [`ITS_SUB_TASKS`]): a landed sub-task worktree's leftovers go to
     /// `.jigc/displaced/<sub-task>`, by the human's ruling of 2026-10-19 on the rows'
-    /// record's §6, entry 18, and to no other unit's place there. *What it does not ask*:
-    /// that the sub-task a file arrives under is the one whose worktree it left.
+    /// record's §6, entry 18, and to no other unit's place there. **A component the place
+    /// and the directory both name is one unit** ([`Tally::of_its_unit`]): what left
+    /// `s1`'s worktree arrives under `s1`'s place and no sibling's — *"to
+    /// `.jigc/displaced/<task-id>/` with its relative paths intact"* (`design/finalize.md`
+    /// → *7. Post-commit*), *"`.jigc/displaced/<unit-id>/<relative>`"* (`design/storage.md`
+    /// → *The per-task working area*). A directory the move makes on its way there — the
+    /// directory's fixed head, `.jigc/displaced` — is its too. Keyed so since the review of
+    /// the task `B8` (its H10): a sub-task's leftover held under a sibling's place, and
+    /// the three lines that move an area aside named `displaced/` at large.
     ///
     /// **At one file's place** ([`Where::Path`] — a mover's destination, `RL3`, `CS3`) it
     /// moves aside **only the foreign occupant of a destination a move landed on**
@@ -573,11 +580,12 @@ pub enum May {
     Migrated,
     /// **Its knob set** — the project manifest, made or rewritten so that every line of it
     /// that is no line of the knob the command names (the unit) stands as it stood, in
-    /// order, and every line that is not so names that knob, beside the `scalar:` line
-    /// that holds them: *"`jigc config set <key> <value>` | a `scalar-set`"*, in the one
-    /// file a hand edit is first-class — *"**by hand** (edit `manifest.yaml`"*
-    /// (`design/overrides.md` → *Authoring deltas*). `jigc config set`'s `CS1`; added
-    /// 2026-10-19 (the task `B8`).
+    /// order, and one line names that knob, under the `scalar:` map that holds it — made
+    /// where none stood — **set to the value the command names**: *"`jigc config set <key>
+    /// <value>` | a `scalar-set`"*, in the one file a hand edit is first-class — *"**by
+    /// hand** (edit `manifest.yaml`"* (`design/overrides.md` → *Authoring deltas*). `jigc
+    /// config set`'s `CS1`; added 2026-10-19 (the task `B8`); the value read, and the
+    /// `scalar:` line held, since the review of `B8` (its H9).
     ItsKeySet,
 }
 
@@ -706,8 +714,15 @@ pub enum When {
     /// a refusal alone. `jigc migrate-corpus` refuses one doc while *"the run's other docs
     /// still migrate and commit, and the run exits non-zero"* (`design/finalize.md` → *4.
     /// Promote managed docs*), and a refusal that committed nothing is held to change
-    /// nothing — the reading of the rows' record's §6, entry 22, until it is ruled. Added
-    /// 2026-10-19, with the movers family's rows (the task `B8`).
+    /// nothing — the reading of the rows' record's §6, entry 22, until it is ruled. **On
+    /// such a refusal, what git tracks changes only as the commit landed it**
+    /// ([`Tally::as_it_landed`]): a path the main checkout's `HEAD` held before the command
+    /// or after it, or its index did, stands in the working tree and in the index as the
+    /// commit left it — so the doc the refusal reported *"joins `blocked`"* and is not
+    /// written; what git tracks nothing of, the gitignored caches, the line's word reads as
+    /// it does at exit 0. Added 2026-10-19, with the movers family's rows (the task `B8`);
+    /// held to the commit since its review (H8): the refused doc migrated in the working
+    /// tree, or staged, held.
     ItCommitted,
 }
 
@@ -1189,6 +1204,9 @@ struct Acting {
     to: Option<String>,
     /// Where the doc the unit names stands once its identity has moved — [`THE_NEW_DOC`].
     new_doc: Option<String>,
+    /// **The word after the unit**, where the unit is the word after the leaf — the value
+    /// `jigc config set <key> <value>` names, what [`May::ItsKeySet`] asks the knob to be.
+    value: Option<String>,
     /// **What the file-state baseline records before the command**, by path from the
     /// repository's root — the keys of `.jigc/state/file-state.json`'s `hashes`: a managed
     /// doc is one recorded there, a foreign file one that is not (`design/reconciliation.md`
@@ -1235,6 +1253,11 @@ impl Acting {
                 .filter(|word| !word.starts_with('-'))
                 .map(|word| word.to_string()),
         };
+        let value = matches!(row.unit, Unit::TheWordAfterTheLeaf)
+            .then(|| argv.get(row.leaf.len() + 1))
+            .flatten()
+            .filter(|word| !word.starts_with('-'))
+            .map(|word| word.to_string());
         let docs_root = docs_root(before);
         let records = docs_root
             .as_deref()
@@ -1334,6 +1357,7 @@ impl Acting {
             from,
             to,
             new_doc,
+            value,
             baselined: baselined(before),
             unit,
             sub_tasks,
@@ -2010,6 +2034,21 @@ fn under_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     head.len() == depth && is_at_for(&pattern, &head.join("/"), acting)
 }
 
+/// **Whether `path` is a directory on the way to the one `pattern` names** — a path of its
+/// fixed head, the components before the first that stands for something: what a move
+/// into `.jigc/displaced/<sub-task>` makes before it reaches a unit's place.
+fn on_the_way_to(pattern: &str, path: &str, acting: &Acting) -> bool {
+    let Some(pattern) = acting.rooted(pattern) else {
+        return false;
+    };
+    let head: Vec<&str> = pattern
+        .split('/')
+        .take_while(|word| !word.starts_with('<') && *word != "*")
+        .collect();
+    let got: Vec<&str> = path.split('/').collect();
+    got.len() <= head.len() && got == head[..got.len()]
+}
+
 /// [`under_for`] with no unit: a place that names one is nowhere.
 fn under(pattern: &str, path: &str) -> bool {
     under_for(pattern, path, &Acting::default())
@@ -2125,6 +2164,45 @@ impl<'a> Tally<'a> {
         was.head.is_empty() && at.is_none()
     }
 
+    /// **Whether `line` is in force by the command's commit alone** — a line under
+    /// [`When::ItCommitted`] on a refusal: what it covers is what the commit landed
+    /// ([`Tally::as_it_landed`]).
+    fn by_its_commit_alone(&self, line: &Line) -> bool {
+        line.when == When::ItCommitted && !self.acted
+    }
+
+    /// **Whether `now` — the id of a regular file's bytes, or nothing — at `rel`, from the
+    /// repository's root, is what the command's commit left git tracking there**: the tree
+    /// the main checkout's `HEAD` holds after the command holds that file there, or nothing
+    /// where `now` is nothing. A path git tracks nothing of — no `HEAD` before or after the
+    /// command holds it, nor the index — is none of it, and holds.
+    fn as_it_landed(&self, rel: &str, now: Option<&str>) -> bool {
+        let head = |manifest: &Manifest| {
+            manifest
+                .checkouts
+                .get(REPO)
+                .map(|main| main.head.clone())
+                .unwrap_or_default()
+        };
+        let (was, is) = (self.seen.before, self.seen.after);
+        let landed = tree_of(is, &head(is));
+        let tracked = landed.contains_key(rel)
+            || tree_of(was, &head(was)).contains_key(rel)
+            || [was, is].into_iter().any(|manifest| {
+                manifest
+                    .checkouts
+                    .get(REPO)
+                    .is_some_and(|main| main.index.contains_key(rel))
+            });
+        if !tracked {
+            return true;
+        }
+        match landed.get(rel) {
+            None => now.is_none(),
+            Some((mode, blob)) => mode & 0o170_000 == 0o100_000 && now == Some(blob.as_str()),
+        }
+    }
+
     /// Whether `place` is where `path` — from the sandbox's root — stands.
     fn placed(&self, place: Where, path: &str) -> bool {
         match (place, in_repo(path)) {
@@ -2143,21 +2221,39 @@ impl<'a> Tally<'a> {
                 let Allows::Files(place, may) = line.allows else {
                     return false;
                 };
+                if self.by_its_commit_alone(line)
+                    && in_repo(diff.path).is_some_and(|rel| {
+                        !self.as_it_landed(rel, diff.after.and_then(Entry::blob))
+                    })
+                {
+                    return false;
+                }
                 let aside = |dir: &str, path: &str| {
                     in_repo(path).is_some_and(|rel| under_for(dir, rel, &self.acting))
                 };
+                let on_the_way = |dir: &str, path: &str| {
+                    matches!(diff.after, Some(Entry::Dir(_)))
+                        && in_repo(path).is_some_and(|rel| on_the_way_to(dir, rel, &self.acting))
+                };
                 if let May::MovedAsideTo(dir) = may
-                    && aside(dir, diff.path)
+                    && (aside(dir, diff.path) || on_the_way(dir, diff.path))
                 {
                     // The arrival: a directory, or an entry that left a place the line parks
-                    // from — gone from it, or something else standing there now; at one
-                    // file's place, only a destination's foreign occupant.
+                    // from — gone from it, or something else standing there now — under its
+                    // own unit's place; at one file's place, only a destination's foreign
+                    // occupant.
+                    let unit = |from: &str| {
+                        in_repo(from)
+                            .zip(in_repo(diff.path))
+                            .is_some_and(|(from, to)| self.of_its_unit(place, from, dir, to))
+                    };
                     return diff.before.is_none()
                         && diff.after.is_some_and(|arrived| {
                             matches!(arrived, Entry::Dir(_))
                                 || self.seen.before.files.iter().any(|(from, left)| {
                                     left.same(arrived)
                                         && self.parks(place, from)
+                                        && unit(from)
                                         && self
                                             .seen
                                             .after
@@ -2239,6 +2335,8 @@ impl<'a> Tally<'a> {
                                 aside(dir, to)
                                     && arrived.same(left)
                                     && !self.seen.before.files.contains_key(to)
+                                    && in_repo(to)
+                                        .is_some_and(|to| self.of_its_unit(place, rel, dir, to))
                             })
                     }
                     _ => false,
@@ -2514,6 +2612,34 @@ impl<'a> Tally<'a> {
         })
     }
 
+    /// **Whether `to` — an arrival under the directory `dir` a line moves aside to — is under
+    /// the place of the unit `from` left** ([`May::MovedAsideTo`]), each from the
+    /// repository's root: every component `dir` names by a unit's word ([`OWN`],
+    /// [`ITS_SUB_TASKS`]) that the line's `place` names too stands in `to` for what it
+    /// stands for in `from`. A word only `dir` names reads as a place's does; a place that
+    /// names none binds nothing.
+    fn of_its_unit(&self, place: Where, from: &str, dir: &str, to: &str) -> bool {
+        let (Where::Under(pattern) | Where::Path(pattern)) = place else {
+            return true;
+        };
+        let (Some(pattern), Some(dir)) = (self.acting.rooted(pattern), self.acting.rooted(dir))
+        else {
+            return false;
+        };
+        let source: Vec<&str> = pattern.split('/').collect();
+        let (from, to): (Vec<&str>, Vec<&str>) =
+            (from.split('/').collect(), to.split('/').collect());
+        dir.split('/').enumerate().all(|(at, word)| {
+            if !word.starts_with('<') {
+                return true;
+            }
+            match source.iter().position(|named| *named == word) {
+                None => true,
+                Some(left) => from.get(left).is_some_and(|unit| to.get(at) == Some(unit)),
+            }
+        })
+    }
+
     /// **Whether `path`, from the sandbox's root, is where a line that moves aside parks
     /// from** ([`May::MovedAsideTo`]): any path of its place under a directory, and at one
     /// file's place only a destination's foreign occupant ([`Tally::squatted`]).
@@ -2599,10 +2725,15 @@ impl<'a> Tally<'a> {
     }
 
     /// **Whether `is` is the project manifest with its knob set** ([`May::ItsKeySet`]) over
-    /// `was`: the lines that do not name the knob the unit is, nor are the `scalar:` line,
-    /// the same in both, in order; and a line of `is` names the knob.
+    /// `was`: the lines that do not name the knob the unit is the same in both, in order —
+    /// but one `scalar:` line, the map that holds the knob, where `was` held none;
+    /// one line of `is` names the knob, and the manifest read as YAML holds, under
+    /// `scalar:`, the knob set to the value the command names, a string — as the cascade
+    /// reads a knob ([`knob`]). Since the review of the task `B8` (its H9): a line naming
+    /// the knob held, whatever its value, and the `scalar:` line was free.
     fn its_knob_set(&self, was: Option<&Entry>, is: &Entry) -> bool {
-        let Some(knob) = self.acting.unit.as_deref() else {
+        let (Some(knob), Some(value)) = (self.acting.unit.as_deref(), self.acting.value.as_deref())
+        else {
             return false;
         };
         let names = |line: &&[u8]| {
@@ -2610,21 +2741,43 @@ impl<'a> Tally<'a> {
                 .trim_start()
                 .starts_with(&format!("{knob}:"))
         };
-        let rest = |entry: Option<&Entry>| -> Option<Vec<Vec<u8>>> {
-            Some(match entry {
-                None => Vec::new(),
-                Some(entry) => entry
-                    .lines()?
-                    .into_iter()
-                    .filter(|line| !names(line) && line.trim_ascii_end() != b"scalar:")
-                    .map(<[u8]>::to_vec)
-                    .collect(),
-            })
-        };
-        let Some(lines) = is.lines() else {
+        let the_map = |line: &&[u8]| line.trim_ascii_end() == b"scalar:";
+        let (Some(lines), Entry::File { bytes, .. }) = (is.lines(), is) else {
             return false;
         };
-        lines.iter().any(names) && rest(was).is_some() && rest(was) == rest(Some(is))
+        let held = match was {
+            None => Vec::new(),
+            Some(was) => match was.lines() {
+                Some(lines) => lines,
+                None => return false,
+            },
+        };
+        // The map that holds the knob may be made, once, where none stood.
+        let mut made = held.iter().any(the_map);
+        let rest_was: Vec<&[u8]> = held.iter().filter(|line| !names(line)).copied().collect();
+        let rest_is: Vec<&[u8]> = lines
+            .iter()
+            .filter(|line| {
+                if names(line) {
+                    return false;
+                }
+                if !made && the_map(line) {
+                    made = true;
+                    return false;
+                }
+                true
+            })
+            .copied()
+            .collect();
+        let set = serde_yaml_ng::from_slice::<serde_yaml_ng::Value>(bytes)
+            .ok()
+            .is_some_and(|yaml| {
+                yaml.get("scalar")
+                    .and_then(|map| map.get(knob))
+                    .and_then(serde_yaml_ng::Value::as_str)
+                    == Some(value)
+            });
+        lines.iter().filter(|line| names(line)).count() == 1 && rest_was == rest_is && set
     }
 
     /// **Whether the regular file at `path`, from the sandbox's root, is one the pinned
@@ -2674,6 +2827,16 @@ impl<'a> Tally<'a> {
                 let Allows::Files(place, may) = line.allows else {
                     return false;
                 };
+                if self.by_its_commit_alone(line)
+                    && !self.as_it_landed(
+                        path,
+                        entry
+                            .filter(|(mode, _)| mode & 0o170_000 == 0o100_000)
+                            .map(|(_, blob)| blob.as_str()),
+                    )
+                {
+                    return false;
+                }
                 // The arrival a word reads away from its place.
                 if let (Some(entry), May::IntoItsHome) = (entry, may)
                     && as_after(entry)
@@ -3121,10 +3284,12 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
         };
         let aside = tally.in_force().find_map(|(at, line)| match line.allows {
             Allows::Files(place, May::MovedAsideTo(dir)) if in_a_parked_place(place) => {
-                let to = stands
-                    .files
-                    .iter()
-                    .find(|to| in_repo(to).is_some_and(|rel| under_for(dir, rel, &tally.acting)))?;
+                let to = stands.files.iter().find(|to| {
+                    in_repo(to).is_some_and(|rel| {
+                        under_for(dir, rel, &tally.acting)
+                            && tally.of_its_unit(place, named, dir, rel)
+                    })
+                })?;
                 Some((at, to))
             }
             // A doc moved into its home carries what was planted in it.

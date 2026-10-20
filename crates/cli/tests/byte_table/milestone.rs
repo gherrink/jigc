@@ -241,7 +241,7 @@ pub const FINALIZE: Row = Row {
             "M6, moved aside",
             Allows::Files(
                 Where::Under(".jigc/tasks/<sub-task>"),
-                May::MovedAsideTo(".jigc/displaced"),
+                May::MovedAsideTo(".jigc/displaced/<sub-task>"),
             ),
             &[
                 Quote {
@@ -278,7 +278,7 @@ pub const FINALIZE: Row = Row {
             "M6, the milestone's area moved aside",
             Allows::Files(
                 Where::Under(".jigc/milestones/<unit>"),
-                May::MovedAsideTo(".jigc/displaced"),
+                May::MovedAsideTo(".jigc/displaced/<unit>"),
             ),
             &[
                 Quote {
@@ -296,8 +296,9 @@ pub const FINALIZE: Row = Row {
         // A landed sub-task's worktree keeps what git neither ignores nor holds — the
         // human's ruling of 2026-10-19 on the rows' record's §6, entry 18, the line's
         // sentence until the design docs say it — under that sub-task's place in
-        // `displaced/`. Last of the moved-aside lines: a directory made under
-        // `displaced/` is the first such line's that names it, as it was before this one.
+        // `displaced/`. Last of the moved-aside lines: a directory made at `displaced/`, or
+        // under a unit's place there, is the first such line's that covers it, as it was
+        // before this one.
         line(
             "M6, the worktrees moved aside",
             Allows::Files(

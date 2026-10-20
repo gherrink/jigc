@@ -3524,7 +3524,10 @@ fn bytes_that_stand_elsewhere_are_not_lost() {
 /// `milestone finalize`'s own row: a file of the user's in a sub-task's worktree, moved to
 /// that sub-task's place under `.jigc/displaced/`, holds; moved under an id the record does
 /// not name, or loose at the directory's root, it is *written outside its allowance*; gone,
-/// it is *lost* — the line moves bytes and never lets them go.
+/// it is *lost* — the line moves bytes and never lets them go. **And under its own unit's
+/// place, not a sibling's** (the review of `B8`, its H10, red first: each came out
+/// *holds*): a sub-task's worktree or area, the milestone's area and a task's area, each
+/// moved under another unit's place there — a unit the record names — is written outside.
 #[test]
 fn a_file_moved_aside_lands_under_its_units_place() {
     let before = then(&sandbox(), |m| {
@@ -3575,6 +3578,105 @@ fn a_file_moved_aside_lands_under_its_units_place() {
     }
     let (class, why) = came(&moved_to(None));
     assert_eq!(class, Classification::Lost, "gone: {why:#?}");
+
+    // **Its own unit's place, not a sibling's** (the review of `B8`, its H10, red first:
+    // each came out *holds*). A place under `displaced/` names the unit whose area or
+    // worktree the bytes left — *"to `.jigc/displaced/<task-id>/` with its relative paths
+    // intact"*, *"`.jigc/displaced/<unit-id>/<relative>`"* — so one unit's leftover under
+    // another's place, a unit the record names, is written outside; and so is it on the
+    // three lines that moved an area aside to `displaced/` at large: a task's area, a
+    // sub-task's area, the milestone's own area.
+    let moved_from = |before: &Manifest, from: &str, to: &str| {
+        then(before, |m| {
+            m.files.retain(|path, _| !path.starts_with(from));
+            let mut at = REPO.to_string();
+            let parts: Vec<&str> = to.split('/').collect();
+            for part in &parts[..parts.len() - 1] {
+                at = format!("{at}/{part}");
+                if !m.files.contains_key(&at) {
+                    dir(m, &at);
+                }
+            }
+            put(m, &format!("{REPO}/{to}"), MARKER);
+        })
+    };
+    let siblings = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        records(m, "docs", &[("m", &["s1", "s2"])]);
+        for path in [
+            "repo/.jigc/worktrees",
+            "repo/.jigc/worktrees/s1",
+            "repo/.jigc/tasks",
+            "repo/.jigc/tasks/s1",
+            "repo/.jigc/milestones",
+            "repo/.jigc/milestones/m",
+        ] {
+            dir(m, path);
+        }
+    });
+    let task_area = then(&sandbox(), |m| {
+        for path in ["repo/.jigc", "repo/.jigc/tasks", "repo/.jigc/tasks/t1"] {
+            dir(m, path);
+        }
+        put(m, "repo/.jigc/tasks/t1/base.json", "{}\n");
+    });
+    let leftovers = [
+        (
+            "a sub-task's worktree",
+            &milestone::FINALIZE,
+            &["milestone", "finalize", "m"],
+            &siblings,
+            ".jigc/worktrees/s1/notes.txt",
+            ".jigc/displaced/s1/notes.txt",
+            ".jigc/displaced/s2/notes.txt",
+        ),
+        (
+            "a sub-task's area",
+            &milestone::FINALIZE,
+            &["milestone", "finalize", "m"],
+            &siblings,
+            ".jigc/tasks/s1/notes.txt",
+            ".jigc/displaced/s1/notes.txt",
+            ".jigc/displaced/s2/notes.txt",
+        ),
+        (
+            "the milestone's area",
+            &milestone::FINALIZE,
+            &["milestone", "finalize", "m"],
+            &siblings,
+            ".jigc/milestones/m/notes.txt",
+            ".jigc/displaced/m/notes.txt",
+            ".jigc/displaced/s1/notes.txt",
+        ),
+        (
+            "a task's area",
+            &task::FINALIZE,
+            &["task", "finalize", "t1"],
+            &task_area,
+            ".jigc/tasks/t1/notes.txt",
+            ".jigc/displaced/t1/notes.txt",
+            ".jigc/displaced/t2/notes.txt",
+        ),
+    ];
+    for (case, row, argv, before, from, own, sibling) in leftovers {
+        let at = format!("{REPO}/{from}");
+        let before = then(before, |m| put(m, &at, MARKER));
+        let area = format!("{REPO}/{}", from.rsplit_once('/').expect("a file").0);
+        let planted: &[(&str, &str)] = &[(at.as_str(), MARKER)];
+        for (to, want) in [
+            (own, Classification::Holds),
+            (sibling, Classification::WrittenOutside),
+        ] {
+            let after = moved_from(&before, &area, to);
+            let (class, why) = Cell {
+                planted,
+                argv,
+                ..Cell::of(*row, &before, &after)
+            }
+            .came_to();
+            assert_eq!(class, want, "{case}, moved to `{to}`: {why:#?}");
+        }
+    }
 }
 
 /// A sandbox with these committed files, under the directories they need — the movers
@@ -4304,7 +4406,10 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
 /// holds, and given two is red. A line of the user's in the old changelog moves with it, and holds under
 /// `--no-commit`; a commit that carries it is red, read against what `HEAD` held at the
 /// old home (the task `B8`'s third commit, red first: the plant came out *written
-/// outside*, then the commit *held*).
+/// outside*, then the commit *held*). A refusal that committed one doc holds where the
+/// doc it refused stands as it did, and is red where that doc is migrated in the working
+/// tree or staged — *"the doc joins `blocked`"* (the review of `B8`, its H8, red first:
+/// each came out *refuses, nothing changed*).
 #[test]
 fn a_migrated_doc_keeps_its_prose() {
     const V1: &str = "---\nschema-version: 1\nstatus: accepted\n---\n\n# One way\n\n## Context\n\nWe had to choose.\n\n## Decision\n\nOne way.\n\n## Consequences\n\nIt holds.\n";
@@ -4508,6 +4613,58 @@ fn a_migrated_doc_keeps_its_prose() {
         Classification::RefusedAndChanged,
         "a refusal that committed nothing: {why:#?}"
     );
+    // A refusal that committed one doc changes what git tracks only as its commit landed
+    // it: the doc it refused — *"the doc joins `blocked`"* — is not written, in the
+    // working tree or in the index (the review of `B8`, its H8, red first: each came out
+    // *refuses, nothing changed*).
+    let two = with_committed(&[
+        ("docs/decisions/one-way.md", V1),
+        ("docs/decisions/two-way.md", V1),
+    ]);
+    let refused_of_two = |after: &Manifest| {
+        Cell {
+            argv: &["migrate-corpus"],
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(movers::MIGRATE_CORPUS, &two, after)
+        }
+        .came_to()
+    };
+    let one_committed = |m: &mut Manifest| {
+        written(m, "docs/decisions/one-way.md", V2);
+        commit(
+            m,
+            "c2",
+            &[("docs/decisions/one-way.md", Some((0o100_644, V2)))],
+        );
+    };
+    let (class, why) = refused_of_two(&then(&two, one_committed));
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "one doc committed, the refused one as it stood: {why:#?}"
+    );
+    let blocked_written = then(&two, |m| {
+        one_committed(m);
+        written(m, "docs/decisions/two-way.md", V2);
+    });
+    let blocked_staged = then(&two, |m| {
+        one_committed(m);
+        written(m, "docs/decisions/two-way.md", V2);
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index
+            .insert("docs/decisions/two-way.md".to_string(), staged(V2));
+    });
+    for (case, after) in [
+        (
+            "the refused doc migrated in the working tree",
+            &blocked_written,
+        ),
+        ("the refused doc migrated and staged", &blocked_staged),
+    ] {
+        let (class, why) = refused_of_two(after);
+        assert_eq!(class, Classification::RefusedAndChanged, "{case}: {why:#?}");
+    }
 
     // Under `--dry-run` nothing is written.
     let (class, why) = came(&before, &before, Some("--dry-run"));
@@ -4607,9 +4764,12 @@ fn a_migrated_doc_keeps_its_prose() {
 
 /// **A knob set keeps every other line of the project manifest** — `CS1` of `jigc config
 /// set`'s row ([`movers::CONFIG_SET`]), the word *its knob set* (the task `B8`). On the row
-/// itself: the knob's line added beside the user's own lines, or the manifest made where
-/// none stood, holds; the user's comment dropped, another knob's value changed, or the
-/// manifest left with no line of the knob, is each red.
+/// itself: the knob's line added beside the user's own lines, the manifest made where
+/// none stood, or the knob's value replaced, holds; the user's comment dropped, another
+/// knob's value changed, or the manifest left with no line of the knob, is each red — and
+/// so, since the review of `B8` (its H9, red first: each came out *holds*), is the knob set
+/// to a value the command does not name or to none, its line outside the `scalar:` map or
+/// twice, and the `scalar:` line dropped or written twice.
 #[test]
 fn a_knob_set_keeps_every_other_line() {
     const MINE: &str = "# a note of the user's\nscalar:\n  docs-root: docs\n";
@@ -4646,7 +4806,53 @@ fn a_knob_set_keeps_every_other_line() {
     });
     let (class, why) = came(&none, &made);
     assert_eq!(class, Classification::Holds, "the manifest made: {why:#?}");
+    let was_set = then(&sandbox(), |m| {
+        written(
+            m,
+            ".jigc/config/manifest.yaml",
+            "scalar:\n  finalize.fan-out.squash: 'true'\n",
+        )
+    });
+    let reset = then(&was_set, |m| {
+        written(
+            m,
+            ".jigc/config/manifest.yaml",
+            "scalar:\n  finalize.fan-out.squash: 'false'\n",
+        )
+    });
+    let (class, why) = came(&was_set, &reset);
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the knob's value replaced: {why:#?}"
+    );
     for (case, bytes) in [
+        // The value the command names, and the map that holds it (the review of `B8`, its
+        // H9, red first: each came out *holds*).
+        (
+            "the knob set to another value",
+            "# a note of the user's\nscalar:\n  docs-root: docs\n  finalize.fan-out.squash: 'true'\n",
+        ),
+        (
+            "the knob set to no value",
+            "# a note of the user's\nscalar:\n  docs-root: docs\n  finalize.fan-out.squash:\n",
+        ),
+        (
+            "the knob's line outside the `scalar:` map",
+            "# a note of the user's\nscalar:\n  docs-root: docs\nfinalize.fan-out.squash: 'false'\n",
+        ),
+        (
+            "the `scalar:` line dropped",
+            "# a note of the user's\n  docs-root: docs\n  finalize.fan-out.squash: 'false'\n",
+        ),
+        (
+            "a second `scalar:` line",
+            "# a note of the user's\nscalar:\n  docs-root: docs\nscalar:\n  finalize.fan-out.squash: 'false'\n",
+        ),
+        (
+            "the knob's line twice",
+            "# a note of the user's\nscalar:\n  docs-root: docs\n  finalize.fan-out.squash: 'false'\n  finalize.fan-out.squash: 'false'\n",
+        ),
         (
             "the user's comment dropped",
             "scalar:\n  docs-root: docs\n  finalize.fan-out.squash: 'false'\n",
