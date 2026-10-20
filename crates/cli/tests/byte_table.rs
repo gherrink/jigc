@@ -142,6 +142,8 @@ mod doc;
 mod install;
 #[path = "byte_table/milestone.rs"]
 mod milestone;
+#[path = "byte_table/mint.rs"]
+mod mint;
 #[path = "byte_table/movers.rs"]
 mod movers;
 #[path = "byte_table/task.rs"]
@@ -166,7 +168,7 @@ macro_rules! families {
     };
 }
 
-families![install, task, milestone, doc, movers];
+families![install, task, milestone, doc, movers, mint];
 
 use owed::{CELLS_OWED, OWED, OWING};
 
@@ -512,10 +514,11 @@ fn every_write_leaf_has_a_row_a_scheduled_row_or_an_owed_row() {
     let rows: Vec<&[&str]> = rows().iter().map(|row| row.leaf).collect();
     assert_eq!(
         rows.len(),
-        26,
+        30,
         "the table has the four rows of the pilot's acceptance, `jigc task discard`'s, \
          `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the milestone \
-         family's seven beside `milestone finalize`, and the movers family's four: {rows:?}"
+         family's seven beside `milestone finalize`, the movers family's four and the mint \
+         family's four: {rows:?}"
     );
     let wrong = unanswered(&here, &rows, &scheduled(SCHEDULED), OWED);
     assert!(
@@ -1944,6 +1947,49 @@ const READ_AND_NEVER_WRITTEN: &str = "nothing can: the line lets no difference h
 /// a cell has met it yet. A line that is on neither list, or on both, is named
 /// ([`unaccounted`]).
 const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
+    (&["start"], "ST1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["start"], "ST2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["start"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["start"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["start"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["start"], "C3, the task list", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["workflow"], "WF1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["workflow"], "WF2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["workflow"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["workflow"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["workflow"],
+        "C3, the base pin",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (
+        &["workflow"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (&["migrate"], "MI1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate"], "MI2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["migrate"], "C3, the base pin", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["migrate"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (&["task", "amend"], "AM1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["task", "amend"], "C1", THE_FAMILYS_CELLS_ARE_OWED),
+    (&["task", "amend"], "C2", THE_FAMILYS_CELLS_ARE_OWED),
+    (
+        &["task", "amend"],
+        "C3, the base pin",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
+    (
+        &["task", "amend"],
+        "C3, the task list",
+        THE_FAMILYS_CELLS_ARE_OWED,
+    ),
     (&["rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["rename"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["migrate-corpus"], "MG4", STAGED_UNDER_ANOTHER_LINE),
@@ -2351,6 +2397,11 @@ const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed bou
 /// difference happen there.
 const A_DRY_RUN_WRITES_NOTHING: &str = "nothing can: the dry run's line lets no difference happen at the doc it reads — it names \
      the place, which is what the plants of the spelling's cells are aimed at";
+
+/// What would use a line of the mint family's rows: the family's cells, owed by the task `B9`
+/// until the commits after its rows (`owed.rs` → `CELLS_OWED`).
+const THE_FAMILYS_CELLS_ARE_OWED: &str = "the family's cells, owed by the task `B9` (`CELLS_OWED`): its rows are written from \
+     their docs a commit before any cell of them runs";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -2762,6 +2813,10 @@ const DOCS: &[(&str, &str)] = &[
     (
         "design/assistant-adapter.md",
         include_str!("../../../design/assistant-adapter.md"),
+    ),
+    (
+        "design/auto-migration.md",
+        include_str!("../../../design/auto-migration.md"),
     ),
     (
         "design/corpus-migration.md",
@@ -4596,6 +4651,134 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
     assert_eq!(class, Classification::Holds, "the re-point: {why:#?}");
     let (class, why) = came(&re_pointed("elsewhere/roadmap.md"));
     assert!(class.is_red(), "another root: came out {class}, {why:#?}");
+}
+
+/// **A task a command mints is one, where nothing stood** — the word `<minted-task>` of the
+/// mint family's rows (`jigc start`, `jigc migrate`, `jigc task amend`; the task `B9`): an
+/// area under `.jigc/tasks/` that carries its base pin after the command, at an id where
+/// nothing stood before it. A new area holds; an area that carries no pin, two areas, an
+/// area made over a residual that stood at its id, and a sibling task's area rewritten
+/// beside the mint are each red (red first: against the word declared and read by nobody,
+/// the new area came out *written outside its allowance*).
+#[test]
+fn a_task_a_command_mints_is_one_nothing_stood_at() {
+    const MINTS: Row = row(&[line(
+        "N1",
+        Allows::Files(Where::Under(".jigc/tasks/<minted-task>"), May::Rebuilt),
+    )]);
+    let area = |m: &mut Manifest, id: &str| {
+        written(m, &format!(".jigc/tasks/{id}/base.json"), "a pin\n");
+        written(
+            m,
+            &format!(".jigc/tasks/{id}/docs/commit:{id}.md"),
+            "# a commit\n",
+        );
+    };
+    let before = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let (class, why) =
+        Cell::of(MINTS, &before, &then(&before, |m| area(m, "add-a-file"))).came_to();
+    assert_eq!(class, Classification::Holds, "a task minted: {why:#?}");
+    let residual = then(&before, |m| {
+        written(m, ".jigc/tasks/add-a-file/notes.md", "the user's notes\n")
+    });
+    let sibling = then(&before, |m| area(m, "other"));
+    for (case, before, after) in [
+        (
+            "an area that carries no pin",
+            &before,
+            then(&before, |m| {
+                written(m, ".jigc/tasks/add-a-file/intent", "add a file\n")
+            }),
+        ),
+        (
+            "two areas",
+            &before,
+            then(&before, |m| {
+                area(m, "one");
+                area(m, "two");
+            }),
+        ),
+        (
+            "an area made over a residual",
+            &residual,
+            then(&residual, |m| area(m, "add-a-file")),
+        ),
+        (
+            "a sibling's area rewritten beside the mint",
+            &sibling,
+            then(&sibling, |m| {
+                area(m, "add-a-file");
+                written(m, ".jigc/tasks/other/docs/commit:other.md", "# rewritten\n");
+            }),
+        ),
+    ] {
+        let (class, why) = Cell::of(MINTS, before, &after).came_to();
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
+}
+
+/// **A provisioned place makes, and rewrites nothing** — the word *provisioned* of `jigc
+/// workflow`'s `WF1` (the task `B9`): what a re-entry provisions into its sub-task's area is
+/// made where nothing stood. The commit doc and the provenance manifest made in the unit's
+/// area hold; a staged doc that stood rewritten, the base pin gone, and a file made in a
+/// sibling's area are each red (red first: against the word declared and read by nobody,
+/// the made files came out *written outside its allowance*).
+#[test]
+fn a_provisioned_place_makes_and_rewrites_nothing() {
+    const PROVISIONS: Row = Row {
+        unit: Unit::TheTaskFlag,
+        ..row(&[line(
+            "P1",
+            Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Provisioned),
+        )])
+    };
+    let argv: &[&str] = &["workflow", "sub-task", "--task", "s1"];
+    let before = then(&sandbox(), |m| {
+        for id in ["s1", "s2"] {
+            written(m, &format!(".jigc/tasks/{id}/base.json"), "a pin\n");
+        }
+    });
+    let provisioned = |m: &mut Manifest| {
+        written(m, ".jigc/tasks/s1/docs/commit:s1.md", "# a commit\n");
+        written(m, ".jigc/tasks/s1/docs/provenance.json", "{}\n");
+    };
+    let came = |before: &Manifest, after: &Manifest| {
+        Cell {
+            argv,
+            ..Cell::of(PROVISIONS, before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = came(&before, &then(&before, provisioned));
+    assert_eq!(class, Classification::Holds, "provisioned: {why:#?}");
+    let authored = then(&before, |m| {
+        written(m, ".jigc/tasks/s1/docs/commit:s1.md", "# authored\n")
+    });
+    for (case, before, after) in [
+        (
+            "a staged doc rewritten",
+            &authored,
+            then(&authored, provisioned),
+        ),
+        (
+            "the base pin gone",
+            &before,
+            then(&before, |m| {
+                provisioned(m);
+                m.files.remove("repo/.jigc/tasks/s1/base.json");
+            }),
+        ),
+        (
+            "a file made in a sibling's area",
+            &before,
+            then(&before, |m| {
+                written(m, ".jigc/tasks/s2/docs/commit:s2.md", "# a commit\n")
+            }),
+        ),
+    ] {
+        let (class, why) = came(before, &after);
+        assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
+    }
 }
 
 /// **A line moves aside only from a place the command removes, never from a destination** —

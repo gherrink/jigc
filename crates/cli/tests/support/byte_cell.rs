@@ -325,6 +325,19 @@ pub const MINTED: &str = "<minted>";
 /// spec's criteria.
 pub const EACH_MINTED: &str = "<each-minted>";
 
+/// **The component of a place that stands for the task the command mints** — a task, by
+/// its area: the one id at which an area under `.jigc/tasks/` carries its base pin after
+/// the command, where nothing stood before it in the working tree or in what git held, the
+/// path up to and with this component holding no entry — *"A task is an area that carries
+/// its base pin"* (`design/storage.md` → *The per-task working area (staging)*), and *"the
+/// CLI mints the *id* and opens the area"* (`design/write-commands.md` → *Task
+/// origination*). **And it is one**: where two areas came to carry a pin, the place is
+/// nowhere — each door mints one task. [`MINTED`]'s reading of a mint is the committed
+/// record's, and a task has no record: `jigc start`, `jigc migrate` and `jigc task amend`
+/// mint a task and commit nothing. Added 2026-10-20, with the mint family's rows (the
+/// task `B9`).
+pub const MINTED_TASK: &str = "<minted-task>";
+
 /// **The component of a place that stands for a sub-task whose area the re-seed rebuilds**:
 /// a sub-task the committed record of the unit the command acts on names
 /// ([`ITS_SUB_TASKS`]), whose item that record has not settled, and at which nothing stood
@@ -403,6 +416,15 @@ pub const THE_NEW_DOC: &str = "<the-new-doc>";
 /// home"* (`design/corpus-migration.md` → *The freeze-exempt sibling*).
 pub const PRIOR_HOME: &str = "<prior-home>";
 
+/// **The path the command's first argument names** — the source `jigc migrate <path> --as
+/// <doctype>` reads, the first word after the leaf, from the repository's root (a leading
+/// `./` read away): *"Reads the foreign file's bytes"* (`design/auto-migration.md` → *The
+/// `jigc migrate` verb (the trigger)*). It names where the plants a line of it is aimed at
+/// stand; its one line lets nothing happen there ([`May::CopiedFrom`]), so the comparison
+/// reads no path for it, and a difference at the source is outside every line. Added
+/// 2026-10-20, with the mint family's rows (the task `B9`).
+pub const THE_SOURCE: &str = "<the-source>";
+
 /// **Where a move into a doctype's home lands a doc** — a mover's destination: for a doc that
 /// stood before the command where a move into its home ([`May::IntoItsHome`]) takes it — a
 /// `<name>.md` under the prior home `--from` names, of the doctype the command names, or a
@@ -480,6 +502,15 @@ pub enum May {
     /// Made or replaced by a regular file that is, byte for byte, a doc staged in a work
     /// unit.
     CopyOfAStagedDoc,
+    /// **Provisioned** — made where nothing stood: a file or a directory at a path that held
+    /// no entry before the command; nothing that stood is rewritten, and nothing is gone.
+    /// *"The first `jigc workflow <W> --task <id>` re-entry **provisions** the
+    /// sub-workflow's deterministic instances (the commit doc, any workflow-provisioned
+    /// docs) into the sub-area"* (`design/write-commands.md` → *Sub-agent re-entry*): a
+    /// second re-entry finds them and writes nothing, so a staged doc a sub-agent authored
+    /// is no instance to provision. `jigc workflow`'s `WF1`; added 2026-10-20, with the mint
+    /// family's rows (the task `B9`).
+    Provisioned,
     /// **Read, and nothing written** — the home of a committed doc a write copies into a
     /// task's working area: the place the copy is read from, which the write leaves as it
     /// stands. It lets no difference happen there, at exit 0 or on a refusal, and lets no
@@ -945,6 +976,7 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                 | May::Invalidated(_)
                 | May::CopyOfAStagedDoc
                 | May::FromTheBasesTree
+                | May::Provisioned
         )
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
@@ -1204,6 +1236,10 @@ struct Acting {
     /// The ids the command minted, read off the committed records before and after it —
     /// what [`MINTED`] and [`EACH_MINTED`] stand for.
     minted: BTreeSet<String>,
+    /// The tasks the command minted: the ids at which an area under `.jigc/tasks/` carries
+    /// its base pin after the command, where nothing stood before it — what [`MINTED_TASK`]
+    /// stands for.
+    minted_tasks: BTreeSet<String>,
     /// The shared base the unit's committed record pins — the `base:` of its front matter,
     /// the full id — what [`Allows::Registered`] asks a new checkout's `HEAD` against.
     base: Option<String>,
@@ -1339,6 +1375,20 @@ impl Acting {
                 }
             })
             .unwrap_or_default();
+        // The tasks it minted: an area that carries its pin after the command, at an id where
+        // nothing stood.
+        let minted_tasks: BTreeSet<String> = after
+            .files
+            .iter()
+            .filter(|(_, entry)| matches!(entry, Entry::File { .. }))
+            .filter_map(|(path, _)| {
+                let id = in_repo(path)?
+                    .strip_prefix(".jigc/tasks/")?
+                    .strip_suffix("/base.json")?;
+                (!id.contains('/') && !stood.contains(&format!(".jigc/tasks/{id}")))
+                    .then(|| id.to_string())
+            })
+            .collect();
         let homes = Homes::over(before);
         let the_doc = unit.as_ref().and_then(|unit| {
             let (ty, slug) = unit.split_once(':')?;
@@ -1382,6 +1432,7 @@ impl Acting {
             docs_root,
             stood: Some(stood),
             minted,
+            minted_tasks,
             base,
             checked_out: before
                 .checkouts
@@ -2024,7 +2075,11 @@ fn is_at_for(pattern: &str, path: &str, acting: &Acting) -> bool {
     want.len() == got.len()
         && want.iter().zip(&got).enumerate().all(|(at, (want, part))| {
             let id_with = |word: &str| want.strip_prefix(word).and_then(|s| part.strip_suffix(s));
-            if want.starts_with(EACH_MINTED) {
+            if want.starts_with(MINTED_TASK) {
+                id_with(MINTED_TASK).is_some_and(|id| {
+                    acting.minted_tasks.len() == 1 && acting.minted_tasks.contains(id)
+                }) && acting.nothing_stood(&got_so_far(&got, at))
+            } else if want.starts_with(EACH_MINTED) {
                 id_with(EACH_MINTED).is_some_and(|id| acting.minted.contains(id))
                     && acting.nothing_stood(&got_so_far(&got, at))
             } else if want.starts_with(MINTED) {
@@ -2370,6 +2425,7 @@ impl<'a> Tally<'a> {
                     (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
                         in_repo(diff.path) == Some(stamped)
                     }
+                    (May::Provisioned, None, Some(_)) => true,
                     (May::FromTheBasesTree, None, Some(Entry::Dir(_))) => true,
                     (May::FromTheBasesTree, None, Some(Entry::File { mode, blob, .. })) => {
                         self.of_the_bases_tree(place, diff.path, *mode, blob)

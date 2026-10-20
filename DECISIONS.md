@@ -2,6 +2,47 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-20 — The mint family's four rows are written from their docs before a cell of any runs — `jigc start`, `jigc workflow`, `jigc migrate`, `jigc task amend` — over three words, each red first: the task a command mints, *provisioned*, and the source a command reads; the list of leaves whose rows are owed is empty (the byte table, task B9, the second of its commits)
+
+**What.** The rows of the mint family's four leaves, written from their docs into [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §4d and lifted quote for quote into [mint.rs](crates/cli/tests/byte_table/mint.rs), a family file of its own. **No cell is added, and no line was written from a run** — each leaf was driven once with nothing planted on this tree's debug build after its row was read off the docs (the self-check's sixth item), and every write it made stands under a line over a quoted sentence. No product source changes. The four leave the list of leaves whose rows are owed ([owed.rs](crates/cli/tests/byte_table/owed.rs)), which is empty now, and join the list of leaves whose cells are owed, under `B9`.
+
+### The rows
+
+| leaf | lines | spellings | home | unit |
+|---|---|---|---|---|
+| `start` | `ST1` the minted task's area made · `ST2` the edge index rebuilt | `bare` and `--task`, each taking `ST1` out of force | `fresh` | `--task`, else the task that stands |
+| `workflow` | `WF1` a sub-task's area *provisioned* on its first re-entry · `WF2` the edge index rebuilt | `--preview`, taking both out | `fresh`, with a milestone of one sub-task provisioned | `--task` |
+| `migrate` | `MI1` the migration task's area made · `MI2` the source read, and nothing written | — | `fresh`, with a foreign file committed | none |
+| `task amend` | `AM1` the amend task's area made | — | `fresh` | none |
+
+`C1` to `C3` stand in each. **No line is**: what each refuses before it mints (`ST3`, `WF3`, `MI3`, `AM2`), and that none commits — *"Only `finalize` produces committed changes"*. What each leaf wrote with nothing planted, driven: `start --workflow single-task "<intent>"` the task's area — base pin, intent, workflow, the commit doc, the provenance manifest, the staged snapshot — and nothing else; bare `start` nothing in `fresh`, and the edge index over a live task; `start --task` the edge index; `workflow <W> --task <sub>` at the sub-task's worktree the commit doc and the provenance manifest in its area under the main checkout, and the edge index; `workflow --preview` nothing; `migrate` the task's area with the staged `source` and `source-path`; `task amend` the task's area with its `amend` marker. **The split the cells are built in**, by the docs the leaves share: the three mints (*Task origination*, the working area), then the re-entry.
+
+### Three words, red first
+
+[The frame](crates/cli/tests/support/byte_cell.rs):
+
+- **`<minted-task>`** (`MINTED_TASK`) — the one id at which an area under `.jigc/tasks/` carries its base pin after the command, where nothing stood before in the working tree or in what git held; where two came to carry one, nowhere. *Over* `<minted>`, which reads a mint off the committed record: a task has none, and the milestone family's record of 2026-10-19 that named `<minted>` *"there for `B9`'s mints"* did not read what it reads.
+- **`May::Provisioned`** — made where nothing stood, a file or a directory; nothing that stood rewritten, nothing gone: *"The first … re-entry **provisions**"*. *Over* *rebuilt*, under which a second re-entry that rewrote a sub-agent's authored commit doc would hold.
+- **`<the-source>`** (`THE_SOURCE`) — the path the first word after the leaf names: where the plants a line of it is aimed at stand. Its one line is *read, and nothing written* (`May::CopiedFrom`, W3's), which lets nothing happen there, so the comparison reads no path for it.
+
+*Red first*: two fences against the words declared and read by nobody — [`a_task_a_command_mints_is_one_nothing_stood_at`](crates/cli/tests/byte_table.rs) and [`a_provisioned_place_makes_and_rewrites_nothing`](crates/cli/tests/byte_table.rs) — each came out *written outside its allowance* at its first case, where it must hold. Built: a new task area holds, and an area that carries no pin, two areas, an area over a residual, and a sibling's area rewritten beside the mint are each red; a provisioned commit doc and manifest hold, and a staged doc rewritten, the base pin gone, and a file in a sibling's area are each red.
+
+### Where the docs say two things, or seem to
+
+- **Bare `start`'s edge index** — answered: `design/reconciliation.md`'s *"stay pure readers"* is the sentence of what a sweep persists of the file-state baseline, as its own paragraph says; `design/write-commands.md` names the index it materializes.
+- **A slug that collides** — answered: *"collision-suffixed"* in ST1's sentence is the parallel case's, by the same section's *"suffix only in the deterministic parallel case"*; a serial collision refuses.
+- **`task amend` and the staged snapshot** — `design/finalize.md` names *"the three task-minting doors"* and not the amend door, which the product's mint registry has write one. A lead for the docs: AM1's place is the area whole, so no cell turns on it.
+
+### What moved — on both binaries
+
+The whole table on the arm of a named binary — the previous release's rebuild (`accf3996…ab5d`, checked) and this tree's debug build, 395 s — beside the print of this task's first commit: **no cell moved**, in classification, exit, listing, mark or key, on either binary; the new words are read by the four rows alone, which have no cell. **The lists**: thirty rows, where twenty-six; the four rows' twenty-three lines — `start` 6, `workflow` 6, `migrate` 6, `task amend` 5, the `C` lines among them — each on the list of lines that excuse nothing until their cells run. Cells, the expected-red list and the marks as the first commit left them: 687, 531 in the gate; 149 under thirty-nine keys; one.
+
+### Decided here — as a builder, and open to being overturned
+
+- **`start`'s forms as spellings** — `bare` and `--task` each take `ST1` out of force, so an orientation or a resume that minted would be red; the intent forms are the plain spelling, which the catalog's bare `jigc start` runs in the refusing layer.
+- **`WF1` under the unit's area, and the re-entry run at the worktree** — the place is the main checkout's (*"the shared **`.jigc/`** (config, task areas, caches) resolve against **jigc_home**"*); the cells bring the frame a cell's working directory.
+- **No line for the staged snapshot of its own**: it is inside each minted area, which ST1, MI1 and AM1 let be made whole.
+
 ## 2026-10-20 — The human's two rulings of the day, recorded: jigc never moves or overwrites a file to make room for its own, so a mover refuses over anything that stands at a destination — `relocate` blocking that doc, a root knob its whole re-point — and an acting sweep exits non-zero where an act it was asked for did not happen; the parking lines go, a mover's destination is a line's place, and `relocate`'s lines hold on a refusal that names the doc it left (the byte table, task B9, the first of its commits)
 
 **What.** The human ruled on 2026-10-20 on [the rows' record](completions/artifacts/M55/stabilization-build/reshape/byte-table-acceptance-rows.md) → §6, entry 23, and on R1 of the review of `B8`, which the eighth fix had recorded as a key judging two docs wrong and no entry (`r1-relocate-refuses-a-doc-and-exits-0`). This commit records both as the orchestrating session handed them on, in the form `b7ef80e6` used, and brings the frame, the movers' rows and cells and the records to them. No product source changes.
