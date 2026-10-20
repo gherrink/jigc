@@ -9,7 +9,7 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 741 cells: the acceptance's twelve, the task family's
+//! `migrate`, `task amend`) — and 746 cells: the acceptance's twelve, the task family's
 //! seventy-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
 //! spelling `doc-only`), **`milestone finalize`'s spelling `squash: false` four, the install
 //! family's hundred and thirty-one** (`setup`, `uninstall`, `ingest`, `unmanage`), **the doc
@@ -18,7 +18,7 @@
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
 //! under `squash: false`), **the movers family's seventy-six and eighty-two** (`rename`,
-//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-one**, of which
+//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-six**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
 //! rows and the cells, a family a file under
@@ -4926,10 +4926,61 @@ fn a_provisioned_place_makes_and_rewrites_nothing() {
                 written(m, ".jigc/tasks/s2/docs/commit:s2.md", "# a commit\n")
             }),
         ),
+        // *Provisioned* is "a file or a directory" (the review of the task `B9`, H4): a link
+        // made where the commit doc goes, and a FIFO beside it, are neither.
+        (
+            "a link made where the commit doc goes",
+            &before,
+            then(&before, |m| {
+                written(m, ".jigc/tasks/s1/docs/provenance.json", "{}\n");
+                m.files.insert(
+                    format!("{REPO}/.jigc/tasks/s1/docs/commit:s1.md"),
+                    Entry::Link("/etc/passwd".to_string()),
+                );
+            }),
+        ),
+        (
+            "a FIFO made beside what is provisioned",
+            &before,
+            then(&before, |m| {
+                provisioned(m);
+                m.files
+                    .insert(format!("{REPO}/.jigc/tasks/s1/docs/fifo"), Entry::Special);
+            }),
+        ),
     ] {
         let (class, why) = came(before, &after);
         assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
     }
+}
+
+/// **What a re-entry provisions meets a link or a directory where it goes** — the review of
+/// the task `B9`, H4's lead: `jigc workflow`'s `WF1` names the sub-task's area, a directory,
+/// so `aimed` gave it the one kind an area takes, **U**, and no cell put a link or a
+/// directory where the commit doc goes — where the re-entry, driven, replaces a link to
+/// nothing with its own file at exit 0. What the line provisions is named files (*"the
+/// commit doc, any workflow-provisioned docs"*), each one file's place, so **L** and **K**
+/// are aimed at it; **T**, **E** and **S** are not, since git holds no file under the
+/// workbench (red first: `WF1`'s needs were **U** alone).
+#[test]
+fn a_provisioned_place_needs_a_link_and_a_directory_where_it_provisions() {
+    let of_wf1: Vec<String> = needs(&mint::WORKFLOW)
+        .iter()
+        .map(Need::named)
+        .filter(|need| need.starts_with("WF1 × "))
+        .collect();
+    assert_eq!(
+        of_wf1,
+        [
+            "WF1 × U",
+            "WF1 × L, to nothing",
+            "WF1 × L, to a file in the repository",
+            "WF1 × L, to a file outside it",
+            "WF1 × K, a directory in a file's place",
+            "WF1 × K, a file in a directory's place",
+        ],
+        "what `WF1` provisions is aimed at by a link and a directory"
+    );
 }
 
 /// **A line moves aside only from a place the command removes, never from a destination** —
@@ -11460,7 +11511,21 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     (
         "r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc",
         Classification::NotTheListedOutcome,
-        &["workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned"],
+        &[
+            "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
+            // After the review of the task `B9`, H4's lead: a link to a file and a
+            // directory, taken for the commit doc as the file is — one check, `exists()`.
+            "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
+            "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
+            "workflow-a-directory-where-the-commit-doc-is-provisioned",
+        ],
+    ),
+    // The same check, where it answers *absent*: a link to nothing at the commit doc's place
+    // is replaced by jigc's file at exit 0 (after the review of the task `B9`, H4's lead).
+    (
+        "r1-workflow-re-entry-replaces-a-link-of-the-users-where-the-sub-tasks-commit-doc-goes",
+        Classification::Lost,
+        &["workflow-a-link-to-nothing-where-the-commit-doc-is-provisioned"],
     ),
 ];
 
@@ -11927,7 +11992,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (741, 561, 180),
+        (746, 566, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -11941,8 +12006,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
          movers eighty-two, `relocate`'s twenty-nine and `config set`'s fifty-three: \
-         seventy in the gate, twelve on demand — and the mint family's fifty, `start`'s \
-         fifteen, `workflow`'s eleven, `migrate`'s fifteen and `task amend`'s ten: twenty-seven \
+         seventy in the gate, twelve on demand — and the mint family's fifty-six, `start`'s \
+         fifteen, `workflow`'s sixteen, `migrate`'s fifteen and `task amend`'s ten: thirty-two \
          in the gate, twenty-four on demand"
     );
 }

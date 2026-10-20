@@ -503,7 +503,9 @@ pub enum May {
     /// unit.
     CopyOfAStagedDoc,
     /// **Provisioned** — made where nothing stood: a file or a directory at a path that held
-    /// no entry before the command; nothing that stood is rewritten, and nothing is gone.
+    /// no entry before the command; nothing that stood is rewritten, and nothing is gone. A
+    /// regular file or a directory and no other entry — a link or a FIFO made in the area is
+    /// none (after the review of the task `B9`, H4).
     /// *"The first `jigc workflow <W> --task <id>` re-entry **provisions** the
     /// sub-workflow's deterministic instances (the commit doc, any workflow-provisioned
     /// docs) into the sub-area"* (`design/write-commands.md` → *Sub-agent re-entry*): a
@@ -983,6 +985,14 @@ impl Kind {
 /// after the review of the task `B8`, H7; a mover's since the human's ruling of that day on
 /// the rows' record's §6, entry 23, where `RL3` and `CS3`, which parked what stood there,
 /// had been the place).
+///
+/// **And what a re-entry provisions** ([`May::Provisioned`], `jigc workflow`'s `WF1`): its
+/// place is the sub-task's area, a directory, but what it makes there is named files —
+/// *"the commit doc, any workflow-provisioned docs"* — each one file's place, so **L** and
+/// **K** go there as to one file's place: a link or a directory where the commit doc goes,
+/// a file where its directory does. **T**, **E** and **S** do not: the area is under the
+/// workbench, where git holds no file to commit, edit or stage (added 2026-10-20, after the
+/// review of the task `B9`, H4's lead).
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -1004,6 +1014,8 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     };
     let merges = |may: May| matches!(may, May::MergeInto | May::TakeOutOf);
     let read = |may: May| matches!(may, May::CopiedFrom);
+    // What a re-entry provisions: named files in an area, each one file's place.
+    let provisions = |may: May| matches!(may, May::Provisioned);
     // A doc's destination: where the doc the address names stands once its identity moved,
     // and where a mover lands a doc.
     let destination = |place: Where| matches!(place, Where::Path(path) if path == THE_NEW_DOC || path == A_NEW_HOME);
@@ -1027,15 +1039,18 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
             Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside | Kind::DirForAFile,
             Allows::Files(place, may),
         ) => {
-            one_file(place)
-                && (lands(may)
-                    || read(may)
-                    || rewrites(place, may)
-                    || destination(place)
-                    || matches!(may, May::MergeInto))
+            provisions(may)
+                || (one_file(place)
+                    && (lands(may)
+                        || read(may)
+                        || rewrites(place, may)
+                        || destination(place)
+                        || matches!(may, May::MergeInto)))
         }
         (Kind::FileForADir, Allows::Files(place, may)) => {
-            one_file(place) && (lands(may) || rewrites(place, may) || matches!(may, May::MergeInto))
+            provisions(may)
+                || (one_file(place)
+                    && (lands(may) || rewrites(place, may) || matches!(may, May::MergeInto)))
         }
         (Kind::EditBefore, Allows::Files(_, may)) => {
             matches!(may, May::CopyOfAStagedDoc) || read(may)
@@ -2477,7 +2492,7 @@ impl<'a> Tally<'a> {
                     (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
                         in_repo(diff.path) == Some(stamped)
                     }
-                    (May::Provisioned, None, Some(_)) => true,
+                    (May::Provisioned, None, Some(Entry::File { .. } | Entry::Dir(_))) => true,
                     (May::FromTheBasesTree, None, Some(Entry::Dir(_))) => true,
                     (May::FromTheBasesTree, None, Some(Entry::File { mode, blob, .. })) => {
                         self.of_the_bases_tree(place, diff.path, *mode, blob)

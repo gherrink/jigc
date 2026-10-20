@@ -500,6 +500,9 @@ macro_rules! a_sub_task_provisioned {
 const ITS_WORKTREE: Place = Place::Repo(".jigc/worktrees/add-alpha");
 const RE_ENTER_IT: &[&str] = &["workflow", "sub-task", "--task", "add-alpha"];
 
+/// Where the sub-task's commit doc is provisioned, in the main checkout's workbench.
+const THE_COMMIT_DOC: &str = ".jigc/tasks/add-alpha/docs/commit:add-alpha.md";
+
 /// One cell of `jigc workflow`, its command run at the sub-task's worktree.
 const fn re_enters(
     name: &'static str,
@@ -525,8 +528,13 @@ const fn re_enters(
 ///   makes what stood nowhere — *"mirroring how `jigc start` provisions at mint time"*, and
 ///   the mint *"keeps refusing rather than adopting the directory"* — so it refuses, naming
 ///   what stands there;
+/// - **a link or a directory where the commit doc is provisioned** — a link to nothing, to
+///   a file in the repository, to one outside it, a directory: none is the commit doc the
+///   provisioning makes, and each is refused as the user's file there is, naming the path
+///   (after the review of the task `B9`, H4's lead); **a file where the commit doc's
+///   directory goes** is refused, changing nothing;
 /// - **under the edge index**, a file of the user's stays.
-const WORKFLOW_CELLS: [Cell; 5] = [
+const WORKFLOW_CELLS: [Cell; 10] = [
     Cell {
         spelling: Some("--preview"),
         ..cell(
@@ -560,11 +568,48 @@ const WORKFLOW_CELLS: [Cell; 5] = [
     // the user's where the commit doc goes is refused, naming it (the findings' §26).
     re_enters(
         "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
-        a_sub_task_provisioned!(Lead::Plant(Plant::File(
-            ".jigc/tasks/add-alpha/docs/commit:add-alpha.md"
-        ))),
+        a_sub_task_provisioned!(Lead::Plant(Plant::File(THE_COMMIT_DOC))),
         refuses(1, "commit:add-alpha"),
         at("WF1", Kind::Untracked),
+    ),
+    // `WF1`, a link or a directory where the commit doc is provisioned, and a file where its
+    // directory goes (after the review of the task `B9`, H4's lead): what stands there is
+    // refused as the user's file is.
+    re_enters(
+        "workflow-a-link-to-nothing-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToNothing(THE_COMMIT_DOC))),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::LinkToNothing),
+    ),
+    re_enters(
+        "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_COMMIT_DOC,
+            outside: false,
+        })),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::LinkInside),
+    ),
+    re_enters(
+        "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_COMMIT_DOC,
+            outside: true,
+        })),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::LinkOutside),
+    ),
+    re_enters(
+        "workflow-a-directory-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::Dir(THE_COMMIT_DOC))),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::DirForAFile),
+    ),
+    re_enters(
+        "workflow-a-file-in-the-place-of-the-commit-docs-directory",
+        a_sub_task_provisioned!(Lead::Plant(Plant::File(".jigc/tasks/add-alpha/docs"))),
+        refuses(1, "add-alpha"),
+        at("WF1", Kind::FileForADir),
     ),
     // `WF2`, the edge index.
     re_enters(

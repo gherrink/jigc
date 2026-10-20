@@ -1473,6 +1473,26 @@ ls "$REPO/.jigc/tasks/add-alpha/docs"                                           
 $JIGC doc set-field commit:add-alpha#type --value docs --task add-alpha; echo "exit=$?"            # write.non-reparseable · exit=1
 ```
 
+- *Its reach, since the fourth fix after the task's review* (2026-10-20, H4's lead): three cells more, the same outcome on both binaries — `workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned`, `…-a-link-to-a-file-outside-…` and `workflow-a-directory-where-the-commit-doc-is-provisioned`: exit 0, nothing provisioned, the link or the directory standing where the commit doc goes, taken for it. One check — `provision_on_first_entry` asks `path.exists()` (`crates/cli/src/start.rs`), which follows a link and does not ask what kind of entry stands there — and one fix closes the four.
+
+### `r1-workflow-re-entry-replaces-a-link-of-the-users-where-the-sub-tasks-commit-doc-goes`
+
+- *The cell.* `workflow-a-link-to-nothing-where-the-commit-doc-is-provisioned`: the state of the key above, with a link to nothing at `.jigc/tasks/add-alpha/docs/commit:add-alpha.md`, then the sub-task's first re-entry at its worktree.
+- *What it came to.* **Lost; also not the listed outcome**: exit 0, the link gone and jigc's commit doc and provenance manifest in the area — the same check as the key above, where it answers *absent*: `exists()` follows the link to nothing, finds no file, and the provisioning writes its own file over the user's entry. The same on the previous release.
+- *Held against.* The same sentences as the key above, and the human's ruling of 2026-10-20 on the rows' record's §6, entry 23 — *jigc never moves or overwrites a file to make room for its own*.
+- *Which is wrong, and why.* **The code.** A re-entry that reports success after writing over what stood at the place it provisions is the overwrite the ruling forbids; the link's bytes — its target — are in no file after it. *Robust*: the review's answer to its question Q-a — *first entry* is keyed on jigc's own provenance record, a commit doc that stands without its `created` entry refuses, naming the path, and the place is asked about without following a link — which closes this key and the one above together. The cell is listed refusing, exit 1, naming `commit:add-alpha`. A file where the commit doc's directory goes (`workflow-a-file-in-the-place-of-the-commit-docs-directory`) is refused at exit 1 and changes nothing on both binaries, in the OS's words (*"could not provision the commit doc for `add-alpha`: File exists (os error 17)"*) — no code and no route: a lead for the route catalog; the cell lists only the task's id, which a fix that names the path keeps.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+$JIGC milestone create "Ship it" && $JIGC milestone add-task ship-it "add alpha" && $JIGC milestone provision ship-it
+mkdir -p .jigc/tasks/add-alpha/docs && ln -s the-users-notes.md ".jigc/tasks/add-alpha/docs/commit:add-alpha.md"
+readlink ".jigc/tasks/add-alpha/docs/commit:add-alpha.md"                                          # the-users-notes.md
+(cd .jigc/worktrees/add-alpha && $JIGC workflow sub-task --task add-alpha >/dev/null; echo "exit=$?") # exit=0
+ls -l .jigc/tasks/add-alpha/docs                                                                   # commit:add-alpha.md a regular file, provenance.json; the link gone
+```
+
 ### What the other fifty show
 
 - **`start`, fifteen cells.** The orientation over `fresh` acts and writes nothing; a mint makes the task's area — base pin, intent, workflow, the commit doc, the provenance manifest, the staged snapshot — and nothing else; the orientation and the resume over a minted task rebuild the edge index and mint nothing, and a file of the user's under the index stands; a residual where the task is minted, a live task of the same id and a title that slugs to nothing are refused before a write. In every other prepared state the mint acts, or `bare` refuses.
