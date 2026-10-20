@@ -1665,6 +1665,48 @@ macro_rules! a_committed_decision {
 
 const SET_DOCS_ROOT: &[&str] = &["config", "set", "docs-root", "notes"];
 
+/// The roadmap's home, the methodology pack's `placement: { file: docs/roadmap.md }`, and
+/// its home once `placement-root` is `notes`.
+const THE_ROADMAP: &str = "docs/roadmap.md";
+const THE_ROADMAPS_NEW_HOME: &str = "notes/roadmap.md";
+/// A roadmap, as `committed-singletons` holds one.
+const A_ROADMAP: &str = "---\nschema-version: 1\n---\n\n# Roadmap\n\n## Milestones\n\n### M-Alpha  {#m-alpha}\n\n#### Proves\n\nThat the composed loop lands one task end to end.\n\n#### Decomposition\n\nIncrement 1 — the enumeration seam. Increment 2 — the fixture builder.\n";
+
+/// **A roadmap, committed** — written by hand and committed by the user: the doc a
+/// `placement-root` re-point strands, and moves (`fresh` composes the methodology pack).
+macro_rules! a_committed_roadmap {
+    ($($after:expr),* $(,)?) => {
+        &[
+            file(THE_ROADMAP, A_ROADMAP),
+            git(&["add", "--", "docs"]),
+            git(&["commit", "-q", "-m", "a roadmap"]),
+            $($after,)*
+        ]
+    };
+}
+
+const SET_PLACEMENT_ROOT: &[&str] = &["config", "set", "placement-root", "notes"];
+
+/// One cell of `jigc config set placement-root` — the other root knob, whose re-point
+/// moves through `relocate::relocate_stranded` where `docs-root`'s has a loop of its own
+/// (`design/storage.md` → *Placement*).
+const fn sets_the_placement_root(
+    name: &'static str,
+    leads: &'static [Lead],
+    listed: Listed,
+    aim: Option<Aim>,
+) -> Cell {
+    cell(
+        name,
+        &["config", "set"],
+        FRESH,
+        leads,
+        SET_PLACEMENT_ROOT,
+        listed,
+        aim,
+    )
+}
+
 /// One cell of `jigc config set`.
 const fn sets(
     name: &'static str,
@@ -1704,8 +1746,22 @@ const fn sets(
 ///   (`design/storage.md` → *Placement*) — and a file the user committed blocks it, as
 ///   `relocate`'s; **a decision jigc manages** there blocks it, as it blocks `relocate`
 ///   (`design/reconciliation.md` → *Relocation collisions*);
-/// - **a file of the user's beside the baseline** stays.
-const CONFIG_SET_CELLS: [Cell; 35] = [
+/// - **a file of the user's beside the baseline** stays;
+/// - **the other root knob, `placement-root`**, over a committed roadmap — its re-point
+///   moves through `relocate::relocate_stranded`, which *"a foreign file squatting the new
+///   home is parked"* names (`design/storage.md` → *Placement*), where `docs-root`'s moves
+///   through a loop of its own: the base cell; **at the roadmap's place** and **at its new
+///   home** every plant the decision's two places take, the mechanism being another; a file
+///   in the place of the roadmap's directory leaves a committed doc the re-point cannot
+///   move, and a root knob that cannot move a doc it strands refuses the re-point whole,
+///   naming it — the knob unchanged, as a link or a directory in the doc's place is refused
+///   (a doc of the re-point blocked while the knob lands is a doc left at a home the cascade
+///   no longer resolves); a file the user committed at the new home blocks it — the reading
+///   of the record's §6, entry 23, marked — and a roadmap jigc moved there blocks it. The
+///   manifest, the baseline and the staging are the knob's write and the move primitive's,
+///   one for both knobs, and their plants stand at `docs-root`'s cells (added 2026-10-20,
+///   after the review of the task `B8`, H5).
+const CONFIG_SET_CELLS: [Cell; 51] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -1953,6 +2009,144 @@ const CONFIG_SET_CELLS: [Cell; 35] = [
         a_committed_decision!(Lead::Plant(Plant::File(".jigc/state/notes.md"))),
         Listed::Acts,
         at("CS4", Kind::Untracked),
+    ),
+    // `placement-root`, over a committed roadmap.
+    sets_the_placement_root(
+        "config-set-placement-root-to-notes",
+        a_committed_roadmap!(),
+        Listed::Acts,
+        None,
+    ),
+    // `CS2`, at the roadmap's home.
+    sets_the_placement_root(
+        "config-set-placement-root-a-file-of-the-users-in-the-roadmaps-place",
+        a_committed_roadmap!(Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_ROADMAP)))),
+        Listed::Acts,
+        at("CS2", Kind::Untracked),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-nothing-in-the-roadmaps-place",
+        a_committed_roadmap!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToNothing(
+            THE_ROADMAP
+        )))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkToNothing),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-file-in-the-repository-in-the-roadmaps-place",
+        a_committed_roadmap!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: THE_ROADMAP,
+            outside: false
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkInside),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-file-outside-in-the-roadmaps-place",
+        a_committed_roadmap!(Lead::Plant(Plant::InPlaceOf(&Plant::LinkToAFile {
+            at: THE_ROADMAP,
+            outside: true
+        }))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::LinkOutside),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-directory-in-the-roadmaps-place",
+        a_committed_roadmap!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(THE_ROADMAP)))),
+        refuses(1, "store.home-not-regular-file"),
+        at("CS2", Kind::DirForAFile),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-file-in-the-place-of-the-roadmaps-directory",
+        a_committed_roadmap!(
+            Lead::MovedAway("repo/docs"),
+            Lead::Plant(Plant::File("docs"))
+        ),
+        refuses(1, THE_ROADMAP),
+        at("CS2", Kind::FileForADir),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-an-edit-to-the-roadmap",
+        a_committed_roadmap!(Lead::Plant(Plant::Edit(THE_ROADMAP))),
+        Listed::Acts,
+        at("CS2", Kind::EditAfter),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-change-staged-at-the-roadmap",
+        a_committed_roadmap!(Lead::Plant(Plant::Staged {
+            at: THE_ROADMAP,
+            kept: false
+        })),
+        Listed::Acts,
+        at("CS2", Kind::StagedThere),
+    ),
+    // `CS3`, at the roadmap's new home: what squats the new home is parked.
+    sets_the_placement_root(
+        "config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::File(THE_ROADMAPS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::Untracked),
+    ),
+    Cell {
+        marks: &[Mark::Silence(23)],
+        ..sets_the_placement_root(
+            "config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home",
+            a_committed_roadmap!(Lead::Plant(Plant::Committed(THE_ROADMAPS_NEW_HOME))),
+            refuses(1, "notes/roadmap.md"),
+            at("CS3", Kind::Committed),
+        )
+    },
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::LinkToNothing(THE_ROADMAPS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::LinkToNothing),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_ROADMAPS_NEW_HOME,
+            outside: false
+        })),
+        Listed::Acts,
+        at("CS3", Kind::LinkInside),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_ROADMAPS_NEW_HOME,
+            outside: true
+        })),
+        Listed::Acts,
+        at("CS3", Kind::LinkOutside),
+    ),
+    sets_the_placement_root(
+        "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
+        a_committed_roadmap!(Lead::Plant(Plant::Dir(THE_ROADMAPS_NEW_HOME))),
+        Listed::Acts,
+        at("CS3", Kind::DirForAFile),
+    ),
+    // A roadmap jigc manages at the new home — moved there by a re-point the user
+    // committed, the knob then taken out of the manifest by hand — and one committed at the
+    // old: no squatter, and nothing parked.
+    sets_the_placement_root(
+        "config-set-placement-root-a-roadmap-a-re-point-moved-to-the-roadmaps-new-home",
+        a_committed_roadmap!(
+            jigc(SET_PLACEMENT_ROOT),
+            git(&["add", "--", ".jigc/config"]),
+            git(&["commit", "-q", "-m", "the roadmap re-pointed"]),
+            git(&["rm", "-q", "--", THE_MANIFEST]),
+            file(THE_ROADMAP, A_ROADMAP),
+            git(&["add", "--", "docs"]),
+            git(&[
+                "commit",
+                "-q",
+                "-m",
+                "the placement root back, and a roadmap"
+            ]),
+        ),
+        refuses(1, "write.already-present"),
+        None,
     ),
     // The base cell in each other prepared state: the command as typed, with no lead.
     cell(

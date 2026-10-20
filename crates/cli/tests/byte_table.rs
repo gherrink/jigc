@@ -1921,6 +1921,7 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (&["relocate"], "RL4", &[Prepared::Of(State::Fresh)]),
     (&["config", "set"], "CS1", &[Prepared::Of(State::Fresh)]),
     (&["config", "set"], "CS2", &[Prepared::Of(State::Fresh)]),
+    (&["config", "set"], "CS3", &[Prepared::Of(State::Fresh)]),
     (&["config", "set"], "CS4", &[Prepared::Of(State::Fresh)]),
 ];
 
@@ -1943,11 +1944,6 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["relocate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
     (&["relocate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["relocate"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
-    (
-        &["config", "set"],
-        "CS3",
-        NOT_UNTIL_A_RE_POINT_PARKS_A_SQUATTER,
-    ),
     (&["config", "set"], "CS5", STAGED_UNDER_ANOTHER_LINE),
     (&["config", "set"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
     (&["config", "set"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
@@ -2340,12 +2336,6 @@ const NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER: &str = "a commit that is the config l
 const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed boundary that moves what git neither ignores nor holds out of a sub-task's \
      worktree into `.jigc/displaced/<sub-task-id>/`, as the human's ruling on entry 18 has it: on \
      this tree it takes the file with the checkout, and the cell of it is lost under its key";
-
-/// What would use `config set`'s `CS3`: a re-point that parks what squats a doc's new home,
-/// as its doc has it.
-const NOT_UNTIL_A_RE_POINT_PARKS_A_SQUATTER: &str = "a root knob's re-point that parks what squats a doc's new home under `.jigc/displaced/`, \
-     as `design/storage.md` has it: on this tree it refuses every squatter, and its cells are \
-     red under their key";
 
 /// What would use `migrate-corpus`'s `MG5`: nothing — the dry run's line names the docs it
 /// reads, which is what the plants of its spelling's cells are aimed at, and lets no
@@ -10344,6 +10334,13 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "config-set-a-directory-at-the-decisions-new-home",
         ],
     ),
+    // The other root knob, `placement-root` (after the review of the task `B8`, H5): the
+    // rows' record's §6, entry 23, at its second door — the cell marked.
+    (
+        "r1-config-set-parks-a-file-the-user-committed-at-a-new-home",
+        Classification::NotTheListedOutcome,
+        &["config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home"],
+    ),
 ];
 
 /// One entry of the expected-red list.
@@ -10769,7 +10766,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (665, 509, 156),
+        (681, 525, 156),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          seventy-one — fifty-nine in the gate, four of them its spelling `doc-only`, twelve \
          on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -10782,8 +10779,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
          the movers family's doors that commit seventy-six, `rename`'s thirty-seven and \
          `migrate-corpus`'s thirty-nine: sixty-four in the gate, twelve on demand — and its \
-         movers fifty-nine, `relocate`'s twenty-four and `config set`'s thirty-five: \
-         forty-seven in the gate, twelve on demand"
+         movers seventy-five, `relocate`'s twenty-four and `config set`'s fifty-one: \
+         sixty-three in the gate, twelve on demand"
     );
 }
 

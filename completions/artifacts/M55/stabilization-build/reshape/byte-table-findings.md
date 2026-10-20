@@ -1296,6 +1296,27 @@ mkdir -p notes/decisions && echo "the user's own notes" > notes/decisions/one-wa
 $JIGC config set docs-root notes 2>&1 | grep -o "fatal: destination exists"   # fatal: destination exists
 ```
 
+### `r1-config-set-parks-a-file-the-user-committed-at-a-new-home`
+
+*Added 2026-10-20, after the review of the task `B8` (its H5): every cell of `config set` had set `docs-root`, which refuses every squatter, so the root knob that parks one was met by no cell.*
+
+- *The cell.* `config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home`, marked with the rows' record's §6, entry 23.
+- *What it came to.* **Not the listed outcome**: exit 0, the user's committed `notes/roadmap.md` moved to `.jigc/displaced/roadmap.md` and named *"a foreign file at the new home, parked out of the way"*, its index entry replaced by the roadmap's moved in over it, the knob set — the next commit takes the user's file out of the tree. The same on the previous release.
+- *Held against.* The reading until entry 23 is ruled: the move is blocked, as `migrate-corpus` blocks a destination that holds *"anything else"* (`design/corpus-migration.md`); against it, `design/reconciliation.md`'s *"a committed-but-unmanaged squatter's tracked-path index slot is freed"* and `design/storage.md`'s *"delegating to `relocate::relocate_stranded` so a foreign file squatting the new home is parked"*.
+- *Which is wrong, and why.* **The docs that park it, and the product that follows them** — the human's to rule (entry 23); one mechanism with `r1-relocate-parks-a-file-the-user-committed-at-a-new-home`, `relocate::relocate_stranded`, at its second door. *Robust, for a root knob*: refuse the re-point whole, naming the new home, the knob unchanged — a re-point that blocked the one doc and let the knob land would leave it at a home the cascade no longer resolves; the door already refuses whole for every doc its sweep blocks (`config.repoint-failed`, *"the re-point was undone"*). No byte is lost: the file stands in `.jigc/displaced/` and in history.
+
+```zsh
+# from the repository's root; BIN the binary under test, by an absolute path
+root=$PWD
+rig=$("$root"/dev/jigc-rig --binary "$BIN" fresh) || exit; eval "$rig"; cd "$REPO"
+mkdir -p docs notes
+printf -- '---\nschema-version: 1\n---\n\n# Roadmap\n\n## Milestones\n' > docs/roadmap.md
+echo "the user's own notes" > notes/roadmap.md
+git add docs notes && git commit -qm "a roadmap, and notes of the user's"
+$JIGC config set placement-root notes; echo "exit=$?"   # exit=0 · notes/roadmap.md → .jigc/displaced/roadmap.md
+git status --porcelain                                  # D  docs/roadmap.md · M  notes/roadmap.md
+```
+
 ### What the other cells show
 
 - **`relocate`, twenty-three cells, eighteen that hold or refuse having changed nothing.** The stranded note moved into its home with a staged `git mv`, the baseline re-keyed; an edit and a change staged at it moved with it; a file of the user's in its place, or in the place of its directory, left alone; every squatter at the new home but a committed file parked under `.jigc/displaced/` — a directory with its files; the frozen doctype the catalog names refused (`relocate.frozen-doctype`); in every other prepared state no `note` doctype (`store.unknown-type`), or no project.

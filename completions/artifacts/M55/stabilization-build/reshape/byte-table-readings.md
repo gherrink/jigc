@@ -166,6 +166,7 @@ Two lists feed it: the plan's four questions ([byte-table-plan.md](byte-table-pl
 - *What the product does.* `relocate` parks it, at exit 0; `config set docs-root` refuses, as it refuses every squatter.
 - *Robust*: block that doc — the user's committed file stays in the tree; the reconciliation doc and `relocate` change.
 - *Until ruled*: the stricter reading — the move is blocked. *The cells* — `relocate-a-file-the-user-committed-at-the-notes-new-home`, red on both binaries, and `config-set-a-file-the-user-committed-at-the-decisions-new-home`, which refuses having changed nothing; each marked.
+- *[2026-10-20, after the review of the task `B8` (its H5): the other root knob parks it — `config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home`, a file the user committed at `notes/roadmap.md`, parked at exit 0 on both binaries, red under `r1-config-set-parks-a-file-the-user-committed-at-a-new-home`, marked. So `config set` refuses it by one knob and parks it by the other, and the cell of `docs-root` held only because that knob refuses every squatter. Under the robust answer for a root knob — refuse the re-point whole, naming the new home, the knob unchanged — the new cell, listed refusing with the new home, comes out *refuses, nothing changed*, and the cell of `docs-root` stays as it is.]*
 
 ## The marked cells
 
@@ -178,3 +179,4 @@ A line a mark of a cell, as the suite prints it. A cell with two marks has two l
 | silence 22 | `migrate-corpus-a-hook-that-rejects` |
 | silence 23 | `relocate-a-file-the-user-committed-at-the-notes-new-home` |
 | silence 23 | `config-set-a-file-the-user-committed-at-the-decisions-new-home` |
+| silence 23 | `config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home` |
