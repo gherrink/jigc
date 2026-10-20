@@ -808,9 +808,29 @@ pub struct Line {
 /// human's ruling of 2026-10-18 on the two spellings (`DECISIONS.md`).
 #[derive(Clone, Copy, Debug)]
 pub struct Spelling {
+    /// **What the spelling is, by its name** ([`Spelling::typed_in`]): a name that begins
+    /// with `--` is the flag a command types; `bare` is the leaf typed with no word after
+    /// it; any other name is a state the cell builds, which no command's words show.
     pub name: &'static str,
     /// The `id`s of the row's lines this spelling takes out of force.
     pub replaces: &'static [&'static str],
+}
+
+impl Spelling {
+    /// **Whether the command `argv` of `leaf` types this spelling** — `None` for a spelling
+    /// no command's words show ([`Spelling::name`]). A cell whose command types a spelling
+    /// is compared under it, and names it: the review of the task `B9`, its third hole —
+    /// the catalog's bare `jigc start` and `jigc workflow … --preview` were compared under
+    /// the plain spelling's lines.
+    pub fn typed_in(&self, leaf: &[&str], argv: &[&str]) -> Option<bool> {
+        if self.name == "bare" {
+            Some(argv == leaf)
+        } else if self.name.starts_with("--") {
+            Some(argv.contains(&self.name))
+        } else {
+            None
+        }
+    }
 }
 
 /// **A leaf's row**: the command as `cli::cli::VERB_KINDS` holds it, the flag its owner

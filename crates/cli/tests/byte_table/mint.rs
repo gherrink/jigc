@@ -386,7 +386,8 @@ const fn starts(
 
 /// **The cells of `jigc start`**, each listed from the row's doc:
 ///
-/// - **the leaf as the catalog types it**, bare `jigc start` over `fresh`, orients and acts;
+/// - **the leaf as the catalog types it**, bare `jigc start` over `fresh`, orients and acts,
+///   judged under the spelling it types, `bare`, so a mint there is outside its lines;
 ///   **the base cell** mints a task (`ST1`); **its two spellings** over a task minted
 ///   first — the orientation reports it, the resume recomposes it, each rebuilding the edge
 ///   index (`ST2`, `ST2, at a resume`) and minting nothing;
@@ -397,13 +398,16 @@ const fn starts(
 /// - **under the edge index**, a file of the user's stays, under each spelling that rebuilds
 ///   it.
 const START_CELLS: [Cell; 9] = [
-    starts(
-        "start-as-the-catalog-names-it",
-        &[],
-        &["start"],
-        Listed::Acts,
-        None,
-    ),
+    Cell {
+        spelling: Some("bare"),
+        ..starts(
+            "start-as-the-catalog-names-it",
+            &[],
+            &["start"],
+            Listed::Acts,
+            None,
+        )
+    },
     starts("start-a-task", &[], ADD_A_FILE, Listed::Acts, None),
     Cell {
         spelling: Some("bare"),
@@ -512,26 +516,29 @@ const fn re_enters(
 /// **The cells of `jigc workflow`**, each listed from the row's doc:
 ///
 /// - **the leaf as the catalog types it**, `--preview` of `single-task` over `fresh`, acts
-///   and writes nothing; **the base cell** re-enters the provisioned sub-task at its
-///   worktree — its commit doc and provenance manifest provisioned in its area (`WF1`), the
-///   edge index rebuilt (`WF2`); **its spelling** `--preview` over the same state writes
-///   nothing — of `single-task`, since a preview of the verb-routed `sub-task` is refused,
-///   `workflow.verb-routed`;
+///   and writes nothing, judged under the spelling it types, `--preview`; **the base
+///   cell** re-enters the provisioned sub-task at its worktree — its commit doc and
+///   provenance manifest provisioned in its area (`WF1`), the edge index rebuilt (`WF2`);
+///   **its spelling** `--preview` over the same state writes nothing — of `single-task`,
+///   since a preview of the verb-routed `sub-task` is refused, `workflow.verb-routed`;
 /// - **where the commit doc is provisioned**, a file of the user's there: the provisioning
 ///   makes what stood nowhere — *"mirroring how `jigc start` provisions at mint time"*, and
 ///   the mint *"keeps refusing rather than adopting the directory"* — so it refuses, naming
 ///   what stands there;
 /// - **under the edge index**, a file of the user's stays.
 const WORKFLOW_CELLS: [Cell; 5] = [
-    cell(
-        "workflow-as-the-catalog-names-it",
-        &["workflow"],
-        FRESH,
-        &[],
-        &["workflow", "single-task", "--preview"],
-        Listed::Acts,
-        None,
-    ),
+    Cell {
+        spelling: Some("--preview"),
+        ..cell(
+            "workflow-as-the-catalog-names-it",
+            &["workflow"],
+            FRESH,
+            &[],
+            &["workflow", "single-task", "--preview"],
+            Listed::Acts,
+            None,
+        )
+    },
     re_enters(
         "workflow-a-sub-task-re-entered",
         a_sub_task_provisioned!(),

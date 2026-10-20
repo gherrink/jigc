@@ -608,6 +608,40 @@ fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
             "names the spelling `{name}`, which its row does not have"
         ));
     }
+    // A cell is compared under the spelling its command types, and names it — the review of
+    // the task `B9`, its third hole ([`byte_cell::Spelling::typed_in`]).
+    let typed: Vec<&str> = row
+        .spellings
+        .iter()
+        .filter(|spelling| spelling.typed_in(row.leaf, cell.argv) == Some(true))
+        .map(|spelling| spelling.name)
+        .collect();
+    match (typed.as_slice(), cell.spelling) {
+        ([one], named) if named != Some(*one) => {
+            return Err(format!(
+                "types the spelling `{one}`, and is compared under {}",
+                named.map_or("the plain spelling".to_string(), |name| format!(
+                    "the spelling `{name}`"
+                ))
+            ));
+        }
+        ([_, _, ..], _) => {
+            return Err(format!(
+                "types the spellings `{}` at once, and a cell is compared under one",
+                typed.join("`, `")
+            ));
+        }
+        (_, Some(name))
+            if row.spellings.iter().any(|spelling| {
+                spelling.name == name && spelling.typed_in(row.leaf, cell.argv) == Some(false)
+            }) =>
+        {
+            return Err(format!(
+                "names the spelling `{name}`, which its command does not type"
+            ));
+        }
+        _ => {}
+    }
     let aim = match (layer, cell.aim, cell.spelling) {
         (Layer::Planted, Some(aim), _) => aim,
         (Layer::Planted, None, _) => {
@@ -622,6 +656,10 @@ fn answers(cell: &byte_cell::Cell, row: &Row) -> Result<Need, String> {
                     .map(|spelling| spelling.name)
                     .expect("the spelling is the row's"),
             ));
+        }
+        // The catalog's argv types a spelling: the refusing cell runs it, and names it.
+        (Layer::Refusing, None, Some(name)) if typed.contains(&name) => {
+            return Ok(Need::Refusing);
         }
         (Layer::Refusing | Layer::BaseElsewhere, None, Some(name)) => {
             return Err(format!(
@@ -8459,6 +8497,148 @@ fn a_cell_is_compared_under_the_spelling_it_names() {
     assert!(
         !unanswered.iter().any(|line| line.starts_with(plain_need)),
         "the plain spelling's cell answers it: {unanswered:#?}"
+    );
+}
+
+/// **A cell is judged under the spelling its command types** — the review of the task
+/// `B9`, its third hole. The catalog's cells of `jigc start` and `jigc workflow` type a
+/// second spelling of their leaf — bare `jigc start`, whose sentence is *"Never mints"*, and
+/// `jigc workflow single-task --preview`, which takes `WF1` and `WF2` out of force — and
+/// were compared under the plain spelling's lines: a bare `jigc start` that minted a task
+/// held under `ST1`, and a preview that rebuilt the edge index held under `WF2`. Each comes
+/// out *written outside its allowance* over that write, as the table holds it, where the
+/// same cell under the plain spelling holds — so the comparison is the spelling's and no
+/// other. And a cell whose command types a spelling of its row names it, in the refusing
+/// layer too; a cell that names one its command does not type, or types one and names
+/// another, answers nothing ([`answers`]).
+#[test]
+fn a_cell_is_judged_under_the_spelling_its_command_types() {
+    let cells = cells();
+    let catalog = |name: &str| {
+        *cells
+            .iter()
+            .find(|cell| cell.name == name)
+            .unwrap_or_else(|| panic!("the table has the cell `{name}`"))
+    };
+    let before = then(&sandbox(), |m| dir(m, "repo/.jigc"));
+    let minted = then(&before, |m| {
+        written(m, ".jigc/tasks/orient/base.json", "a pin\n");
+        written(
+            m,
+            ".jigc/tasks/orient/docs/commit:orient.md",
+            "# a commit\n",
+        );
+    });
+    let rebuilt = then(&before, |m| {
+        written(m, ".jigc/index/edges.json", "built against the tree\n");
+    });
+    for (row, name, spelling, after) in [
+        (
+            mint::START,
+            "start-as-the-catalog-names-it",
+            "bare",
+            &minted,
+        ),
+        (
+            mint::WORKFLOW,
+            "workflow-as-the-catalog-names-it",
+            "--preview",
+            &rebuilt,
+        ),
+    ] {
+        let cell = catalog(name);
+        assert_eq!(cell.layer(&row), Layer::Refusing, "`{name}`'s layer");
+        let judged = |spelling| {
+            Cell {
+                argv: cell.argv,
+                spelling,
+                ..Cell::of(row, &before, after)
+            }
+            .came_to()
+        };
+        let (plain, why) = judged(None);
+        assert_eq!(
+            plain,
+            Classification::Holds,
+            "the write is a line's under the plain spelling, so the arm can tell the two \
+             apart: {why:#?}"
+        );
+        let (class, why) = judged(cell.spelling);
+        assert_eq!(
+            class,
+            Classification::WrittenOutside,
+            "`{name}` types the spelling `{spelling}`, and is judged under it: {why:#?}"
+        );
+        assert_eq!(cell.spelling, Some(spelling), "`{name}` names its spelling");
+        assert_eq!(answers(cell, &row), Ok(Need::Refusing), "`{name}`");
+        // Typed and not named, the cell answers nothing.
+        let unnamed = byte_cell::Cell {
+            spelling: None,
+            ..*cell
+        };
+        let fault = answers(&unnamed, &row);
+        assert!(
+            fault.as_ref().is_err_and(|fault| fault.contains(&format!(
+                "types the spelling `{spelling}`, and is compared under the plain spelling"
+            ))),
+            "`{name}` with no spelling named: {fault:?}"
+        );
+    }
+    // Named and not typed: the base cell of `jigc start` minting under bare's name, and a
+    // re-entry of `jigc workflow` under `--preview`'s.
+    for (row, name, spelling) in [
+        (mint::START, "start-a-task", "bare"),
+        (
+            mint::WORKFLOW,
+            "workflow-a-sub-task-re-entered",
+            "--preview",
+        ),
+    ] {
+        let misnamed = byte_cell::Cell {
+            spelling: Some(spelling),
+            ..*catalog(name)
+        };
+        let fault = answers(&misnamed, &row);
+        assert!(
+            fault.as_ref().is_err_and(|fault| fault.contains(&format!(
+                "names the spelling `{spelling}`, which its command does not type"
+            ))),
+            "`{name}` under `{spelling}`: {fault:?}"
+        );
+    }
+    // Typed and another named: a resume of `jigc start` under bare's name.
+    let resume = byte_cell::Cell {
+        spelling: Some("bare"),
+        ..*catalog("start-the-task-again")
+    };
+    let fault = answers(&resume, &mint::START);
+    assert!(
+        fault.as_ref().is_err_and(|fault| fault
+            .contains("types the spelling `--task`, and is compared under the spelling `bare`")),
+        "{fault:?}"
+    );
+    // Two typed at once: `migrate-corpus --no-commit --dry-run`, under either name.
+    let both = byte_cell::Cell {
+        argv: &["migrate-corpus", "--no-commit", "--dry-run"],
+        spelling: Some("--dry-run"),
+        ..*catalog("migrate-corpus-the-catalog-names")
+    };
+    let fault = answers(&both, &movers::MIGRATE_CORPUS);
+    assert!(
+        fault.as_ref().is_err_and(|fault| fault.contains(
+            "types the spellings `--no-commit`, `--dry-run` at once, and a cell is compared \
+             under one"
+        )),
+        "{fault:?}"
+    );
+    // A spelling no command's words show is typed by none, and named by the cell's choice.
+    assert_eq!(
+        byte_cell::Spelling {
+            name: "doc-only",
+            replaces: &[],
+        }
+        .typed_in(&["task", "finalize"], &["task", "finalize", "a-task"]),
+        None
     );
 }
 
