@@ -1837,11 +1837,13 @@ const fn approves(
 /// - **a file of the user's in the source's place, a line added before the migration copies
 ///   the source in, a change staged there, and a source staged and never committed** —
 ///   bytes no commit holds, which the seam records or does not see — are refused at exit 3,
-///   naming the source, as the edit after the mint is; each marked: the retire
-///   *"deletes only a file git holds a copy of"* on the warrant that it *"destroys only a
-///   reviewed, in-repo, **git-recoverable** file"*. The doc's own test asks git for the
-///   path, not the bytes — the rows' record's §6, entry 24, whose *Until ruled* reading this
-///   listing is.
+///   naming the source, as the edit after the mint is: the retire *"deletes only a file git
+///   holds a copy of"* on the warrant that it *"destroys only a reviewed, in-repo,
+///   **git-recoverable** file"*. The doc's own test asks git for the path, not the bytes —
+///   the rows' record's §6, entry 24, **ruled by the human on 2026-10-20**: the retire
+///   deletes the source only where `HEAD` holds its bytes, both the working file's and the
+///   index's, and otherwise refuses before anything is promoted, naming the source. The
+///   listing is the ruling's; the cells, marked until it, are plain red under their key.
 const FINALIZE_APPROVED: [Cell; 7] = [
     approves(
         "task-finalize-approve-a-migration",
@@ -1849,27 +1851,21 @@ const FINALIZE_APPROVED: [Cell; 7] = [
         Listed::Acts,
         None,
     ),
-    Cell {
-        marks: &[Mark::Silence(24)],
-        ..approves(
-            "task-finalize-approve-a-file-of-the-users-in-the-sources-place",
-            a_migration!(
-                [Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_HISTORY)))],
-                []
-            ),
-            refuses(3, THE_HISTORY),
-            at("T10", Kind::Untracked),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(24)],
-        ..approves(
-            "task-finalize-approve-an-edit-to-the-source-before-the-migration",
-            a_migration!([Lead::Plant(Plant::Edit(THE_HISTORY))], []),
-            refuses(3, THE_HISTORY),
-            at("T10", Kind::EditBefore),
-        )
-    },
+    approves(
+        "task-finalize-approve-a-file-of-the-users-in-the-sources-place",
+        a_migration!(
+            [Lead::Plant(Plant::InPlaceOf(&Plant::File(THE_HISTORY)))],
+            []
+        ),
+        refuses(3, THE_HISTORY),
+        at("T10", Kind::Untracked),
+    ),
+    approves(
+        "task-finalize-approve-an-edit-to-the-source-before-the-migration",
+        a_migration!([Lead::Plant(Plant::Edit(THE_HISTORY))], []),
+        refuses(3, THE_HISTORY),
+        at("T10", Kind::EditBefore),
+    ),
     approves(
         "task-finalize-approve-an-edit-to-the-source-after-the-authoring",
         a_migration!([], [Lead::Plant(Plant::Edit(THE_HISTORY))]),
@@ -1888,49 +1884,43 @@ const FINALIZE_APPROVED: [Cell; 7] = [
         Listed::Acts,
         at("T10", Kind::EditAfter),
     ),
-    Cell {
-        marks: &[Mark::Silence(24)],
-        ..approves(
-            "task-finalize-approve-a-change-staged-at-the-source",
-            a_migration!(
-                [],
-                [Lead::Plant(Plant::Staged {
-                    at: THE_HISTORY,
-                    kept: false,
-                })]
-            ),
-            refuses(3, THE_HISTORY),
-            at("T10", Kind::StagedThere),
-        )
-    },
+    approves(
+        "task-finalize-approve-a-change-staged-at-the-source",
+        a_migration!(
+            [],
+            [Lead::Plant(Plant::Staged {
+                at: THE_HISTORY,
+                kept: false,
+            })]
+        ),
+        refuses(3, THE_HISTORY),
+        at("T10", Kind::StagedThere),
+    ),
     // The source `git add`ed and never committed, which `jigc migrate` admits on purpose —
     // M51's *"staged-only cell"*, priced there (`DECISIONS.md`): the retire's commit takes
     // the index's entry away, and the bytes it held with it.
-    Cell {
-        marks: &[Mark::Silence(24)],
-        ..approves(
-            "task-finalize-approve-a-source-staged-and-never-committed",
-            &[
-                Lead::Plant(Plant::Staged {
-                    at: THE_HISTORY,
-                    kept: true,
-                }),
-                jigc(&["migrate", THE_HISTORY, "--as", "changelog"]),
-                payload("changelog", THE_CHANGELOG),
-                jigc(&[
-                    "doc",
-                    "author",
-                    "changelog",
-                    "--from-file",
-                    "../outside/changelog",
-                    "--task",
-                    THE_MIGRATION,
-                ]),
-            ],
-            refuses(3, THE_HISTORY),
-            at("T10", Kind::StagedThere),
-        )
-    },
+    approves(
+        "task-finalize-approve-a-source-staged-and-never-committed",
+        &[
+            Lead::Plant(Plant::Staged {
+                at: THE_HISTORY,
+                kept: true,
+            }),
+            jigc(&["migrate", THE_HISTORY, "--as", "changelog"]),
+            payload("changelog", THE_CHANGELOG),
+            jigc(&[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "../outside/changelog",
+                "--task",
+                THE_MIGRATION,
+            ]),
+        ],
+        refuses(3, THE_HISTORY),
+        at("T10", Kind::StagedThere),
+    ),
 ];
 
 pub const CELLS: &[&[Cell]] = &[

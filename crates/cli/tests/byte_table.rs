@@ -11937,7 +11937,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     // A migration task's approved finalize retires the source where git holds a copy of its
     // path, and so deletes bytes no commit holds — a file of the user's in the source's place,
     // an edit made before the migration copied the source in, a change staged there, a
-    // source staged and never committed — at exit 0 (after the review of the task `B9`, H6; the rows' record's §6, entry 24). An
+    // source staged and never committed — at exit 0 (after the review of the task `B9`, H6; the rows' record's §6, entry 24, ruled by the human on 2026-10-20: the retire refuses where `HEAD` does not hold the bytes). An
     // edit after the mint is refused on this tree.
     (
         "r1-finalize-approve-retires-a-migration-source-whose-bytes-no-commit-holds",
