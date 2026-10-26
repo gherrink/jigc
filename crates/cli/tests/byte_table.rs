@@ -9762,6 +9762,88 @@ fn a_commit_lets_the_edge_indexs_file_go_at_any_door_and_nothing_beside_it() {
     assert_eq!(class, Classification::RefusedAndChanged, "{why:#?}");
 }
 
+/// **A line over one file's place lets no directory be made there** — the words *rebuilt*,
+/// *invalidated* and *laid out* let a directory be made where none stood, which is what a
+/// line over a directory's place needs (a cache's directory, made on the way); over one
+/// file's place — `C3`'s halves, the milestone's `base.json` and `tasks.json`, and `C4`, the
+/// edge index's stamped file — a directory made at the file's own path is neither the file
+/// rebuilt nor taken away, and no sentence of theirs lets it. Found by the task `B10`'s own
+/// self-check, after its record: the fence of `C4` held a directory put where the index's
+/// file **stood**, and not one made where **none** stood.
+///
+/// Red first: against the comparison as it stood, a commit that made a directory at the
+/// index's path where no index was built came out *holds* under `C4`, and a refusal that made
+/// one at a milestone's `base.json` *refuses, nothing changed* under `C3`.
+#[test]
+fn a_line_over_one_files_place_lets_no_directory_be_made_there() {
+    const INDEX: &str = "repo/.jigc/index/edges.json";
+    const AGAIN: &str = "readme, written again\n";
+    const COMMITS: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        line("K2", Allows::Commit(Holding::OnlyTheLines)),
+        AFTER_A_COMMIT,
+    ]);
+    // No index built before the command: the commit, and the file made, hold; a directory
+    // made at its path does not.
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/index");
+    });
+    let committed = then(&before, |m| {
+        put(m, "repo/README.md", AGAIN);
+        commit(m, "c1", &[(README, Some((0o100_644, AGAIN)))]);
+    });
+    let (class, why) = Cell::of(
+        COMMITS,
+        &before,
+        &then(&committed, |m| put(m, INDEX, "{\"stamp\":\"c1\"}\n")),
+    )
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::Holds,
+        "the index's file made: {why:#?}"
+    );
+    let (class, why) = Cell::of(COMMITS, &before, &then(&committed, |m| dir(m, INDEX))).came_to();
+    assert!(
+        class.is_red() && why.iter().any(|why| why.contains("no line covers it")),
+        "a directory made at the index's path: {class}, {why:#?}"
+    );
+    // `C3`, on a refusal: the milestone's cache file made holds; a directory at its path does
+    // not.
+    const BASE: &str = "repo/.jigc/milestones/m1/base.json";
+    const CACHES: Row = row(&ON_A_REFUSAL);
+    let before = then(&sandbox(), |m| {
+        for at in [
+            "repo/.jigc",
+            "repo/.jigc/milestones",
+            "repo/.jigc/milestones/m1",
+        ] {
+            dir(m, at);
+        }
+    });
+    let refused = |after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(CACHES, &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = refused(&then(&before, |m| put(m, BASE, "{}\n")));
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "the base pin's file made: {why:#?}"
+    );
+    let (class, why) = refused(&then(&before, |m| dir(m, BASE)));
+    assert_eq!(
+        class,
+        Classification::RefusedAndChanged,
+        "a directory made at the base pin's path: {why:#?}"
+    );
+}
+
 /// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
 /// expects — the exit code, and words the output holds — and one that refuses with another
 /// code, or without saying so, is *not the listed outcome*. A refusal that also changed

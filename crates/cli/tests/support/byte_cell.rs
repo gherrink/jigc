@@ -488,7 +488,8 @@ pub enum May {
     /// order.
     TakeOutOf,
     Removed,
-    /// Made, or written whole, as a regular file — or a directory made. **Nothing is
+    /// Made, or written whole, as a regular file — or, at a directory's place, a directory
+    /// made (never at one file's own path: the task `B10`). **Nothing is
     /// gone**: what a refusal may do to a cache, which is rebuilt and never taken away —
     /// and what a command that acts may do in a directory it writes into, where no
     /// sentence of its doc lets a file of that directory go.
@@ -2607,11 +2608,15 @@ impl<'a> Tally<'a> {
                     }
                     (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
                     (May::Rebuilt | May::Invalidated(_), _, Some(Entry::File { .. })) => true,
+                    // A directory made where none stood: a cache's directory, laid out or
+                    // on the way — at a directory's place, and never at one file's own path
+                    // (`C3`'s halves, `C4`), where it is neither the file rebuilt nor taken
+                    // away.
                     (
                         May::Rebuilt | May::Invalidated(_) | May::LaidOut,
                         None,
                         Some(Entry::Dir(_)),
-                    ) => true,
+                    ) => matches!(place, Where::Under(_)),
                     (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
                         in_repo(diff.path) == Some(stamped)
                     }
