@@ -1,0 +1,983 @@
+== excused ==
+command	line	the named binary	this tree's binary
+jigc setup	S1	94	60
+jigc setup	S2	96	61
+jigc setup	S3	120	73
+jigc setup	S4	223	139
+jigc setup	S5	93	60
+jigc setup	S6, written	0	60
+jigc setup	S6, removed	0	0
+jigc setup	S7	115	76
+jigc setup	S8	124	64
+jigc setup	S9	6	3
+jigc setup	S10	31	21
+jigc setup	S11	39	23
+jigc setup	S16, the file-state hashes	32	20
+jigc setup	S16, the edge index	0	0
+jigc setup	C1	0	0
+jigc setup	C2	26	22
+jigc setup	C3, the base pin	0	0
+jigc setup	C3, the task list	0	0
+jigc setup	C4	0	0
+jigc uninstall	U1	89	79
+jigc uninstall	U2	0	0
+jigc uninstall	U3	0	0
+jigc uninstall	U4	0	2
+jigc uninstall	U4, removed	19	16
+jigc uninstall	U5	0	0
+jigc uninstall	U6	0	0
+jigc uninstall	U9	0	0
+jigc uninstall	C1	0	0
+jigc uninstall	C2	0	0
+jigc uninstall	C3, the base pin	0	0
+jigc uninstall	C3, the task list	0	0
+jigc uninstall	C4	0	0
+jigc ingest	I1	6	6
+jigc ingest	I2	18	18
+jigc ingest	C1	0	0
+jigc ingest	C2	0	0
+jigc ingest	C3, the base pin	0	0
+jigc ingest	C3, the task list	0	0
+jigc ingest	C4	0	0
+jigc unmanage	X1	5	5
+jigc unmanage	X2	15	15
+jigc unmanage	C1	0	0
+jigc unmanage	C2	0	0
+jigc unmanage	C3, the base pin	0	0
+jigc unmanage	C3, the task list	0	0
+jigc unmanage	C4	0	0
+jigc task finalize	T1	147	147
+jigc task finalize	T2	5	2
+jigc task finalize	T3	0	0
+jigc task finalize	T3, the config	0	0
+jigc task finalize	T3, the config's ignore file	0	0
+jigc task finalize	T4	40	36
+jigc task finalize	T5, the edge index	59	53
+jigc task finalize	T5, the file-state hashes	67	61
+jigc task finalize	T6	372	349
+jigc task finalize	T6, moved aside	7	7
+jigc task finalize	T9	5	3
+jigc task finalize	T10	11	9
+jigc task finalize	C1	31	39
+jigc task finalize	C2	0	0
+jigc task finalize	C3, the base pin	0	0
+jigc task finalize	C3, the task list	0	0
+jigc task finalize	C4	0	0
+jigc task discard	A1	80	80
+jigc task discard	A5	30	30
+jigc task discard	A6	10	10
+jigc task discard	A7	10	10
+jigc task discard	C1	0	0
+jigc task discard	C2	0	0
+jigc task discard	C3, the base pin	0	0
+jigc task discard	C3, the task list	0	0
+jigc task discard	C4	0	0
+jigc milestone finalize	M1	47	59
+jigc milestone finalize	M2	33	12
+jigc milestone finalize	M3	137	130
+jigc milestone finalize	M4	21	21
+jigc milestone finalize	M3, the config	0	0
+jigc milestone finalize	M3, the config's ignore file	0	0
+jigc milestone finalize	M5	84	72
+jigc milestone finalize	M6, the worktrees	996	886
+jigc milestone finalize	M6, the sub-tasks' areas	400	320
+jigc milestone finalize	M6, moved aside	5	5
+jigc milestone finalize	M6, the milestone's area	140	120
+jigc milestone finalize	M6, the milestone's area moved aside	5	5
+jigc milestone finalize	M6, the worktrees moved aside	0	0
+jigc milestone finalize	M7	112	92
+jigc milestone finalize	M10, the edge index	29	25
+jigc milestone finalize	M10, the file-state hashes	28	24
+jigc milestone finalize	M11	0	0
+jigc milestone finalize	M12	4	4
+jigc milestone finalize	C1	3	3
+jigc milestone finalize	C2	0	0
+jigc milestone finalize	C3, the base pin	0	0
+jigc milestone finalize	C3, the task list	0	0
+jigc milestone finalize	C4	0	0
+jigc milestone create	MC1	50	50
+jigc milestone create	MC2	46	46
+jigc milestone create	MC3	15	10
+jigc milestone create	MC4	20	16
+jigc milestone create	C1	0	0
+jigc milestone create	C2	0	0
+jigc milestone create	C3, the base pin	0	0
+jigc milestone create	C3, the task list	0	0
+jigc milestone create	C4	0	0
+jigc milestone add-task	MA1	55	55
+jigc milestone add-task	MA2	12	12
+jigc milestone add-task	MA3	36	36
+jigc milestone add-task	MA4	12	12
+jigc milestone add-task	MA5	12	12
+jigc milestone add-task	MA6	0	0
+jigc milestone add-task	C1	0	0
+jigc milestone add-task	C2	0	0
+jigc milestone add-task	C3, the base pin	0	0
+jigc milestone add-task	C3, the task list	0	0
+jigc milestone add-task	C4	0	0
+jigc milestone add-from-spec	MS1	36	36
+jigc milestone add-from-spec	MS2	8	8
+jigc milestone add-from-spec	MS3	25	25
+jigc milestone add-from-spec	MS4	8	8
+jigc milestone add-from-spec	MS5	8	8
+jigc milestone add-from-spec	MS6	0	0
+jigc milestone add-from-spec	C1	0	0
+jigc milestone add-from-spec	C2	0	0
+jigc milestone add-from-spec	C3, the base pin	0	0
+jigc milestone add-from-spec	C3, the task list	0	0
+jigc milestone add-from-spec	C4	0	0
+jigc milestone provision	MP1	327	344
+jigc milestone provision	MP2	34	34
+jigc milestone provision	MP3	0	0
+jigc milestone provision	MP4	0	0
+jigc milestone provision	C1	0	0
+jigc milestone provision	C2	0	0
+jigc milestone provision	C3, the base pin	0	0
+jigc milestone provision	C3, the task list	0	0
+jigc milestone provision	C4	0	0
+jigc milestone execute	ME1	1	1
+jigc milestone execute	ME2	4	4
+jigc milestone execute	C1	0	0
+jigc milestone execute	C2	0	0
+jigc milestone execute	C3, the base pin	0	0
+jigc milestone execute	C3, the task list	0	0
+jigc milestone execute	C4	0	0
+jigc milestone join	MJ1	0	0
+jigc milestone join	MJ2	0	0
+jigc milestone join	MJ4, the edge index	1	1
+jigc milestone join	C1	3	3
+jigc milestone join	C2	0	0
+jigc milestone join	C3, the base pin	0	0
+jigc milestone join	C3, the task list	0	0
+jigc milestone join	C4	0	0
+jigc milestone discard	MD1	39	39
+jigc milestone discard	MD2	13	13
+jigc milestone discard	MD3	13	13
+jigc milestone discard	MD4, the milestone's area	66	66
+jigc milestone discard	MD4, the sub-tasks' areas	104	104
+jigc milestone discard	MD4, the worktrees	462	488
+jigc milestone discard	MD7	0	0
+jigc milestone discard	MD8	0	0
+jigc milestone discard	MD6	52	52
+jigc milestone discard	C1	0	0
+jigc milestone discard	C2	0	0
+jigc milestone discard	C3, the base pin	0	0
+jigc milestone discard	C3, the task list	0	0
+jigc milestone discard	C4	0	0
+jigc doc add-item	W1	17	17
+jigc doc add-item	W2	0	2
+jigc doc add-item	W3	0	0
+jigc doc add-item	C1	0	0
+jigc doc add-item	C2	0	0
+jigc doc add-item	C3, the base pin	0	0
+jigc doc add-item	C3, the task list	0	0
+jigc doc add-item	C4	0	0
+jigc doc remove-item	W1	9	9
+jigc doc remove-item	W2	0	2
+jigc doc remove-item	W3	0	0
+jigc doc remove-item	C1	0	0
+jigc doc remove-item	C2	0	0
+jigc doc remove-item	C3, the base pin	0	0
+jigc doc remove-item	C3, the task list	0	0
+jigc doc remove-item	C4	0	0
+jigc doc retitle-item	W1	9	9
+jigc doc retitle-item	W2	0	2
+jigc doc retitle-item	W3	0	0
+jigc doc retitle-item	C1	0	0
+jigc doc retitle-item	C2	0	0
+jigc doc retitle-item	C3, the base pin	0	0
+jigc doc retitle-item	C3, the task list	0	0
+jigc doc retitle-item	C4	0	0
+jigc doc rename	W1	34	34
+jigc doc rename	W2	0	2
+jigc doc rename	W3	0	0
+jigc doc rename	W4	7	7
+jigc doc rename	C1	0	0
+jigc doc rename	C2	0	0
+jigc doc rename	C3, the base pin	0	0
+jigc doc rename	C3, the task list	0	0
+jigc doc rename	C4	0	0
+jigc doc set-field	W1	13	13
+jigc doc set-field	W2	0	2
+jigc doc set-field	W3	0	0
+jigc doc set-field	C1	0	0
+jigc doc set-field	C2	0	0
+jigc doc set-field	C3, the base pin	0	0
+jigc doc set-field	C3, the task list	0	0
+jigc doc set-field	C4	0	0
+jigc doc set-slot	W1	13	13
+jigc doc set-slot	W2	0	2
+jigc doc set-slot	W3	0	0
+jigc doc set-slot	C1	0	0
+jigc doc set-slot	C2	0	0
+jigc doc set-slot	C3, the base pin	0	0
+jigc doc set-slot	C3, the task list	0	0
+jigc doc set-slot	C4	0	0
+jigc doc create	W1	42	42
+jigc doc create	W2	0	2
+jigc doc create	W3	0	0
+jigc doc create	C1	0	0
+jigc doc create	C2	0	0
+jigc doc create	C3, the base pin	0	0
+jigc doc create	C3, the task list	0	0
+jigc doc create	C4	0	0
+jigc doc author	W1	34	34
+jigc doc author	W2	0	2
+jigc doc author	W3	0	0
+jigc doc author	C1	0	0
+jigc doc author	C2	0	0
+jigc doc author	C3, the base pin	0	0
+jigc doc author	C3, the task list	0	0
+jigc doc author	C4	0	0
+jigc rename	RN1	27	27
+jigc rename	RN1, at its new home	24	24
+jigc rename	RN2	24	24
+jigc rename	RN3	9	9
+jigc rename	RN4	15	15
+jigc rename	RN5	10	10
+jigc rename	C1	79	79
+jigc rename	C2	1	1
+jigc rename	C3, the base pin	0	0
+jigc rename	C3, the task list	0	0
+jigc rename	C4	0	0
+jigc relocate	RL1	43	45
+jigc relocate	RL1, at its new home	40	40
+jigc relocate	RL2	0	0
+jigc relocate	RL4	40	38
+jigc relocate	C1	0	0
+jigc relocate	C2	0	0
+jigc relocate	C3, the base pin	0	0
+jigc relocate	C3, the task list	0	0
+jigc relocate	C4	0	0
+jigc migrate-corpus	MG1	29	29
+jigc migrate-corpus	MG1, from a prior home	9	9
+jigc migrate-corpus	MG2	2	2
+jigc migrate-corpus	MG3	19	19
+jigc migrate-corpus	MG4	0	0
+jigc migrate-corpus	MG5	0	0
+jigc migrate-corpus	C1	0	0
+jigc migrate-corpus	C2	0	0
+jigc migrate-corpus	C3, the base pin	0	0
+jigc migrate-corpus	C3, the task list	0	0
+jigc migrate-corpus	C4	0	0
+jigc config set	CS1	33	30
+jigc config set	CS2	43	45
+jigc config set	CS2, at its new home	43	43
+jigc config set	CS4	54	48
+jigc config set	CS5	0	0
+jigc config set	C1	0	0
+jigc config set	C2	0	0
+jigc config set	C3, the base pin	0	0
+jigc config set	C3, the task list	0	0
+jigc config set	C4	0	0
+jigc start	ST1	50	50
+jigc start	ST2	5	5
+jigc start	ST2, at a resume	5	5
+jigc start	C1	0	0
+jigc start	C2	0	0
+jigc start	C3, the base pin	0	0
+jigc start	C3, the task list	0	0
+jigc start	C4	0	0
+jigc workflow	WF1	22	22
+jigc workflow	WF2	27	27
+jigc workflow	C1	0	0
+jigc workflow	C2	0	0
+jigc workflow	C3, the base pin	0	0
+jigc workflow	C3, the task list	0	0
+jigc workflow	C4	0	0
+jigc migrate	MI1	84	84
+jigc migrate	MI2	0	0
+jigc migrate	C1	0	0
+jigc migrate	C2	0	0
+jigc migrate	C3, the base pin	0	0
+jigc migrate	C3, the task list	0	0
+jigc migrate	C4	0	0
+jigc task amend	AM1	66	66
+jigc task amend	C1	0	0
+jigc task amend	C2	0	0
+jigc task amend	C3, the base pin	0	0
+jigc task amend	C3, the task list	0	0
+jigc task amend	C4	0	0
+
+== needs ==
+command	needs a cell for	answered by
+jigc setup	refusing	setup-run-again-where-it-is-installed
+jigc setup	base	setup-in-a-repository-jigc-was-never-set-up-in
+jigc setup	base, in `fresh`	setup-after-a-task-landed
+jigc setup	base, in `committed-singletons`	setup-in-committed-singletons
+jigc setup	base, in `migrated`	setup-in-migrated
+jigc setup	base, in `refs-post-hoc`	setup-in-refs-post-hoc
+jigc setup	base, in `chatty-hooks`	setup-in-chatty-hooks
+jigc setup	base, in `vendored`	setup-in-vendored
+jigc setup	S1 × U	setup-head-unborn-a-file-at-the-bootstrap · setup-head-born-a-file-at-the-bootstrap
+jigc setup	S1 × T	setup-at-the-bootstrap-a-committed-file
+jigc setup	S1 × L, to nothing	setup-at-the-bootstrap-a-link-to-nothing
+jigc setup	S1 × L, to a file in the repository	setup-at-the-bootstrap-a-link-to-a-file-in-the-repository
+jigc setup	S1 × L, to a file outside it	setup-at-the-bootstrap-a-link-to-a-file-outside-it
+jigc setup	S1 × K, a directory in a file's place	setup-at-the-bootstrap-a-directory
+jigc setup	S1 × K, a file in a directory's place	setup-a-file-where-the-workbench-goes
+jigc setup	S1 × E, after the first write	setup-an-edit-to-its-bootstrap · setup-its-bootstrap-deleted
+jigc setup	S1 × S, where the command writes	setup-at-the-bootstrap-a-change-staged-and-not-in-the-tree
+jigc setup	S2 × L, to nothing	setup-at-the-host-file-a-link-to-nothing
+jigc setup	S2 × L, to a file in the repository	setup-at-the-host-file-a-link-to-a-file-in-the-repository
+jigc setup	S2 × L, to a file outside it	setup-at-the-host-file-a-link-to-a-file-outside-it
+jigc setup	S2 × K, a directory in a file's place	setup-at-the-host-file-a-directory
+jigc setup	S2 × K, a file in a directory's place	scheduled: the line's file stands at the repository's root, whose place no file can take
+jigc setup	S2 × E, after the first write	setup-an-edit-to-the-host-file · setup-the-host-file-deleted
+jigc setup	S2 × M	setup-at-the-host-file-the-users-own-file
+jigc setup	S2 × S, where the command writes	setup-at-the-host-file-a-change-staged-and-not-in-the-tree
+jigc setup	S3 × L, to nothing	setup-at-the-settings-a-link-to-nothing
+jigc setup	S3 × L, to a file in the repository	setup-at-the-settings-a-link-to-a-file-in-the-repository
+jigc setup	S3 × L, to a file outside it	setup-at-the-settings-a-link-to-a-file-outside-it
+jigc setup	S3 × K, a directory in a file's place	setup-at-the-settings-a-directory
+jigc setup	S3 × K, a file in a directory's place	setup-a-file-where-the-settings-directory-goes
+jigc setup	S3 × E, after the first write	setup-an-edit-to-the-settings-file · setup-the-settings-file-deleted
+jigc setup	S3 × M	setup-at-the-settings-the-users-own-file
+jigc setup	S3 × S, where the command writes	setup-at-the-settings-a-change-staged-and-not-in-the-tree
+jigc setup	S4 × U	setup-under-the-project-layer-an-untracked-file
+jigc setup	S5 × U	setup-at-the-stamp-an-untracked-file
+jigc setup	S5 × T	setup-at-the-stamp-a-committed-file
+jigc setup	S5 × L, to nothing	setup-at-the-stamp-a-link-to-nothing
+jigc setup	S5 × L, to a file in the repository	setup-at-the-stamp-a-link-to-a-file-in-the-repository
+jigc setup	S5 × L, to a file outside it	setup-at-the-stamp-a-link-to-a-file-outside-it
+jigc setup	S5 × K, a directory in a file's place	setup-at-the-stamp-a-directory
+jigc setup	S5 × K, a file in a directory's place	scheduled: the file at `.jigc` that stands in the place of the directory this line's file is written into is the same construction as the cell aimed at `S1`, whose place is under the same directory — before the port, a second cell of it
+jigc setup	S5 × E, after the first write	setup-an-edit-to-the-stamp · setup-the-stamp-deleted
+jigc setup	S5 × S, where the command writes	setup-at-the-stamp-a-change-staged-and-not-in-the-tree
+jigc setup	S6, written × U	setup-at-the-settings-record-an-untracked-file
+jigc setup	S6, written × T	setup-at-the-settings-record-a-committed-file
+jigc setup	S6, written × L, to nothing	setup-at-the-settings-record-a-link-to-nothing
+jigc setup	S6, written × L, to a file in the repository	setup-at-the-settings-record-a-link-to-a-file-in-the-repository
+jigc setup	S6, written × L, to a file outside it	setup-at-the-settings-record-a-link-to-a-file-outside-it
+jigc setup	S6, written × K, a directory in a file's place	setup-at-the-settings-record-a-directory
+jigc setup	S6, written × K, a file in a directory's place	scheduled: the file at `.jigc` that stands in the place of the directory this line's file is written into is the same construction as the cell aimed at `S1`, whose place is under the same directory — before the port, a second cell of it
+jigc setup	S6, written × E, after the first write	setup-an-edit-to-the-settings-record · setup-the-settings-record-deleted
+jigc setup	S6, written × S, where the command writes	setup-at-the-settings-record-a-change-staged-and-not-in-the-tree
+jigc setup	S7 × L, to nothing	setup-at-the-workbench-ignore-a-link-to-nothing
+jigc setup	S7 × L, to a file in the repository	setup-at-the-workbench-ignore-a-link-to-a-file-in-the-repository
+jigc setup	S7 × L, to a file outside it	setup-at-the-workbench-ignore-a-link-to-a-file-outside-it
+jigc setup	S7 × K, a directory in a file's place	setup-at-the-workbench-ignore-a-directory
+jigc setup	S7 × K, a file in a directory's place	scheduled: the file at `.jigc` that stands in the place of the directory this line's file is written into is the same construction as the cell aimed at `S1`, whose place is under the same directory — before the port, a second cell of it
+jigc setup	S7 × E, after the first write	setup-an-edit-to-the-workbench-ignore · setup-the-workbench-ignore-deleted
+jigc setup	S7 × M	setup-at-the-workbench-ignore-the-users-own-file
+jigc setup	S7 × S, where the command writes	setup-at-the-workbench-ignore-a-change-staged-and-not-in-the-tree
+jigc setup	S8 × U	setup-at-the-guide-an-untracked-file
+jigc setup	S8 × T	setup-at-the-guide-a-committed-file
+jigc setup	S8 × L, to nothing	setup-at-the-guide-a-link-to-nothing
+jigc setup	S8 × L, to a file in the repository	setup-at-the-guide-a-link-to-a-file-in-the-repository
+jigc setup	S8 × L, to a file outside it	setup-at-the-guide-a-link-to-a-file-outside-it
+jigc setup	S8 × K, a directory in a file's place	setup-at-the-guide-a-directory
+jigc setup	S8 × K, a file in a directory's place	setup-a-file-where-the-guides-directory-goes
+jigc setup	S8 × E, after the first write	setup-an-edit-to-the-guide · setup-the-guide-deleted
+jigc setup	S8 × S, where the command writes	setup-at-the-guide-a-change-staged-and-not-in-the-tree
+jigc setup	S9 × L, to nothing	setup-head-unborn-at-the-root-ignore-a-link-to-nothing
+jigc setup	S9 × L, to a file in the repository	setup-head-unborn-at-the-root-ignore-a-link-to-a-file-in-the-repository
+jigc setup	S9 × L, to a file outside it	setup-head-unborn-at-the-root-ignore-a-link-to-a-file-outside-it
+jigc setup	S9 × K, a directory in a file's place	setup-head-unborn-at-the-root-ignore-a-directory
+jigc setup	S9 × K, a file in a directory's place	scheduled: the line's file stands at the repository's root, whose place no file can take
+jigc setup	S9 × E, after the first write	setup-head-unborn-an-edit-to-the-root-ignore · setup-head-unborn-the-staged-root-ignore-deleted
+jigc setup	S9 × M	setup-head-unborn-at-the-root-ignore-the-users-own-file
+jigc setup	S9 × S, where the command writes	setup-head-unborn-at-the-root-ignore-a-change-staged-and-not-in-the-tree
+jigc setup	S10 × L, to nothing	setup-at-the-hook-a-link-to-nothing
+jigc setup	S10 × L, to a file in the repository	setup-at-the-hook-a-link-to-a-file-in-the-repository
+jigc setup	S10 × L, to a file outside it	setup-at-the-hook-a-link-to-a-file-outside-it
+jigc setup	S10 × K, a directory in a file's place	setup-at-the-hook-a-directory
+jigc setup	S10 × K, a file in a directory's place	setup-a-file-where-the-hooks-directory-goes
+jigc setup	S10 × M	setup-the-users-own-hook
+jigc setup	S11 × S, where it does not	setup-a-file-staged-elsewhere
+jigc setup	S11 × N	setup-a-file-staged-under-a-name-git-quotes
+jigc setup	S11 × H	setup-a-hook-that-rejects
+jigc uninstall	refusing	uninstall-run-as-typed
+jigc uninstall	base	uninstall-after-a-task-landed
+jigc uninstall	base, in `bare`	uninstall-in-a-repository-jigc-was-never-set-up-in
+jigc uninstall	base, in `committed-singletons`	uninstall-in-committed-singletons
+jigc uninstall	base, in `migrated`	uninstall-in-migrated
+jigc uninstall	base, in `refs-post-hoc`	uninstall-in-refs-post-hoc
+jigc uninstall	base, in `chatty-hooks`	uninstall-in-chatty-hooks
+jigc uninstall	base, in `vendored`	uninstall-in-vendored
+jigc uninstall	U1 × D	uninstall-a-foreign-file-under-logs · uninstall-a-foreign-file-under-state · uninstall-a-foreign-file-under-index · uninstall-a-foreign-file-at-the-workbench-root · uninstall-a-foreign-file-under-logs-by-consent
+jigc uninstall	U2 × E, after the first write	uninstall-the-host-file-deleted · uninstall-an-edit-to-the-host-file
+jigc uninstall	U2 × M	uninstall-a-line-of-the-users-in-the-host-file
+jigc uninstall	U2 × S, where the command writes	uninstall-a-change-staged-at-the-host-file-and-not-in-the-file
+jigc uninstall	U3 × E, after the first write	uninstall-the-settings-file-deleted · uninstall-an-edit-to-the-settings-file
+jigc uninstall	U3 × M	uninstall-a-line-of-the-users-in-the-settings-file
+jigc uninstall	U3 × S, where the command writes	uninstall-a-change-staged-at-the-settings-file-and-not-in-the-file
+jigc uninstall	U4 × M	uninstall-the-users-own-lines-in-the-hook
+jigc uninstall	U6 × W, its directory there	uninstall-the-users-own-worktree
+jigc uninstall	U6 × W, its directory moved away	uninstall-the-users-own-worktree-moved-away
+jigc uninstall	U9 × S, where it does not	uninstall-a-file-staged-elsewhere
+jigc uninstall	U9 × N	uninstall-a-file-staged-under-a-name-git-quotes
+jigc uninstall	U9 × H	uninstall-a-hook-that-rejects
+jigc ingest	refusing	ingest-with-nothing-to-adopt
+jigc ingest	base	ingest-a-foreign-decision-that-conforms
+jigc ingest	base, in `bare`	ingest-in-a-repository-jigc-was-never-set-up-in
+jigc ingest	base, in `committed-singletons`	ingest-in-committed-singletons
+jigc ingest	base, in `migrated`	ingest-in-migrated
+jigc ingest	base, in `refs-post-hoc`	ingest-in-refs-post-hoc
+jigc ingest	base, in `chatty-hooks`	ingest-in-chatty-hooks
+jigc ingest	base, in `vendored`	ingest-in-vendored
+jigc ingest	I1 × U	ingest-a-file-of-the-users-under-the-file-state-hashes
+jigc ingest	I2 × U	ingest-a-file-of-the-users-under-the-edge-index
+jigc unmanage	refusing	unmanage-a-path-never-managed
+jigc unmanage	base	unmanage-the-committed-vision
+jigc unmanage	base, in `bare`	unmanage-in-a-repository-jigc-was-never-set-up-in
+jigc unmanage	base, in `fresh`	unmanage-in-fresh
+jigc unmanage	base, in `migrated`	unmanage-in-migrated
+jigc unmanage	base, in `refs-post-hoc`	unmanage-in-refs-post-hoc
+jigc unmanage	base, in `chatty-hooks`	unmanage-in-chatty-hooks
+jigc unmanage	base, in `vendored`	unmanage-in-vendored
+jigc unmanage	X1 × U	unmanage-a-file-of-the-users-under-the-file-state-hashes
+jigc unmanage	X2 × U	unmanage-a-file-of-the-users-under-the-edge-index
+jigc task finalize	refusing	task-finalize-a-task-that-is-not-there
+jigc task finalize	base	task-finalize-a-created-decision · task-finalize-a-pending-config-delta
+jigc task finalize	base, in `bare`	task-finalize-a-created-decision-in-bare
+jigc task finalize	base, in `committed-singletons`	task-finalize-a-created-decision-in-committed-singletons
+jigc task finalize	base, in `migrated`	task-finalize-a-created-decision-in-migrated
+jigc task finalize	base, in `refs-post-hoc`	task-finalize-a-created-decision-in-refs-post-hoc
+jigc task finalize	base, in `chatty-hooks`	task-finalize-a-created-decision-in-chatty-hooks
+jigc task finalize	base, in `vendored`	task-finalize-a-created-decision-in-vendored
+jigc task finalize	base, as `doc-only`	task-finalize-doc-only-a-finding
+jigc task finalize	base, as `--approve`	task-finalize-approve-a-migration
+jigc task finalize	T1 × U	task-finalize-an-untracked-file-at-the-created-docs-home · task-finalize-an-untracked-file-at-the-created-docs-home-run-again
+jigc task finalize	T1 × T	task-finalize-a-committed-file-at-the-created-docs-home
+jigc task finalize	T1 × L, to nothing	task-finalize-a-link-to-nothing-at-the-created-decisions-home
+jigc task finalize	T1 × L, to a file in the repository	task-finalize-a-link-to-a-file-in-the-repository-at-the-created-docs-home
+jigc task finalize	T1 × L, to a file outside it	task-finalize-a-link-to-a-file-outside-at-the-created-docs-home
+jigc task finalize	T1 × K, a directory in a file's place	task-finalize-a-directory-at-the-created-docs-home
+jigc task finalize	T1 × K, a file in a directory's place	task-finalize-a-file-where-the-created-docs-directory-goes
+jigc task finalize	T1 × E, before the first write	task-finalize-a-hand-edit-before-the-first-write-to-another-part · task-finalize-a-hand-edit-before-the-first-write-to-the-same-part
+jigc task finalize	T1 × E, after the first write	task-finalize-no-baseline-a-hand-edit-after-the-first-write · task-finalize-a-baseline-a-hand-edit-after-the-first-write · task-finalize-a-hand-edit-after-the-first-write-run-again · task-finalize-the-vision-deleted-after-the-first-write
+jigc task finalize	T1 × S, where the command writes	task-finalize-a-file-staged-at-the-created-docs-home-and-not-in-the-tree · task-finalize-a-change-staged-at-the-updated-doc-and-not-in-the-file
+jigc task finalize	T2 × U	task-finalize-a-file-of-the-users-in-the-stamps-place
+jigc task finalize	T2 × T	task-finalize-a-file-the-user-committed-in-the-stamps-place
+jigc task finalize	T2 × L, to nothing	task-finalize-a-link-to-nothing-in-the-stamps-place
+jigc task finalize	T2 × L, to a file in the repository	task-finalize-a-link-to-a-file-in-the-repository-in-the-stamps-place
+jigc task finalize	T2 × L, to a file outside it	task-finalize-a-link-to-a-file-outside-in-the-stamps-place
+jigc task finalize	T2 × K, a directory in a file's place	task-finalize-a-directory-in-the-stamps-place
+jigc task finalize	T2 × K, a file in a directory's place	scheduled: the line's file stands in `.jigc/`, which holds the task's working area too: a file in that directory's place takes the task with it, and the finalize refuses `finalize.no-task` before it reaches the stamp — no state reaches the line
+jigc task finalize	T2 × E, after the first write	task-finalize-a-hand-edit-to-the-version-stamp · task-finalize-the-version-stamp-deleted
+jigc task finalize	T2 × S, where the command writes	task-finalize-a-change-staged-at-the-version-stamp-and-not-in-the-file
+jigc task finalize	T4 × S, where it does not	task-finalize-a-file-staged-elsewhere
+jigc task finalize	T4 × N	task-finalize-a-staged-file-whose-name-git-quotes
+jigc task finalize	T4 × H	task-finalize-a-hook-that-rejects
+jigc task finalize	T5, the edge index × U	task-finalize-a-foreign-file-under-the-edge-index
+jigc task finalize	T5, the file-state hashes × U	task-finalize-a-foreign-file-under-the-file-state-hashes
+jigc task finalize	T6 × D	task-finalize-a-foreign-file-at-the-task-areas-root · task-finalize-a-foreign-file-under-the-task-areas-docs
+jigc task finalize	T9 × S, where it does not, as `doc-only`	task-finalize-doc-only-a-file-staged-elsewhere
+jigc task finalize	T9 × N, as `doc-only`	task-finalize-doc-only-a-staged-file-whose-name-git-quotes
+jigc task finalize	T9 × H, as `doc-only`	task-finalize-doc-only-a-hook-that-rejects
+jigc task finalize	T10 × U, as `--approve`	task-finalize-approve-a-file-of-the-users-in-the-sources-place
+jigc task finalize	T10 × E, before the first write, as `--approve`	task-finalize-approve-an-edit-to-the-source-before-the-migration
+jigc task finalize	T10 × E, after the first write, as `--approve`	task-finalize-approve-an-edit-to-the-source-after-the-authoring · task-finalize-approve-the-source-deleted-after-the-authoring
+jigc task finalize	T10 × S, where the command writes, as `--approve`	task-finalize-approve-a-change-staged-at-the-source · task-finalize-approve-a-source-staged-and-never-committed
+jigc task discard	refusing	task-discard-a-task-that-is-not-there
+jigc task discard	base	task-discard-a-task-with-a-staged-decision · task-discard-a-task-with-a-staged-decision-under-the-consent · task-discard-a-sub-task-nobody-re-entered
+jigc task discard	base, in `bare`	task-discard-a-sub-task-nobody-re-entered-in-bare
+jigc task discard	base, in `committed-singletons`	task-discard-a-sub-task-nobody-re-entered-in-committed-singletons
+jigc task discard	base, in `migrated`	task-discard-a-sub-task-nobody-re-entered-in-migrated
+jigc task discard	base, in `refs-post-hoc`	task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc
+jigc task discard	base, in `chatty-hooks`	task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks
+jigc task discard	base, in `vendored`	task-discard-a-sub-task-nobody-re-entered-in-vendored
+jigc task discard	A1 × D	task-discard-a-foreign-file-at-the-task-areas-root · task-discard-a-foreign-file-at-the-task-areas-root-under-the-consent · task-discard-a-foreign-file-under-the-task-areas-docs · task-discard-a-foreign-file-under-the-task-areas-docs-under-the-consent
+jigc task discard	A5 × U	task-discard-a-file-of-the-users-in-the-records-place
+jigc task discard	A5 × T	task-discard-a-file-the-user-committed-in-the-records-place
+jigc task discard	A5 × L, to nothing	task-discard-a-link-to-nothing-in-the-records-place
+jigc task discard	A5 × L, to a file in the repository	task-discard-a-link-to-a-file-in-the-repository-in-the-records-place
+jigc task discard	A5 × L, to a file outside it	task-discard-a-link-to-a-file-outside-in-the-records-place
+jigc task discard	A5 × K, a directory in a file's place	task-discard-a-directory-in-the-records-place
+jigc task discard	A5 × K, a file in a directory's place	task-discard-a-file-in-the-place-of-the-records-directory
+jigc task discard	A5 × E, after the first write	task-discard-a-hand-edit-to-the-milestones-record · task-discard-the-milestones-record-deleted
+jigc task discard	A5 × S, where the command writes	task-discard-a-change-staged-at-the-record-and-not-in-the-file
+jigc task discard	A6 × S, where it does not	task-discard-a-file-staged-elsewhere
+jigc task discard	A6 × N	task-discard-a-staged-file-whose-name-git-quotes
+jigc task discard	A6 × H	task-discard-a-hook-that-rejects
+jigc task discard	A7 × U	task-discard-a-foreign-file-under-the-file-state-hashes
+jigc milestone finalize	refusing	milestone-finalize-a-milestone-that-is-not-there
+jigc milestone finalize	base	milestone-finalize-two-code-carrying-sub-tasks · milestone-finalize-two-reporters-findings · milestone-finalize-a-pending-config-delta · milestone-finalize-a-sub-tasks-area-gone-and-no-work-to-land
+jigc milestone finalize	base, in `bare`	milestone-finalize-land-it-in-bare
+jigc milestone finalize	base, in `committed-singletons`	milestone-finalize-land-it-in-committed-singletons
+jigc milestone finalize	base, in `migrated`	milestone-finalize-land-it-in-migrated
+jigc milestone finalize	base, in `refs-post-hoc`	milestone-finalize-land-it-in-refs-post-hoc
+jigc milestone finalize	base, in `chatty-hooks`	milestone-finalize-land-it-in-chatty-hooks
+jigc milestone finalize	base, in `vendored`	milestone-finalize-land-it-in-vendored
+jigc milestone finalize	base, as `squash: false`	milestone-finalize-squash-false-two-sub-tasks
+jigc milestone finalize	M1 × U	milestone-finalize-a-file-of-the-users-in-the-merged-set
+jigc milestone finalize	M2 × U	milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M2 × T	milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone
+jigc milestone finalize	M2 × L, to nothing	milestone-finalize-a-link-to-nothing-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M2 × L, to a file in the repository	milestone-finalize-a-link-to-a-file-in-the-repository-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M2 × L, to a file outside it	milestone-finalize-a-link-to-a-file-outside-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M2 × K, a directory in a file's place	milestone-finalize-a-directory-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M2 × K, a file in a directory's place	milestone-finalize-a-file-in-the-place-of-the-findings-directory
+jigc milestone finalize	M2 × E, before the first write	milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-another-part · milestone-finalize-a-hand-edit-before-a-sub-tasks-first-write-to-the-same-part
+jigc milestone finalize	M2 × E, after the first write	milestone-finalize-a-hand-edit-after-a-sub-tasks-first-write
+jigc milestone finalize	M2 × S, where the command writes	milestone-finalize-a-change-staged-at-the-id-the-join-numbered-onto
+jigc milestone finalize	M3 × S, where it does not	milestone-finalize-a-file-staged-elsewhere · milestone-finalize-a-file-staged-before-the-milestone
+jigc milestone finalize	M3 × N	milestone-finalize-a-staged-file-whose-name-git-quotes
+jigc milestone finalize	M3 × H	milestone-finalize-a-hook-that-rejects
+jigc milestone finalize	M4 × S, where it does not, as `squash: false`	milestone-finalize-squash-false-a-file-staged-elsewhere · milestone-finalize-squash-false-a-file-staged-before-the-milestone
+jigc milestone finalize	M4 × N, as `squash: false`	milestone-finalize-squash-false-a-staged-file-whose-name-git-quotes
+jigc milestone finalize	M4 × H, as `squash: false`	milestone-finalize-squash-false-a-hook-that-rejects
+jigc milestone finalize	M5 × U	milestone-finalize-a-file-of-the-users-in-the-records-place
+jigc milestone finalize	M5 × T	milestone-finalize-a-file-the-user-committed-in-the-records-place
+jigc milestone finalize	M5 × L, to nothing	milestone-finalize-a-link-to-nothing-in-the-records-place
+jigc milestone finalize	M5 × L, to a file in the repository	milestone-finalize-a-link-to-a-file-in-the-repository-in-the-records-place
+jigc milestone finalize	M5 × L, to a file outside it	milestone-finalize-a-link-to-a-file-outside-in-the-records-place
+jigc milestone finalize	M5 × K, a directory in a file's place	milestone-finalize-a-directory-in-the-records-place
+jigc milestone finalize	M5 × K, a file in a directory's place	milestone-finalize-a-file-in-the-place-of-the-records-directory
+jigc milestone finalize	M5 × E, after the first write	milestone-finalize-a-hand-edit-to-the-record
+jigc milestone finalize	M5 × S, where the command writes	milestone-finalize-a-change-staged-at-the-record
+jigc milestone finalize	M6, the worktrees × D	milestone-finalize-a-file-of-the-users-in-a-sub-tasks-worktree
+jigc milestone finalize	M6, the sub-tasks' areas × D	milestone-finalize-a-foreign-file-in-a-sub-tasks-area
+jigc milestone finalize	M6, the milestone's area × D	milestone-finalize-a-foreign-file-in-the-milestones-area
+jigc milestone finalize	M7 × W, its directory there	milestone-finalize-the-users-own-worktree
+jigc milestone finalize	M7 × W, its directory moved away	milestone-finalize-the-users-own-worktree-moved-away
+jigc milestone finalize	M10, the edge index × U	milestone-finalize-a-file-of-the-users-under-the-edge-index
+jigc milestone finalize	M10, the file-state hashes × U	milestone-finalize-a-file-of-the-users-beside-the-file-state-hashes
+jigc milestone finalize	M11 × U	scheduled: a file of the user's in the milestone's area at the boundary is the same construction as the cell aimed at `M6, the milestone's area` × D (`milestone-finalize-a-foreign-file-in-the-milestones-area`), whose plant stands where this line's re-seed rebuilds a cache — before the port, a second cell of it
+jigc milestone finalize	M12 × U	scheduled: a file of the user's in a sub-task's area at the boundary is the same construction as the cell aimed at `M6, the sub-tasks' areas` × D (`milestone-finalize-a-foreign-file-in-a-sub-tasks-area`): a plant in an area makes it stand, which the re-seed skips untouched — before the port, a second cell of it
+jigc milestone create	refusing	milestone-create-a-milestone-the-catalog-names
+jigc milestone create	base	milestone-create-ship-it
+jigc milestone create	base, in `bare`	milestone-create-ship-it-in-bare
+jigc milestone create	base, in `committed-singletons`	milestone-create-ship-it-in-committed-singletons
+jigc milestone create	base, in `migrated`	milestone-create-ship-it-in-migrated
+jigc milestone create	base, in `refs-post-hoc`	milestone-create-ship-it-in-refs-post-hoc
+jigc milestone create	base, in `chatty-hooks`	milestone-create-ship-it-in-chatty-hooks
+jigc milestone create	base, in `vendored`	milestone-create-ship-it-in-vendored
+jigc milestone create	MC1 × U	milestone-create-a-file-of-the-users-in-the-milestones-area
+jigc milestone create	MC2 × U	milestone-create-a-file-of-the-users-at-the-records-home
+jigc milestone create	MC2 × T	milestone-create-a-file-the-user-committed-at-the-records-home
+jigc milestone create	MC2 × L, to nothing	milestone-create-a-link-to-nothing-at-the-records-home
+jigc milestone create	MC2 × L, to a file in the repository	milestone-create-a-link-to-a-file-in-the-repository-at-the-records-home
+jigc milestone create	MC2 × L, to a file outside it	milestone-create-a-link-to-a-file-outside-at-the-records-home
+jigc milestone create	MC2 × K, a directory in a file's place	milestone-create-a-directory-at-the-records-home
+jigc milestone create	MC2 × K, a file in a directory's place	milestone-create-a-file-in-the-place-of-the-records-directory
+jigc milestone create	MC2 × E, after the first write	milestone-create-over-a-discarded-milestones-record-edited-by-hand
+jigc milestone create	MC2 × S, where the command writes	milestone-create-a-change-staged-at-the-records-home
+jigc milestone create	MC3 × S, where it does not	milestone-create-a-file-staged-elsewhere
+jigc milestone create	MC3 × N	milestone-create-a-staged-file-whose-name-git-quotes
+jigc milestone create	MC3 × H	milestone-create-a-hook-that-rejects
+jigc milestone create	MC4 × U	milestone-create-a-file-of-the-users-beside-the-baseline
+jigc milestone add-task	refusing	milestone-add-task-to-a-milestone-that-is-not-there
+jigc milestone add-task	base	milestone-add-task-do-the-thing
+jigc milestone add-task	base, in `bare`	milestone-add-task-do-the-thing-in-bare
+jigc milestone add-task	base, in `committed-singletons`	milestone-add-task-do-the-thing-in-committed-singletons
+jigc milestone add-task	base, in `migrated`	milestone-add-task-do-the-thing-in-migrated
+jigc milestone add-task	base, in `refs-post-hoc`	milestone-add-task-do-the-thing-in-refs-post-hoc
+jigc milestone add-task	base, in `chatty-hooks`	milestone-add-task-do-the-thing-in-chatty-hooks
+jigc milestone add-task	base, in `vendored`	milestone-add-task-do-the-thing-in-vendored
+jigc milestone add-task	MA1 × U	milestone-add-task-a-file-of-the-users-in-the-sub-tasks-area
+jigc milestone add-task	MA2 × U	milestone-add-task-a-file-of-the-users-in-the-milestones-area
+jigc milestone add-task	MA3 × L, to nothing	milestone-add-task-a-link-to-nothing-in-the-records-place
+jigc milestone add-task	MA3 × L, to a file in the repository	milestone-add-task-a-link-to-a-file-in-the-repository-in-the-records-place
+jigc milestone add-task	MA3 × L, to a file outside it	milestone-add-task-a-link-to-a-file-outside-in-the-records-place
+jigc milestone add-task	MA3 × K, a directory in a file's place	milestone-add-task-a-directory-in-the-records-place
+jigc milestone add-task	MA3 × K, a file in a directory's place	milestone-add-task-a-file-in-the-place-of-the-records-directory
+jigc milestone add-task	MA3 × E, after the first write	milestone-add-task-a-hand-edit-to-the-record · milestone-add-task-the-record-deleted
+jigc milestone add-task	MA3 × M	milestone-add-task-a-line-of-the-users-in-the-record
+jigc milestone add-task	MA3 × S, where the command writes	milestone-add-task-a-change-staged-at-the-record
+jigc milestone add-task	MA4 × S, where it does not	milestone-add-task-a-file-staged-elsewhere
+jigc milestone add-task	MA4 × N	milestone-add-task-a-staged-file-whose-name-git-quotes
+jigc milestone add-task	MA4 × H	milestone-add-task-a-hook-that-rejects
+jigc milestone add-task	MA5 × U	milestone-add-task-a-file-of-the-users-beside-the-baseline
+jigc milestone add-task	MA6 × U	milestone-add-task-a-file-of-the-users-in-a-first-sub-tasks-area
+jigc milestone add-from-spec	refusing	milestone-add-from-spec-to-a-milestone-that-is-not-there
+jigc milestone add-from-spec	base	milestone-add-from-spec-padding · milestone-add-from-spec-a-spec-of-two-criteria
+jigc milestone add-from-spec	base, in `bare`	milestone-add-from-spec-padding-in-bare
+jigc milestone add-from-spec	base, in `fresh`	milestone-add-from-spec-padding-in-fresh
+jigc milestone add-from-spec	base, in `committed-singletons`	milestone-add-from-spec-padding-in-committed-singletons
+jigc milestone add-from-spec	base, in `migrated`	milestone-add-from-spec-padding-in-migrated
+jigc milestone add-from-spec	base, in `refs-post-hoc`	milestone-add-from-spec-padding-in-refs-post-hoc
+jigc milestone add-from-spec	base, in `chatty-hooks`	milestone-add-from-spec-padding-in-chatty-hooks
+jigc milestone add-from-spec	MS1 × U	milestone-add-from-spec-a-file-of-the-users-in-the-sub-tasks-area
+jigc milestone add-from-spec	MS2 × U	milestone-add-from-spec-a-file-of-the-users-in-the-milestones-area
+jigc milestone add-from-spec	MS3 × L, to nothing	milestone-add-from-spec-a-link-to-nothing-in-the-records-place
+jigc milestone add-from-spec	MS3 × L, to a file in the repository	milestone-add-from-spec-a-link-to-a-file-in-the-repository-in-the-records-place
+jigc milestone add-from-spec	MS3 × L, to a file outside it	milestone-add-from-spec-a-link-to-a-file-outside-in-the-records-place
+jigc milestone add-from-spec	MS3 × K, a directory in a file's place	milestone-add-from-spec-a-directory-in-the-records-place
+jigc milestone add-from-spec	MS3 × K, a file in a directory's place	milestone-add-from-spec-a-file-in-the-place-of-the-records-directory
+jigc milestone add-from-spec	MS3 × E, after the first write	milestone-add-from-spec-a-hand-edit-to-the-record
+jigc milestone add-from-spec	MS3 × M	milestone-add-from-spec-a-line-of-the-users-in-the-record
+jigc milestone add-from-spec	MS3 × S, where the command writes	milestone-add-from-spec-a-change-staged-at-the-record
+jigc milestone add-from-spec	MS4 × S, where it does not	milestone-add-from-spec-a-file-staged-elsewhere
+jigc milestone add-from-spec	MS4 × N	milestone-add-from-spec-a-staged-file-whose-name-git-quotes
+jigc milestone add-from-spec	MS4 × H	milestone-add-from-spec-a-hook-that-rejects
+jigc milestone add-from-spec	MS5 × U	milestone-add-from-spec-a-file-of-the-users-beside-the-baseline
+jigc milestone add-from-spec	MS6 × U	milestone-add-from-spec-a-file-of-the-users-in-a-first-sub-tasks-area
+jigc milestone provision	refusing	milestone-provision-a-milestone-that-is-not-there
+jigc milestone provision	base	milestone-provision-two-sub-tasks · milestone-provision-a-sub-task-the-record-has-settled
+jigc milestone provision	base, in `bare`	milestone-provision-ship-it-in-bare
+jigc milestone provision	base, in `committed-singletons`	milestone-provision-ship-it-in-committed-singletons
+jigc milestone provision	base, in `migrated`	milestone-provision-ship-it-in-migrated
+jigc milestone provision	base, in `refs-post-hoc`	milestone-provision-ship-it-in-refs-post-hoc
+jigc milestone provision	base, in `chatty-hooks`	milestone-provision-ship-it-in-chatty-hooks
+jigc milestone provision	base, in `vendored`	milestone-provision-ship-it-in-vendored
+jigc milestone provision	MP1 × U	milestone-provision-a-file-of-the-users-where-a-worktree-goes
+jigc milestone provision	MP3 × U	milestone-provision-a-file-of-the-users-in-the-milestones-area
+jigc milestone provision	MP4 × U	milestone-provision-a-file-of-the-users-in-a-sub-tasks-area
+jigc milestone execute	refusing	milestone-execute-a-milestone-that-is-not-there
+jigc milestone execute	base	milestone-execute-two-provisioned-sub-tasks · milestone-execute-the-caches-task-list-gone · milestone-execute-a-sub-tasks-area-gone
+jigc milestone execute	base, in `bare`	milestone-execute-ship-it-in-bare
+jigc milestone execute	base, in `committed-singletons`	milestone-execute-ship-it-in-committed-singletons
+jigc milestone execute	base, in `migrated`	milestone-execute-ship-it-in-migrated
+jigc milestone execute	base, in `refs-post-hoc`	milestone-execute-ship-it-in-refs-post-hoc
+jigc milestone execute	base, in `chatty-hooks`	milestone-execute-ship-it-in-chatty-hooks
+jigc milestone execute	base, in `vendored`	milestone-execute-ship-it-in-vendored
+jigc milestone execute	ME1 × U	milestone-execute-a-file-of-the-users-in-the-milestones-area
+jigc milestone execute	ME2 × U	milestone-execute-a-file-of-the-users-in-a-sub-tasks-area
+jigc milestone join	refusing	milestone-join-a-milestone-that-is-not-there
+jigc milestone join	base	milestone-join-two-re-entered-sub-tasks · milestone-join-the-edge-index-gone
+jigc milestone join	base, in `bare`	milestone-join-ship-it-in-bare
+jigc milestone join	base, in `committed-singletons`	milestone-join-ship-it-in-committed-singletons
+jigc milestone join	base, in `migrated`	milestone-join-ship-it-in-migrated
+jigc milestone join	base, in `refs-post-hoc`	milestone-join-ship-it-in-refs-post-hoc
+jigc milestone join	base, in `chatty-hooks`	milestone-join-ship-it-in-chatty-hooks
+jigc milestone join	base, in `vendored`	milestone-join-ship-it-in-vendored
+jigc milestone join	MJ1 × U	milestone-join-a-file-of-the-users-in-the-milestones-area
+jigc milestone join	MJ2 × U	milestone-join-a-file-of-the-users-in-a-sub-tasks-area
+jigc milestone join	MJ4, the edge index × U	milestone-join-a-file-of-the-users-under-the-edge-index
+jigc milestone discard	refusing	milestone-discard-a-milestone-that-is-not-there
+jigc milestone discard	base	milestone-discard-ship-it
+jigc milestone discard	base, in `bare`	milestone-discard-ship-it-in-bare
+jigc milestone discard	base, in `committed-singletons`	milestone-discard-ship-it-in-committed-singletons
+jigc milestone discard	base, in `migrated`	milestone-discard-ship-it-in-migrated
+jigc milestone discard	base, in `refs-post-hoc`	milestone-discard-ship-it-in-refs-post-hoc
+jigc milestone discard	base, in `chatty-hooks`	milestone-discard-ship-it-in-chatty-hooks
+jigc milestone discard	base, in `vendored`	milestone-discard-ship-it-in-vendored
+jigc milestone discard	MD1 × U	milestone-discard-a-file-of-the-users-in-the-records-place
+jigc milestone discard	MD1 × T	milestone-discard-a-file-the-user-committed-in-the-records-place
+jigc milestone discard	MD1 × L, to nothing	milestone-discard-a-link-to-nothing-in-the-records-place
+jigc milestone discard	MD1 × L, to a file in the repository	milestone-discard-a-link-to-a-file-in-the-repository-in-the-records-place
+jigc milestone discard	MD1 × L, to a file outside it	milestone-discard-a-link-to-a-file-outside-in-the-records-place
+jigc milestone discard	MD1 × K, a directory in a file's place	milestone-discard-a-directory-in-the-records-place
+jigc milestone discard	MD1 × K, a file in a directory's place	milestone-discard-a-file-in-the-place-of-the-records-directory
+jigc milestone discard	MD1 × E, after the first write	milestone-discard-a-hand-edit-to-the-record · milestone-discard-the-record-deleted
+jigc milestone discard	MD1 × S, where the command writes	milestone-discard-a-change-staged-at-the-record
+jigc milestone discard	MD2 × S, where it does not	milestone-discard-a-file-staged-elsewhere
+jigc milestone discard	MD2 × N	milestone-discard-a-staged-file-whose-name-git-quotes
+jigc milestone discard	MD2 × H	milestone-discard-a-hook-that-rejects
+jigc milestone discard	MD3 × U	milestone-discard-a-file-of-the-users-beside-the-baseline
+jigc milestone discard	MD4, the milestone's area × D	milestone-discard-a-foreign-file-in-the-milestones-area · milestone-discard-a-foreign-file-in-the-milestones-area-by-consent
+jigc milestone discard	MD4, the sub-tasks' areas × D	milestone-discard-a-foreign-file-in-a-sub-tasks-area
+jigc milestone discard	MD4, the worktrees × D	milestone-discard-a-file-of-the-users-in-a-sub-tasks-worktree
+jigc milestone discard	MD7 × U	scheduled: a file of the user's in the milestone's area at `discard` is the same construction as the two cells aimed at `MD4, the milestone's area` × D (`milestone-discard-a-foreign-file-in-the-milestones-area`, and its consent), whose plant stands where this line's re-seed rebuilds a cache — before the port, a second cell of it
+jigc milestone discard	MD8 × U	scheduled: a file of the user's in a sub-task's area at `discard` is the same construction as the cell aimed at `MD4, the sub-tasks' areas` × D (`milestone-discard-a-foreign-file-in-a-sub-tasks-area`): a plant in an area makes it stand, which the re-seed skips untouched — before the port, a second cell of it
+jigc milestone discard	MD6 × W, its directory there	milestone-discard-the-users-own-worktree
+jigc milestone discard	MD6 × W, its directory moved away	milestone-discard-the-users-own-worktree-moved-away
+jigc doc add-item	refusing	doc-add-item-with-no-task
+jigc doc add-item	base	doc-add-a-milestone · doc-add-a-milestone-beside-a-sibling-task-that-stages-the-roadmap
+jigc doc add-item	base, in `bare`	doc-add-a-milestone-in-bare
+jigc doc add-item	base, in `fresh`	doc-add-a-milestone-in-fresh
+jigc doc add-item	base, in `migrated`	doc-add-a-milestone-in-migrated
+jigc doc add-item	base, in `refs-post-hoc`	doc-add-a-milestone-in-refs-post-hoc
+jigc doc add-item	base, in `chatty-hooks`	doc-add-a-milestone-in-chatty-hooks
+jigc doc add-item	base, in `vendored`	doc-add-a-milestone-in-vendored
+jigc doc add-item	W1 × U	doc-add-a-milestone-a-file-of-the-users-in-the-tasks-area
+jigc doc add-item	W2 × U	doc-add-a-milestone-no-baseline-a-file-of-the-users-under-the-state
+jigc doc add-item	W3 × U	doc-add-a-milestone-a-file-of-the-users-in-the-docs-place
+jigc doc add-item	W3 × L, to nothing	doc-add-a-milestone-a-link-to-nothing-in-the-docs-place
+jigc doc add-item	W3 × L, to a file in the repository	doc-add-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc add-item	W3 × L, to a file outside it	doc-add-a-milestone-a-link-to-a-file-outside-in-the-docs-place
+jigc doc add-item	W3 × K, a directory in a file's place	doc-add-a-milestone-a-directory-in-the-docs-place
+jigc doc add-item	W3 × E, before the first write	doc-add-a-milestone-the-doc-deleted-before-the-first-write
+jigc doc add-item	W3 × E, after the first write	doc-add-a-milestone-the-doc-deleted-after-the-first-write
+jigc doc remove-item	refusing	doc-remove-item-with-no-task
+jigc doc remove-item	base	doc-remove-a-milestone
+jigc doc remove-item	base, in `bare`	doc-remove-a-milestone-in-bare
+jigc doc remove-item	base, in `fresh`	doc-remove-a-milestone-in-fresh
+jigc doc remove-item	base, in `migrated`	doc-remove-a-milestone-in-migrated
+jigc doc remove-item	base, in `refs-post-hoc`	doc-remove-a-milestone-in-refs-post-hoc
+jigc doc remove-item	base, in `chatty-hooks`	doc-remove-a-milestone-in-chatty-hooks
+jigc doc remove-item	base, in `vendored`	doc-remove-a-milestone-in-vendored
+jigc doc remove-item	W1 × U	doc-remove-a-milestone-a-file-of-the-users-in-the-tasks-area
+jigc doc remove-item	W2 × U	doc-remove-a-milestone-no-baseline-a-file-of-the-users-under-the-state
+jigc doc remove-item	W3 × U	doc-remove-a-milestone-a-file-of-the-users-in-the-docs-place
+jigc doc remove-item	W3 × L, to nothing	doc-remove-a-milestone-a-link-to-nothing-in-the-docs-place
+jigc doc remove-item	W3 × L, to a file in the repository	doc-remove-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc remove-item	W3 × L, to a file outside it	doc-remove-a-milestone-a-link-to-a-file-outside-in-the-docs-place
+jigc doc remove-item	W3 × K, a directory in a file's place	doc-remove-a-milestone-a-directory-in-the-docs-place
+jigc doc remove-item	W3 × E, before the first write	doc-remove-a-milestone-the-doc-deleted-before-the-first-write
+jigc doc remove-item	W3 × E, after the first write	doc-remove-a-milestone-the-doc-deleted-after-the-first-write
+jigc doc retitle-item	refusing	doc-retitle-item-with-no-task
+jigc doc retitle-item	base	doc-retitle-a-milestone
+jigc doc retitle-item	base, in `bare`	doc-retitle-a-milestone-in-bare
+jigc doc retitle-item	base, in `fresh`	doc-retitle-a-milestone-in-fresh
+jigc doc retitle-item	base, in `migrated`	doc-retitle-a-milestone-in-migrated
+jigc doc retitle-item	base, in `refs-post-hoc`	doc-retitle-a-milestone-in-refs-post-hoc
+jigc doc retitle-item	base, in `chatty-hooks`	doc-retitle-a-milestone-in-chatty-hooks
+jigc doc retitle-item	base, in `vendored`	doc-retitle-a-milestone-in-vendored
+jigc doc retitle-item	W1 × U	doc-retitle-a-milestone-a-file-of-the-users-in-the-tasks-area
+jigc doc retitle-item	W2 × U	doc-retitle-a-milestone-no-baseline-a-file-of-the-users-under-the-state
+jigc doc retitle-item	W3 × U	doc-retitle-a-milestone-a-file-of-the-users-in-the-docs-place
+jigc doc retitle-item	W3 × L, to nothing	doc-retitle-a-milestone-a-link-to-nothing-in-the-docs-place
+jigc doc retitle-item	W3 × L, to a file in the repository	doc-retitle-a-milestone-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc retitle-item	W3 × L, to a file outside it	doc-retitle-a-milestone-a-link-to-a-file-outside-in-the-docs-place
+jigc doc retitle-item	W3 × K, a directory in a file's place	doc-retitle-a-milestone-a-directory-in-the-docs-place
+jigc doc retitle-item	W3 × E, before the first write	doc-retitle-a-milestone-the-doc-deleted-before-the-first-write
+jigc doc retitle-item	W3 × E, after the first write	doc-retitle-a-milestone-the-doc-deleted-after-the-first-write
+jigc doc rename	refusing	doc-rename-with-no-task
+jigc doc rename	base	doc-rename-a-decision-the-task-made
+jigc doc rename	base, in `bare`	doc-rename-a-decision-the-task-made-in-bare
+jigc doc rename	base, in `fresh`	doc-rename-a-decision-the-task-made-in-fresh
+jigc doc rename	base, in `migrated`	doc-rename-a-decision-the-task-made-in-migrated
+jigc doc rename	base, in `refs-post-hoc`	doc-rename-a-decision-the-task-made-in-refs-post-hoc
+jigc doc rename	base, in `chatty-hooks`	doc-rename-a-decision-the-task-made-in-chatty-hooks
+jigc doc rename	base, in `vendored`	doc-rename-a-decision-the-task-made-in-vendored
+jigc doc rename	W1 × U	doc-rename-a-decision-the-task-made-a-file-of-the-users-in-the-tasks-area
+jigc doc rename	W2 × U	doc-retitle-a-committed-decision-no-baseline-a-file-of-the-users-under-the-state
+jigc doc rename	W3 × U	doc-retitle-a-committed-decision-a-file-of-the-users-in-the-docs-place
+jigc doc rename	W3 × L, to nothing	doc-retitle-a-committed-decision-a-link-to-nothing-in-the-docs-place
+jigc doc rename	W3 × L, to a file in the repository	doc-retitle-a-committed-decision-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc rename	W3 × L, to a file outside it	doc-retitle-a-committed-decision-a-link-to-a-file-outside-in-the-docs-place
+jigc doc rename	W3 × K, a directory in a file's place	doc-retitle-a-committed-decision-a-directory-in-the-docs-place
+jigc doc rename	W3 × E, before the first write	doc-retitle-a-committed-decision-the-doc-deleted-before-the-first-write
+jigc doc rename	W3 × E, after the first write	doc-retitle-a-committed-decision-the-doc-deleted-after-the-first-write
+jigc doc set-field	refusing	doc-set-field-with-no-task
+jigc doc set-field	base	doc-set-a-releases-link
+jigc doc set-field	base, in `bare`	doc-set-a-releases-link-in-bare
+jigc doc set-field	base, in `fresh`	doc-set-a-releases-link-in-fresh
+jigc doc set-field	base, in `migrated`	doc-set-a-releases-link-in-migrated
+jigc doc set-field	base, in `refs-post-hoc`	doc-set-a-releases-link-in-refs-post-hoc
+jigc doc set-field	base, in `chatty-hooks`	doc-set-a-releases-link-in-chatty-hooks
+jigc doc set-field	base, in `vendored`	doc-set-a-releases-link-in-vendored
+jigc doc set-field	W1 × U	doc-set-a-releases-link-a-file-of-the-users-in-the-tasks-area
+jigc doc set-field	W2 × U	doc-set-a-releases-link-no-baseline-a-file-of-the-users-under-the-state
+jigc doc set-field	W3 × U	doc-set-a-releases-link-a-file-of-the-users-in-the-docs-place
+jigc doc set-field	W3 × L, to nothing	doc-set-a-releases-link-a-link-to-nothing-in-the-docs-place
+jigc doc set-field	W3 × L, to a file in the repository	doc-set-a-releases-link-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc set-field	W3 × L, to a file outside it	doc-set-a-releases-link-a-link-to-a-file-outside-in-the-docs-place
+jigc doc set-field	W3 × K, a directory in a file's place	doc-set-a-releases-link-a-directory-in-the-docs-place
+jigc doc set-field	W3 × E, before the first write	doc-set-a-releases-link-the-doc-deleted-before-the-first-write
+jigc doc set-field	W3 × E, after the first write	doc-set-a-releases-link-the-doc-deleted-after-the-first-write
+jigc doc set-slot	refusing	doc-set-slot-with-no-task
+jigc doc set-slot	base	doc-set-what-a-milestone-proves
+jigc doc set-slot	base, in `bare`	doc-set-what-a-milestone-proves-in-bare
+jigc doc set-slot	base, in `fresh`	doc-set-what-a-milestone-proves-in-fresh
+jigc doc set-slot	base, in `migrated`	doc-set-what-a-milestone-proves-in-migrated
+jigc doc set-slot	base, in `refs-post-hoc`	doc-set-what-a-milestone-proves-in-refs-post-hoc
+jigc doc set-slot	base, in `chatty-hooks`	doc-set-what-a-milestone-proves-in-chatty-hooks
+jigc doc set-slot	base, in `vendored`	doc-set-what-a-milestone-proves-in-vendored
+jigc doc set-slot	W1 × U	doc-set-what-a-milestone-proves-a-file-of-the-users-in-the-tasks-area
+jigc doc set-slot	W2 × U	doc-set-what-a-milestone-proves-no-baseline-a-file-of-the-users-under-the-state
+jigc doc set-slot	W3 × U	doc-set-what-a-milestone-proves-a-file-of-the-users-in-the-docs-place
+jigc doc set-slot	W3 × L, to nothing	doc-set-what-a-milestone-proves-a-link-to-nothing-in-the-docs-place
+jigc doc set-slot	W3 × L, to a file in the repository	doc-set-what-a-milestone-proves-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc set-slot	W3 × L, to a file outside it	doc-set-what-a-milestone-proves-a-link-to-a-file-outside-in-the-docs-place
+jigc doc set-slot	W3 × K, a directory in a file's place	doc-set-what-a-milestone-proves-a-directory-in-the-docs-place
+jigc doc set-slot	W3 × E, before the first write	doc-set-what-a-milestone-proves-the-doc-deleted-before-the-first-write · doc-set-the-visions-open-questions-a-hand-edit-to-the-same-part-before-the-first-write · doc-set-the-visions-thesis-a-hand-edit-to-another-part-before-the-first-write
+jigc doc set-slot	W3 × E, after the first write	doc-set-what-a-milestone-proves-the-doc-deleted-after-the-first-write
+jigc doc create	refusing	doc-create-with-no-task
+jigc doc create	base	doc-create-the-vision
+jigc doc create	base, in `bare`	doc-create-the-vision-in-bare
+jigc doc create	base, in `fresh`	doc-create-the-vision-in-fresh
+jigc doc create	base, in `migrated`	doc-create-the-vision-in-migrated
+jigc doc create	base, in `refs-post-hoc`	doc-create-the-vision-in-refs-post-hoc
+jigc doc create	base, in `chatty-hooks`	doc-create-the-vision-in-chatty-hooks
+jigc doc create	base, in `vendored`	doc-create-the-vision-in-vendored
+jigc doc create	W1 × U	doc-create-the-vision-a-file-of-the-users-in-the-tasks-area
+jigc doc create	W2 × U	doc-create-the-vision-no-baseline-a-file-of-the-users-under-the-state
+jigc doc create	W3 × U	doc-create-the-vision-a-file-of-the-users-in-the-docs-place
+jigc doc create	W3 × L, to nothing	doc-create-the-vision-a-link-to-nothing-in-the-docs-place
+jigc doc create	W3 × L, to a file in the repository	doc-create-the-vision-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc create	W3 × L, to a file outside it	doc-create-the-vision-a-link-to-a-file-outside-in-the-docs-place
+jigc doc create	W3 × K, a directory in a file's place	doc-create-the-vision-a-directory-in-the-docs-place
+jigc doc create	W3 × E, before the first write	doc-create-the-vision-the-doc-deleted-before-the-first-write
+jigc doc create	W3 × E, after the first write	doc-create-the-vision-the-doc-deleted-after-the-first-write
+jigc doc author	refusing	doc-author-with-no-task
+jigc doc author	base	doc-author-the-vision
+jigc doc author	base, in `bare`	doc-author-the-vision-in-bare
+jigc doc author	base, in `fresh`	doc-author-the-vision-in-fresh
+jigc doc author	base, in `migrated`	doc-author-the-vision-in-migrated
+jigc doc author	base, in `refs-post-hoc`	doc-author-the-vision-in-refs-post-hoc
+jigc doc author	base, in `chatty-hooks`	doc-author-the-vision-in-chatty-hooks
+jigc doc author	base, in `vendored`	doc-author-the-vision-in-vendored
+jigc doc author	W1 × U	doc-author-the-vision-a-file-of-the-users-in-the-tasks-area
+jigc doc author	W2 × U	doc-author-the-vision-no-baseline-a-file-of-the-users-under-the-state
+jigc doc author	W3 × U	doc-author-the-vision-a-file-of-the-users-in-the-docs-place
+jigc doc author	W3 × L, to nothing	doc-author-the-vision-a-link-to-nothing-in-the-docs-place
+jigc doc author	W3 × L, to a file in the repository	doc-author-the-vision-a-link-to-a-file-in-the-repository-in-the-docs-place
+jigc doc author	W3 × L, to a file outside it	doc-author-the-vision-a-link-to-a-file-outside-in-the-docs-place
+jigc doc author	W3 × K, a directory in a file's place	doc-author-the-vision-a-directory-in-the-docs-place
+jigc doc author	W3 × E, before the first write	doc-author-the-vision-the-doc-deleted-before-the-first-write
+jigc doc author	W3 × E, after the first write	doc-author-the-vision-the-doc-deleted-after-the-first-write
+jigc rename	refusing	rename-a-decision-the-catalog-names
+jigc rename	base	rename-one-way-to-single-way · rename-one-way-retitled-in-place · rename-one-way-with-the-edge-index-built
+jigc rename	base, in `bare`	rename-one-way-in-bare
+jigc rename	base, in `committed-singletons`	rename-one-way-in-committed-singletons
+jigc rename	base, in `migrated`	rename-one-way-in-migrated
+jigc rename	base, in `refs-post-hoc`	rename-one-way-in-refs-post-hoc
+jigc rename	base, in `chatty-hooks`	rename-one-way-in-chatty-hooks
+jigc rename	base, in `vendored`	rename-one-way-in-vendored
+jigc rename	RN1 × U	rename-a-file-of-the-users-in-the-decisions-place
+jigc rename	RN1 × L, to nothing	rename-a-link-to-nothing-in-the-decisions-place
+jigc rename	RN1 × L, to a file in the repository	rename-a-link-to-a-file-in-the-repository-in-the-decisions-place
+jigc rename	RN1 × L, to a file outside it	rename-a-link-to-a-file-outside-in-the-decisions-place
+jigc rename	RN1 × K, a directory in a file's place	rename-a-directory-in-the-decisions-place
+jigc rename	RN1 × K, a file in a directory's place	rename-a-file-in-the-place-of-the-decisions-directory
+jigc rename	RN1 × E, after the first write	rename-an-edit-to-the-decision
+jigc rename	RN1 × S, where the command writes	rename-a-change-staged-at-the-decision
+jigc rename	RN1, at its new home × U	rename-a-file-of-the-users-at-the-decisions-new-home
+jigc rename	RN1, at its new home × T	rename-a-file-the-user-committed-at-the-decisions-new-home
+jigc rename	RN1, at its new home × L, to nothing	rename-a-link-to-nothing-at-the-decisions-new-home
+jigc rename	RN1, at its new home × L, to a file in the repository	rename-a-link-to-a-file-in-the-repository-at-the-decisions-new-home
+jigc rename	RN1, at its new home × L, to a file outside it	rename-a-link-to-a-file-outside-at-the-decisions-new-home
+jigc rename	RN1, at its new home × K, a directory in a file's place	rename-a-directory-at-the-decisions-new-home
+jigc rename	RN2 × U	rename-a-file-of-the-users-in-the-citing-docs-place
+jigc rename	RN2 × L, to nothing	rename-a-link-to-nothing-in-the-citing-docs-place
+jigc rename	RN2 × L, to a file in the repository	rename-a-link-to-a-file-in-the-repository-in-the-citing-docs-place
+jigc rename	RN2 × L, to a file outside it	rename-a-link-to-a-file-outside-in-the-citing-docs-place
+jigc rename	RN2 × K, a directory in a file's place	rename-a-directory-in-the-citing-docs-place
+jigc rename	RN2 × K, a file in a directory's place	rename-a-file-in-the-place-of-the-citing-docs-directory
+jigc rename	RN2 × E, after the first write	rename-an-edit-to-the-citing-doc
+jigc rename	RN2 × S, where the command writes	rename-a-change-staged-at-the-citing-doc
+jigc rename	RN3 × S, where it does not	rename-a-file-staged-elsewhere
+jigc rename	RN3 × N	rename-a-staged-file-whose-name-git-quotes
+jigc rename	RN3 × H	rename-a-hook-that-rejects
+jigc rename	RN4 × U	rename-a-file-of-the-users-beside-the-baseline
+jigc rename	RN5 × U	rename-a-file-of-the-users-under-the-edge-index
+jigc relocate	refusing	relocate-the-changelog-the-catalog-names
+jigc relocate	base	relocate-a-stranded-note · relocate-a-note-a-task-landed-at-the-notes-new-home
+jigc relocate	base, in `bare`	relocate-a-note-in-bare
+jigc relocate	base, in `committed-singletons`	relocate-a-note-in-committed-singletons
+jigc relocate	base, in `migrated`	relocate-a-note-in-migrated
+jigc relocate	base, in `refs-post-hoc`	relocate-a-note-in-refs-post-hoc
+jigc relocate	base, in `chatty-hooks`	relocate-a-note-in-chatty-hooks
+jigc relocate	base, in `vendored`	relocate-a-note-in-vendored
+jigc relocate	RL1 × U	relocate-a-file-of-the-users-in-the-stranded-notes-place · relocate-a-md-of-the-users-beside-the-stranded-note
+jigc relocate	RL1 × L, to nothing	relocate-a-link-to-nothing-in-the-stranded-notes-place · relocate-a-link-to-nothing-beside-the-stranded-note · relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note
+jigc relocate	RL1 × L, to a file in the repository	relocate-a-link-to-a-file-in-the-repository-in-the-stranded-notes-place
+jigc relocate	RL1 × L, to a file outside it	relocate-a-link-to-a-file-outside-in-the-stranded-notes-place
+jigc relocate	RL1 × K, a directory in a file's place	relocate-a-directory-in-the-stranded-notes-place
+jigc relocate	RL1 × K, a file in a directory's place	relocate-a-file-in-the-place-of-the-legacy-notes-directory
+jigc relocate	RL1 × E, after the first write	relocate-an-edit-to-the-stranded-note
+jigc relocate	RL1 × S, where the command writes	relocate-a-change-staged-at-the-stranded-note
+jigc relocate	RL1, at its new home × U	relocate-a-file-of-the-users-at-the-notes-new-home · relocate-a-doc-of-the-users-beside-the-notes-new-home · relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note
+jigc relocate	RL1, at its new home × T	relocate-a-file-the-user-committed-at-the-notes-new-home · relocate-a-doc-the-user-committed-beside-the-notes-new-home
+jigc relocate	RL1, at its new home × L, to nothing	relocate-a-link-to-nothing-at-the-notes-new-home
+jigc relocate	RL1, at its new home × L, to a file in the repository	relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home
+jigc relocate	RL1, at its new home × L, to a file outside it	relocate-a-link-to-a-file-outside-at-the-notes-new-home
+jigc relocate	RL1, at its new home × K, a directory in a file's place	relocate-a-directory-at-the-notes-new-home
+jigc relocate	RL4 × U	relocate-a-file-of-the-users-beside-the-baseline
+jigc migrate-corpus	refusing	migrate-corpus-the-catalog-names
+jigc migrate-corpus	base	migrate-corpus-a-decision-below-its-version · migrate-corpus-a-decision-jigc-tracks-below-its-version · migrate-corpus-the-changelog-at-its-old-home · migrate-corpus-a-file-the-user-committed-at-the-changelogs-home-and-a-decision-below-its-version · migrate-corpus-a-decision-below-its-version-git-never-held · migrate-corpus-the-changelog-at-its-old-home-git-never-held
+jigc migrate-corpus	base, in `bare`	migrate-corpus-in-bare
+jigc migrate-corpus	base, in `committed-singletons`	migrate-corpus-in-committed-singletons
+jigc migrate-corpus	base, in `migrated`	migrate-corpus-in-migrated
+jigc migrate-corpus	base, in `refs-post-hoc`	migrate-corpus-in-refs-post-hoc
+jigc migrate-corpus	base, in `chatty-hooks`	migrate-corpus-in-chatty-hooks
+jigc migrate-corpus	base, in `vendored`	migrate-corpus-in-vendored
+jigc migrate-corpus	base, as `--no-commit`	migrate-corpus-no-commit-a-decision-below-its-version
+jigc migrate-corpus	base, as `--dry-run`	migrate-corpus-dry-run-a-decision-below-its-version
+jigc migrate-corpus	MG1 × U	migrate-corpus-a-file-of-the-users-in-the-decisions-place
+jigc migrate-corpus	MG1 × L, to nothing	migrate-corpus-a-link-to-nothing-in-the-decisions-place
+jigc migrate-corpus	MG1 × L, to a file in the repository	migrate-corpus-a-link-to-a-file-in-the-repository-in-the-decisions-place
+jigc migrate-corpus	MG1 × L, to a file outside it	migrate-corpus-a-link-to-a-file-outside-in-the-decisions-place
+jigc migrate-corpus	MG1 × K, a directory in a file's place	migrate-corpus-a-directory-in-the-decisions-place
+jigc migrate-corpus	MG1 × K, a file in a directory's place	migrate-corpus-a-file-in-the-place-of-the-decisions-directory
+jigc migrate-corpus	MG1 × E, after the first write	migrate-corpus-an-edit-to-the-decision
+jigc migrate-corpus	MG1 × S, where the command writes	migrate-corpus-a-change-staged-at-the-decision
+jigc migrate-corpus	MG1, from a prior home × U	migrate-corpus-a-file-of-the-users-in-the-old-changelogs-place
+jigc migrate-corpus	MG1, from a prior home × L, to nothing	migrate-corpus-a-link-to-nothing-in-the-old-changelogs-place
+jigc migrate-corpus	MG1, from a prior home × L, to a file in the repository	migrate-corpus-a-link-to-a-file-in-the-repository-in-the-old-changelogs-place
+jigc migrate-corpus	MG1, from a prior home × L, to a file outside it	migrate-corpus-a-link-to-a-file-outside-in-the-old-changelogs-place
+jigc migrate-corpus	MG1, from a prior home × K, a directory in a file's place	migrate-corpus-a-directory-in-the-old-changelogs-place
+jigc migrate-corpus	MG1, from a prior home × K, a file in a directory's place	migrate-corpus-a-file-in-the-place-of-the-old-changelogs-directory
+jigc migrate-corpus	MG1, from a prior home × E, after the first write	migrate-corpus-an-edit-to-the-old-changelog
+jigc migrate-corpus	MG1, from a prior home × S, where the command writes	migrate-corpus-a-change-staged-at-the-old-changelog
+jigc migrate-corpus	MG2 × U	migrate-corpus-a-file-of-the-users-beside-the-baseline
+jigc migrate-corpus	MG3 × S, where it does not	migrate-corpus-a-file-staged-elsewhere
+jigc migrate-corpus	MG3 × N	migrate-corpus-a-staged-file-whose-name-git-quotes
+jigc migrate-corpus	MG3 × H	migrate-corpus-a-hook-that-rejects
+jigc migrate-corpus	MG5 × U, as `--dry-run`	migrate-corpus-dry-run-a-file-of-the-users-in-the-decisions-place
+jigc migrate-corpus	MG5 × L, to nothing, as `--dry-run`	migrate-corpus-dry-run-a-link-to-nothing-in-the-decisions-place
+jigc migrate-corpus	MG5 × L, to a file in the repository, as `--dry-run`	migrate-corpus-dry-run-a-link-to-a-file-in-the-repository-in-the-decisions-place
+jigc migrate-corpus	MG5 × L, to a file outside it, as `--dry-run`	migrate-corpus-dry-run-a-link-to-a-file-outside-in-the-decisions-place
+jigc migrate-corpus	MG5 × K, a directory in a file's place, as `--dry-run`	migrate-corpus-dry-run-a-directory-in-the-decisions-place
+jigc migrate-corpus	MG5 × E, before the first write, as `--dry-run`	migrate-corpus-dry-run-the-decision-deleted
+jigc migrate-corpus	MG5 × E, after the first write, as `--dry-run`	migrate-corpus-dry-run-an-edit-to-the-decision
+jigc config set	refusing	config-set-docs-root-the-catalog-names
+jigc config set	base	config-set-docs-root-to-notes · config-set-a-knob-that-moves-nothing · config-set-over-a-manifest-that-holds-the-users-comment · config-set-a-decision-a-task-landed-at-the-decisions-new-home · config-set-placement-root-to-notes · config-set-placement-root-a-roadmap-a-re-point-moved-to-the-roadmaps-new-home
+jigc config set	base, in `bare`	config-set-docs-root-to-notes-in-bare
+jigc config set	base, in `committed-singletons`	config-set-docs-root-to-notes-in-committed-singletons
+jigc config set	base, in `migrated`	config-set-docs-root-to-notes-in-migrated
+jigc config set	base, in `refs-post-hoc`	config-set-docs-root-to-notes-in-refs-post-hoc
+jigc config set	base, in `chatty-hooks`	config-set-docs-root-to-notes-in-chatty-hooks
+jigc config set	base, in `vendored`	config-set-docs-root-to-notes-in-vendored
+jigc config set	CS1 × U	config-set-a-file-of-the-users-in-the-manifests-place
+jigc config set	CS1 × L, to nothing	config-set-a-link-to-nothing-in-the-manifests-place
+jigc config set	CS1 × L, to a file in the repository	config-set-a-link-to-a-file-in-the-repository-in-the-manifests-place
+jigc config set	CS1 × L, to a file outside it	config-set-a-link-to-a-file-outside-in-the-manifests-place
+jigc config set	CS1 × K, a directory in a file's place	config-set-a-directory-in-the-manifests-place
+jigc config set	CS1 × K, a file in a directory's place	config-set-a-file-in-the-place-of-the-config-layers-directory
+jigc config set	CS1 × E, after the first write	config-set-an-edit-to-the-committed-manifest
+jigc config set	CS1 × M	config-set-a-line-of-the-users-in-the-manifest
+jigc config set	CS1 × S, where the command writes	config-set-a-change-staged-at-the-manifest
+jigc config set	CS2 × U	config-set-a-file-of-the-users-in-the-decisions-place · config-set-placement-root-a-file-of-the-users-in-the-roadmaps-place
+jigc config set	CS2 × L, to nothing	config-set-a-link-to-nothing-in-the-decisions-place · config-set-placement-root-a-link-to-nothing-in-the-roadmaps-place
+jigc config set	CS2 × L, to a file in the repository	config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place · config-set-placement-root-a-link-to-a-file-in-the-repository-in-the-roadmaps-place
+jigc config set	CS2 × L, to a file outside it	config-set-a-link-to-a-file-outside-in-the-decisions-place · config-set-placement-root-a-link-to-a-file-outside-in-the-roadmaps-place
+jigc config set	CS2 × K, a directory in a file's place	config-set-a-directory-in-the-decisions-place · config-set-placement-root-a-directory-in-the-roadmaps-place
+jigc config set	CS2 × K, a file in a directory's place	config-set-a-file-in-the-place-of-the-decisions-directory · config-set-placement-root-a-file-in-the-place-of-the-roadmaps-directory
+jigc config set	CS2 × E, after the first write	config-set-an-edit-to-the-decision · config-set-placement-root-an-edit-to-the-roadmap
+jigc config set	CS2 × S, where the command writes	config-set-a-change-staged-at-the-decision · config-set-placement-root-a-change-staged-at-the-roadmap
+jigc config set	CS2, at its new home × U	config-set-a-file-of-the-users-at-the-decisions-new-home · config-set-a-doc-of-the-users-beside-the-decisions-new-home · config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home · config-set-placement-root-a-doc-of-the-users-beside-the-roadmaps-new-home
+jigc config set	CS2, at its new home × T	config-set-a-file-the-user-committed-at-the-decisions-new-home · config-set-a-doc-the-user-committed-beside-the-decisions-new-home · config-set-placement-root-a-file-the-user-committed-at-the-roadmaps-new-home · config-set-placement-root-a-doc-the-user-committed-beside-the-roadmaps-new-home
+jigc config set	CS2, at its new home × L, to nothing	config-set-a-link-to-nothing-at-the-decisions-new-home · config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home
+jigc config set	CS2, at its new home × L, to a file in the repository	config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home · config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home
+jigc config set	CS2, at its new home × L, to a file outside it	config-set-a-link-to-a-file-outside-at-the-decisions-new-home · config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home
+jigc config set	CS2, at its new home × K, a directory in a file's place	config-set-a-directory-at-the-decisions-new-home · config-set-placement-root-a-directory-at-the-roadmaps-new-home
+jigc config set	CS4 × U	config-set-a-file-of-the-users-beside-the-baseline
+jigc start	refusing	start-as-the-catalog-names-it
+jigc start	base	start-a-task · start-over-a-task-of-the-same-name · start-a-title-that-slugs-to-nothing
+jigc start	base, in `bare`	start-a-task-in-bare
+jigc start	base, in `committed-singletons`	start-a-task-in-committed-singletons
+jigc start	base, in `migrated`	start-a-task-in-migrated
+jigc start	base, in `refs-post-hoc`	start-a-task-in-refs-post-hoc
+jigc start	base, in `chatty-hooks`	start-a-task-in-chatty-hooks
+jigc start	base, in `vendored`	start-a-task-in-vendored
+jigc start	base, as `bare`	start-bare-over-a-task-it-reports
+jigc start	base, as `--task`	start-the-task-again
+jigc start	ST1 × U	start-a-file-of-the-users-where-the-task-is-minted
+jigc start	ST2 × U, as `bare`	start-bare-a-file-of-the-users-under-the-edge-index
+jigc start	ST2, at a resume × U, as `--task`	start-the-task-again-a-file-of-the-users-under-the-edge-index
+jigc workflow	refusing	workflow-as-the-catalog-names-it
+jigc workflow	base	workflow-a-sub-task-re-entered · workflow-a-sub-tasks-commit-doc-written-then-re-entered
+jigc workflow	base, in `bare`	workflow-a-sub-task-re-entered-in-bare
+jigc workflow	base, in `committed-singletons`	workflow-a-sub-task-re-entered-in-committed-singletons
+jigc workflow	base, in `migrated`	workflow-a-sub-task-re-entered-in-migrated
+jigc workflow	base, in `refs-post-hoc`	workflow-a-sub-task-re-entered-in-refs-post-hoc
+jigc workflow	base, in `chatty-hooks`	workflow-a-sub-task-re-entered-in-chatty-hooks
+jigc workflow	base, in `vendored`	workflow-a-sub-task-re-entered-in-vendored
+jigc workflow	base, as `--preview`	workflow-a-preview-at-the-sub-tasks-worktree
+jigc workflow	WF1 × U	workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned
+jigc workflow	WF1 × L, to nothing	workflow-a-link-to-nothing-where-the-commit-doc-is-provisioned
+jigc workflow	WF1 × L, to a file in the repository	workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned
+jigc workflow	WF1 × L, to a file outside it	workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned
+jigc workflow	WF1 × K, a directory in a file's place	workflow-a-directory-where-the-commit-doc-is-provisioned
+jigc workflow	WF1 × K, a file in a directory's place	workflow-a-file-in-the-place-of-the-commit-docs-directory
+jigc workflow	WF2 × U	workflow-a-file-of-the-users-under-the-edge-index
+jigc migrate	refusing	migrate-as-the-catalog-names-it
+jigc migrate	base	migrate-a-foreign-history
+jigc migrate	base, in `bare`	migrate-a-foreign-history-in-bare
+jigc migrate	base, in `committed-singletons`	migrate-a-foreign-history-in-committed-singletons
+jigc migrate	base, in `migrated`	migrate-a-foreign-history-in-migrated
+jigc migrate	base, in `refs-post-hoc`	migrate-a-foreign-history-in-refs-post-hoc
+jigc migrate	base, in `chatty-hooks`	migrate-a-foreign-history-in-chatty-hooks
+jigc migrate	base, in `vendored`	migrate-a-foreign-history-in-vendored
+jigc migrate	MI1 × U	migrate-a-file-of-the-users-where-the-migration-task-is-minted
+jigc migrate	MI2 × U	migrate-a-file-of-the-users-in-the-sources-place
+jigc migrate	MI2 × L, to nothing	migrate-a-link-to-nothing-in-the-sources-place
+jigc migrate	MI2 × L, to a file in the repository	migrate-a-link-to-a-file-in-the-repository-in-the-sources-place
+jigc migrate	MI2 × L, to a file outside it	migrate-a-link-to-a-file-outside-in-the-sources-place
+jigc migrate	MI2 × K, a directory in a file's place	migrate-a-directory-in-the-sources-place
+jigc migrate	MI2 × E, before the first write	scheduled: no work unit stands between an edit of the source and the mint, so the edit is planted last before the command, the construction of the cell aimed at `MI2` × E, after the first write (`migrate-an-edit-to-the-source`) — before the port, a second cell of it
+jigc migrate	MI2 × E, after the first write	migrate-an-edit-to-the-source
+jigc task amend	refusing	task-amend-as-the-catalog-names-it
+jigc task amend	base	task-amend-the-last-commit · task-amend-a-merge-commit
+jigc task amend	base, in `bare`	task-amend-the-last-commit-in-bare
+jigc task amend	base, in `committed-singletons`	task-amend-the-last-commit-in-committed-singletons
+jigc task amend	base, in `migrated`	task-amend-the-last-commit-in-migrated
+jigc task amend	base, in `refs-post-hoc`	task-amend-the-last-commit-in-refs-post-hoc
+jigc task amend	base, in `chatty-hooks`	task-amend-the-last-commit-in-chatty-hooks
+jigc task amend	base, in `vendored`	task-amend-the-last-commit-in-vendored
+jigc task amend	AM1 × U	task-amend-a-file-of-the-users-where-the-task-is-minted

@@ -1,0 +1,43 @@
+the named binary	this tree's binary	cells
+git's state moved outside its allowance	git's state moved outside its allowance	5
+git's state moved outside its allowance	holds	3
+git's state moved outside its allowance; also not the listed outcome	git's state moved outside its allowance; also not the listed outcome	2
+git's state moved outside its allowance; also not the listed outcome	refuses, nothing changed	5
+git's state moved outside its allowance; also written outside its allowance	git's state moved outside its allowance; also written outside its allowance	1
+git's state moved outside its allowance; also written outside its allowance	holds	2
+git's state moved outside its allowance; also written outside its allowance	written outside its allowance	1
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	git's state moved outside its allowance; also not the listed outcome	1
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	12
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	not the listed outcome	2
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refused, and changed what a refusal may not	2
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refuses, nothing changed	6
+holds	holds	291
+lost	holds	2
+lost	lost	8
+lost; also git's state moved outside its allowance	holds	2
+lost; also git's state moved outside its allowance; also not the listed outcome	lost; also git's state moved outside its allowance; also not the listed outcome	2
+lost; also git's state moved outside its allowance; also not the listed outcome	refuses, nothing changed	2
+lost; also git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	lost; also git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	4
+lost; also git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refuses, nothing changed	1
+lost; also not the listed outcome	lost; also not the listed outcome	5
+lost; also not the listed outcome	refuses, nothing changed	6
+lost; also written outside its allowance	written outside its allowance	1
+lost; also written outside its allowance; also not the listed outcome	lost; also written outside its allowance; also not the listed outcome	2
+lost; also written outside its allowance; also not the listed outcome	refuses, nothing changed	3
+not run: a deletion takes the file at `.jigc/settings-entries.json`, and no regular file stands there	holds	1
+not run: an edit goes into `.jigc/settings-entries.json`, and no regular file stands there	refuses, nothing changed	1
+not the listed outcome	git's state moved outside its allowance; also not the listed outcome	1
+not the listed outcome	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	1
+not the listed outcome	holds	3
+not the listed outcome	lost	2
+not the listed outcome	not the listed outcome	33
+not the listed outcome	refused, and changed what a refusal may not	1
+not the listed outcome	refuses, nothing changed	49
+refused, and changed what a refusal may not	refused, and changed what a refusal may not	42
+refused, and changed what a refusal may not	refuses, nothing changed	2
+refused, and changed what a refusal may not; also not the listed outcome	holds	4
+refused, and changed what a refusal may not; also not the listed outcome	refuses, nothing changed	4
+refuses, nothing changed	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	1
+refuses, nothing changed	refuses, nothing changed	197
+written outside its allowance	written outside its allowance	46
+written outside its allowance; also not the listed outcome	refuses, nothing changed	1

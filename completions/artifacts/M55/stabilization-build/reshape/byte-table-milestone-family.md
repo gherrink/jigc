@@ -1,5 +1,7 @@
 # The byte table's milestone family — its numbers
 
+*Since 2026-10-26 the table as a whole is counted in [byte-table-record.md](byte-table-record.md), every number re-derived over all thirty rows and both binaries (the task `B10`); this record stays the count of what its family built, as of when it was written.*
+
 *Written 2026-10-19 with the last commit of the milestone family's part of the plan's task `B7` ([byte-table-plan.md](byte-table-plan.md) → §8, *What would follow*), on the branch `fix/rc24-route-catalog`, after the family's rows and its three parts of cells ([DECISIONS.md](../../../../../DECISIONS.md), the entries of 2026-10-19). A record: it counts what the family built and what it costs, and **decides nothing**. The doc family's record is [byte-table-doc-family.md](byte-table-doc-family.md), the install family's [byte-table-install-family.md](byte-table-install-family.md); the findings are [byte-table-findings.md](byte-table-findings.md) → §17 to §19, the rows [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §4 and §4b, the question the cells met §6, entry 18, and [byte-table-readings.md](byte-table-readings.md) → §17.*
 
 *The table on 2026-10-19, after the movers family's cells: [byte-table-movers-family.md](byte-table-movers-family.md), whose committed print of all 657 cells on both binaries is the table's latest; the print below stays the record of its run.*
