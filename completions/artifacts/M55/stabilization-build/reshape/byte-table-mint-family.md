@@ -59,10 +59,10 @@ And what no cell holds (the findings' §26, *Seen*): `migrate` over a directory 
 
 - **The human's two rulings of 2026-10-20**, recorded by the family's first commit — §6, entry 23, stricter than its option A: any file at a mover's destination refuses; and R1: an acting sweep exits non-zero where an act it was asked for did not happen. Held at their doors by cells a whole refusal fails since the first fix (`relocate`) and the sixth (`migrate-corpus`, a refusal listed with the decision it committed).
 - **Entry 24 — ruled on 2026-10-20, A**: the retire deletes the source only where `HEAD` holds its bytes; its four cells lost their mark and are plain red under their key.
-- **Entry 25 — open**: what a sub-task's first re-entry does with an entry that stands where its commit doc goes. Four cells marked.
+- **Entry 25 — open**: what a sub-task's first re-entry does with an entry that stands where its commit doc goes. Four cells marked. *[Ruled on 2026-10-26, option A — first entry is jigc's own provenance record, and an entry there without one refuses, naming the path, the check following no link; the four cells lost the mark, plain red under their key, and nothing else moved (`DECISIONS.md`, the entry of that day; the task `B10`).]*
 - **The words the fixes narrowed**: *into its home* (a doc git held, a regular file), *provisioned* (a file or a directory), *migrated* (a doc git held — and `migrate-corpus`, which commits a doc the user never committed, is red under a key of its own); the spelling a cell is judged under (the one its command types, declared where the spelling is).
 - **The base cells elsewhere stand on their preconditions** (the review's N9): `workflow`'s and `migrate`'s five in the states neither `bare` nor their home, and `rename`'s and `relocate`'s at `B8` — twenty that refused for what was missing now meet the state; nineteen act and hold, and `rename` in `refs-post-hoc` refuses over that state's live task. `workflow` in `bare` stands on nothing: its milestone is `jigc`'s to make.
-- **The open entries 4 and 7** — met by no door of this family.
+- **The open entries 4 and 7** — met by no door of this family. *[Ruled on 2026-10-26, each option A: `setup` writes no file for the spawn launch-template; any door that commits may remove or rebuild `.jigc/index/edges.json`, `C4` in every row (the task `B10`).]*
 
 ## 4. Not established
 

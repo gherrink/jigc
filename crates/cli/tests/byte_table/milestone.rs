@@ -15,7 +15,7 @@
 //! `M3` out of force; a cell that sets the knob names the spelling ([`Spelling`]), by the
 //! human's ruling of 2026-10-18.
 
-use super::{ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
+use super::{AFTER_A_COMMIT, ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row,
     Spelling, Typed, Unit, When, Where,
@@ -368,6 +368,7 @@ pub const FINALIZE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -619,6 +620,7 @@ pub const CREATE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -672,6 +674,7 @@ pub const ADD_TASK: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -736,6 +739,7 @@ pub const ADD_FROM_SPEC: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -784,6 +788,7 @@ pub const PROVISION: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -805,6 +810,7 @@ pub const EXECUTE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -849,6 +855,7 @@ pub const JOIN: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -935,6 +942,7 @@ pub const DISCARD: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 

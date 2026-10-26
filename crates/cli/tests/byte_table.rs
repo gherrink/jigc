@@ -314,6 +314,44 @@ const ON_A_REFUSAL: [Line; 4] = [
     ),
 ];
 
+/// The heading of the entry of `DECISIONS.md` that records the human's three rulings of
+/// 2026-10-26 (the task `B10`, its first commit).
+const B10_RULINGS: &str = "2026-10-26 — The human's three rulings of the day, recorded: a sub-task's first re-entry is decided by jigc's own provenance record and refuses over an entry it did not write; `setup` writes no file for the spawn launch-template, and jigc never launches a sub-agent itself — the `Spawn:` line is owed the adapter's template; any door that commits may remove or rebuild the edge index's file, and a line in every row says so; and every entry of the rows' record's §6 says its state in its heading (the byte table, task B10, the first of its commits)";
+
+/// **What a commit lets a cache become** — the line `C4` of the committed record (its §4a),
+/// which stands in every row beside `C1` to `C3`: the human's ruling of 2026-10-26 on the
+/// record's §6, entry 7. The edge index is stamped with the `HEAD` it was built from, so
+/// any commit leaves it stale and its next read rebuilds it: **any door that commits may
+/// remove or rebuild `.jigc/index/edges.json`**, and none is required to. The line names that
+/// one file and no other of the index's directory, and is in force only where the command
+/// landed a commit of its own ([`When::ACommitLanded`]) — at a door that commits nothing it
+/// excuses nothing. Where a row's own line already lets its command invalidate the index —
+/// `T5`, `M10`, `RN5` — that line stands before this one and is the one a difference is
+/// counted under.
+const AFTER_A_COMMIT: Line = Line {
+    id: "C4",
+    allows: Allows::Files(
+        Where::Path(".jigc/index/edges.json"),
+        May::Invalidated(".jigc/index/edges.json"),
+    ),
+    when: When::ACommitLanded,
+    on_refusal: true,
+    quotes: &[
+        Quote {
+            doc: "DECISIONS.md",
+            heading: B10_RULINGS,
+            words: "**Any door that commits may remove or rebuild `.jigc/index/edges.json`; none is required to, and none is faulted for it.**",
+        },
+        Quote {
+            doc: "design/storage.md",
+            heading: "Derived caches",
+            words: "The **edge index** is **stamped with the HEAD it was built against** (`index.rs`, `EdgeIndex { stamp, edges }`); a branch switch, pull, or rebase changes the docs underneath it, so `load_committed` sees the stamp mismatch and rebuilds.",
+        },
+        THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ[0],
+    ],
+    spelling: None,
+};
+
 /// **The edge index's file is the stamp's, and its next read rebuilds it** — the sentences
 /// beside a finalize's own *"Invalidate the edge-index stamp"* that its lines `T5` and
 /// `M10` rest on for the word [`May::Invalidated`]: the file the stamp is kept in, a cache
@@ -2224,6 +2262,49 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         NO_CELL_OF_THIS_LEAF,
     ),
+    // `C4`, the human's ruling of 2026-10-26 on the rows' record's §6, entry 7: in every row.
+    (&["setup"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["uninstall"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["ingest"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["unmanage"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (
+        &["task", "finalize"],
+        "C4",
+        ITS_OWN_LINE_INVALIDATES_THE_INDEX,
+    ),
+    (&["task", "discard"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (
+        &["milestone", "finalize"],
+        "C4",
+        ITS_OWN_LINE_INVALIDATES_THE_INDEX,
+    ),
+    (&["doc", "add-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "remove-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "retitle-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "rename"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "set-field"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "set-slot"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "create"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "author"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "create"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "add-task"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (
+        &["milestone", "add-from-spec"],
+        "C4",
+        NO_COMMIT_TOOK_THE_INDEX,
+    ),
+    (&["milestone", "provision"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "execute"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "join"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "discard"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["rename"], "C4", ITS_OWN_LINE_INVALIDATES_THE_INDEX),
+    (&["relocate"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["migrate-corpus"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["config", "set"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["start"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["workflow"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["migrate"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["task", "amend"], "C4", NO_COMMIT_TOOK_THE_INDEX),
 ];
 
 /// What would use a line of `uninstall`'s whose change lands at a tracked path, and the
@@ -2299,6 +2380,18 @@ const NOT_UNTIL_THE_BOUNDARY_MOVES_THE_WORKTREES_LEFTOVERS: &str = "a landed bou
 /// difference happen there.
 const A_DRY_RUN_WRITES_NOTHING: &str = "nothing can: the dry run's line lets no difference happen at the doc it reads — it names \
      the place, which is what the plants of the spelling's cells are aimed at";
+
+/// What would use `C4` at a door whose own line already lets it invalidate the edge index —
+/// `T5`, `M10`, `RN5`: nothing — that line stands before `C4` in the row, and a difference
+/// at the index's file is counted under it.
+const ITS_OWN_LINE_INVALIDATES_THE_INDEX: &str = "nothing can: the leaf's own line that invalidates the edge index stands before `C4` in \
+     its row, and the index's file gone or written again is counted under it";
+
+/// What would use `C4` at every other door: a cell of the leaf that lands a commit and takes
+/// the edge index's file away, or writes it again, at the same run.
+const NO_COMMIT_TOOK_THE_INDEX: &str = "a cell of this leaf that lands a commit and takes `.jigc/index/edges.json` away or writes \
+     it again in the same run: none does, on either binary — a cell that lands a commit leaves the \
+     index's file as it stood";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -9525,6 +9618,150 @@ fn a_finalize_may_take_the_edge_indexs_file_away_and_no_other_file() {
     }
 }
 
+/// **A commit lets the edge index's file go or be written again, at any door, and nothing
+/// beside it** — the line `C4` ([`AFTER_A_COMMIT`]), the human's ruling of 2026-10-26 on the
+/// rows' record's §6, entry 7: *any door that commits may remove or rebuild
+/// `.jigc/index/edges.json`*. Every row of the table carries the line as it stands. Over a
+/// built index — its file, a second file of the index's directory, and the file-state
+/// hashes beside it — a door whose command rewrote a file of its own and committed it may
+/// leave the index's file gone or written again; it may not take away or write the second
+/// file, the hashes, or put a directory or a link where the index's file stood. A door that
+/// commits nothing — the probe's own, and the table's `relocate` and `doc set-field` — is
+/// excused nothing at exit 0 (the index's file gone is *lost* there, written again *written
+/// outside its allowance*), and a refusal that landed no commit nothing beyond `C1`'s
+/// rebuild.
+///
+/// Red first, twice: with every row as it stood, no row carried the line; with the line in
+/// force at any run that acted, the door that commits nothing came out *holds* with the
+/// index's file gone; and with the line over the index's whole directory, the second file
+/// written again by a commit came out *holds*.
+#[test]
+fn a_commit_lets_the_edge_indexs_file_go_at_any_door_and_nothing_beside_it() {
+    const INDEX: &str = "repo/.jigc/index/edges.json";
+    const OTHER: &str = "repo/.jigc/index/by-task.json";
+    const HASHES: &str = "repo/.jigc/state/file-state.json";
+    const AGAIN: &str = "readme, written again\n";
+    let carried: Vec<String> = rows()
+        .iter()
+        .filter(|row| {
+            !row.lines.iter().any(|line| {
+                line.id == AFTER_A_COMMIT.id
+                    && format!("{:?}", line.allows) == format!("{:?}", AFTER_A_COMMIT.allows)
+                    && line.when == AFTER_A_COMMIT.when
+                    && line.on_refusal
+                    && line.spelling.is_none()
+            })
+        })
+        .map(|row| format!("`jigc {}`", row.leaf.join(" ")))
+        .collect();
+    assert!(
+        carried.is_empty(),
+        "every row carries `C4` as it stands; these do not: {carried:?}"
+    );
+    const COMMITS: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        line("K2", Allows::Commit(Holding::OnlyTheLines)),
+        AFTER_A_COMMIT,
+    ]);
+    const WRITES: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        AFTER_A_COMMIT,
+    ]);
+    let before = then(&sandbox(), |m| {
+        for at in ["repo/.jigc", "repo/.jigc/index", "repo/.jigc/state"] {
+            dir(m, at);
+        }
+        put(m, INDEX, "{\"stamp\":\"c0\",\"edges\":[]}\n");
+        put(m, OTHER, "{}\n");
+        put(m, HASHES, "{\"hashes\":{}}\n");
+    });
+    let written = then(&before, |m| put(m, "repo/README.md", AGAIN));
+    let committed = then(&written, |m| {
+        commit(m, "c1", &[(README, Some((0o100_644, AGAIN)))])
+    });
+    let gone = |from: &Manifest, path: &'static str| {
+        then(from, move |m| {
+            m.files.remove(path);
+        })
+    };
+    let again = |from: &Manifest, path: &'static str| {
+        then(from, move |m| {
+            put(m, path, "{\"stamp\":\"c1\",\"again\":true}\n")
+        })
+    };
+    let came =
+        |row: Row, before: &Manifest, after: &Manifest| Cell::of(row, before, after).came_to();
+    // The door that commits.
+    for (what, after) in [
+        ("its commit alone", committed.clone()),
+        ("the index's file taken away", gone(&committed, INDEX)),
+        ("the index's file written again", again(&committed, INDEX)),
+    ] {
+        let (class, why) = came(COMMITS, &before, &after);
+        assert_eq!(class, Classification::Holds, "a commit, {what}: {why:#?}");
+    }
+    for (what, after) in [
+        (
+            "a second file of the index taken away",
+            gone(&committed, OTHER),
+        ),
+        (
+            "a second file of the index written again",
+            again(&committed, OTHER),
+        ),
+        ("the file-state hashes taken away", gone(&committed, HASHES)),
+        (
+            "a directory where the index's file stood",
+            then(&committed, |m| dir(m, INDEX)),
+        ),
+        (
+            "a link where the index's file stood",
+            then(&committed, |m| {
+                m.files
+                    .insert(INDEX.to_string(), Entry::Link("elsewhere".to_string()));
+            }),
+        ),
+    ] {
+        let (class, why) = came(COMMITS, &before, &after);
+        assert!(
+            class.is_red() && why.iter().any(|why| why.contains("no line covers it")),
+            "a commit, {what}: {class}, {why:#?}"
+        );
+    }
+    // A door that commits nothing: the probe's, and two of the table's.
+    for (what, after) in [
+        ("the index's file taken away", gone(&written, INDEX)),
+        ("the index's file written again", again(&written, INDEX)),
+    ] {
+        let (class, why) = came(WRITES, &before, &after);
+        assert!(
+            class.is_red() && why.iter().any(|why| why.contains("no line covers it")),
+            "no commit, {what}: {class}, {why:#?}"
+        );
+    }
+    for door in [movers::RELOCATE, doc::SET_FIELD] {
+        for (what, after) in [
+            ("the index's file taken away", gone(&before, INDEX)),
+            ("the index's file written again", again(&before, INDEX)),
+        ] {
+            let (class, why) = came(door, &before, &after);
+            assert!(
+                class.is_red() && why.iter().any(|why| why.contains("no line covers it")),
+                "`jigc {}`, which commits nothing, {what}: {class}, {why:#?}",
+                door.leaf.join(" ")
+            );
+        }
+    }
+    // A refusal that landed no commit: `C1` rebuilds, and takes nothing away.
+    let (class, why) = Cell {
+        code: Some(1),
+        listed: Listed::Refuses,
+        ..Cell::of(movers::RELOCATE, &before, &gone(&before, INDEX))
+    }
+    .came_to();
+    assert_eq!(class, Classification::RefusedAndChanged, "{why:#?}");
+}
+
 /// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
 /// expects — the exit code, and words the output holds — and one that refuses with another
 /// code, or without saying so, is *not the listed outcome*. A refusal that also changed
@@ -11914,7 +12151,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         ],
     ),
     // The mint family (the task `B9`, its third commit): a re-entry over a file of the
-    // user's where the sub-task's commit doc is provisioned.
+    // user's where the sub-task's commit doc is provisioned. The rows' record's §6, entry 25,
+    // ruled by the human on 2026-10-26: an entry there with no provenance entry of jigc's
+    // refuses, naming the path, the check following no link — these four and the link to
+    // nothing below, two keys that one fix closes.
     (
         "r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc",
         Classification::NotTheListedOutcome,

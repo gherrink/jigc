@@ -13,9 +13,9 @@
 //! `jigc workflow <W> --preview`, which writes nothing — each a spelling that only takes a
 //! line out of force.
 
-use super::{ON_A_REFUSAL, refuses};
+use super::{AFTER_A_COMMIT, ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
-    Aim, Allows, Cell, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row, Spelling,
+    Aim, Allows, Cell, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote, Row, Spelling,
     THE_SOURCE, Typed, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
@@ -131,6 +131,7 @@ pub const START: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -174,6 +175,7 @@ pub const WORKFLOW: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -216,6 +218,7 @@ pub const MIGRATE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -248,6 +251,7 @@ pub const TASK_AMEND: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -593,20 +597,20 @@ const WORKFLOW_CELLS: [Cell; 11] = [
     },
     // `WF1`, where the commit doc is provisioned: the provisioning mirrors the mint, which
     // refuses what stands at its area rather than land jigc's files beside it — so a file of
-    // the user's where the commit doc goes is refused, naming it (the findings' §26). No
-    // sentence says what the re-entry does with what stands there: the cells it takes are
-    // marked with the record's §6, entry 25, the human's question since the sixth of the fixes
-    // after the review of the task `B9` (its Q-a); the link to nothing it writes over is not —
-    // the ruling on entry 23 forbids that overwrite under either answer.
-    Cell {
-        marks: &[Mark::Silence(25)],
-        ..re_enters(
-            "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
-            a_sub_task_provisioned!(Lead::Plant(Plant::File(THE_COMMIT_DOC))),
-            refuses(1, "commit:add-alpha"),
-            at("WF1", Kind::Untracked),
-        )
-    },
+    // the user's where the commit doc goes is refused, naming it (the findings' §26). What the
+    // re-entry does with what stands there is the record's §6, entry 25 — the review of the
+    // task `B9`'s Q-a — **ruled by the human on 2026-10-26**: *first entry* is decided by
+    // jigc's own provenance record, and an entry at the commit doc's place with no provenance
+    // entry — a file, a directory, a link of any kind — refuses, naming the path, the check
+    // following no link. The four cells it takes, marked until the ruling, are plain red under
+    // their key; the link to nothing it writes over was never marked — the ruling on entry 23
+    // forbade that overwrite under either answer.
+    re_enters(
+        "workflow-a-file-of-the-users-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::File(THE_COMMIT_DOC))),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::Untracked),
+    ),
     // `WF1`, a link or a directory where the commit doc is provisioned, and a file where its
     // directory goes (after the review of the task `B9`, H4's lead): what stands there is
     // refused as the user's file is.
@@ -616,39 +620,30 @@ const WORKFLOW_CELLS: [Cell; 11] = [
         refuses(1, "commit:add-alpha"),
         at("WF1", Kind::LinkToNothing),
     ),
-    Cell {
-        marks: &[Mark::Silence(25)],
-        ..re_enters(
-            "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
-            a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
-                at: THE_COMMIT_DOC,
-                outside: false,
-            })),
-            refuses(1, "commit:add-alpha"),
-            at("WF1", Kind::LinkInside),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(25)],
-        ..re_enters(
-            "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
-            a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
-                at: THE_COMMIT_DOC,
-                outside: true,
-            })),
-            refuses(1, "commit:add-alpha"),
-            at("WF1", Kind::LinkOutside),
-        )
-    },
-    Cell {
-        marks: &[Mark::Silence(25)],
-        ..re_enters(
-            "workflow-a-directory-where-the-commit-doc-is-provisioned",
-            a_sub_task_provisioned!(Lead::Plant(Plant::Dir(THE_COMMIT_DOC))),
-            refuses(1, "commit:add-alpha"),
-            at("WF1", Kind::DirForAFile),
-        )
-    },
+    re_enters(
+        "workflow-a-link-to-a-file-in-the-repository-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_COMMIT_DOC,
+            outside: false,
+        })),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::LinkInside),
+    ),
+    re_enters(
+        "workflow-a-link-to-a-file-outside-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToAFile {
+            at: THE_COMMIT_DOC,
+            outside: true,
+        })),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::LinkOutside),
+    ),
+    re_enters(
+        "workflow-a-directory-where-the-commit-doc-is-provisioned",
+        a_sub_task_provisioned!(Lead::Plant(Plant::Dir(THE_COMMIT_DOC))),
+        refuses(1, "commit:add-alpha"),
+        at("WF1", Kind::DirForAFile),
+    ),
     re_enters(
         "workflow-a-file-in-the-place-of-the-commit-docs-directory",
         a_sub_task_provisioned!(Lead::Plant(Plant::File(".jigc/tasks/add-alpha/docs"))),

@@ -12,7 +12,7 @@
 //! `W5`, where *on a refusal: no* comes from, and `W6`, why no row lets a write change a
 //! doc's home, git's index or a commit. No row names a consent: no `doc` verb takes one.
 
-use super::{ON_A_REFUSAL, refuses};
+use super::{AFTER_A_COMMIT, ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared, Quote, Row,
     Unit, When, Where,
@@ -121,7 +121,7 @@ const W4: Line = line(
 const HOME: Prepared = Prepared::Of(State::CommittedSingletons);
 
 /// The lines every row of the family has.
-const LINES: [Line; 7] = [
+const LINES: [Line; 8] = [
     W1,
     W2,
     W3,
@@ -129,6 +129,7 @@ const LINES: [Line; 7] = [
     ON_A_REFUSAL[1],
     ON_A_REFUSAL[2],
     ON_A_REFUSAL[3],
+    AFTER_A_COMMIT,
 ];
 
 /// A row of the family: its leaf, and the lines every row has.
@@ -159,6 +160,7 @@ pub const RENAME: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
     ..row(&["doc", "rename"])
 };

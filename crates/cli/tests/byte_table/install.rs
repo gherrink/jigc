@@ -19,7 +19,7 @@
 //! file it would spare is a plant, which no line excuses.
 
 use super::task::A_DECISION;
-use super::{ON_A_REFUSAL, refuses};
+use super::{AFTER_A_COMMIT, ON_A_REFUSAL, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, May, Plant, Prepared, Quote,
     Row, Unit, When, Where,
@@ -233,6 +233,7 @@ pub const SETUP: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -333,6 +334,7 @@ pub const UNINSTALL: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -369,6 +371,7 @@ pub const INGEST: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -411,6 +414,7 @@ pub const UNMANAGE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 

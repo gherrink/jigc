@@ -15,8 +15,8 @@
 
 use super::task::A_DECISION as A_TASK_THAT_RECORDS_ONE_WAY;
 use super::{
-    ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses, refuses_having_committed,
-    refuses_having_moved,
+    AFTER_A_COMMIT, ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses,
+    refuses_having_committed, refuses_having_moved,
 };
 use crate::support::byte_cell::{
     A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
@@ -205,6 +205,7 @@ pub const RENAME: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -290,6 +291,7 @@ pub const RELOCATE: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -416,6 +418,7 @@ pub const MIGRATE_CORPUS: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 
@@ -497,6 +500,7 @@ pub const CONFIG_SET: Row = Row {
         ON_A_REFUSAL[1],
         ON_A_REFUSAL[2],
         ON_A_REFUSAL[3],
+        AFTER_A_COMMIT,
     ],
 };
 

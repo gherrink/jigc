@@ -811,6 +811,16 @@ pub enum When {
     /// 23). A refusal that names no doc it left — an argument's, a doctype's, taken before
     /// the sweep — is held to change nothing. `jigc relocate`'s lines that write.
     ADocLeftAndNamed,
+    /// **A commit landed** — the command left a commit of its own on the checked-out branch,
+    /// at exit 0 or on a refusal, and only then: a line under it is in force at a run that
+    /// moved the main checkout's `HEAD` that way, whichever door it is, and at no other. The
+    /// edge index is stamped with the `HEAD` it was built from, so a commit leaves it stale
+    /// and its next read rebuilds it — the human's ruling of 2026-10-26 on the rows'
+    /// record's §6, entry 7: *any door that commits may remove or rebuild
+    /// `.jigc/index/edges.json`*. A door that commits nothing, and a run of a committing door
+    /// that landed no commit, have it in force nowhere. `C4`; added 2026-10-26 (the task
+    /// `B10`).
+    ACommitLanded,
 }
 
 /// **One line of an allowance.** `id` is the line's number in the committed record; a
@@ -1042,6 +1052,19 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         return Err(
             "the line holds on a refusal only, and a plant targets what a command \
                     may do where it acts",
+        );
+    }
+    // The stamped file of a cache, and nothing beside it (`C4`): the docs declare those bytes
+    // the cache's own, rebuildable from the committed docs, and the human's ruling of
+    // 2026-10-12 makes a rebuildable cache no loss — so no bytes of the user's are at stake
+    // there, and a plant aimed at it would be a cell that turns on nothing the line governs.
+    // What else stands in the cache's directory is no place of the line's.
+    if let Allows::Files(Where::Path(place), May::Invalidated(stamped)) = line.allows
+        && place == stamped
+    {
+        return Err(
+            "the line's place is a cache's stamped file alone, whose bytes the docs declare the \
+             cache's own and rebuildable: no bytes of the user's stand there",
         );
     }
     let one_file = |place: Where| !matches!(place, Where::Under(_));
@@ -2373,6 +2396,7 @@ impl<'a> Tally<'a> {
                     When::Refused => !self.acted,
                     When::ItCommitted => self.acted || self.made_a_commit(),
                     When::ADocLeftAndNamed => self.acted || self.left_a_doc_and_named_it(),
+                    When::ACommitLanded => self.made_a_commit(),
                 }
         })
     }
