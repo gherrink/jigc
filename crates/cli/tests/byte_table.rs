@@ -9844,6 +9844,208 @@ fn a_line_over_one_files_place_lets_no_directory_be_made_there() {
     );
 }
 
+/// **A cache's own file is the only thing a cache's line lets stand at its place** — the
+/// edge index's `edges.json`, the file↔state hashes' `file-state.json`, and a milestone's
+/// `base.json` and `tasks.json` ([`CACHE_FILES`](byte_cell::CACHE_FILES)). A line over a
+/// cache's whole directory — `C1`, `C2`, and the rows' own *rebuilt*, *invalidated* and
+/// *laid out* lines over `.jigc/index`, `.jigc/state` and a milestone's area — lets a
+/// directory be made on the way, but **never at one of those files' own paths**, where a
+/// directory is neither the file rebuilt nor taken away (the rule the task `B10`'s third
+/// commit held only where the line names the file's one place). And **a link, a directory
+/// or a special file that stood where a cache file goes is the user's**: the words let the
+/// file be made where nothing stood or written again over a regular file, and never over
+/// another kind of entry — the same entry taken away was red, and written over was not
+/// (the rows' record's §6, entries 23 and 25: jigc moves nothing of the user's aside to make
+/// room for its own, and follows no link). The review of the task `B10`, its findings H1 and
+/// H2.
+///
+/// Red first: with the comparison as it stood, a commit whose `T5`-shaped line names the
+/// index's directory and its stamped file came out *holds* with a directory made at
+/// `edges.json`; refusals under `C1`, `C2` and a milestone's area line that made a directory
+/// at their caches' files *refuses, nothing changed*; and a commit that wrote the index over
+/// a link, or over an empty directory, that stood at its place came out *holds* — as did a
+/// refusal that wrote the hashes over a link.
+#[test]
+fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
+    const INDEX: &str = "repo/.jigc/index/edges.json";
+    const HASHES: &str = "repo/.jigc/state/file-state.json";
+    const BASE: &str = "repo/.jigc/milestones/m1/base.json";
+    const TASKS: &str = "repo/.jigc/milestones/m1/tasks.json";
+    const AGAIN: &str = "readme, written again\n";
+    const BUILT: &str = "{\"stamp\":\"c1\"}\n";
+    // The shape of `T5`, `M10` and `RN5`: the index's directory, its stamped file invalidated.
+    const INVALIDATES: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        line("K2", Allows::Commit(Holding::OnlyTheLines)),
+        line(
+            "K3",
+            Allows::Files(
+                Where::Under(".jigc/index"),
+                May::Invalidated(".jigc/index/edges.json"),
+            ),
+        ),
+        AFTER_A_COMMIT,
+    ]);
+    const COMMITS: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        line("K2", Allows::Commit(Holding::OnlyTheLines)),
+        AFTER_A_COMMIT,
+    ]);
+    // The shape of the milestone family's lines over a unit's area.
+    const AREA: Row = row(&[line(
+        "K1",
+        Allows::Files(Where::Under(".jigc/milestones/*"), May::Rebuilt),
+    )]);
+    const CACHES: Row = row(&ON_A_REFUSAL);
+    let before = then(&sandbox(), |m| {
+        for at in [
+            "repo/.jigc",
+            "repo/.jigc/index",
+            "repo/.jigc/state",
+            "repo/.jigc/milestones",
+            "repo/.jigc/milestones/m1",
+        ] {
+            dir(m, at);
+        }
+    });
+    let committed = |from: &Manifest, change: &dyn Fn(&mut Manifest)| {
+        then(from, |m| {
+            put(m, "repo/README.md", AGAIN);
+            commit(m, "c1", &[(README, Some((0o100_644, AGAIN)))]);
+            change(m);
+        })
+    };
+    let refused = |row: Row, before: &Manifest, after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(row, before, after)
+        }
+        .came_to()
+    };
+    let link = |m: &mut Manifest, at: &str| {
+        m.files
+            .insert(at.to_string(), Entry::Link("../../notes.md".to_string()));
+    };
+    // Every case is checked, and every one that came out otherwise is named together.
+    let mut wrong: Vec<String> = Vec::new();
+    let mut expect = |what: &str, (class, why): (Classification, Vec<String>), want: Want| {
+        let right = match want {
+            Want::Is(want) => class == want,
+            Want::Uncovered => {
+                class.is_red() && why.iter().any(|why| why.contains("no line covers it"))
+            }
+        };
+        if !right {
+            wrong.push(format!("{what}: wanted {want:?}, came to {class}, {why:?}"));
+        }
+    };
+    #[derive(Debug, Clone, Copy)]
+    enum Want {
+        Is(Classification),
+        /// Red, with the difference no line covers.
+        Uncovered,
+    }
+    use Classification::{Holds, RefusedAndChanged, RefusesNothingChanged};
+
+    // H1 — a directory made at a cache file's own path, where nothing stood.
+    expect(
+        "a commit, the index's file made",
+        Cell::of(
+            INVALIDATES,
+            &before,
+            &committed(&before, &|m| put(m, INDEX, BUILT)),
+        )
+        .came_to(),
+        Want::Is(Holds),
+    );
+    expect(
+        "a commit, a directory made at the index's file",
+        Cell::of(
+            INVALIDATES,
+            &before,
+            &committed(&before, &|m| dir(m, INDEX)),
+        )
+        .came_to(),
+        Want::Uncovered,
+    );
+    for (row, at, what) in [
+        (CACHES, INDEX, "`C1`, the index's file"),
+        (CACHES, HASHES, "`C2`, the hashes' file"),
+    ] {
+        expect(
+            &format!("a refusal, {what} made"),
+            refused(row, &before, &then(&before, |m| put(m, at, BUILT))),
+            Want::Is(RefusesNothingChanged),
+        );
+        expect(
+            &format!("a refusal, a directory made at {what}"),
+            refused(row, &before, &then(&before, |m| dir(m, at))),
+            Want::Is(RefusedAndChanged),
+        );
+    }
+    for (at, what) in [(BASE, "its base pin"), (TASKS, "its task list")] {
+        expect(
+            &format!("a line over a milestone's area, {what} made"),
+            Cell::of(AREA, &before, &then(&before, |m| put(m, at, BUILT))).came_to(),
+            Want::Is(Holds),
+        );
+        expect(
+            &format!("a line over a milestone's area, a directory made at {what}"),
+            Cell::of(AREA, &before, &then(&before, |m| dir(m, at))).came_to(),
+            Want::Uncovered,
+        );
+    }
+    // A directory made inside a cache's directory, at no cache file's path, still holds.
+    expect(
+        "a refusal, a directory made in the hashes' directory",
+        refused(
+            CACHES,
+            &before,
+            &then(&before, |m| dir(m, "repo/.jigc/state/locks")),
+        ),
+        Want::Is(RefusesNothingChanged),
+    );
+
+    // H2 — a cache's file written over what stood at its place that was no regular file.
+    let over_a_file = then(&before, |m| put(m, INDEX, "{\"stamp\":\"c0\"}\n"));
+    expect(
+        "a commit, the index written over its file",
+        Cell::of(
+            COMMITS,
+            &over_a_file,
+            &committed(&over_a_file, &|m| put(m, INDEX, BUILT)),
+        )
+        .came_to(),
+        Want::Is(Holds),
+    );
+    for (what, stood) in [
+        ("a link", then(&before, |m| link(m, INDEX))),
+        ("an empty directory", then(&before, |m| dir(m, INDEX))),
+        (
+            "a special file",
+            then(&before, |m| {
+                m.files.insert(INDEX.to_string(), Entry::Special);
+            }),
+        ),
+    ] {
+        for (row, under) in [(COMMITS, "`C4`"), (INVALIDATES, "a `T5`-shaped line")] {
+            expect(
+                &format!("a commit under {under}, the index written over {what} at its place"),
+                Cell::of(row, &stood, &committed(&stood, &|m| put(m, INDEX, BUILT))).came_to(),
+                Want::Uncovered,
+            );
+        }
+    }
+    let stood = then(&before, |m| link(m, HASHES));
+    expect(
+        "a refusal under `C2`, the hashes written over a link at their place",
+        refused(CACHES, &stood, &then(&stood, |m| put(m, HASHES, BUILT))),
+        Want::Is(RefusedAndChanged),
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
 /// expects — the exit code, and words the output holds — and one that refuses with another
 /// code, or without saying so, is *not the listed outcome*. A refusal that also changed

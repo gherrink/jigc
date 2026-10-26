@@ -488,8 +488,11 @@ pub enum May {
     /// order.
     TakeOutOf,
     Removed,
-    /// Made, or written whole, as a regular file — or, at a directory's place, a directory
-    /// made (never at one file's own path: the task `B10`). **Nothing is
+    /// Made where nothing stood, or written whole over a regular file, as a regular file —
+    /// never over a link, a directory or a special file, which is the user's (the review of
+    /// the task `B10`, H2) — or, at a directory's place, a directory made (never at one
+    /// file's own path, nor at a cache's own file inside it: the task `B10` and its review,
+    /// H1, [`CACHE_FILES`]). **Nothing is
     /// gone**: what a refusal may do to a cache, which is rebuilt and never taken away —
     /// and what a command that acts may do in a directory it writes into, where no
     /// sentence of its doc lets a file of that directory go.
@@ -674,6 +677,31 @@ pub enum May {
 /// A file here is covered by no [`May::Rebuilt`] line, at exit 0 or on a refusal; where
 /// the record moves to, no line of a cache's covers it either.
 pub const NO_CACHE: &[&str] = &[".jigc/state/setup-install-footprint"];
+
+/// **The caches' own files**, by their paths from the repository's root — the files
+/// `design/storage.md` declares rebuildable derived state is kept in: the edge index's
+/// `edges.json` (`engine`'s `index::EDGES_FILE`), the file↔state hashes' `file-state.json`
+/// (`file_state::FILE_STATE_FILE`), and a milestone's `base.json` and `tasks.json`
+/// (*Repository layout & state location*). A line that lets a cache be *rebuilt*,
+/// *invalidated* or *laid out* lets a directory be made where none stood inside the
+/// directory it names, but **never at one of these paths**: a directory there is neither the
+/// file rebuilt nor taken away, whether the line names the file's one place (`C3`'s halves,
+/// `C4`) or the whole directory around it (`C1`, `C2`, `T5`, `M10`, `RN5`, a milestone's
+/// area). Added 2026-10-26, after the review of the task `B10` (its finding H1): the third
+/// commit of that task had held the rule only where a line names the file's one place.
+pub const CACHE_FILES: &[&str] = &[
+    ".jigc/index/edges.json",
+    ".jigc/state/file-state.json",
+    ".jigc/milestones/*/base.json",
+    ".jigc/milestones/*/tasks.json",
+];
+
+/// Whether `rel`, from the repository's root, is a cache's own file [`CACHE_FILES`] names.
+fn a_cache_file(rel: &str) -> bool {
+    CACHE_FILES
+        .iter()
+        .any(|file| is_at_for(file, rel, &Acting::default()))
+}
 
 /// **The rendered message's temporary file, by its name — which no line covers where it
 /// stands after the command, made or rewritten**: the record-only commit's
@@ -2607,16 +2635,30 @@ impl<'a> Tally<'a> {
                         self.as_head_held(rel, Some(blob))
                     }
                     (May::ReSlugged, Some(_), None) => self.re_slugged(diff.path),
-                    (May::Rebuilt | May::Invalidated(_), _, Some(Entry::File { .. })) => true,
+                    // A file made where nothing stood, or written again over a regular
+                    // file: a link, a directory or a special file that stood where the file
+                    // goes is the user's, and is not written over (the rows' record's §6,
+                    // entries 23 and 25; the review of the task `B10`, its finding H2).
+                    (
+                        May::Rebuilt | May::Invalidated(_),
+                        None | Some(Entry::File { .. }),
+                        Some(Entry::File { .. }),
+                    ) => true,
                     // A directory made where none stood: a cache's directory, laid out or
-                    // on the way — at a directory's place, and never at one file's own path
-                    // (`C3`'s halves, `C4`), where it is neither the file rebuilt nor taken
-                    // away.
+                    // on the way — at a directory's place, and never at one file's own path:
+                    // the one the line names (`C3`'s halves, `C4`), the stamped file it
+                    // invalidates, or any cache's own file ([`CACHE_FILES`]), where it is
+                    // neither the file rebuilt nor taken away (the review of the task `B10`,
+                    // its finding H1).
                     (
                         May::Rebuilt | May::Invalidated(_) | May::LaidOut,
                         None,
                         Some(Entry::Dir(_)),
-                    ) => matches!(place, Where::Under(_)),
+                    ) => {
+                        matches!(place, Where::Under(_))
+                            && !a_cache_file(rel)
+                            && !matches!(may, May::Invalidated(stamped) if stamped == rel)
+                    }
                     (May::Invalidated(stamped), Some(Entry::File { .. }), None) => {
                         in_repo(diff.path) == Some(stamped)
                     }
