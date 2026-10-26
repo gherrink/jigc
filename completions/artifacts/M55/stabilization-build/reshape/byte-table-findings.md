@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-27, with the second of the fixes after the review of the task `B10`, which records the human's ruling of 2026-10-26 on the rows' record's §6, entry 1 (ii) — the file↔state record is a baseline, not a cache, and a refusal leaves it exactly as it was: §1 gains the doc-only finding of the seven sentences, in five docs, that call the record rebuildable, `r1-storage-design-calls-the-file-state-record-a-rebuildable-cache-where-it-is-the-baseline`; §1's first key and §6's `r1-setup-refuses-after-its-first-write-and-leaves-the-install-written` say what the ruling changed of them. No cell's classification moved, on either binary.*
+
 *Changed 2026-10-26, with the first commit of the task `B10`, which records the human's three rulings of that day on the rows' record's §6, entries 25, 4 and 7, each option A: in §26 the two re-entry keys carry the ruling on entry 25 — *first entry* is jigc's own provenance record, and an entry at the commit doc's place without one refuses, naming the path, the check following no link — the doc's sentence folded into them, the four cells unmarked, and the two keys kept two; §1 gains two doc-only findings, `design/project-setup.md`'s *generate* of the spawn launch-template (entry 4) and `design/storage.md`'s missing sentence on the edge index after a commit (entry 7); and §27, the finding the human's rule of the same day names — the adapter's launch template is checked at install and never rendered, a key no byte cell can see, its repro run as printed on both binaries. No cell's classification moved by the rulings; what moved by the line `C4` is `DECISIONS.md`'s entry of that day.*
 
 *Changed 2026-10-20, with the third commit of the mint family's task (`B9`), which brings its cells: §26, fifty-one cells, one red under one key — a re-entry over a file of the user's where the sub-task's commit doc is provisioned — the same on both binaries; §14's lead for `B9` answered, and the earlier families' leads for it.*
@@ -86,7 +88,34 @@ and `design/storage.md` → *Edge index lifecycle*, the first row of its table o
 
 **Where it was met.** Writing the row of `jigc task finalize` from the docs ([byte-table-acceptance-rows.md](byte-table-acceptance-rows.md) → §6, entry 1): the row could not say whether a refused finalize may leave the caches changed, because the two docs answer differently. The plan's own run of a refused `jigc task finalize` on this tree left three new files under `.jigc/index/` ([byte-table-plan.md](byte-table-plan.md) → §1.2).
 
-**What was ruled, and what was not.** The table follows the storage design: a refusal may rebuild a cache, and no cell is red for it (the record's §4a, lines `C1` to `C3`). Which of the two sentences is corrected, and to what, is not ruled here and no design doc is edited in this lane. A neighbour of the same question is in the record's §6, entry 1, *what the ruling leaves open*: `design/storage.md` → *Derived caches* calls the file↔state hashes *rebuildable from the committed docs* in one sentence and says in the next paragraph that they *"carry **no stamp and no rebuild path**"* — one doc, two sentences.
+**What was ruled, and what was not.** The table follows the storage design: a refusal may rebuild a cache, and no cell is red for it (the record's §4a, lines `C1` to `C3`). Which of the two sentences is corrected, and to what, is not ruled here and no design doc is edited in this lane. A neighbour of the same question is in the record's §6, entry 1, *what the ruling leaves open*: `design/storage.md` → *Derived caches* calls the file↔state hashes *rebuildable from the committed docs* in one sentence and says in the next paragraph that they *"carry **no stamp and no rebuild path**"* — one doc, two sentences. *Ruled on 2026-10-26*: the record is a baseline, not a cache, and a refusal leaves it as it was — so of the three things the second side names, the hashes are not this key's: what a refusal may rebuild is the edge index and a milestone's `{base,tasks}.json`, and the record's own finding is `r1-storage-design-calls-the-file-state-record-a-rebuildable-cache-where-it-is-the-baseline`, below.
+
+### `r1-storage-design-calls-the-file-state-record-a-rebuildable-cache-where-it-is-the-baseline`
+
+*Recorded 2026-10-27, by the second of the fixes after the review of the task `B10`, for the human's ruling of 2026-10-26 on the rows' record's §6, entry 1 (ii), option A. For the stabilization run's ledger: doctype `inconsistency` — one design doc that says two things, and five more that follow the wrong one; nothing in the product is shown to change. Not edited in this lane.*
+
+**One side** — `design/storage.md` → *Derived caches*, its first sentence:
+
+> The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed
+
+**The other side** — the same section, its next paragraph:
+
+> The **file↔state hashes** carry **no stamp and no rebuild path**
+
+**The ruling**: **jigc's file↔state record — `.jigc/state/`, the hashes of what jigc last wrote for each managed doc — is a baseline, not a cache: the authority on what counts as an out-of-band edit. A refusal leaves it exactly as it was.** The second side is right, and the first is wrong. *Why*: a baseline written over a user's hand edit makes that edit read as jigc's own to the next drift check — `CLAUDE.md`'s *out-of-band edits are detected and routed*; and a record that *"no rebuild path"* can re-derive is no cache, whatever it is called.
+
+**The sentences the correction owes — seven, in five docs, and a word in a sixth**, by `grep -n 'rebuildable' design/*.md` (24 lines) read for the record, and the record's rows of the docs that say *cache* of it:
+
+- `design/storage.md` → *Derived caches*, the sentence above;
+- `design/storage.md` → *Source of truth*: *"Every other artifact — the staging working area, the edge index, the file↔state hashes — is either a rebuildable cache or a transient working copy."*;
+- `design/storage.md` → *Repository layout & state location*, the layout's line for `state/`: *"gitignored — file↔CLI-state hashes (rebuildable)"*;
+- `design/doc-read-surface.md`: *"the record is a gitignored, rebuildable cache and is empty on a fresh clone"* — the sentence's point, that the record cannot adjudicate what a teammate sees, stands; its word for the record does not;
+- `design/reconciliation.md`, of an unreadable record: it *"routes at `rm <that file, absolute>` and a re-run, because the record is a rebuildable cache"* — the reason is the wrong sentence's; whether the route stands, now that the record is a baseline whose loss un-baselines every doc, is a lead of its own and not this finding's;
+- `design/validation.md`: *"The file-state record lives in **gitignored, rebuildable `.jigc/state/`**"*;
+- `design/project-setup.md`, of what `uninstall` takes with the workbench — the record among them: *"Those are **rebuildable state, and they go with the tree**"* — that they go stands; the word does not;
+- and the word *derived-cache* for `.jigc/state/*` in `design/team-ready-state.md` → *What a fan-out worktree isolates*: true of the sharing it describes.
+
+**What follows**: each sentence says the record is jigc's baseline of what it last wrote — gitignored, empty on a fresh clone, re-recorded by the doors that adopt a doc — and not rebuildable; a refusal leaves it as it was. **The product**: no refusal of the table writes it, on this tree or on the previous release (the rows' record's §6, entry 1, *what moved*); no product change is shown. **The table** carries the ruling as `C2` narrowed to the record's lock.
 
 ### `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`
 
@@ -435,6 +464,7 @@ Seven cells of the family come out otherwise on the previous release, beside the
 - *Held against.* **The human's ruling of 2026-10-14 on the record's §6, entry 2: every refusal of `setup` leaves the repository as it was**, caches aside — a failure after the first write rolls back. These are the late failures it decides, and the `S12` behaviour it overrules (§1 of this file, `r1-setup-design-stages-a-failed-install-where-the-rule-is-that-a-refusal-changes-nothing`). **No byte of the user's is lost** in any of the twelve: the plant stands in each.
 - *The previous release.* Red in all twelve: eleven the same, one *written outside its allowance*.
 - *Ruled on 2026-10-15, the record's §6, entry 3*, option A: **the install-footprint record is named in the doc and moves out of `.jigc/state/`, since it is not rebuildable; a refusal leaves none**, and it is part of this finding; the fixer settles how the old path is read. The table checks its path: `C2` no longer excuses `.jigc/state/setup-install-footprint` (`byte_cell::NO_CACHE`), so each of the twelve names it among what the refusal changed. The class is the one it was.
+- *Ruled on 2026-10-26, the record's §6, entry 1 (ii)*: the file↔state record is a baseline, not a cache, and `C2` lets a refusal leave the record's lock and nothing else under `.jigc/state/` (2026-10-27). Each of this key's cells laid out `.jigc/state/` — and `.jigc/` with it, where the refusal made that — to hold the footprint; `C2` had excused the directory, and now no line does, so it joins what each names as changed. No cell's class moves — each was red already — and none wrote the record, on either binary: a `setup` writes none. The previous release's five more late failures there (at a link to nothing at the bootstrap, the host file, the settings file and the workbench's ignore file, and a directory at the stamp — each refused before its first write on this tree) did the same.
 
 ### `r1-setup-runs-no-hook-at-its-install-commit`
 

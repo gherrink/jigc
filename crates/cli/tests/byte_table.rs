@@ -228,7 +228,8 @@ const fn refuses_having_committed(
     })
 }
 
-/// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused.
+/// A line of [`ON_A_REFUSAL`]: a cache at `place`, rebuilt, when the command refused — or,
+/// for `C2`, the file↔state record's lock.
 const fn rebuilt_on_a_refusal(id: &'static str, place: Where, quotes: &'static [Quote]) -> Line {
     Line {
         id,
@@ -243,10 +244,15 @@ const fn rebuilt_on_a_refusal(id: &'static str, place: Where, quotes: &'static [
 /// **What a refusal may do to a cache** — the lines `C1` to `C3` of the committed record
 /// (its §4a), which stand in every row: the human's ruling of 2026-10-12 on the record's
 /// first silence (`DECISIONS.md` → *A refusal may rebuild a cache*). The places are the
-/// ones `design/storage.md` declares rebuildable derived state — the edge index, the
-/// file↔state hashes, and a milestone's `base.json` and `tasks.json` — and no other. A
-/// line here holds **when the command refused, and only then**; what a command that exits
-/// 0 may write to a cache is its own row's to say.
+/// ones `design/storage.md` declares rebuildable derived state — the edge index and a
+/// milestone's `base.json` and `tasks.json` — and no other. **The file↔state hashes are
+/// not among them**: the human's ruling of 2026-10-26 on the record's §6, entry 1 (ii),
+/// has them a **baseline, not a cache** — the authority on what counts as an out-of-band
+/// edit — which a refusal leaves exactly as it was ([`THE_RECORD_IS_A_BASELINE`]); `C2`
+/// lets a refusal leave the record's lock, the stable `file-state.json.lock` its save is
+/// taken on, which holds no hash, and nothing else under `.jigc/state/`. A line here holds
+/// **when the command refused, and only then**; what a command that exits 0 may write to
+/// a cache, or to the record, is its own row's to say.
 const ON_A_REFUSAL: [Line; 4] = [
     rebuilt_on_a_refusal(
         "C1",
@@ -266,17 +272,17 @@ const ON_A_REFUSAL: [Line; 4] = [
     ),
     rebuilt_on_a_refusal(
         "C2",
-        Where::Under(".jigc/state"),
+        Where::Path(".jigc/state/file-state.json.lock"),
         &[
             Quote {
-                doc: "design/storage.md",
-                heading: "Derived caches",
-                words: "The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed",
+                doc: "DECISIONS.md",
+                heading: THE_RECORD_IS_A_BASELINE,
+                words: "**A refusal leaves the file↔state record exactly as it was.**",
             },
             Quote {
                 doc: "design/storage.md",
-                heading: "Repository layout & state location",
-                words: "gitignored — file↔CLI-state hashes (rebuildable)",
+                heading: "Concurrent writers",
+                words: "taken on a **stable `<filename>.lock` sibling**, never the target's own fd",
             },
         ],
     ),
@@ -313,6 +319,11 @@ const ON_A_REFUSAL: [Line; 4] = [
         ],
     ),
 ];
+
+/// The heading of the entry of `DECISIONS.md` that records the human's ruling of 2026-10-26
+/// on the rows' record's §6, entry 1 (ii) — the file↔state record is a baseline, not a
+/// cache (the task `B10`, after its review: the second of its fixes).
+const THE_RECORD_IS_A_BASELINE: &str = "2026-10-27 — The file↔state record is a baseline, not a cache: the human's ruling of 2026-10-26 on the rows' record's §6, entry 1 (ii), recorded — a refusal leaves `.jigc/state/` as it was, but for the record's lock, and `C2` says so; red first, and no cell moved on either binary (the byte table, task B10, after its review: the second of its fixes)";
 
 /// The heading of the entry of `DECISIONS.md` that records the human's three rulings of
 /// 2026-10-26 (the task `B10`, its first commit).
@@ -1453,7 +1464,6 @@ const EXCUSED_IN: &[(&[&str], &str, &[Prepared])] = &[
     (&["setup"], "S10", &[Prepared::Bare]),
     (&["setup"], "S11", &[Prepared::Bare]),
     (&["setup"], "S16, the file-state hashes", &[Prepared::Bare]),
-    (&["setup"], "C2", &[Prepared::Bare]),
     (&["uninstall"], "U1", &[Prepared::Of(State::Fresh)]),
     (&["uninstall"], "U4", &[Prepared::Of(State::Fresh)]),
     (&["uninstall"], "U4, removed", &[Prepared::Of(State::Fresh)]),
@@ -1915,19 +1925,23 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["migrate-corpus"], "MG5", A_DRY_RUN_WRITES_NOTHING),
     (&["relocate"], "RL2", STAGED_UNDER_ANOTHER_LINE),
     (&["start"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["start"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["start"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["start"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["start"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["workflow"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["workflow"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["workflow"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["workflow"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["workflow"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["migrate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["migrate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["migrate"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["migrate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["migrate"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["task", "amend"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["task", "amend"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["task", "amend"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (&["task", "amend"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (
         &["task", "amend"],
@@ -1936,12 +1950,16 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["migrate"], "MI2", READ_AND_NEVER_WRITTEN),
     (&["relocate"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["relocate"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["relocate"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["relocate"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["relocate"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["config", "set"], "CS5", STAGED_UNDER_ANOTHER_LINE),
     (&["config", "set"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["config", "set"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["config", "set"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (&["config", "set"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (
         &["config", "set"],
@@ -1949,7 +1967,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         NO_CELL_OF_THIS_LEAF,
     ),
     (&["migrate-corpus"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["migrate-corpus"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["migrate-corpus"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["migrate-corpus"],
         "C3, the base pin",
@@ -1971,6 +1993,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         NO_SETUP_LAYS_THE_INDEX_OUT,
     ),
     (&["setup"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["setup"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["setup"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["setup"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "U2", NOT_UNTIL_THE_TEARDOWN_COMMITS),
@@ -1979,15 +2002,15 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (&["uninstall"], "U6", A_REGISTRATION_UNDER_THE_WORKBENCH),
     (&["uninstall"], "U9", NOT_UNTIL_THE_TEARDOWN_COMMITS),
     (&["ingest"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["ingest"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["ingest"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["ingest"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["ingest"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["unmanage"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["unmanage"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["unmanage"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["unmanage"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["unmanage"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["uninstall"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (&["uninstall"], "C2", A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK),
     (&["uninstall"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (&["uninstall"], "C3, the task list", NO_CELL_OF_THIS_LEAF),
     (&["task", "finalize"], "T3", STAGED_UNDER_ANOTHER_LINE),
@@ -2001,7 +2024,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "T3, the config's ignore file",
         NO_FIRST_COMMIT_OF_THE_CONFIG_LAYER,
     ),
-    (&["task", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["task", "finalize"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["task", "finalize"],
         "C3, the base pin",
@@ -2013,7 +2040,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         NO_CELL_OF_THIS_LEAF,
     ),
     (&["task", "discard"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["task", "discard"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["task", "discard"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["task", "discard"],
         "C3, the base pin",
@@ -2024,7 +2055,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C3, the task list",
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
-    (&["milestone", "finalize"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "finalize"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "finalize"],
         "C3, the base pin",
@@ -2036,7 +2071,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (&["milestone", "create"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["milestone", "create"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "create"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "create"],
         "C3, the base pin",
@@ -2049,7 +2088,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["milestone", "add-task"], "MA6", NO_AREA_TO_RE_SEED),
     (&["milestone", "add-task"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["milestone", "add-task"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "add-task"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "add-task"],
         "C3, the base pin",
@@ -2069,7 +2112,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (
         &["milestone", "add-from-spec"],
         "C2",
-        A_REFUSAL_THAT_REBUILDS_IT,
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
     ),
     (
         &["milestone", "add-from-spec"],
@@ -2091,7 +2134,7 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     (
         &["milestone", "provision"],
         "C2",
-        A_REFUSAL_THAT_REBUILDS_IT,
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
     ),
     (
         &["milestone", "provision"],
@@ -2104,7 +2147,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (&["milestone", "execute"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["milestone", "execute"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "execute"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "execute"],
         "C3, the base pin",
@@ -2117,7 +2164,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["milestone", "join"], "MJ1", NO_CACHE_TO_RE_DERIVE),
     (&["milestone", "join"], "MJ2", NO_AREA_TO_RE_SEED),
-    (&["milestone", "join"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "join"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "join"],
         "C3, the base pin",
@@ -2129,7 +2180,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         A_REFUSAL_THAT_REBUILDS_IT,
     ),
     (&["milestone", "discard"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["milestone", "discard"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["milestone", "discard"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["milestone", "discard"],
         "C3, the base pin",
@@ -2172,7 +2227,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "add-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "add-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "add-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "add-item"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["doc", "add-item"],
         "C3, the base pin",
@@ -2185,7 +2244,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "remove-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "remove-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "remove-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "remove-item"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["doc", "remove-item"],
         "C3, the base pin",
@@ -2198,7 +2261,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "retitle-item"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "retitle-item"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "retitle-item"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "retitle-item"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["doc", "retitle-item"],
         "C3, the base pin",
@@ -2211,7 +2278,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "rename"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "rename"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "rename"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "rename"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (&["doc", "rename"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (
         &["doc", "rename"],
@@ -2220,7 +2291,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "set-field"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "set-field"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "set-field"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "set-field"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["doc", "set-field"],
         "C3, the base pin",
@@ -2233,7 +2308,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "set-slot"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "set-slot"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "set-slot"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "set-slot"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (
         &["doc", "set-slot"],
         "C3, the base pin",
@@ -2246,7 +2325,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "create"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "create"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "create"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "create"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (&["doc", "create"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (
         &["doc", "create"],
@@ -2255,7 +2338,11 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     ),
     (&["doc", "author"], "W3", READ_AND_NEVER_WRITTEN),
     (&["doc", "author"], "C1", A_REFUSAL_THAT_REBUILDS_IT),
-    (&["doc", "author"], "C2", A_REFUSAL_THAT_REBUILDS_IT),
+    (
+        &["doc", "author"],
+        "C2",
+        A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK,
+    ),
     (&["doc", "author"], "C3, the base pin", NO_CELL_OF_THIS_LEAF),
     (
         &["doc", "author"],
@@ -2337,6 +2424,12 @@ const STAGED_UNDER_ANOTHER_LINE: &str = "no cell can: the comparison excuses a s
 /// leaf's cells has met.
 const A_REFUSAL_THAT_REBUILDS_IT: &str =
     "a refusal of this leaf that leaves that cache rebuilt: none of its cells' refusals does";
+
+/// What would use `C2`, which since the human's ruling of 2026-10-26 on the rows' record's
+/// §6, entry 1 (ii), lets a refusal leave the file↔state record's lock and nothing else
+/// under `.jigc/state/`.
+const A_REFUSAL_THAT_TOOK_THE_RECORDS_LOCK: &str = "a refusal of this leaf that took the file↔state record's lock — a save the refusal put back \
+     — where no lock stood before: none of its cells' refusals does";
 
 /// What would use a line of the re-seed of the sub-tasks' areas: an area the record names
 /// that is absent before the command.
@@ -9367,8 +9460,11 @@ fn a_refusal_may_rebuild_a_cache_and_may_not_take_one_away() {
 /// the two words the human's rulings of 2026-10-15 on the install family's questions put
 /// into the frame (the record's §6, entries 3 and 1). A refusal that leaves the record at
 /// the path a run showed it under is *refused, and changed what a refusal may not*: a line
-/// that lets a cache be rebuilt does not cover it ([`byte_cell::NO_CACHE`]), where a file
-/// of the cache beside it still is. And a line that lays a directory out ([`May::LaidOut`])
+/// that lets a cache be rebuilt does not cover it ([`byte_cell::NO_CACHE`]) — neither a line
+/// over `.jigc/state/` whole nor the table's own `C2` — where the file↔state record's lock
+/// beside it still is (under `C2`, since the ruling of 2026-10-26 on entry 1 (ii) the one
+/// file a refusal may leave there: [`a_refusal_leaves_the_file_state_record_as_it_was`]).
+/// And a line that lays a directory out ([`May::LaidOut`])
 /// lets the directory be made by a command that acts, and nothing in it: a file made there
 /// is *written outside its allowance*, as is a directory made outside the line's place.
 #[test]
@@ -9396,7 +9492,10 @@ fn the_footprint_record_is_no_cache_and_a_directory_laid_out_holds_no_file() {
             put(m, &format!("repo/.jigc/state/{file}"), "a run's own\n");
         })
     };
-    let (rebuilt, footprint) = (with("file-state.json"), with("setup-install-footprint"));
+    let (rebuilt, footprint) = (
+        with("file-state.json.lock"),
+        with("setup-install-footprint"),
+    );
     let (class, why) = refused(&rebuilt);
     assert_eq!(class, Classification::RefusesNothingChanged, "{why:#?}");
     let (class, why) = refused(&footprint);
@@ -9406,6 +9505,27 @@ fn the_footprint_record_is_no_cache_and_a_directory_laid_out_holds_no_file() {
                 .iter()
                 .any(|why| why.contains("`repo/.jigc/state/setup-install-footprint` was made")),
         "the footprint record left by a refusal is no rebuilt cache: {class}, {why:#?}"
+    );
+    // Nor does the table's own `C2` cover it, where it lets the record's lock stand.
+    let refused_on_the_table = |after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(row(&ON_A_REFUSAL), &before, after)
+        }
+        .came_to()
+    };
+    let (class, why) = refused_on_the_table(&rebuilt);
+    assert_eq!(
+        class,
+        Classification::RefusesNothingChanged,
+        "the record's lock under `C2`: {why:#?}"
+    );
+    let (class, why) = refused_on_the_table(&footprint);
+    assert_eq!(
+        class,
+        Classification::RefusedAndChanged,
+        "the footprint record under `C2`: {why:#?}"
     );
 
     const LAYS_OUT: Row = row(&[line(
@@ -9864,7 +9984,9 @@ fn a_line_over_one_files_place_lets_no_directory_be_made_there() {
 /// `edges.json`; refusals under `C1`, `C2` and a milestone's area line that made a directory
 /// at their caches' files *refuses, nothing changed*; and a commit that wrote the index over
 /// a link, or over an empty directory, that stood at its place came out *holds* — as did a
-/// refusal that wrote the hashes over a link.
+/// refusal that wrote the hashes over a link. *Since 2026-10-27* the hashes are no cache:
+/// `C2` lets a refusal leave their lock alone, so their file made, or a directory made
+/// beside it, is red under it too (the second of the fixes after the task's review).
 #[test]
 fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
     const INDEX: &str = "repo/.jigc/index/edges.json";
@@ -9969,14 +10091,27 @@ fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
         .came_to(),
         Want::Uncovered,
     );
-    for (row, at, what) in [
-        (CACHES, INDEX, "`C1`, the index's file"),
-        (CACHES, HASHES, "`C2`, the hashes' file"),
+    // The index's file a refusal may make (`C1`); the hashes' it may not, since the human's
+    // ruling of 2026-10-26 on entry 1 (ii) — a baseline, not a cache
+    // ([`a_refusal_leaves_the_file_state_record_as_it_was`]).
+    for (row, at, what, made) in [
+        (
+            CACHES,
+            INDEX,
+            "`C1`, the index's file",
+            Want::Is(RefusesNothingChanged),
+        ),
+        (
+            CACHES,
+            HASHES,
+            "`C2`, the hashes' file",
+            Want::Is(RefusedAndChanged),
+        ),
     ] {
         expect(
             &format!("a refusal, {what} made"),
             refused(row, &before, &then(&before, |m| put(m, at, BUILT))),
-            Want::Is(RefusesNothingChanged),
+            made,
         );
         expect(
             &format!("a refusal, a directory made at {what}"),
@@ -9996,13 +10131,14 @@ fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
             Want::Uncovered,
         );
     }
-    // A directory made inside a cache's directory, at no cache file's path, still holds.
+    // A directory made inside a cache's directory, at no cache file's path, still holds —
+    // the index's: the hashes' directory is no cache's since the ruling of 2026-10-26.
     expect(
-        "a refusal, a directory made in the hashes' directory",
+        "a refusal, a directory made in the index's directory",
         refused(
             CACHES,
             &before,
-            &then(&before, |m| dir(m, "repo/.jigc/state/locks")),
+            &then(&before, |m| dir(m, "repo/.jigc/index/locks")),
         ),
         Want::Is(RefusesNothingChanged),
     );
@@ -10042,6 +10178,154 @@ fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
         "a refusal under `C2`, the hashes written over a link at their place",
         refused(CACHES, &stood, &then(&stood, |m| put(m, HASHES, BUILT))),
         Want::Is(RefusedAndChanged),
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// **A refusal leaves the file↔state record exactly as it was** — the human's ruling of
+/// 2026-10-26 on the rows' record's §6, entry 1, its open point (ii): the record under
+/// `.jigc/state/` — the hashes of what jigc last wrote for each managed doc — is a
+/// **baseline, not a cache**, the authority on what counts as an out-of-band edit, and a
+/// baseline written over a user's hand edit makes that edit read as jigc's own to the next
+/// drift check. So `C2` ([`ON_A_REFUSAL`]) lets a refusal leave the record's lock beside it
+/// — the stable `file-state.json.lock` its save is taken on, which holds no hash and which
+/// nothing writes to — and the directories on the way to it, and nothing else under
+/// `.jigc/state/`. Over a built record, a refusal that wrote it again, took it away, made it
+/// where none stood, made a file beside it or laid out its directory with nothing in it is
+/// *refused, and changed what a refusal may not*; one that left only the lock *refuses,
+/// nothing changed*, the lock counted under `C2`. `C1`'s rebuild of the edge index is as it
+/// was — the ruling of 2026-10-12 stands for the true caches — and so is a row's own line
+/// over the record at exit 0: the ruling speaks of a refusal.
+///
+/// Red first: with `C2` as it stood — everything under `.jigc/state/`, rebuilt — the record
+/// written again, the record made, a file beside it and its directory laid out empty each
+/// came out *refuses, nothing changed*.
+#[test]
+fn a_refusal_leaves_the_file_state_record_as_it_was() {
+    const HASHES: &str = "repo/.jigc/state/file-state.json";
+    const LOCK: &str = "repo/.jigc/state/file-state.json.lock";
+    const INDEX: &str = "repo/.jigc/index/edges.json";
+    const CACHES: Row = row(&ON_A_REFUSAL);
+    const ITS_OWN: Row = row(&[line(
+        "K1",
+        Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+    )]);
+    let workbench = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/index");
+    });
+    let built = then(&workbench, |m| {
+        dir(m, "repo/.jigc/state");
+        put(m, HASHES, "{\"hashes\":{\"docs/a.md\":\"h0\"}}\n");
+    });
+    let none = then(&workbench, |m| dir(m, "repo/.jigc/state"));
+    let refused = |before: &Manifest, after: &Manifest| {
+        Cell {
+            code: Some(1),
+            listed: Listed::Refuses,
+            ..Cell::of(CACHES, before, after)
+        }
+        .verdict()
+        .expect("a cell")
+    };
+    use Classification::{Holds, RefusedAndChanged, RefusesNothingChanged};
+    // Every case is checked, and every one that came out otherwise is named together.
+    let mut wrong: Vec<String> = Vec::new();
+    let mut expect = |what: &str, verdict: byte_cell::Verdict, want: Classification| {
+        if verdict.classification != want {
+            wrong.push(format!(
+                "{what}: wanted {want}, came to {}, {:?}",
+                verdict.classification, verdict.why
+            ));
+        }
+    };
+    expect(
+        "a refusal, the record written again",
+        refused(
+            &built,
+            &then(&built, |m| {
+                put(m, HASHES, "{\"hashes\":{\"docs/a.md\":\"h1\"}}\n")
+            }),
+        ),
+        RefusedAndChanged,
+    );
+    expect(
+        "a refusal, the record taken away",
+        refused(
+            &built,
+            &then(&built, |m| {
+                m.files.remove(HASHES);
+            }),
+        ),
+        RefusedAndChanged,
+    );
+    expect(
+        "a refusal, the record made where none stood",
+        refused(&none, &then(&none, |m| put(m, HASHES, "{\"hashes\":{}}\n"))),
+        RefusedAndChanged,
+    );
+    expect(
+        "a refusal, a file made beside the record",
+        refused(
+            &built,
+            &then(&built, |m| put(m, "repo/.jigc/state/notes.json", "{}\n")),
+        ),
+        RefusedAndChanged,
+    );
+    expect(
+        "a refusal, the record's directory laid out with nothing in it",
+        refused(
+            &workbench,
+            &then(&workbench, |m| dir(m, "repo/.jigc/state")),
+        ),
+        RefusedAndChanged,
+    );
+    // What a refusal may leave: the record's lock, and the directory on the way to it.
+    let lock = refused(&built, &then(&built, |m| put(m, LOCK, "")));
+    assert_eq!(
+        lock.excused.iter().find(|(id, _)| *id == "C2"),
+        Some(&("C2", 1)),
+        "the lock is counted under `C2`: {:#?}",
+        lock.why
+    );
+    expect(
+        "a refusal, the record's lock made",
+        lock,
+        RefusesNothingChanged,
+    );
+    expect(
+        "a refusal, the record's directory made with its lock in it",
+        refused(
+            &workbench,
+            &then(&workbench, |m| {
+                dir(m, "repo/.jigc/state");
+                put(m, LOCK, "");
+            }),
+        ),
+        RefusesNothingChanged,
+    );
+    // The edge index is a cache, and a refusal may rebuild it as before.
+    expect(
+        "a refusal, the edge index rebuilt",
+        refused(
+            &built,
+            &then(&built, |m| put(m, INDEX, "{\"stamp\":\"c1\"}\n")),
+        ),
+        RefusesNothingChanged,
+    );
+    // A row's own line over the record, at exit 0: the ruling speaks of a refusal.
+    expect(
+        "exit 0, the record written again under a row's own line",
+        Cell::of(
+            ITS_OWN,
+            &built,
+            &then(&built, |m| {
+                put(m, HASHES, "{\"hashes\":{\"docs/a.md\":\"h1\"}}\n")
+            }),
+        )
+        .verdict()
+        .expect("a cell"),
+        Holds,
     );
     assert!(wrong.is_empty(), "{wrong:#?}");
 }

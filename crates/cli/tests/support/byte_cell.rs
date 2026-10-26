@@ -686,9 +686,12 @@ pub const NO_CACHE: &[&str] = &[".jigc/state/setup-install-footprint"];
 /// *invalidated* or *laid out* lets a directory be made where none stood inside the
 /// directory it names, but **never at one of these paths**: a directory there is neither the
 /// file rebuilt nor taken away, whether the line names the file's one place (`C3`'s halves,
-/// `C4`) or the whole directory around it (`C1`, `C2`, `T5`, `M10`, `RN5`, a milestone's
-/// area). Added 2026-10-26, after the review of the task `B10` (its finding H1): the third
-/// commit of that task had held the rule only where a line names the file's one place.
+/// `C4`) or the whole directory around it (`C1`, `T5`, `M10`, `RN5`, a milestone's area;
+/// `C2` until 2026-10-27). Added 2026-10-26, after the review of the task `B10` (its finding
+/// H1): the third commit of that task had held the rule only where a line names the file's
+/// one place. **The file↔state record's `file-state.json` stays on the list** though the
+/// human's ruling of 2026-10-26 has the record a baseline and not a cache: a row's own line
+/// over `.jigc/state/` lets no directory be made at it either.
 pub const CACHE_FILES: &[&str] = &[
     ".jigc/index/edges.json",
     ".jigc/state/file-state.json",
