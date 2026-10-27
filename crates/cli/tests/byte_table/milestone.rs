@@ -1469,7 +1469,7 @@ const NOT_SET_UP: Listed = refuses(1, "this project isn't set up");
 ///   sweeping the agent's in-flight index/worktree WIP"*), and **a hook that rejects** the
 ///   commit leaves no residue (`MC5`);
 /// - **a file of the user's beside the baseline** (`MC4`) stays.
-const CREATE_CELLS: [Cell; 22] = [
+const CREATE_CELLS: [Cell; 23] = [
     cell(
         "milestone-create-a-milestone-the-catalog-names",
         &["milestone", "create"],
@@ -1549,6 +1549,15 @@ const CREATE_CELLS: [Cell; 22] = [
         CREATE_IT,
         refuses(1, "store.home-not-regular-file"),
         at("MC2", Kind::LinkOutside),
+    ),
+    cell(
+        "milestone-create-a-link-to-a-directory-outside-at-the-records-directory",
+        &["milestone", "create"],
+        FRESH,
+        &[Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
+        CREATE_IT,
+        refuses(1, "docs/milestone-records"),
+        at("MC2", Kind::LinkOnTheWay),
     ),
     cell(
         "milestone-create-a-directory-at-the-records-home",
@@ -1707,7 +1716,7 @@ const CREATE_CELLS: [Cell; 22] = [
 /// - **a file of the user's beside the baseline** (`MA5`), and **one in the area of a
 ///   sub-task added before** (`MA6`: *"A sub-task whose area already exists is skipped
 ///   untouched"*), stay.
-const ADD_TASK_CELLS: [Cell; 24] = [
+const ADD_TASK_CELLS: [Cell; 25] = [
     cell(
         "milestone-add-task-to-a-milestone-that-is-not-there",
         &["milestone", "add-task"],
@@ -1791,6 +1800,18 @@ const ADD_TASK_CELLS: [Cell; 24] = [
         ADD_A_SUB_TASK,
         refuses(1, "store.home-not-regular-file"),
         at("MA3", Kind::LinkOutside),
+    ),
+    cell(
+        "milestone-add-task-a-link-to-a-directory-outside-at-the-records-directory",
+        &["milestone", "add-task"],
+        FRESH,
+        &[
+            MINT_IT,
+            Lead::Plant(Plant::LinkToADir("docs/milestone-records")),
+        ],
+        ADD_A_SUB_TASK,
+        refuses(1, "docs/milestone-records"),
+        at("MA3", Kind::LinkOnTheWay),
     ),
     cell(
         "milestone-add-task-a-directory-in-the-records-place",
@@ -2033,7 +2054,7 @@ macro_rules! seeds {
 /// `vendored`'s committed spec `spec:padding`, whose one criterion mints `pads-the-input`;
 /// each listed as `add-task`'s is. In a prepared state with no spec the base cell refuses —
 /// the spec is not there, which no doc of the door's words; the words are a run's.
-const ADD_FROM_SPEC_CELLS: [Cell; 24] = [
+const ADD_FROM_SPEC_CELLS: [Cell; 25] = [
     cell(
         "milestone-add-from-spec-to-a-milestone-that-is-not-there",
         &["milestone", "add-from-spec"],
@@ -2094,6 +2115,12 @@ const ADD_FROM_SPEC_CELLS: [Cell; 24] = [
         }))],
         refuses(1, "store.home-not-regular-file"),
         at("MS3", Kind::LinkOutside)
+    ),
+    seeds!(
+        "milestone-add-from-spec-a-link-to-a-directory-outside-at-the-records-directory",
+        [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
+        refuses(1, "docs/milestone-records"),
+        at("MS3", Kind::LinkOnTheWay)
     ),
     seeds!(
         "milestone-add-from-spec-a-directory-in-the-records-place",
@@ -2683,7 +2710,7 @@ macro_rules! discards {
 ///   is disposable"*: refused;
 /// - **the user's own linked worktree** (`MD6`), its directory there or moved away, is
 ///   *"left byte-identical"*.
-const DISCARD_CELLS: [Cell; 22] = [
+const DISCARD_CELLS: [Cell; 23] = [
     cell(
         "milestone-discard-a-milestone-that-is-not-there",
         &["milestone", "discard"],
@@ -2742,6 +2769,13 @@ const DISCARD_CELLS: [Cell; 22] = [
         DISCARD_IT,
         refuses(1, "store.home-not-regular-file"),
         at("MD1", Kind::LinkOutside)
+    ),
+    discards!(
+        "milestone-discard-a-link-to-a-directory-outside-at-the-records-directory",
+        [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
+        DISCARD_IT,
+        refuses(1, "docs/milestone-records"),
+        at("MD1", Kind::LinkOnTheWay)
     ),
     discards!(
         "milestone-discard-a-directory-in-the-records-place",
@@ -2958,7 +2992,7 @@ const fn finalizes(
 /// - **a sub-task's area gone, at a milestone with no work to land**: the re-seed rebuilds
 ///   the area before the door's own guard refuses (`milestone.zero-contribution`), and the
 ///   area stays — the areas' half of the re-seed holds on a refusal (`M12`).
-const FINALIZE_CELLS: [Cell; 31] = [
+const FINALIZE_CELLS: [Cell; 33] = [
     finalizes(
         "milestone-finalize-a-milestone-that-is-not-there",
         FRESH,
@@ -3047,6 +3081,14 @@ const FINALIZE_CELLS: [Cell; 31] = [
         &["milestone", "finalize", "stage-reports"],
         refuses(3, "store.home-not-regular-file"),
         at("M2", Kind::LinkOutside),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-directory-outside-at-the-numbered-docs-directory",
+        FRESH,
+        two_reporters_joined!([], [Lead::Plant(Plant::LinkToADir("docs/inconsistencies"))]),
+        &["milestone", "finalize", "stage-reports"],
+        refuses(1, "docs/inconsistencies"),
+        at("M2", Kind::LinkOnTheWay),
     ),
     finalizes(
         "milestone-finalize-a-directory-at-the-id-the-join-numbered-onto",
@@ -3174,6 +3216,17 @@ const FINALIZE_CELLS: [Cell; 31] = [
         FINALIZE_IT,
         refuses(1, "store.home-not-regular-file"),
         at("M5", Kind::LinkOutside),
+    ),
+    finalizes(
+        "milestone-finalize-a-link-to-a-directory-outside-at-the-records-directory",
+        FRESH,
+        two_sub_tasks_joined!(
+            [],
+            [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))]
+        ),
+        FINALIZE_IT,
+        refuses(1, "docs/milestone-records"),
+        at("M5", Kind::LinkOnTheWay),
     ),
     finalizes(
         "milestone-finalize-a-directory-in-the-records-place",

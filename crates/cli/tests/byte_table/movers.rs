@@ -651,7 +651,7 @@ const fn renames(
 /// - **a hook that rejects** the commit: *"on **any** pre-commit failure restores all
 ///   captured bytes"* (`RN6`);
 /// - **a file of the user's in a cache** (`RN4`, `RN5`) stays.
-const RENAME_CELLS: [Cell; 37] = [
+const RENAME_CELLS: [Cell; 39] = [
     cell(
         "rename-a-decision-the-catalog-names",
         &["rename"],
@@ -718,6 +718,12 @@ const RENAME_CELLS: [Cell; 37] = [
         }))),
         refuses(1, "store.home-not-regular-file"),
         at("RN1", Kind::LinkOutside),
+    ),
+    renames(
+        "rename-a-link-to-a-directory-outside-at-the-decisions-directory",
+        a_decision_and_its_citer!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
+        refuses(1, "docs/decisions"),
+        at("RN1", Kind::LinkOnTheWay),
     ),
     renames(
         "rename-a-directory-in-the-decisions-place",
@@ -824,6 +830,12 @@ const RENAME_CELLS: [Cell; 37] = [
         }))),
         refuses(1, "rename.dirty-tree"),
         at("RN2", Kind::LinkOutside),
+    ),
+    renames(
+        "rename-a-link-to-a-directory-outside-at-the-citing-docs-directory",
+        a_decision_and_its_citer!(Lead::Plant(Plant::LinkToADir("docs/architecture"))),
+        refuses(1, "docs/architecture"),
+        at("RN2", Kind::LinkOnTheWay),
     ),
     renames(
         "rename-a-directory-in-the-citing-docs-place",
@@ -1060,7 +1072,7 @@ const fn migrates(
 ///   nothing changed — the human's ruling of 2026-10-19 on the record's §6, entry 22;
 /// - **a file of the user's beside the baseline** (`MG2`), over the decision a task
 ///   landed, stays.
-const MIGRATE_CORPUS_CELLS: [Cell; 42] = [
+const MIGRATE_CORPUS_CELLS: [Cell; 44] = [
     migrates("migrate-corpus-the-catalog-names", &[], Listed::Acts, None),
     migrates(
         "migrate-corpus-a-decision-below-its-version",
@@ -1139,6 +1151,12 @@ const MIGRATE_CORPUS_CELLS: [Cell; 42] = [
         at("MG1", Kind::LinkOutside),
     ),
     migrates(
+        "migrate-corpus-a-link-to-a-directory-outside-at-the-decisions-directory",
+        a_stale_decision!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
+        refuses(1, "docs/decisions"),
+        at("MG1", Kind::LinkOnTheWay),
+    ),
+    migrates(
         "migrate-corpus-a-directory-in-the-decisions-place",
         a_stale_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
         refuses(1, "store.home-not-regular-file"),
@@ -1202,6 +1220,12 @@ const MIGRATE_CORPUS_CELLS: [Cell; 42] = [
         }))),
         refuses(1, "store.home-not-regular-file"),
         at("MG1, from a prior home", Kind::LinkOutside),
+    ),
+    migrates(
+        "migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory",
+        a_stale_changelog!(Lead::Plant(Plant::LinkToADir("docs/changelog"))),
+        refuses(1, "docs/changelog"),
+        at("MG1, from a prior home", Kind::LinkOnTheWay),
     ),
     migrates(
         "migrate-corpus-a-directory-in-the-old-changelogs-place",
@@ -1603,7 +1627,7 @@ const fn relocates(
 ///   does all it can* (the human's ruling R1 of 2026-10-20), `relocate` *moves the others*
 ///   (entry 23), and a refusal of the whole sweep is not that outcome;
 /// - **a file of the user's beside the baseline** stays.
-const RELOCATE_CELLS: [Cell; 30] = [
+const RELOCATE_CELLS: [Cell; 32] = [
     cell(
         "relocate-the-changelog-the-catalog-names",
         &["relocate"],
@@ -1651,6 +1675,12 @@ const RELOCATE_CELLS: [Cell; 30] = [
         }))),
         refuses(1, "store.home-not-regular-file"),
         at("RL1", Kind::LinkOutside),
+    ),
+    relocates(
+        "relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory",
+        a_stranded_note!(Lead::Plant(Plant::LinkToADir("docs/legacy-notes"))),
+        refuses(1, "docs/legacy-notes"),
+        at("RL1", Kind::LinkOnTheWay),
     ),
     relocates(
         "relocate-a-directory-in-the-stranded-notes-place",
@@ -1736,6 +1766,12 @@ const RELOCATE_CELLS: [Cell; 30] = [
         })),
         refuses(1, THE_NOTES_HOME),
         at("RL1, at its new home", Kind::LinkOutside),
+    ),
+    relocates(
+        "relocate-a-link-to-a-directory-outside-at-the-notes-new-directory",
+        a_stranded_note!(Lead::Plant(Plant::LinkToADir("docs/notes"))),
+        refuses(1, "docs/notes"),
+        at("RL1, at its new home", Kind::LinkOnTheWay),
     ),
     relocates(
         "relocate-a-directory-at-the-notes-new-home",
@@ -1989,7 +2025,7 @@ const fn sets(
 ///   manifest, the baseline and the staging are the knob's write and the move primitive's,
 ///   one for both knobs, and their plants stand at `docs-root`'s cells (added 2026-10-20,
 ///   after the review of the task `B8`, H5).
-const CONFIG_SET_CELLS: [Cell; 55] = [
+const CONFIG_SET_CELLS: [Cell; 58] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -2053,6 +2089,12 @@ const CONFIG_SET_CELLS: [Cell; 55] = [
         })),
         refuses(1, "store.home-not-regular-file"),
         at("CS1", Kind::LinkOutside),
+    ),
+    sets(
+        "config-set-a-link-to-a-directory-outside-at-the-config-directory",
+        a_committed_decision!(Lead::Plant(Plant::LinkToADir(".jigc/config"))),
+        refuses(1, ".jigc/config"),
+        at("CS1", Kind::LinkOnTheWay),
     ),
     sets(
         "config-set-a-directory-in-the-manifests-place",
@@ -2129,6 +2171,12 @@ const CONFIG_SET_CELLS: [Cell; 55] = [
         at("CS2", Kind::LinkOutside),
     ),
     sets(
+        "config-set-a-link-to-a-directory-outside-at-the-decisions-directory",
+        a_committed_decision!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
+        refuses(1, "docs/decisions"),
+        at("CS2", Kind::LinkOnTheWay),
+    ),
+    sets(
         "config-set-a-directory-in-the-decisions-place",
         a_committed_decision!(Lead::Plant(Plant::InPlaceOf(&Plant::Dir(ONE_WAY)))),
         refuses(1, "store.home-not-regular-file"),
@@ -2201,6 +2249,12 @@ const CONFIG_SET_CELLS: [Cell; 55] = [
         })),
         refuses(1, THE_DECISIONS_NEW_HOME),
         at("CS2, at its new home", Kind::LinkOutside),
+    ),
+    sets(
+        "config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory",
+        a_committed_decision!(Lead::Plant(Plant::LinkToADir("notes/decisions"))),
+        refuses(1, "notes/decisions"),
+        at("CS2, at its new home", Kind::LinkOnTheWay),
     ),
     sets(
         "config-set-a-directory-at-the-decisions-new-home",

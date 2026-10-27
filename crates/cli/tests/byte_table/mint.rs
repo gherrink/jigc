@@ -566,7 +566,7 @@ const fn re_enters(
 ///   (after the review of the task `B9`, H4's lead); **a file where the commit doc's
 ///   directory goes** is refused, changing nothing;
 /// - **under the edge index**, a file of the user's stays.
-const WORKFLOW_CELLS: [Cell; 11] = [
+const WORKFLOW_CELLS: [Cell; 12] = [
     Cell {
         spelling: Some("--preview"),
         ..cell(
@@ -637,6 +637,12 @@ const WORKFLOW_CELLS: [Cell; 11] = [
         })),
         refuses(1, "commit:add-alpha"),
         at("WF1", Kind::LinkOutside),
+    ),
+    re_enters(
+        "workflow-a-link-to-a-directory-outside-at-the-sub-tasks-docs-directory",
+        a_sub_task_provisioned!(Lead::Plant(Plant::LinkToADir(".jigc/tasks/add-alpha/docs"))),
+        refuses(1, ".jigc/tasks/add-alpha/docs"),
+        at("WF1", Kind::LinkOnTheWay),
     ),
     re_enters(
         "workflow-a-directory-where-the-commit-doc-is-provisioned",

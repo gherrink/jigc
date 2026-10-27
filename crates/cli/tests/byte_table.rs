@@ -4458,6 +4458,7 @@ fn a_renamed_doc_is_retitled_and_its_referrers_repointed() {
             "RN1, at its new home × L, to nothing",
             "RN1, at its new home × L, to a file in the repository",
             "RN1, at its new home × L, to a file outside it",
+            "RN1, at its new home × L, at a directory on the way",
             "RN1, at its new home × K, a directory in a file's place",
         ],
         "what squats the doc's new home is what the row needs a cell for there"
@@ -5661,6 +5662,147 @@ fn a_provisioned_place_makes_and_rewrites_nothing() {
     }
 }
 
+/// **A link at a directory on the way to where the command writes is a need** — the review
+/// of the task `B10`, its lead L1: a link at the sub-task's `docs` directory, out of the
+/// repository, makes the first re-entry write the commit doc and the provenance manifest
+/// outside it at exit 0, on both binaries, and no cell saw it — **L** stood only at the place
+/// itself, and a link on the way to it was no plant. The kind *L, at a directory on the way*
+/// ([`Kind::LinkOnTheWay`]) is aimed where **L** is — one file's place the command creates,
+/// replaces or merges into, a doc it rewrites or moves, a doc's destination, and the named
+/// files a re-entry provisions — but at a place with a directory of the repository on the
+/// way to it: not a file at the repository's root, not the hook, whose directory is the one
+/// git resolves, and not a home a write only reads from. Its plant
+/// ([`Plant::LinkToADir`]) is of that kind alone, and a command that writes through it writes
+/// outside the repository, which no line covers.
+///
+/// Red first: with the kind there and `aimed` not yet reading it, no line needed it.
+#[test]
+fn a_link_on_the_way_to_a_place_the_command_writes_is_a_need() {
+    const WRITES: Row = Row {
+        leaf: &["task", "finalize"],
+        home: Prepared::Of(State::Fresh),
+        ..row(&[
+            line(
+                "F1",
+                Allows::Files(Where::Path("sub/a-file"), May::WriteWhole),
+            ),
+            line("F2", Allows::Files(Where::Path("a-file"), May::WriteWhole)),
+            line(
+                "F3",
+                Allows::Files(Where::Under(".jigc/tasks/<unit>"), May::Provisioned),
+            ),
+            line("F4", Allows::Files(Where::Hook, May::MergeInto)),
+            line(
+                "F5",
+                Allows::Files(Where::Path("sub/read.md"), May::CopiedFrom),
+            ),
+            line(
+                "F6",
+                Allows::Files(Where::Under(".jigc/index"), May::Rebuilt),
+            ),
+            line(
+                "F7",
+                Allows::Files(Where::Path(byte_cell::THE_DOC), May::Retitled),
+            ),
+            line(
+                "F8",
+                Allows::Files(Where::Path("sub/merged.md"), May::MergeInto),
+            ),
+            line(
+                "F9",
+                Allows::Files(Where::Path("sub/gone.md"), May::Removed),
+            ),
+        ])
+    };
+    let on_the_way: Vec<String> = needs(&WRITES)
+        .iter()
+        .map(Need::named)
+        .filter(|need| need.ends_with(" × L, at a directory on the way"))
+        .collect();
+    assert_eq!(
+        on_the_way,
+        [
+            "F1 × L, at a directory on the way",
+            "F3 × L, at a directory on the way",
+            "F7 × L, at a directory on the way",
+            "F8 × L, at a directory on the way",
+        ],
+        "a link on the way is aimed where a file is written past a directory of the repository"
+    );
+    let why = |id: &str| {
+        let line = WRITES
+            .lines
+            .iter()
+            .find(|line| line.id == id)
+            .expect("the line is the row's");
+        byte_cell::aimed(Kind::LinkOnTheWay, line).err()
+    };
+    assert_eq!(
+        why("F2"),
+        Some(
+            "the line's file stands at the repository's root: no directory of the repository is \
+             on the way to it"
+        )
+    );
+    assert_eq!(
+        why("F4"),
+        Some(
+            "the line's place is the hook, whose directory is the one git resolves for hooks: a \
+             link there is where git runs them from"
+        )
+    );
+    for id in ["F5", "F6", "F9"] {
+        assert_eq!(
+            why(id),
+            Some(
+                "the line names no one file's place the command creates, replaces or merges \
+                 into, past a directory of the repository"
+            ),
+            "{id}"
+        );
+    }
+    for kind in Kind::ALL {
+        assert_eq!(
+            Plant::LinkToADir("sub").is_of(*kind),
+            *kind == Kind::LinkOnTheWay,
+            "a link to a directory on the way is a plant of *{}* only where that is the kind",
+            kind.tag()
+        );
+    }
+    assert!(
+        needs(&mint::WORKFLOW)
+            .iter()
+            .any(|need| need.named() == "WF1 × L, at a directory on the way"),
+        "what `WF1` provisions is aimed at by a link on the way"
+    );
+
+    // What a command that writes through it does is a write outside the repository.
+    const LINK: &str = "repo/sub";
+    let target = format!("outside/{MARKER}-only");
+    let theirs = format!("{target}/a-file-of-its-users.txt");
+    let before = then(&sandbox(), |m| {
+        dir(m, &target);
+        put(m, &theirs, &format!("{MARKER}-target\n"));
+        m.files
+            .insert(LINK.to_string(), Entry::Link(format!("../{target}")));
+    });
+    let after = then(&before, |m| put(m, &format!("{target}/a-file"), "jigc's\n"));
+    // The file of the user's in the linked directory, the plant's piece this reader finds by
+    // its bytes (the arm's reader finds the link's too, by its target).
+    let marker = format!("{MARKER}-target");
+    let planted = [(theirs.as_str(), marker.as_str())];
+    let (class, why) = Cell {
+        planted: &planted,
+        ..Cell::of(WRITES, &before, &after)
+    }
+    .came_to();
+    assert_eq!(
+        class,
+        Classification::WrittenOutside,
+        "a file written through a link on the way stands outside the repository: {why:#?}"
+    );
+}
+
 /// **What a re-entry provisions meets a link or a directory where it goes** — the review of
 /// the task `B9`, H4's lead: `jigc workflow`'s `WF1` names the sub-task's area, a directory,
 /// so `aimed` gave it the one kind an area takes, **U**, and no cell put a link or a
@@ -5683,6 +5825,7 @@ fn a_provisioned_place_needs_a_link_and_a_directory_where_it_provisions() {
             "WF1 × L, to nothing",
             "WF1 × L, to a file in the repository",
             "WF1 × L, to a file outside it",
+            "WF1 × L, at a directory on the way",
             "WF1 × K, a directory in a file's place",
             "WF1 × K, a file in a directory's place",
         ],
@@ -13337,6 +13480,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "milestone-create-a-hook-that-rejects",
             "milestone-add-task-a-file-in-the-place-of-the-records-directory",
             "milestone-add-task-the-record-deleted",
+            // The fifth of the fixes after the review of the task `B10` (its lead L1): the
+            // records' directory a link out of the repository, which `git add` refuses to
+            // stage past — the door refuses, and leaves the directory it made on its way.
+            "milestone-create-a-link-to-a-directory-outside-at-the-records-directory",
+            "milestone-add-task-a-link-to-a-directory-outside-at-the-records-directory",
         ],
     ),
     (
@@ -13596,6 +13744,39 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     // version the user never committed nor staged — at its doctype's home and at an earlier
     // home — where the walk *"enumerates a doctype's **committed** instances"* (the sixth of
     // the fixes after the review of the task `B9`, *migrated* narrowed to a doc git holds).
+    // A link out of the repository at a directory on the way to where a door writes (the
+    // fifth of the fixes after the review of the task `B10`, its lead L1): the door asks
+    // nothing of the directories on the way — `setup` alone does, refusing `setup.write-*`
+    // with *"a symbolic link on the way"* on this tree — and writes, moves or rebuilds
+    // through the link, outside the repository. The rows' record's §6, entries 23 and 25:
+    // jigc never writes over an entry of the user's, and the check follows no link. One key,
+    // not the entry-25 key: the fix of that key asks the commit doc's own place, which a link
+    // on the way passes, and the doors are five.
+    (
+        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
+        Classification::WrittenOutside,
+        &["workflow-a-link-to-a-directory-outside-at-the-sub-tasks-docs-directory"],
+    ),
+    (
+        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
+        Classification::GitMoved,
+        &[
+            "relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory",
+            "relocate-a-link-to-a-directory-outside-at-the-notes-new-directory",
+            "config-set-a-link-to-a-directory-outside-at-the-config-directory",
+            "config-set-a-link-to-a-directory-outside-at-the-decisions-directory",
+            "config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory",
+        ],
+    ),
+    (
+        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
+        Classification::RefusedAndChanged,
+        &[
+            "task-finalize-a-link-to-a-directory-outside-at-the-workbench",
+            "migrate-corpus-a-link-to-a-directory-outside-at-the-decisions-directory",
+            "migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory",
+        ],
+    ),
     (
         "r1-migrate-corpus-migrates-and-commits-a-doc-git-never-held",
         Classification::GitMoved,
@@ -14192,22 +14373,22 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (760, 580, 180),
+        (782, 602, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
-         seventy-eight — sixty-six in the gate, four of them its spelling `doc-only` and seven \
+         eighty-one — sixty-nine in the gate, four of them its spelling `doc-only` and seven \
          its spelling `--approve`, twelve on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
          install family's are a \
-         hundred and thirty-one: a hundred and seven in the gate, twenty-four on demand — the \
+         hundred and thirty-four: a hundred and ten in the gate, twenty-four on demand — the \
          doc family's a hundred and thirty-nine: ninety-one in the gate, forty-eight on \
-         demand — and the milestone family's record doors seventy: fifty-two in the gate, \
+         demand — and the milestone family's record doors seventy-three: fifty-five in the gate, \
          eighteen on demand — its fan-out doors thirty-six: eighteen in the gate, eighteen on \
-         demand — and its terminals sixty-nine, `discard`'s twenty-eight and `milestone \
-         finalize`'s plain spelling's forty-one: fifty-seven in the gate, twelve on demand — and \
-         the movers family's doors that commit seventy-nine, `rename`'s thirty-seven and \
-         `migrate-corpus`'s forty-two: sixty-seven in the gate, twelve on demand — and its \
-         movers eighty-five, `relocate`'s thirty and `config set`'s fifty-five: \
-         seventy-three in the gate, twelve on demand — and the mint family's fifty-seven, `start`'s \
-         fifteen, `workflow`'s seventeen, `migrate`'s fifteen and `task amend`'s ten: thirty-three \
+         demand — and its terminals seventy-two, `discard`'s twenty-nine and `milestone \
+         finalize`'s plain spelling's forty-three: sixty in the gate, twelve on demand — and \
+         the movers family's doors that commit eighty-three, `rename`'s thirty-nine and \
+         `migrate-corpus`'s forty-four: seventy-one in the gate, twelve on demand — and its \
+         movers ninety, `relocate`'s thirty-two and `config set`'s fifty-eight: \
+         seventy-eight in the gate, twelve on demand — and the mint family's fifty-eight, `start`'s \
+         fifteen, `workflow`'s eighteen, `migrate`'s fifteen and `task amend`'s ten: thirty-four \
          in the gate, twenty-four on demand"
     );
 }

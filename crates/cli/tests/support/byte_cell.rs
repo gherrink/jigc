@@ -994,6 +994,14 @@ pub enum Kind {
     LinkInside,
     /// **L** — a link to a file under `outside/`.
     LinkOutside,
+    /// **L**, at a directory on the way — a link to a directory under `outside/`, standing at
+    /// a directory of the repository on the way to one file's place the command creates,
+    /// replaces or merges into, or to a file a re-entry provisions: the user's keeping that
+    /// directory outside the repository and linking it in. Added 2026-10-27, by the fifth of
+    /// the fixes after the review of the task `B10` (its lead L1): no plant stood on the way,
+    /// so a re-entry that provisions through a link at the sub-task's `docs` directory, out of
+    /// the repository at exit 0, was seen by no cell.
+    LinkOnTheWay,
     /// **K** — a directory in a file's place.
     DirForAFile,
     /// **K** — a file in a directory's place: at the parent of a file the command writes.
@@ -1030,6 +1038,7 @@ impl Kind {
         Kind::LinkToNothing,
         Kind::LinkInside,
         Kind::LinkOutside,
+        Kind::LinkOnTheWay,
         Kind::DirForAFile,
         Kind::FileForADir,
         Kind::EditBefore,
@@ -1052,6 +1061,7 @@ impl Kind {
             Kind::LinkToNothing => "L, to nothing",
             Kind::LinkInside => "L, to a file in the repository",
             Kind::LinkOutside => "L, to a file outside it",
+            Kind::LinkOnTheWay => "L, at a directory on the way",
             Kind::DirForAFile => "K, a directory in a file's place",
             Kind::FileForADir => "K, a file in a directory's place",
             Kind::EditBefore => "E, before the first write",
@@ -1117,6 +1127,14 @@ impl Kind {
 /// a file where its directory does. **T**, **E** and **S** do not: the area is under the
 /// workbench, where git holds no file to commit, edit or stage (added 2026-10-20, after the
 /// review of the task `B9`, H4's lead).
+///
+/// **And a link at a directory on the way** ([`Kind::LinkOnTheWay`]): where **L** goes —
+/// one file's place the command creates, replaces or merges into, a doc it rewrites or
+/// moves, a doc's destination, the files a re-entry provisions — and a directory of the
+/// repository is on the way to it, so not a file at the repository's root, and not the hook,
+/// whose directory is the one git resolves for hooks. Not the home a write only reads from:
+/// a read through a link writes nothing (added 2026-10-27, by the fifth of the fixes after the
+/// review of the task `B10`, its lead L1).
 pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
     if line.when == When::Refused {
         return Err(
@@ -1170,6 +1188,10 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                 May::Retitled | May::Repointed | May::IntoItsHome | May::Migrated | May::ItsKeySet
             )
     };
+    // One file at the repository's root, by its path: no directory of the repository is on
+    // the way to it. A place written `<…>` resolves to a doc's home, which a doctype's
+    // directory holds.
+    let at_the_root = |place: Where| matches!(place, Where::Path(path) if !path.contains('/') && !path.starts_with('<'));
     let aimed = match (kind, line.allows) {
         (Kind::Untracked, Allows::Files(place, may)) => {
             lands(may) || read(may) || rewrites(place, may) || destination(place) || retires(may)
@@ -1185,6 +1207,17 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                 || (one_file(place)
                     && (lands(may)
                         || read(may)
+                        || rewrites(place, may)
+                        || destination(place)
+                        || matches!(may, May::MergeInto)))
+        }
+        // A link on the way: where **L** goes, past a directory of the repository.
+        (Kind::LinkOnTheWay, Allows::Files(place, may)) => {
+            provisions(may)
+                || (one_file(place)
+                    && !matches!(place, Where::Hook)
+                    && !at_the_root(place)
+                    && (lands(may)
                         || rewrites(place, may)
                         || destination(place)
                         || matches!(may, May::MergeInto)))
@@ -1224,6 +1257,20 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
         Kind::LinkToNothing | Kind::LinkInside | Kind::LinkOutside => {
             "the line names no one file's place the command creates, replaces or merges into"
         }
+        Kind::LinkOnTheWay => match line.allows {
+            Allows::Files(Where::Hook, _) => {
+                "the line's place is the hook, whose directory is the one git resolves for \
+                 hooks: a link there is where git runs them from"
+            }
+            Allows::Files(place, _) if at_the_root(place) => {
+                "the line's file stands at the repository's root: no directory of the \
+                 repository is on the way to it"
+            }
+            _ => {
+                "the line names no one file's place the command creates, replaces or merges \
+                 into, past a directory of the repository"
+            }
+        },
         Kind::DirForAFile | Kind::FileForADir => {
             "the line names no one file's place the command writes"
         }
@@ -4745,6 +4792,16 @@ pub enum Plant {
     /// **K**, a directory in a file's place — a directory at this path of the repository,
     /// holding one file of the user's.
     Dir(&'static str),
+    /// **L**, at a directory on the way — a symbolic link at this path of the repository to a
+    /// directory under `outside/`: **the user keeps that directory outside the repository and
+    /// links it in**. The directory that stands at the path is moved there with what it holds,
+    /// so what the command reads through the link is what it read before; where none stands,
+    /// one is made there. The link's target carries one marker, by its name, and a file of the
+    /// user's put in the directory another, in its bytes: a command that writes through the
+    /// link writes outside the repository, and one that takes the link takes the first. Only
+    /// a directory, or nothing, may stand at the path. Added 2026-10-27, by the fifth of the
+    /// fixes after the review of the task `B10` (its lead L1).
+    LinkToADir(&'static str),
     /// **S**, and **N** — a change of the user's staged at this path of the repository: a
     /// file with the marker, or the marker added as a line to the file that stands there,
     /// then `git add`. Where not `kept`, the working file is put back as it was — taken
@@ -4947,6 +5004,7 @@ impl Plant {
                 }
             }
             Plant::Dir(_) => kind == Kind::DirForAFile,
+            Plant::LinkToADir(_) => kind == Kind::LinkOnTheWay,
             Plant::Staged { kept, .. } => {
                 kind == Kind::StagedThere
                     || (kept && matches!(kind, Kind::StagedElsewhere | Kind::QuotedName))
@@ -5178,6 +5236,13 @@ impl Plant {
                 format!("{REPO}/{path}/{INSIDE_THE_DIRECTORY}"),
                 "only",
             )],
+            Plant::LinkToADir(path) => vec![
+                piece(format!("{REPO}/{path}"), "only"),
+                piece(
+                    format!("outside/{}/{INSIDE_THE_DIRECTORY}", marker(at, "only")),
+                    "target",
+                ),
+            ],
             Plant::Staged { at: path, kept } => vec![Planted {
                 staged: !kept,
                 ..piece(format!("{REPO}/{path}"), "only")
@@ -5334,6 +5399,39 @@ impl Plant {
                 }
                 fs::write(&target, format!("{}\n", marker(at, "target"))).map_err(written(path))?;
                 std::os::unix::fs::symlink(&target, free(path)?).map_err(written(path))
+            }
+            Plant::LinkToADir(path) => {
+                let link = repo.join(path);
+                let target = sandbox.outside().join(marker(at, "only"));
+                if fs::symlink_metadata(&target).is_ok() {
+                    return Err(format!(
+                        "the link's target `{}` stands already",
+                        marker(at, "only")
+                    ));
+                }
+                match fs::symlink_metadata(&link) {
+                    // The directory that stands, moved out with what it holds.
+                    Ok(entry) if entry.is_dir() => {
+                        fs::rename(&link, &target).map_err(written(path))?;
+                    }
+                    Ok(_) => {
+                        return Err(format!(
+                            "a link on the way goes to `{path}`, and what stands there is no \
+                             directory"
+                        ));
+                    }
+                    Err(_) => {
+                        fs::create_dir_all(link.parent().expect("a plant has a parent"))
+                            .and_then(|()| fs::create_dir(&target))
+                            .map_err(written(path))?;
+                    }
+                }
+                fs::write(
+                    target.join(INSIDE_THE_DIRECTORY),
+                    format!("{}\n", marker(at, "target")),
+                )
+                .map_err(written(path))?;
+                std::os::unix::fs::symlink(&target, &link).map_err(written(path))
             }
             Plant::Dir(path) => {
                 let dir = free(path)?;

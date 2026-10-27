@@ -856,7 +856,7 @@ const A_NAME_GIT_QUOTES: &str = "notes/a \"quoted\" n\u{e4}me.txt";
 /// Two cells run their own command a second time over what a first refusal left
 /// ([`Lead::Refused`]): the ruling on a refusal's caches is bounded by *a refused command
 /// run again refuses again, with the plant standing*.
-const FINALIZE_CELLS: [Cell; 26] = [
+const FINALIZE_CELLS: [Cell; 27] = [
     finalize(
         "task-finalize-a-task-that-is-not-there",
         FRESH,
@@ -955,6 +955,14 @@ const FINALIZE_CELLS: [Cell; 26] = [
         FINALIZE_THE_DECISION,
         refuses(3, "store.home-not-regular-file"),
         at("T1", Kind::LinkOutside),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-directory-outside-at-the-created-docs-directory",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::LinkToADir("docs/decisions"))]),
+        FINALIZE_THE_DECISION,
+        refuses(3, "docs/decisions"),
+        at("T1", Kind::LinkOnTheWay),
     ),
     // The plain spelling's own cell at a link to nothing: the acceptance's runs a task of
     // the doc-only arm, and a need is keyed by its spelling.
@@ -1204,7 +1212,7 @@ const FINALIZE_CELLS: [Cell; 26] = [
 /// row says why**: `.jigc/` holds the task's working area too, so a file there takes the
 /// task with it and the finalize refuses `finalize.no-task` before it reaches the stamp — a
 /// cell of it would hold a refusal over a task that is not there, and never `T2`.
-const FINALIZE_AT_THE_STAMP: [Cell; 6] = [
+const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
     finalize(
         "task-finalize-a-file-of-the-users-in-the-stamps-place",
         FRESH,
@@ -1264,6 +1272,14 @@ const FINALIZE_AT_THE_STAMP: [Cell; 6] = [
         FINALIZE_THE_DECISION,
         Listed::Acts,
         at("T2", Kind::LinkOutside),
+    ),
+    finalize(
+        "task-finalize-a-link-to-a-directory-outside-at-the-workbench",
+        FRESH,
+        a_decision!([], [Lead::Plant(Plant::LinkToADir(".jigc"))]),
+        FINALIZE_THE_DECISION,
+        refuses(3, ".jigc"),
+        at("T2", Kind::LinkOnTheWay),
     ),
     finalize(
         "task-finalize-a-directory-in-the-stamps-place",
@@ -1502,7 +1518,7 @@ const DISCARD_CELLS: [Cell; 15] = [
 /// and with the record's directory gone there is no record to settle, which the discard
 /// does *"before it destroys"* (`A8`), so it refuses there too — no run gives its words,
 /// and any refusal names the record.
-const DISCARD_AT_THE_RECORD: [Cell; 7] = [
+const DISCARD_AT_THE_RECORD: [Cell; 8] = [
     discard(
         "task-discard-a-file-of-the-users-in-the-records-place",
         &[
@@ -1563,6 +1579,17 @@ const DISCARD_AT_THE_RECORD: [Cell; 7] = [
         DISCARD_THE_SUB_TASK,
         refuses(1, "store.home-not-regular-file"),
         at("A5", Kind::LinkOutside),
+    ),
+    discard(
+        "task-discard-a-link-to-a-directory-outside-at-the-records-directory",
+        &[
+            A_SUB_TASK[0],
+            A_SUB_TASK[1],
+            Lead::Plant(Plant::LinkToADir("docs/milestone-records")),
+        ],
+        DISCARD_THE_SUB_TASK,
+        refuses(1, "docs/milestone-records"),
+        at("A5", Kind::LinkOnTheWay),
     ),
     discard(
         "task-discard-a-directory-in-the-records-place",

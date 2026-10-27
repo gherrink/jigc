@@ -631,7 +631,7 @@ const UNBORN: Lead = Lead::Under(Condition::HeadUnborn);
 ///
 /// A `setup` that exits 0 lays out `.jigc/state/`, empty: `S16`, the human's ruling of
 /// 2026-10-15 on the record's §6, entry 1.
-const SETUP_PLANTED: [Cell; 48] = [
+const SETUP_PLANTED: [Cell; 51] = [
     setup(
         "setup-at-the-bootstrap-a-committed-file",
         &[Lead::Plant(Plant::Committed(".jigc/AGENT.md"))],
@@ -661,6 +661,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         })],
         refuses(1, "setup.write-bootstrap"),
         at("S1", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-a-link-to-a-directory-outside-at-the-workbench",
+        &[Lead::Plant(Plant::LinkToADir(".jigc"))],
+        refuses(1, ".jigc"),
+        at("S1", Kind::LinkOnTheWay),
     ),
     setup(
         "setup-at-the-bootstrap-a-directory",
@@ -804,6 +810,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         at("S8", Kind::LinkOutside),
     ),
     setup(
+        "setup-a-link-to-a-directory-outside-at-the-guides-directory",
+        &[Lead::Plant(Plant::LinkToADir(".claude/skills/jigc"))],
+        refuses(1, ".claude/skills/jigc"),
+        at("S8", Kind::LinkOnTheWay),
+    ),
+    setup(
         "setup-at-the-guide-a-directory",
         &[Lead::Plant(Plant::Dir(".claude/skills/jigc/SKILL.md"))],
         Listed::Acts,
@@ -886,6 +898,12 @@ const SETUP_PLANTED: [Cell; 48] = [
         })],
         refuses(1, "setup.inject-allowlist"),
         at("S3", Kind::LinkOutside),
+    ),
+    setup(
+        "setup-a-link-to-a-directory-outside-at-the-assistants-directory",
+        &[Lead::Plant(Plant::LinkToADir(".claude"))],
+        refuses(1, ".claude"),
+        at("S3", Kind::LinkOnTheWay),
     ),
     setup(
         "setup-at-the-settings-a-directory",
