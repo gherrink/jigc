@@ -9,8 +9,12 @@
 # touched is a committed count, each leaf read against its handler
 # (`…/reshape/byte-table-leaves-touched-since-rc24.md`): 30 of 36 under the plan's rule, with
 # these six outside it. `byte_table::every_scheduled_leaf_is_one_the_count_holds_untouched`
-# holds every line here to that count; a line leaves this file in the commit that brings its
-# row.
+# holds every line here to that count, and to a leaf of the previous release's registry,
+# which the suite freezes (`RELEASED_WRITE_LEAVES`): a write leaf that release did not have
+# is touched by definition, and cannot wait here.
+# `byte_table::every_scheduled_leafs_handler_is_the_previous_releases` holds each line's
+# handler, as the count read it, to its text at the previous release
+# (`scheduled-handlers.tsv`). A line leaves this file in the commit that brings its row.
 task bind	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the script's one edge is a closure that shares a name with a changed function
 config insert-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
 config replace-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls

@@ -42,7 +42,9 @@
 //! ([`the_arms_that_run_cells_run_one_at_a_time_under_the_gates_runner`]). And every cell
 //! has its row, its arm, a name of its own and — where it names one — the test of
 //! another suite that holds the same state, ordering by ordering
-//! ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`]).
+//! ([`every_cell_has_its_row_its_arm_and_a_name_of_its_own`]). **Every key of the list,
+//! and every live key the table's record lists, has its heading in the findings**, not as
+//! retired ([`every_key_has_its_heading_in_the_findings`]).
 //!
 //! **And the same cells run on a binary a variable names**
 //! ([`the_cells_are_run_on_the_binary_a_variable_names`], the plan's task `B2e`) —
@@ -105,7 +107,12 @@
 //! scheduled leaf is one the committed count holds untouched**
 //! ([`every_scheduled_leaf_is_one_the_count_holds_untouched`]): the count of the write
 //! leaves the fix pass touched, each read against its handler, is
-//! `…/reshape/byte-table-leaves-touched-since-rc24.md`.
+//! `…/reshape/byte-table-leaves-touched-since-rc24.md`, and its leaves are the previous
+//! release's ([`RELEASED_WRITE_LEAVES`], frozen) — a write leaf that release did not have
+//! is touched by definition and cannot be scheduled. **Every scheduled leaf's handler is
+//! the previous release's** ([`every_scheduled_leafs_handler_is_the_previous_releases`]):
+//! each function the count read for it is recorded with the hash of its text
+//! (`byte_table/scheduled-handlers.tsv`), so a change to it makes the leaf touched.
 //!
 //! **A prepared state is built on the binary handed in**
 //! ([`a_prepared_state_is_built_on_the_binary_handed_in`], the plan's task `B2a`): the
@@ -2701,6 +2708,51 @@ fn every_line_of_a_row_excuses_a_difference_in_some_cell_or_is_named() {
     );
 }
 
+/// **The write leaves of the previous release** — every `Write` row of `VERB_KINDS` in
+/// `jigc 1.0.0-rc.24`, frozen here: read off `git show 91834b5e:crates/cli/src/cli.rs`,
+/// 36 rows, in its order. The count reads these leaves and no others: **a write leaf the
+/// previous release did not have is touched by definition**, so it has no line in the
+/// count and cannot stand on the scheduled list — it comes with its row. The list is the
+/// previous release's, so it changes only when the previous release does, with the count.
+const RELEASED_WRITE_LEAVES: &[&[&str]] = &[
+    &["start"],
+    &["workflow"],
+    &["setup"],
+    &["uninstall"],
+    &["ingest"],
+    &["migrate"],
+    &["migrate-corpus"],
+    &["unmanage"],
+    &["rename"],
+    &["relocate"],
+    &["doc", "create"],
+    &["doc", "add-item"],
+    &["doc", "remove-item"],
+    &["doc", "retitle-item"],
+    &["doc", "rename"],
+    &["doc", "set-field"],
+    &["doc", "set-slot"],
+    &["doc", "author"],
+    &["task", "amend"],
+    &["task", "discard"],
+    &["task", "finalize"],
+    &["task", "bind"],
+    &["config", "set"],
+    &["config", "insert-step"],
+    &["config", "replace-step"],
+    &["config", "remove-step"],
+    &["config", "fill"],
+    &["config", "fork"],
+    &["milestone", "create"],
+    &["milestone", "add-task"],
+    &["milestone", "add-from-spec"],
+    &["milestone", "provision"],
+    &["milestone", "execute"],
+    &["milestone", "join"],
+    &["milestone", "finalize"],
+    &["milestone", "discard"],
+];
+
 /// **The count the pilot's bound stands on** — which write leaves the fix pass touched
 /// since the previous release, each leaf read against its handler, under each reading of
 /// *touched* the plan names (its §1.4).
@@ -2750,18 +2802,22 @@ fn counted(count: &'static str) -> Vec<Counted<'static>> {
         .collect()
 }
 
-/// **Every way a count and a scheduled list of leaves disagree**: a write leaf the count
-/// has no line for, or two; a line for no write leaf; a line that does not say, under
-/// `reading`, whether the leaf is touched; and **a scheduled leaf the count holds
-/// touched** under it.
+/// **Every way a count and a scheduled list of leaves disagree**: a write leaf of the
+/// previous release (`released`) the count has no line for, or two; a line for no write
+/// leaf; a line for a leaf the previous release did not have; a line that does not say,
+/// under `reading`, whether the leaf is touched; **a scheduled leaf the count holds
+/// touched** under it; and **a scheduled leaf the previous release did not have**, which
+/// is touched by definition.
 fn uncounted(
     leaves: &[Vec<&str>],
+    released: &[&[&str]],
     counted: &[Counted<'_>],
     scheduled: &[(Vec<&str>, &str)],
     reading: &str,
 ) -> Vec<String> {
     let mut out = Vec::new();
     let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
+    let was_released = |leaf: &[&str]| released.contains(&leaf);
     let under = |leaf: &[&str]| {
         counted
             .iter()
@@ -2769,7 +2825,7 @@ fn uncounted(
             .and_then(|(_, readings)| readings.iter().find(|(head, _)| *head == reading))
             .map(|(_, touched)| *touched)
     };
-    for leaf in leaves {
+    for leaf in leaves.iter().filter(|leaf| was_released(leaf)) {
         match counted
             .iter()
             .filter(|(counted, _)| counted == leaf)
@@ -2796,10 +2852,24 @@ fn uncounted(
                 "the count has a line for {}, which is no write leaf",
                 named(leaf)
             ));
+        } else if !was_released(leaf) {
+            out.push(format!(
+                "the count has a line for {}, which was no write leaf of the previous \
+                 release: the count reads that release's leaves, and a leaf it did not have \
+                 is touched by definition",
+                named(leaf)
+            ));
         }
     }
     for (leaf, _) in scheduled {
-        if under(leaf) == Some(true) {
+        if !was_released(leaf) {
+            out.push(format!(
+                "{} is on the scheduled list, and was no write leaf of the previous release: \
+                 a leaf the previous release did not have is touched by definition, and has \
+                 its row",
+                named(leaf)
+            ));
+        } else if under(leaf) == Some(true) {
             out.push(format!(
                 "{} is on the scheduled list, and the count holds it touched under \
                  *{reading}*: a touched leaf is the pilot's, and has its row",
@@ -2811,8 +2881,10 @@ fn uncounted(
 }
 
 /// **Every scheduled leaf is one the count holds untouched**, and the count has one line
-/// for every write leaf — on a fixture, fault by fault; then the committed count against
-/// the product's registry and the scheduled list.
+/// for every write leaf of the previous release — on a fixture, fault by fault; then the
+/// committed count against the product's registry, the previous release's write leaves
+/// and the scheduled list; then the same with a write leaf the product gains tomorrow,
+/// scheduled.
 #[test]
 fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
     const FIXTURE: &str = "| leaf | the plan's rule | another reading | why |\n|---|---|---|---|\n\
@@ -2835,10 +2907,12 @@ fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
         vec!["relocate"],
         vec!["rename"],
     ];
+    let released: &[&[&str]] = &[&["setup"], &["doc", "create"], &["relocate"], &["rename"]];
     let waits = |leaf: &[&'static str]| (leaf.to_vec(), "the count holds it untouched");
     says(
         &uncounted(
             &leaves,
+            released,
             &counted_fixture,
             &[waits(&["doc", "create"]), waits(&["setup"])],
             THE_PLANS_RULE,
@@ -2860,15 +2934,67 @@ fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
     says(
         &uncounted(
             &[vec!["doc", "create"]],
+            released,
             &counted_fixture[1..2],
             &[waits(&["doc", "create"])],
             "another reading",
         ),
         &[("`jigc doc create` is on the scheduled list", "touched")],
     );
+    // The review of `B10`'s probe (its H3): a write leaf the previous release did not have,
+    // given a count line *untouched* by whoever adds it, and scheduled. It is touched by
+    // definition: its count line and its scheduled line are each named.
+    const GAINED: &str = "| leaf | the plan's rule | another reading | why |\n|---|---|---|---|\n\
+        | `jigc setup` | touched | touched | - |\n\
+        | `jigc task brand-new` | untouched | untouched | - |\n";
+    let gained = vec![vec!["setup"], vec!["task", "brand-new"]];
+    let before: &[&[&str]] = &[&["setup"]];
+    says(
+        &uncounted(
+            &gained,
+            before,
+            &counted(GAINED),
+            &[waits(&["task", "brand-new"])],
+            THE_PLANS_RULE,
+        ),
+        &[
+            (
+                "a line for `jigc task brand-new`",
+                "no write leaf of the previous release",
+            ),
+            (
+                "`jigc task brand-new` is on the scheduled list",
+                "no write leaf of the previous release",
+            ),
+        ],
+    );
+    // With no count line, it is owed none — and scheduled, it is still named.
+    says(
+        &uncounted(
+            &gained,
+            before,
+            &counted(GAINED)[..1],
+            &[waits(&["task", "brand-new"])],
+            THE_PLANS_RULE,
+        ),
+        &[(
+            "`jigc task brand-new` is on the scheduled list",
+            "no write leaf of the previous release",
+        )],
+    );
+    says(
+        &uncounted(&gained, before, &counted(GAINED)[..1], &[], THE_PLANS_RULE),
+        &[],
+    );
 
+    assert_eq!(
+        RELEASED_WRITE_LEAVES.len(),
+        36,
+        "the previous release's registry holds 36 write leaves"
+    );
     let wrong = uncounted(
         &write_leaves(),
+        RELEASED_WRITE_LEAVES,
         &counted(COUNT),
         &scheduled(SCHEDULED),
         THE_PLANS_RULE,
@@ -2876,8 +3002,281 @@ fn every_scheduled_leaf_is_one_the_count_holds_untouched() {
     assert!(
         wrong.is_empty(),
         "the count of the leaves the fix pass touched and the scheduled list:\n\n  {}\n\nthe \
-         count is `…/reshape/byte-table-leaves-touched-since-rc24.md`: a line a write leaf, \
-         and a leaf it holds touched under the reading the pilot is built under has a row",
+         count is `…/reshape/byte-table-leaves-touched-since-rc24.md`: a line a write leaf \
+         of the previous release, and a leaf it holds touched under the reading the pilot is \
+         built under has a row",
+        wrong.join("\n  ")
+    );
+
+    // Tomorrow's leaf, scheduled: the product's registry with one write leaf more than it
+    // has, and the committed scheduled list with a line for it.
+    let mut tomorrow = write_leaves();
+    tomorrow.push(vec!["doc", "merge"]);
+    let mut waiting = scheduled(SCHEDULED);
+    waiting.push((vec!["doc", "merge"], "the count holds it untouched"));
+    says(
+        &uncounted(
+            &tomorrow,
+            RELEASED_WRITE_LEAVES,
+            &counted(COUNT),
+            &waiting,
+            THE_PLANS_RULE,
+        ),
+        &[(
+            "`jigc doc merge` is on the scheduled list",
+            "no write leaf of the previous release",
+        )],
+    );
+}
+
+/// **The handlers of the scheduled leaves, as the previous release had them** — one file of
+/// data, a line a function the count read for a scheduled leaf.
+const SCHEDULED_HANDLERS: &str = include_str!("byte_table/scheduled-handlers.tsv");
+
+/// One line of [`SCHEDULED_HANDLERS`]: the leaf, the source file by its path from the
+/// repository's root, the type whose `impl` block holds the function (`-` for none), the
+/// function's name, and the hash of its text.
+#[derive(Debug)]
+struct Handler<'a> {
+    leaf: Vec<&'a str>,
+    file: &'a str,
+    within: Option<&'a str>,
+    name: &'a str,
+    hash: &'a str,
+}
+
+/// The lines of a list of handlers: every line that is no comment and not empty.
+fn handlers(list: &str) -> Vec<Handler<'_>> {
+    list.lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            let field = |at: usize| fields.get(at).copied().unwrap_or("");
+            Handler {
+                leaf: field(0).split(' ').collect(),
+                file: field(1),
+                within: Some(field(2)).filter(|within| *within != "-"),
+                name: field(3),
+                hash: field(4),
+            }
+        })
+        .collect()
+}
+
+/// **A function's text in a source file** — from the line that opens it to the line that
+/// closes it, which `cargo fmt` sets at the indent of the opening line: a free function at
+/// the file's top level, or a function of the `impl <within> {` block at the top level.
+/// Its doc comment and attributes are not its text. `Err` says why there is no one text.
+fn fn_text(source: &str, within: Option<&str>, name: &str) -> Result<String, String> {
+    let lines: Vec<&str> = source.lines().collect();
+    let (region, indent) = match within {
+        None => (0..lines.len(), ""),
+        Some(ty) => {
+            let head = format!("impl {ty} {{");
+            let opens: Vec<usize> = (0..lines.len()).filter(|&at| lines[at] == head).collect();
+            let [open] = opens.as_slice() else {
+                return Err(format!("`{head}` opens {} blocks, not one", opens.len()));
+            };
+            let close = (open + 1..lines.len())
+                .find(|&at| lines[at] == "}")
+                .ok_or_else(|| format!("`{head}` is never closed"))?;
+            (open + 1..close, "    ")
+        }
+    };
+    let opens_it = |line: &str| {
+        line.strip_prefix(indent)
+            .filter(|rest| !rest.starts_with(' '))
+            .map(|rest| {
+                let rest = rest
+                    .strip_prefix("pub(crate) ")
+                    .or_else(|| rest.strip_prefix("pub "))
+                    .unwrap_or(rest);
+                [format!("fn {name}("), format!("fn {name}<")]
+                    .iter()
+                    .any(|head| rest.starts_with(head.as_str()))
+            })
+            .unwrap_or(false)
+    };
+    let starts: Vec<usize> = region.clone().filter(|&at| opens_it(lines[at])).collect();
+    let [start] = starts.as_slice() else {
+        return Err(format!(
+            "`fn {name}` opens {} times, not once",
+            starts.len()
+        ));
+    };
+    let body = (*start..region.end)
+        .find(|&at| {
+            let line = lines[at].trim_end();
+            line.ends_with('{') || line.ends_with("{}")
+        })
+        .ok_or_else(|| format!("`fn {name}` opens no body"))?;
+    let end = if lines[body].trim_end().ends_with("{}") {
+        body
+    } else {
+        let close = format!("{indent}}}");
+        (body + 1..region.end)
+            .find(|&at| lines[at] == close)
+            .ok_or_else(|| format!("`fn {name}` is never closed"))?
+    };
+    Ok(lines[*start..=end].join("\n"))
+}
+
+/// **Every way the scheduled leaves and the handlers recorded for them disagree**: a
+/// scheduled leaf with no handler, a handler of a leaf that is not scheduled, a handler
+/// whose function is not there once, and **a handler whose text is not the one its hash
+/// records** — the previous release's, which the count read.
+fn handlers_moved(
+    scheduled: &[(Vec<&str>, &str)],
+    handlers: &[Handler<'_>],
+    source_of: impl Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let named = |leaf: &[&str]| format!("`jigc {}`", leaf.join(" "));
+    for (leaf, _) in scheduled {
+        if !handlers.iter().any(|handler| handler.leaf == *leaf) {
+            out.push(format!(
+                "{} is on the scheduled list, and has no handler recorded",
+                named(leaf)
+            ));
+        }
+    }
+    for handler in handlers {
+        let what = format!(
+            "`{}{}` of `{}`, a handler of {}",
+            handler
+                .within
+                .map(|ty| format!("{ty}::"))
+                .unwrap_or_default(),
+            handler.name,
+            handler.file,
+            named(&handler.leaf)
+        );
+        if !scheduled.iter().any(|(leaf, _)| *leaf == handler.leaf) {
+            out.push(format!("{what}, which is not on the scheduled list"));
+            continue;
+        }
+        let Some(source) = source_of(handler.file) else {
+            out.push(format!("{what}: `{}` cannot be read", handler.file));
+            continue;
+        };
+        match fn_text(&source, handler.within, handler.name) {
+            Err(why) => out.push(format!("{what}, is not there once: {why}")),
+            Ok(text) => {
+                if engine::file_state::hash_bytes(text.as_bytes()) != handler.hash {
+                    out.push(format!(
+                        "{what}, is not the previous release's: its text moved since the \
+                         count read it, so the leaf is touched and has its row"
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// **Every scheduled leaf's handler is the previous release's**: each function the count
+/// read for a scheduled leaf (`…/reshape/byte-table-leaves-touched-since-rc24.md` → §3) is
+/// recorded with the hash of its text at the previous release, and a change to that text
+/// reddens here — the leaf is then touched, and leaves the scheduled list for its row. On
+/// a fixture, fault by fault; then the committed list against this tree's source.
+///
+/// **What it does not hold:** a change to a function the handler calls that the count did
+/// not name — the count's reading of what a handler reaches is the plan's script by name,
+/// run by hand at the count, and no test derives a call graph.
+#[test]
+fn every_scheduled_leafs_handler_is_the_previous_releases() {
+    const SOURCE: &str = "/// a doc comment\n\
+        fn run_alpha(cwd: &Path) -> Result<()> {\n    alpha(cwd)\n}\n\
+        \n\
+        struct Area;\n\
+        \n\
+        impl Area {\n    fn resolve(id: &str) -> Self {\n        Area\n    }\n}\n\
+        \n\
+        fn resolve() {}\n\
+        \n\
+        #[cfg(test)]\n\
+        mod tests {\n    fn run_alpha() {}\n}\n";
+    assert_eq!(
+        fn_text(SOURCE, None, "run_alpha").as_deref(),
+        Ok("fn run_alpha(cwd: &Path) -> Result<()> {\n    alpha(cwd)\n}")
+    );
+    assert_eq!(
+        fn_text(SOURCE, Some("Area"), "resolve").as_deref(),
+        Ok("    fn resolve(id: &str) -> Self {\n        Area\n    }")
+    );
+    assert_eq!(
+        fn_text(SOURCE, None, "resolve").as_deref(),
+        Ok("fn resolve() {}")
+    );
+    assert!(fn_text(SOURCE, None, "run_beta").is_err());
+    assert!(fn_text(SOURCE, Some("Other"), "resolve").is_err());
+
+    let hash = |within, name| {
+        engine::file_state::hash_bytes(fn_text(SOURCE, within, name).unwrap().as_bytes())
+    };
+    let (alpha, resolve) = (hash(None, "run_alpha"), hash(Some("Area"), "resolve"));
+    let list = format!(
+        "# a comment\n\
+         task alpha\tsrc/alpha.rs\t-\trun_alpha\t{alpha}\n\
+         task alpha\tsrc/alpha.rs\tArea\tresolve\t{resolve}\n"
+    );
+    let source_of = |file: &str| (file == "src/alpha.rs").then(|| SOURCE.to_owned());
+    let waits = |leaf: &[&'static str]| (leaf.to_vec(), "the count holds it untouched");
+    says(
+        &handlers_moved(&[waits(&["task", "alpha"])], &handlers(&list), source_of),
+        &[],
+    );
+    // A handler changed since the previous release.
+    let changed = |file: &str| {
+        (file == "src/alpha.rs").then(|| SOURCE.replace("    alpha(cwd)", "    beta(cwd)"))
+    };
+    says(
+        &handlers_moved(&[waits(&["task", "alpha"])], &handlers(&list), changed),
+        &[(
+            "`run_alpha` of `src/alpha.rs`, a handler of `jigc task alpha`",
+            "is not the previous release's",
+        )],
+    );
+    // A scheduled leaf with no handler; a handler of a leaf not scheduled; a function not
+    // there; a file not there.
+    let strays = format!(
+        "task alpha\tsrc/alpha.rs\t-\trun_alpha\t{alpha}\n\
+         task beta\tsrc/alpha.rs\t-\trun_alpha\t{alpha}\n\
+         task alpha\tsrc/alpha.rs\t-\trun_gamma\t{alpha}\n\
+         task alpha\tsrc/delta.rs\t-\trun_alpha\t{alpha}\n"
+    );
+    says(
+        &handlers_moved(
+            &[waits(&["task", "alpha"]), waits(&["config", "fill"])],
+            &handlers(&strays),
+            source_of,
+        ),
+        &[
+            ("`jigc config fill` is on the scheduled list", "no handler"),
+            (
+                "a handler of `jigc task beta`",
+                "which is not on the scheduled list",
+            ),
+            ("`run_gamma` of `src/alpha.rs`", "not there once"),
+            ("`src/delta.rs`", "cannot be read"),
+        ],
+    );
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let committed = handlers(SCHEDULED_HANDLERS);
+    assert!(
+        !committed.is_empty(),
+        "the committed list of handlers is read as empty"
+    );
+    let wrong = handlers_moved(&scheduled(SCHEDULED), &committed, |file| {
+        fs::read_to_string(root.join(file)).ok()
+    });
+    assert!(
+        wrong.is_empty(),
+        "the scheduled leaves' handlers:\n\n  {}\n\na scheduled leaf waits because the count \
+         holds it untouched since the previous release; a handler whose text moved since \
+         then makes it touched — its row, in the commit that changes it, and its line here \
+         and in `byte_table/scheduled.tsv` gone",
         wrong.join("\n  ")
     );
 }
@@ -12929,6 +13328,123 @@ fn the_expected_red_list_is_exact_three_ways() {
             ),
             ("`loses` is listed under `setup loses`", "which is no key"),
         ],
+    );
+}
+
+/// **The findings** — every key's entry, under a heading that names it: ``### `<key>` ``,
+/// and ``### `<key>` — retired …`` for a key no longer live.
+const FINDINGS: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md"
+);
+
+/// **The record of the table as a whole** — its §2 lists every live key, a line each that
+/// opens ``- `<key>` — ``.
+const THE_TABLES_RECORD: &str = include_str!(
+    "../../../completions/artifacts/M55/stabilization-build/reshape/byte-table-record.md"
+);
+
+/// The keys a record lists as live: every line that opens ``- `r1-`` and whose key is
+/// followed by `` ` — ``.
+fn listed_keys(record: &str) -> Vec<&str> {
+    record
+        .lines()
+        .filter_map(|line| line.strip_prefix("- `"))
+        .filter_map(|rest| rest.split_once("` — "))
+        .map(|(key, _)| key)
+        .filter(|key| key.starts_with("r1-"))
+        .collect()
+}
+
+/// **Every key, of every list that names keys, without its heading in the findings** — a
+/// key no heading names, and a key whose only heading says it is retired. `keys` are each
+/// a key and the list it is of.
+fn unheaded(keys: &[(&str, &str)], findings: &str) -> Vec<String> {
+    let headings: Vec<(&str, bool)> = findings
+        .lines()
+        .filter_map(|line| line.strip_prefix("### `"))
+        .filter_map(|rest| rest.split_once('`'))
+        .map(|(key, after)| (key, after.starts_with(" — retired")))
+        .collect();
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (key, list) in keys {
+        if !seen.insert((*key, *list)) {
+            continue;
+        }
+        let of = |retired: bool| {
+            headings
+                .iter()
+                .any(|(heading, is)| heading == key && *is == retired)
+        };
+        if of(false) {
+            continue;
+        }
+        out.push(if of(true) {
+            format!("`{key}`, a key of {list}, has its heading in the findings only as retired")
+        } else {
+            format!("`{key}`, a key of {list}, has no heading in the findings")
+        });
+    }
+    out
+}
+
+/// **Every key of the expected-red list and every live key of the record has its heading
+/// in the findings** (`…/reshape/byte-table-findings.md`), and not as retired — on a
+/// fixture, fault by fault; then the committed lists against the committed findings.
+#[test]
+fn every_key_has_its_heading_in_the_findings() {
+    const FIXTURE_FINDINGS: &str = "# The findings\n\n\
+        ### `r1-setup-loses`\n\nwhy.\n\n\
+        ### `r1-setup-loses` — three more cells\n\n\
+        ### `r1-setup-moved` — retired 2026-10-18\n\n\
+        ```zsh\n# a comment\n```\n";
+    const FIXTURE_RECORD: &str = "## 2. The keys\n\n\
+        Four keys are retired: `r1-setup-moved`.\n\n\
+        - `r1-setup-loses` — setup · 1/1 · lost\n\
+        - `r1-setup-stays` — setup · no cell\n";
+    assert_eq!(
+        listed_keys(FIXTURE_RECORD),
+        ["r1-setup-loses", "r1-setup-stays"]
+    );
+    says(
+        &unheaded(
+            &[
+                ("r1-setup-loses", "the expected-red list"),
+                ("r1-setup-moved", "the expected-red list"),
+                ("r1-setup-loses", "the record's list"),
+                ("r1-setup-stays", "the record's list"),
+            ],
+            FIXTURE_FINDINGS,
+        ),
+        &[
+            (
+                "`r1-setup-moved`, a key of the expected-red list",
+                "only as retired",
+            ),
+            (
+                "`r1-setup-stays`, a key of the record's list",
+                "has no heading in the findings",
+            ),
+        ],
+    );
+
+    let listed = listed_keys(THE_TABLES_RECORD);
+    assert!(
+        !listed.is_empty(),
+        "the record's list of keys is read as empty"
+    );
+    let keys: Vec<(&str, &str)> = EXPECTED_RED
+        .iter()
+        .map(|(key, _, _)| (*key, "the expected-red list"))
+        .chain(listed.into_iter().map(|key| (key, "the record's list")))
+        .collect();
+    let wrong = unheaded(&keys, FINDINGS);
+    assert!(
+        wrong.is_empty(),
+        "the keys and their entries in the findings:\n\n  {}\n\na key has its entry in \
+         `…/reshape/byte-table-findings.md`, under a heading that names it, saying which of \
+         the doc and the code is wrong",
+        wrong.join("\n  ")
     );
 }
 
