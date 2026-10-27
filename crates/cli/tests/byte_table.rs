@@ -10629,6 +10629,159 @@ fn a_cache_files_place_takes_no_directory_and_nothing_that_stood_but_a_file() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// **A file written whole stands only where nothing stood or a regular file did** — the word
+/// *written whole* ([`May::WriteWhole`]) lets the command make a regular file at its place,
+/// or write one again over the regular file that stood there, and **never write over a link,
+/// a directory or a special file that stood there**: that entry is the user's, and jigc
+/// never writes over an entry of the user's to make room for its own (the rows' record's §6,
+/// entries 23 and 25 — and the first of the fixes after the review of the task `B10`, which
+/// made *rebuilt* and *invalidated* as narrow and left this word's sibling arm open). Under a
+/// directory's place the word lets anything else happen, as it did: a file made where nothing
+/// stood, a directory made, an entry taken away — but nothing that stands, of any kind, where
+/// a link, a directory or a special file stood (a directory's permission bits changed are no
+/// entry written over).
+///
+/// Red first: with the comparison as it stood, a file written whole over a link, an empty
+/// directory or a special file at one file's place came out *holds*, and so did a file — and
+/// a directory — written over a link under a directory's place.
+#[test]
+fn a_file_written_whole_stands_only_where_nothing_or_a_regular_file_stood() {
+    const NEW: &str = "repo/notes.md";
+    const UNDER: &str = "repo/.jigc/config/notes.md";
+    const BYTES: &str = "written whole\n";
+    const ONE_PLACE: Row = row(&[
+        line("K1", Allows::Files(Where::Path(README), May::WriteWhole)),
+        line(
+            "K2",
+            Allows::Files(Where::Path("notes.md"), May::WriteWhole),
+        ),
+    ]);
+    const A_DIRECTORYS_PLACE: Row = row(&[line(
+        "K1",
+        Allows::Files(Where::Under(".jigc/config"), May::WriteWhole),
+    )]);
+    let before = then(&sandbox(), |m| {
+        dir(m, "repo/.jigc");
+        dir(m, "repo/.jigc/config");
+    });
+    let link = |m: &mut Manifest, at: &str| {
+        m.files.insert(
+            at.to_string(),
+            Entry::Link("../outside/notes.md".to_string()),
+        );
+    };
+    type Stands = fn(&mut Manifest, &str);
+    let stood: [(&str, Stands); 3] = [
+        ("a link", |m, at| {
+            m.files.insert(
+                at.to_string(),
+                Entry::Link("../outside/notes.md".to_string()),
+            );
+        }),
+        ("an empty directory", |m, at| dir(m, at)),
+        ("a special file", |m, at| {
+            m.files.insert(at.to_string(), Entry::Special);
+        }),
+    ];
+    // Every case is checked, and every one that came out otherwise is named together.
+    let mut wrong: Vec<String> = Vec::new();
+    let mut expect = |what: &str, (class, why): (Classification, Vec<String>), holds: bool| {
+        let right = if holds {
+            class == Classification::Holds
+        } else {
+            class.is_red() && why.iter().any(|why| why.contains("no line covers it"))
+        };
+        if !right {
+            wrong.push(format!(
+                "{what}: wanted {}, came to {class}, {why:?}",
+                if holds { "holds" } else { "red, uncovered" }
+            ));
+        }
+    };
+
+    // The controls: made where nothing stood, written again over the regular file there.
+    expect(
+        "one file's place, the file made where nothing stood",
+        Cell::of(ONE_PLACE, &before, &then(&before, |m| put(m, NEW, BYTES))).came_to(),
+        true,
+    );
+    expect(
+        "one file's place, the file written again over its regular file",
+        Cell::of(
+            ONE_PLACE,
+            &before,
+            &then(&before, |m| put(m, "repo/README.md", BYTES)),
+        )
+        .came_to(),
+        true,
+    );
+    expect(
+        "a directory's place, a file made where nothing stood",
+        Cell::of(
+            A_DIRECTORYS_PLACE,
+            &before,
+            &then(&before, |m| put(m, UNDER, BYTES)),
+        )
+        .came_to(),
+        true,
+    );
+    expect(
+        "a directory's place, a directory made where nothing stood",
+        Cell::of(
+            A_DIRECTORYS_PLACE,
+            &before,
+            &then(&before, |m| dir(m, UNDER)),
+        )
+        .came_to(),
+        true,
+    );
+    let a_link_under = then(&before, |m| link(m, UNDER));
+    expect(
+        "a directory's place, a link that stood there taken away",
+        Cell::of(
+            A_DIRECTORYS_PLACE,
+            &a_link_under,
+            &then(&a_link_under, |m| {
+                m.files.remove(UNDER);
+            }),
+        )
+        .came_to(),
+        true,
+    );
+
+    // The word's narrowing: nothing written over a link, a directory or a special file.
+    for (what, plant) in stood {
+        let at_one = then(&before, |m| plant(m, NEW));
+        expect(
+            &format!("one file's place, the file written whole over {what}"),
+            Cell::of(ONE_PLACE, &at_one, &then(&at_one, |m| put(m, NEW, BYTES))).came_to(),
+            false,
+        );
+        let under = then(&before, |m| plant(m, UNDER));
+        expect(
+            &format!("a directory's place, a file written whole over {what}"),
+            Cell::of(
+                A_DIRECTORYS_PLACE,
+                &under,
+                &then(&under, |m| put(m, UNDER, BYTES)),
+            )
+            .came_to(),
+            false,
+        );
+    }
+    expect(
+        "a directory's place, a directory made over a link",
+        Cell::of(
+            A_DIRECTORYS_PLACE,
+            &a_link_under,
+            &then(&a_link_under, |m| dir(m, UNDER)),
+        )
+        .came_to(),
+        false,
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// **A refusal leaves the file↔state record exactly as it was** — the human's ruling of
 /// 2026-10-26 on the rows' record's §6, entry 1, its open point (ii): the record under
 /// `.jigc/state/` — the hashes of what jigc last wrote for each managed doc — is a

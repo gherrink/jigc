@@ -480,7 +480,11 @@ pub enum Unit {
 /// What may happen at a place.
 #[derive(Clone, Copy, Debug)]
 pub enum May {
-    /// Made, or replaced by any bytes, as a regular file; under a directory, anything.
+    /// Made where nothing stood, or written whole over a regular file, as a regular file;
+    /// under a directory, anything else — but never anything over a link, a directory or a
+    /// special file that stood, which is the user's (the fifth of the fixes after the review
+    /// of the task `B10`, the first fix's left-open: *written whole* had taken any entry
+    /// that stood, where *rebuilt* and *invalidated* no longer did).
     WriteWhole,
     /// Made, or changed so that every line that stood there stays, in order.
     MergeInto,
@@ -2638,7 +2642,24 @@ impl<'a> Tally<'a> {
                     return false;
                 }
                 match (may, diff.before, diff.after) {
-                    (May::WriteWhole, _, Some(Entry::File { .. })) => true,
+                    // A file made where nothing stood, or written again over a regular file
+                    // — and, under a directory's place, anything else but an entry that
+                    // stands where a link, a directory or a special file stood: that entry
+                    // is the user's, and is not written over (the rows' record's §6, entries
+                    // 23 and 25; the fifth of the fixes after the review of the task `B10`,
+                    // the first fix's left-open). A directory's permission bits changed are
+                    // no entry written over.
+                    (
+                        May::WriteWhole,
+                        None | Some(Entry::File { .. }),
+                        Some(Entry::File { .. }),
+                    ) => true,
+                    (May::WriteWhole, Some(Entry::Link(_) | Entry::Special), Some(_))
+                    | (
+                        May::WriteWhole,
+                        Some(Entry::Dir(_)),
+                        Some(Entry::File { .. } | Entry::Link(_) | Entry::Special),
+                    ) => false,
                     (May::WriteWhole, _, _) => matches!(place, Where::Under(_)),
                     (
                         May::MergeInto
