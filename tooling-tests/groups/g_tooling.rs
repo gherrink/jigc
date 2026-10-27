@@ -42,6 +42,8 @@ mod doc_link_fence;
 mod dogfood_apparatus;
 #[path = "../evolution_posture_policy.rs"]
 mod evolution_posture_policy;
+#[path = "../fmt_reach.rs"]
+mod fmt_reach;
 #[path = "../illustrative_disclaimer_scope.rs"]
 mod illustrative_disclaimer_scope;
 #[path = "../ledger_entry_seven_discharged.rs"]

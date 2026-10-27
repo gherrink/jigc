@@ -1,0 +1,25 @@
+# The handlers of the byte table's scheduled leaves, as the previous release had them.
+#
+# A line a function the count read for a scheduled leaf (`…/reshape/byte-table-leaves-touched-since-rc24.md`
+# → §3, its column *its handler* and the functions it names as read): the leaf's words as
+# `scheduled.tsv` holds them, space-separated; the source file, by its path from the
+# repository's root; the type whose top-level `impl` block holds the function, or `-` for a
+# free function at the file's top level; the function's name; and the blake3 of its text —
+# from the line that opens it to the line that closes it, its doc comment and attributes
+# not included — at `jigc 1.0.0-rc.24` (`91834b5e`), each checked equal to that release's
+# text when it was recorded. Tab-separated.
+#
+# `byte_table::every_scheduled_leafs_handler_is_the_previous_releases` holds every scheduled
+# leaf to at least one line here, every line to a scheduled leaf, and every function's text
+# to its hash: a handler that changes makes its leaf touched, and the leaf comes off the
+# scheduled list with its row, these lines with it. A function the handler calls that the
+# count did not name is held by nothing here.
+task bind	crates/cli/src/task.rs	-	run_bind	c6e771b9aae88a3ddb1584d50fd3209b3d2ec5166c8068f9f7c4f96ee18bb89d
+task bind	crates/cli/src/task.rs	TaskArea	resolve	7a4c4c54516bf2f0ab31991d93506e70c4699b676e0618a86509c58e8acf1091
+task bind	crates/cli/src/task.rs	TaskArea	bind	0819a34238f4061136646a202f44a52a9a7736d3295494f7a60eae1fd7206337
+task bind	crates/cli/src/render.rs	-	task_ack	3afeb8d09740e19a87594cc33063d8bed83b024ec9d958128cbdadf07228d0e6
+config insert-step	crates/cli/src/config.rs	-	run_insert_step	62b0e88aea85eae544f67aca363c037b9081d2414a76b1fe6a5e0f0cc9601676
+config replace-step	crates/cli/src/config.rs	-	run_replace_step	bf115d84cc80a7f79a32c7bbbdb6b1a64d5c1658cc9c42788d3d635aacef7b7f
+config remove-step	crates/cli/src/config.rs	-	run_remove_step	9771c5b5074b144de3884af9c7c8e1fca23f07a442aa05eeabcf69f1fd42c762
+config fill	crates/cli/src/config.rs	-	run_fill	9547a595f7ab032855f8b3533d37c593ac8ded8075ef4037fe8abb4efb502a05
+config fork	crates/cli/src/config.rs	-	run_fork	4d242f9c2230b3f0f86412706d1335dacd8da1e525249c3043931df58bc31e24

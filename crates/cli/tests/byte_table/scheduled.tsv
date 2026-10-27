@@ -1,0 +1,23 @@
+# The byte table's scheduled list — the write leaves the pilot leaves for before the port.
+#
+# A line a leaf: its words as `cli::cli::VERB_KINDS` holds them, space-separated; a tab; and
+# why it waits. `byte_table::every_write_leaf_has_a_row_or_a_scheduled_row` holds
+# every write leaf of the product to exactly one of a row of the table or a line here (and,
+# until the task `B9` brought the last rows, a row of the owed list in the suite). The ruling is the human's of 2026-10-12 — only the writing
+# commands the fix pass touched are piloted now, the rest before the port (`DECISIONS.md` →
+# *The reshaped `test` stage is run for real in parts*, ruling 3) — and which leaves the pass
+# touched is a committed count, each leaf read against its handler
+# (`…/reshape/byte-table-leaves-touched-since-rc24.md`): 30 of 36 under the plan's rule, with
+# these six outside it. `byte_table::every_scheduled_leaf_is_one_the_count_holds_untouched`
+# holds every line here to that count, and to a leaf of the previous release's registry,
+# which the suite freezes (`RELEASED_WRITE_LEAVES`): a write leaf that release did not have
+# is touched by definition, and cannot wait here.
+# `byte_table::every_scheduled_leafs_handler_is_the_previous_releases` holds each line's
+# handler, as the count read it, to its text at the previous release
+# (`scheduled-handlers.tsv`). A line leaves this file in the commit that brings its row.
+task bind	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the script's one edge is a closure that shares a name with a changed function
+config insert-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config replace-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config remove-step	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config fill	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls
+config fork	the count holds it untouched since the previous release under the plan's rule: its handler reaches no function that changed — the file's four hunks are in two functions `config set` alone calls

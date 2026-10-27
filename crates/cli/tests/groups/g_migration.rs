@@ -9,6 +9,8 @@ mod support;
 mod arch_doc_acceptance;
 #[path = "../arch_doc_components_materialize.rs"]
 mod arch_doc_components_materialize;
+#[path = "../byte_table.rs"]
+mod byte_table;
 #[path = "../cargo_install_probe.rs"]
 mod cargo_install_probe;
 #[path = "../design_altitude_schemas.rs"]
@@ -43,6 +45,8 @@ mod owner_artifact_natural_order;
 mod owner_artifact_rollback;
 #[path = "../record_decision_acceptance.rs"]
 mod record_decision_acceptance;
+#[path = "../route_catalog.rs"]
+mod route_catalog;
 #[path = "../single_task_changelog_gate.rs"]
 mod single_task_changelog_gate;
 #[path = "../spec_derived_from.rs"]

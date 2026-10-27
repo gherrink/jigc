@@ -49,6 +49,10 @@
 //!
 //!   (8) A plain copy is **provably** independent of its source, in both directions a
 //!       sweep arm mutates — the working tree and the git dir.
+//!
+//!   (9) **A repository the suite makes is still once git returns** — no commit leaves
+//!       a background maintenance child writing under `.git/objects`, which a copy
+//!       races; off for every repository, by the environment cargo gives every process.
 
 use crate::support;
 
@@ -549,4 +553,69 @@ fn a_copied_state_is_independent_of_its_source() {
         before,
         "the copy's own history must have advanced",
     );
+}
+
+/// (9) **A repository the suite makes is still once git returns** — the ground every
+/// copy above stands on. A `git commit` starts `git maintenance run --auto --detach`
+/// unless `maintenance.auto` is off, and that child writes and deletes files under
+/// `.git/objects` *after* the commit has returned; [`TrialCorpus::copy_state`]'s
+/// `read_dir` then lists a file the child removes before `fs::copy` reaches it, and the
+/// copy panics — the flake this suite's (8) and `record_door_baseline` each failed a gate
+/// on. **Off for every repository the suite makes, not one builder's**: the setting is
+/// configuration git reads from the environment that `.cargo/config.toml` gives every
+/// process cargo runs (`GIT_CONFIG_PARAMETERS`, beside the `GIT_CONFIG_COUNT` a sandbox
+/// carries its identity in — so a sandbox that sets or unsets its own keeps it). So the
+/// repository here is made with plain `git`, as two hundred suites make theirs, and is
+/// read twice: as it is, and under the sandbox's mask with its own `GIT_CONFIG_COUNT`.
+#[test]
+fn a_repository_the_suite_makes_starts_no_maintenance_behind_a_commit() {
+    let dir = support::scratch::ScratchDir::new("quiescent-repo");
+    let git = |extra: &[(&str, &str)], args: &[&str]| -> Output {
+        let mut command = std::process::Command::new("git");
+        command.args(args).current_dir(dir.path());
+        for (key, value) in extra {
+            command.env(key, value);
+        }
+        command.output().expect("spawn git")
+    };
+    for args in [
+        &["init", "-q", "-b", "main", "."][..],
+        &["config", "user.name", "Quiescent Repo"],
+        &["config", "user.email", "quiescent@example.com"],
+    ] {
+        let out = git(&[], args);
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    }
+
+    let masked: &[(&str, &str)] = &[
+        ("GIT_CONFIG_NOSYSTEM", "1"),
+        ("GIT_CONFIG_GLOBAL", "/dev/null"),
+        ("GIT_CONFIG_COUNT", "1"),
+        ("GIT_CONFIG_KEY_0", "user.useConfigOnly"),
+        ("GIT_CONFIG_VALUE_0", "true"),
+    ];
+    for (shape, extra) in [("as it is", &[][..]), ("under the sandbox's mask", masked)] {
+        for (key, off) in [("maintenance.auto", "false"), ("gc.auto", "0")] {
+            let out = git(extra, &["config", "--get", key]);
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout).trim(),
+                off,
+                "{shape}: `{key}` must read `{off}` in every repository the suite makes — \
+                 `.cargo/config.toml` gives it to every process cargo runs",
+            );
+        }
+        let mut traced = extra.to_vec();
+        traced.push(("GIT_TRACE", "1"));
+        let out = git(
+            &traced,
+            &["commit", "-q", "--allow-empty", "--no-verify", "-m", shape],
+        );
+        assert!(out.status.success(), "{shape}: the commit: {out:?}");
+        let trace = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !trace.contains("maintenance run"),
+            "{shape}: a commit must start no background maintenance, which writes under \
+             `.git/objects` after the commit returns and races every copy of the repo:\n{trace}",
+        );
+    }
 }

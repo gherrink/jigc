@@ -11,7 +11,7 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
 3. **Green** — the **minimal** implementation that makes the test pass. No extra scope, no speculative generality (keep it minimal).
 4. **Refactor** — tidy while green, touching **only what this task touches**. Pre-existing mess is not this task's to fix (stay in scope).
 5. **Gate** — the verification gate; all **four** pass or the task isn't done, in this order:
-   - `cargo fmt --check`
+   - `cargo fmt --check` — which formats a file only when rustfmt reaches it from a crate's root through a `mod` declaration it can read; a declaration inside a macro is none, so a module is declared beside the macro that lists it and never inside one, and `tooling-tests/fmt_reach.rs` holds the step to every `.rs` file under `crates/` and `tooling-tests/` (2026-10-19 — [DECISIONS.md](../DECISIONS.md) → *The gate's `fmt` step reached none of the files a macro declared*)
    - `cargo clippy --all-targets -- -D warnings`
    - `cargo build`
    - `cargo test` — which `dev/gate` runs as two `cargo nextest run --workspace --no-fail-fast` runs, a fast tier and then its complement, and then `cargo test --workspace --doc`, falling back to `cargo test` itself where nextest is not installed (*What the gate's test step runs* and *The gate stops at the first red stage*, below)

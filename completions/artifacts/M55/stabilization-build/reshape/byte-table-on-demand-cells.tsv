@@ -1,0 +1,195 @@
+# The byte table's cells that run on demand, as their arm last printed them — the base cells in a prepared state that is not their leaf's home. Held by no gate, beyond a line a cell.
+# Printed on 2026-10-15 by `byte_table::the_cells_on_demand_are_run_and_printed`, on this tree's debug build, macOS arm64, at a load average of 11 at its start and 9 at its end: thirty-six cells — the task family's twelve and the install family's twenty-four — four red, each `jigc uninstall` that acts, by its line `U9`. The block below is the arm's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the fourth of the fixes after the review of the task `B6`, at a load average of 11 at its start and 9 at its end: the same block, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's six edit leaves (the task `B6`'s second commit of that family), at a load average of 10 to 18: seventy-two cells — the thirty-six above, the same lines byte for byte, and the six edit leaves' thirty-six, none red. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-18 by the same arm, on this tree's debug build with the doc family's two minting doors (the task `B6`'s third commit of that family), at a load average of 8 to 24: eighty-four cells — the seventy-two above, the same lines byte for byte, and the minting doors' twelve, none red. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's record doors (the task `B7`'s second part, its second commit), macOS arm64, load not measured: a hundred and two cells — the eighty-four above, the same lines byte for byte, and the record doors' eighteen, none red.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's fan-out doors (the task `B7`'s second part, its third commit), macOS arm64, load not measured: a hundred and twenty cells — the hundred and two above, the same lines byte for byte, and the fan-out doors' eighteen, none red.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the milestone family's terminals (the task `B7`'s second part, its fourth commit), macOS arm64, load not measured: a hundred and thirty-two cells — the hundred and twenty above, the same lines byte for byte, and the terminals' twelve, none red.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the seventh of the fixes after the review of the milestone family's part B (the task `B7`), macOS arm64, at a load average of 14 at its start and 12 at its end: the same hundred and thirty-two cells, and ten lines changed — `milestone create`'s and `milestone add-task`'s five that act in a state not their home now come out *written outside its allowance*, the rendered message's file standing under no line (`byte_cell::DELETED_AFTER`), under the key `r1-milestone-record-doors-leave-their-message-file-in-the-milestones-area`; every other line the same, byte for byte. Fourteen red: the four `uninstall` cells by `U9`, and these ten. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the movers family's doors that commit (the task `B8`, its third commit), macOS arm64, at a load average of about 33: a hundred and forty-four cells, the hundred and thirty-two lines before it the same, byte for byte, and twelve more — `rename`'s six and `migrate-corpus`'s six in a state not their home, none red: `rename` refuses in each (not set up in `bare`, `store.not-found` where no decision `one-way` stands), and `migrate-corpus` refuses in `bare` and acts, finding nothing below its version, in the other five. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-19 by the same arm, on this tree's debug build with the movers family's movers (the task `B8`, its fourth commit), macOS arm64, at a load average of about 20: a hundred and fifty-six cells, the hundred and forty-four lines before it the same, byte for byte, and twelve more — `relocate`'s six and `config set`'s six in a state not their home, none red: `relocate` refuses in each (not set up in `bare`, `store.unknown-type` where no pack declares a `note`), and `config set docs-root` refuses in `bare` and acts in the other five. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-20 by the same arm, on this tree's debug build with the mint family's cells (the task `B9`, its third commit), macOS arm64, load not measured: a hundred and eighty cells, the hundred and fifty-six before them the same, byte for byte, and the mint family's twenty-four after them, none red.
+# Printed again on 2026-10-20 by the same arm, on this tree's debug build with the sixth of the fixes after the review of the task `B9` (its second commit), macOS arm64, at a load average of 18 at its start and 15 at its end: the same hundred and eighty cells, and twenty lines changed — the base cells of `rename`, `relocate`, `workflow` and `migrate` in the five states that are neither `bare` nor their home, each now over the precondition its home cells stand on (a decision and its citer, the note pack and a stranded note, a milestone of one sub-task re-entered at its worktree, a foreign history), where each had refused for its absence: nineteen act and hold, and `rename` in `refs-post-hoc` refuses `rename.in-flight` over the state's live task, changing nothing; the four in `bare` refuse, not set up, as before — three of them now over what git alone makes of their precondition, and `workflow`'s over nothing, its milestone being `jigc`'s to make. Every other line the same, byte for byte. Fourteen red, as before. The block below is that run's `== cells on demand ==`, byte for byte.
+# Printed again on 2026-10-27 by the same arm, on this tree's debug build with the fixes after the review of the task `B10` (the sixth of them, which reconciles the records), macOS arm64, at a load average of 5 at its start and 12 at its end: the same hundred and eighty cells, and two lines changed — `config-set-docs-root-to-notes-in-refs-post-hoc` and `config-set-docs-root-to-notes-in-vendored`, *holds* to *written outside its allowance*, by the fourth of those fixes (`CS5` demands a re-point's knob and moves staged together, or none of them) — the two cells the whole-table print committed with the table's record shows the same on this tree's binary.
+cell	command	state	listed as	came to	its exit
+setup-after-a-task-landed	jigc setup	fresh	acts	holds	exit 0
+setup-in-committed-singletons	jigc setup	committed-singletons	acts	holds	exit 0
+setup-in-migrated	jigc setup	migrated	acts	holds	exit 0
+setup-in-refs-post-hoc	jigc setup	refs-post-hoc	acts	holds	exit 0
+setup-in-chatty-hooks	jigc setup	chatty-hooks	acts	holds	exit 0
+setup-in-vendored	jigc setup	vendored	acts	holds	exit 0
+uninstall-in-a-repository-jigc-was-never-set-up-in	jigc uninstall	bare	acts	holds	exit 0
+uninstall-in-committed-singletons	jigc uninstall	committed-singletons	acts	written outside its allowance	exit 0
+uninstall-in-migrated	jigc uninstall	migrated	acts	written outside its allowance	exit 0
+uninstall-in-refs-post-hoc	jigc uninstall	refs-post-hoc	refuses: exit 1, `uninstall.staged-prose`	refuses, nothing changed	exit 1
+uninstall-in-chatty-hooks	jigc uninstall	chatty-hooks	acts	written outside its allowance	exit 0
+uninstall-in-vendored	jigc uninstall	vendored	acts	written outside its allowance	exit 0
+ingest-in-a-repository-jigc-was-never-set-up-in	jigc ingest	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+ingest-in-committed-singletons	jigc ingest	committed-singletons	acts	holds	exit 0
+ingest-in-migrated	jigc ingest	migrated	acts	holds	exit 0
+ingest-in-refs-post-hoc	jigc ingest	refs-post-hoc	acts	holds	exit 0
+ingest-in-chatty-hooks	jigc ingest	chatty-hooks	acts	holds	exit 0
+ingest-in-vendored	jigc ingest	vendored	acts	holds	exit 0
+unmanage-in-a-repository-jigc-was-never-set-up-in	jigc unmanage VISION.md	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+unmanage-in-fresh	jigc unmanage VISION.md	fresh	acts	holds	exit 0
+unmanage-in-migrated	jigc unmanage VISION.md	migrated	acts	holds	exit 0
+unmanage-in-refs-post-hoc	jigc unmanage VISION.md	refs-post-hoc	acts	holds	exit 0
+unmanage-in-chatty-hooks	jigc unmanage VISION.md	chatty-hooks	acts	holds	exit 0
+unmanage-in-vendored	jigc unmanage VISION.md	vendored	acts	holds	exit 0
+task-finalize-a-created-decision-in-bare	jigc task finalize record-a-decision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+task-finalize-a-created-decision-in-committed-singletons	jigc task finalize record-a-decision	committed-singletons	acts	holds	exit 0
+task-finalize-a-created-decision-in-migrated	jigc task finalize record-a-decision	migrated	acts	holds	exit 0
+task-finalize-a-created-decision-in-refs-post-hoc	jigc task finalize record-a-decision	refs-post-hoc	acts	holds	exit 0
+task-finalize-a-created-decision-in-chatty-hooks	jigc task finalize record-a-decision	chatty-hooks	acts	holds	exit 0
+task-finalize-a-created-decision-in-vendored	jigc task finalize record-a-decision	vendored	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-bare	jigc task discard do-the-thing	bare	refuses: exit 1, `no task `do-the-thing``	refuses, nothing changed	exit 1
+task-discard-a-sub-task-nobody-re-entered-in-committed-singletons	jigc task discard do-the-thing	committed-singletons	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-migrated	jigc task discard do-the-thing	migrated	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-refs-post-hoc	jigc task discard do-the-thing	refs-post-hoc	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-chatty-hooks	jigc task discard do-the-thing	chatty-hooks	acts	holds	exit 0
+task-discard-a-sub-task-nobody-re-entered-in-vendored	jigc task discard do-the-thing	vendored	acts	holds	exit 0
+milestone-create-ship-it-in-bare	jigc milestone create ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-create-ship-it-in-committed-singletons	jigc milestone create ship-it	committed-singletons	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-migrated	jigc milestone create ship-it	migrated	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-refs-post-hoc	jigc milestone create ship-it	refs-post-hoc	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-chatty-hooks	jigc milestone create ship-it	chatty-hooks	acts	written outside its allowance	exit 0
+milestone-create-ship-it-in-vendored	jigc milestone create ship-it	vendored	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-bare	jigc milestone add-task ship-it do the thing	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-add-task-do-the-thing-in-committed-singletons	jigc milestone add-task ship-it do the thing	committed-singletons	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-migrated	jigc milestone add-task ship-it do the thing	migrated	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-refs-post-hoc	jigc milestone add-task ship-it do the thing	refs-post-hoc	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-chatty-hooks	jigc milestone add-task ship-it do the thing	chatty-hooks	acts	written outside its allowance	exit 0
+milestone-add-task-do-the-thing-in-vendored	jigc milestone add-task ship-it do the thing	vendored	acts	written outside its allowance	exit 0
+milestone-add-from-spec-padding-in-bare	jigc milestone add-from-spec ship-it spec:padding	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-fresh	jigc milestone add-from-spec ship-it spec:padding	fresh	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-committed-singletons	jigc milestone add-from-spec ship-it spec:padding	committed-singletons	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-migrated	jigc milestone add-from-spec ship-it spec:padding	migrated	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-refs-post-hoc	jigc milestone add-from-spec ship-it spec:padding	refs-post-hoc	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-add-from-spec-padding-in-chatty-hooks	jigc milestone add-from-spec ship-it spec:padding	chatty-hooks	refuses: exit 1, `store.not-found`	refuses, nothing changed	exit 1
+milestone-provision-ship-it-in-bare	jigc milestone provision ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-provision-ship-it-in-committed-singletons	jigc milestone provision ship-it	committed-singletons	acts	holds	exit 0
+milestone-provision-ship-it-in-migrated	jigc milestone provision ship-it	migrated	acts	holds	exit 0
+milestone-provision-ship-it-in-refs-post-hoc	jigc milestone provision ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-provision-ship-it-in-chatty-hooks	jigc milestone provision ship-it	chatty-hooks	acts	holds	exit 0
+milestone-provision-ship-it-in-vendored	jigc milestone provision ship-it	vendored	acts	holds	exit 0
+milestone-execute-ship-it-in-bare	jigc milestone execute ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-execute-ship-it-in-committed-singletons	jigc milestone execute ship-it	committed-singletons	acts	holds	exit 0
+milestone-execute-ship-it-in-migrated	jigc milestone execute ship-it	migrated	acts	holds	exit 0
+milestone-execute-ship-it-in-refs-post-hoc	jigc milestone execute ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-execute-ship-it-in-chatty-hooks	jigc milestone execute ship-it	chatty-hooks	acts	holds	exit 0
+milestone-execute-ship-it-in-vendored	jigc milestone execute ship-it	vendored	acts	holds	exit 0
+milestone-join-ship-it-in-bare	jigc milestone join ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-join-ship-it-in-committed-singletons	jigc milestone join ship-it	committed-singletons	acts	holds	exit 0
+milestone-join-ship-it-in-migrated	jigc milestone join ship-it	migrated	acts	holds	exit 0
+milestone-join-ship-it-in-refs-post-hoc	jigc milestone join ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-join-ship-it-in-chatty-hooks	jigc milestone join ship-it	chatty-hooks	acts	holds	exit 0
+milestone-join-ship-it-in-vendored	jigc milestone join ship-it	vendored	acts	holds	exit 0
+milestone-discard-ship-it-in-bare	jigc milestone discard ship-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-discard-ship-it-in-committed-singletons	jigc milestone discard ship-it	committed-singletons	acts	holds	exit 0
+milestone-discard-ship-it-in-migrated	jigc milestone discard ship-it	migrated	acts	holds	exit 0
+milestone-discard-ship-it-in-refs-post-hoc	jigc milestone discard ship-it	refs-post-hoc	acts	holds	exit 0
+milestone-discard-ship-it-in-chatty-hooks	jigc milestone discard ship-it	chatty-hooks	acts	holds	exit 0
+milestone-discard-ship-it-in-vendored	jigc milestone discard ship-it	vendored	acts	holds	exit 0
+milestone-finalize-land-it-in-bare	jigc milestone finalize land-it	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+milestone-finalize-land-it-in-committed-singletons	jigc milestone finalize land-it	committed-singletons	acts	holds	exit 0
+milestone-finalize-land-it-in-migrated	jigc milestone finalize land-it	migrated	acts	holds	exit 0
+milestone-finalize-land-it-in-refs-post-hoc	jigc milestone finalize land-it	refs-post-hoc	acts	holds	exit 0
+milestone-finalize-land-it-in-chatty-hooks	jigc milestone finalize land-it	chatty-hooks	acts	holds	exit 0
+milestone-finalize-land-it-in-vendored	jigc milestone finalize land-it	vendored	acts	holds	exit 0
+doc-add-a-milestone-in-bare	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-fresh	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-migrated	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-refs-post-hoc	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-add-a-milestone-in-chatty-hooks	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-add-a-milestone-in-vendored	jigc doc add-item roadmap:roadmap#milestones --title M-Beta --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-bare	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-fresh	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-migrated	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-refs-post-hoc	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-remove-a-milestone-in-chatty-hooks	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-remove-a-milestone-in-vendored	jigc doc remove-item roadmap:roadmap#milestones/m-alpha --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-bare	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-fresh	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-migrated	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-refs-post-hoc	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-retitle-a-milestone-in-chatty-hooks	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-retitle-a-milestone-in-vendored	jigc doc retitle-item roadmap:roadmap#milestones/m-alpha --title M-Alpha, sharpened --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-bare	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-fresh	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-migrated	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-refs-post-hoc	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-set-a-releases-link-in-chatty-hooks	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-a-releases-link-in-vendored	jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/release --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-bare	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-fresh	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	fresh	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-migrated	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	migrated	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-refs-post-hoc	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	refs-post-hoc	acts	holds	exit 0
+doc-set-what-a-milestone-proves-in-chatty-hooks	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	chatty-hooks	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-set-what-a-milestone-proves-in-vendored	jigc doc set-slot roadmap:roadmap#milestones/m-alpha/proves --from-file ../outside/proves --task sharpen-the-roadmap	vendored	refuses: exit 1, `no staged instance for`	refuses, nothing changed	exit 1
+doc-rename-a-decision-the-task-made-in-bare	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-rename-a-decision-the-task-made-in-fresh	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	fresh	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-migrated	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	migrated	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-refs-post-hoc	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	refs-post-hoc	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-chatty-hooks	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	chatty-hooks	acts	holds	exit 0
+doc-rename-a-decision-the-task-made-in-vendored	jigc doc rename adr:two-ways --to Three ways --task record-two-ways	vendored	acts	holds	exit 0
+doc-create-the-vision-in-bare	jigc doc create vision --title Vision --task form-the-project-vision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-create-the-vision-in-fresh	jigc doc create vision --title Vision --task form-the-project-vision	fresh	acts	holds	exit 0
+doc-create-the-vision-in-migrated	jigc doc create vision --title Vision --task form-the-project-vision	migrated	acts	holds	exit 0
+doc-create-the-vision-in-refs-post-hoc	jigc doc create vision --title Vision --task form-the-project-vision	refs-post-hoc	acts	holds	exit 0
+doc-create-the-vision-in-chatty-hooks	jigc doc create vision --title Vision --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
+doc-create-the-vision-in-vendored	jigc doc create vision --title Vision --task form-the-project-vision	vendored	acts	holds	exit 0
+doc-author-the-vision-in-bare	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	bare	refuses: exit 1, `finalize.no-task`	refuses, nothing changed	exit 1
+doc-author-the-vision-in-fresh	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	fresh	acts	holds	exit 0
+doc-author-the-vision-in-migrated	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	migrated	acts	holds	exit 0
+doc-author-the-vision-in-refs-post-hoc	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	refs-post-hoc	acts	holds	exit 0
+doc-author-the-vision-in-chatty-hooks	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	chatty-hooks	acts	holds	exit 0
+doc-author-the-vision-in-vendored	jigc doc author vision --from-file ../outside/vision.yaml --task form-the-project-vision	vendored	acts	holds	exit 0
+rename-one-way-in-bare	jigc rename adr:one-way --to Single way	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+rename-one-way-in-committed-singletons	jigc rename adr:one-way --to Single way	committed-singletons	acts	holds	exit 0
+rename-one-way-in-migrated	jigc rename adr:one-way --to Single way	migrated	acts	holds	exit 0
+rename-one-way-in-refs-post-hoc	jigc rename adr:one-way --to Single way	refs-post-hoc	refuses: exit 1, `rename.in-flight`	refuses, nothing changed	exit 1
+rename-one-way-in-chatty-hooks	jigc rename adr:one-way --to Single way	chatty-hooks	acts	holds	exit 0
+rename-one-way-in-vendored	jigc rename adr:one-way --to Single way	vendored	acts	holds	exit 0
+migrate-corpus-in-bare	jigc migrate-corpus	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+migrate-corpus-in-committed-singletons	jigc migrate-corpus	committed-singletons	acts	holds	exit 0
+migrate-corpus-in-migrated	jigc migrate-corpus	migrated	acts	holds	exit 0
+migrate-corpus-in-refs-post-hoc	jigc migrate-corpus	refs-post-hoc	acts	holds	exit 0
+migrate-corpus-in-chatty-hooks	jigc migrate-corpus	chatty-hooks	acts	holds	exit 0
+migrate-corpus-in-vendored	jigc migrate-corpus	vendored	acts	holds	exit 0
+relocate-a-note-in-bare	jigc relocate note --from docs/legacy-notes/	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+relocate-a-note-in-committed-singletons	jigc relocate note --from docs/legacy-notes/	committed-singletons	acts	holds	exit 0
+relocate-a-note-in-migrated	jigc relocate note --from docs/legacy-notes/	migrated	acts	holds	exit 0
+relocate-a-note-in-refs-post-hoc	jigc relocate note --from docs/legacy-notes/	refs-post-hoc	acts	holds	exit 0
+relocate-a-note-in-chatty-hooks	jigc relocate note --from docs/legacy-notes/	chatty-hooks	acts	holds	exit 0
+relocate-a-note-in-vendored	jigc relocate note --from docs/legacy-notes/	vendored	acts	holds	exit 0
+config-set-docs-root-to-notes-in-bare	jigc config set docs-root notes	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+config-set-docs-root-to-notes-in-committed-singletons	jigc config set docs-root notes	committed-singletons	acts	holds	exit 0
+config-set-docs-root-to-notes-in-migrated	jigc config set docs-root notes	migrated	acts	holds	exit 0
+config-set-docs-root-to-notes-in-refs-post-hoc	jigc config set docs-root notes	refs-post-hoc	acts	written outside its allowance	exit 0
+config-set-docs-root-to-notes-in-chatty-hooks	jigc config set docs-root notes	chatty-hooks	acts	holds	exit 0
+config-set-docs-root-to-notes-in-vendored	jigc config set docs-root notes	vendored	acts	written outside its allowance	exit 0
+start-a-task-in-bare	jigc start --workflow single-task add a file	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+start-a-task-in-committed-singletons	jigc start --workflow single-task add a file	committed-singletons	acts	holds	exit 0
+start-a-task-in-migrated	jigc start --workflow single-task add a file	migrated	acts	holds	exit 0
+start-a-task-in-refs-post-hoc	jigc start --workflow single-task add a file	refs-post-hoc	acts	holds	exit 0
+start-a-task-in-chatty-hooks	jigc start --workflow single-task add a file	chatty-hooks	acts	holds	exit 0
+start-a-task-in-vendored	jigc start --workflow single-task add a file	vendored	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-bare	jigc workflow sub-task --task add-alpha	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+workflow-a-sub-task-re-entered-in-committed-singletons	jigc workflow sub-task --task add-alpha	committed-singletons	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-migrated	jigc workflow sub-task --task add-alpha	migrated	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-refs-post-hoc	jigc workflow sub-task --task add-alpha	refs-post-hoc	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-chatty-hooks	jigc workflow sub-task --task add-alpha	chatty-hooks	acts	holds	exit 0
+workflow-a-sub-task-re-entered-in-vendored	jigc workflow sub-task --task add-alpha	vendored	acts	holds	exit 0
+migrate-a-foreign-history-in-bare	jigc migrate HISTORY.md --as changelog	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+migrate-a-foreign-history-in-committed-singletons	jigc migrate HISTORY.md --as changelog	committed-singletons	acts	holds	exit 0
+migrate-a-foreign-history-in-migrated	jigc migrate HISTORY.md --as changelog	migrated	acts	holds	exit 0
+migrate-a-foreign-history-in-refs-post-hoc	jigc migrate HISTORY.md --as changelog	refs-post-hoc	acts	holds	exit 0
+migrate-a-foreign-history-in-chatty-hooks	jigc migrate HISTORY.md --as changelog	chatty-hooks	acts	holds	exit 0
+migrate-a-foreign-history-in-vendored	jigc migrate HISTORY.md --as changelog	vendored	acts	holds	exit 0
+task-amend-the-last-commit-in-bare	jigc task amend fix the message	bare	refuses: exit 1, `this project isn't set up`	refuses, nothing changed	exit 1
+task-amend-the-last-commit-in-committed-singletons	jigc task amend fix the message	committed-singletons	acts	holds	exit 0
+task-amend-the-last-commit-in-migrated	jigc task amend fix the message	migrated	acts	holds	exit 0
+task-amend-the-last-commit-in-refs-post-hoc	jigc task amend fix the message	refs-post-hoc	acts	holds	exit 0
+task-amend-the-last-commit-in-chatty-hooks	jigc task amend fix the message	chatty-hooks	acts	holds	exit 0
+task-amend-the-last-commit-in-vendored	jigc task amend fix the message	vendored	acts	holds	exit 0

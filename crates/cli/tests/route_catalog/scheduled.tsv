@@ -1,0 +1,154 @@
+# The route catalog's scheduled list: the blocking refusal sites the ruling of 2026-10-11
+# leaves for the port (M56) — owed a case before it begins. The ruling's entry:
+# DECISIONS.md → "2026-10-12 — Which families the route catalog takes in".
+# A line a site, tab-separated: its id as `sites.tsv` gives it · the class the count gave it
+# (completions/artifacts/M55/stabilization-build/reshape/route-catalog-sites-changed-since-rc24.md)
+# · a note: `-`, or which change of a direct caller was read and why it is off the path to
+# the refusal. Held by `crates/cli/tests/route_catalog.rs`; a row goes in the commit that
+# brings its site's case.
+# site	class	note
+crates/cli/src/author.rs::reject::dynamic#1	unchanged	-
+crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	unchanged	-
+crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#1	unchanged	-
+crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#2	unchanged	-
+crates/cli/src/config.rs::check_basename_collision::config.step-id-collision#1	unchanged	-
+crates/cli/src/config.rs::check_content_no_nested::config.nested-fill#1	unchanged	-
+crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#1	unchanged	-
+crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#2	unchanged	-
+crates/cli/src/config.rs::check_not_already_forked::config.step-id-collision#1	unchanged	-
+crates/cli/src/config.rs::resolve_fork_bytes::config.anchor-absent#1	unchanged	-
+crates/cli/src/config.rs::undeclared_key_finding::config.undeclared-key#1	unchanged	-
+crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	unchanged	-
+crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_doc_rename` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; the first decides nothing and the second stands behind this refusal, which turns on the provenance the copy-in recorded — recorded as it was. In `read_or_copy_in`, beside the path, a guard over a linked worktree's docs and the copy-in's own read of the baseline now answer earlier, each as its own refusal: states taken from this one, none brought
+crates/cli/src/doc.rs::fixed_identity_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_doc_rename` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; this refusal is by doctype and returns before both
+crates/cli/src/doc.rs::fixed_title_refusal::write.title-ignored#1	unchanged	caller: `crates/cli/src/doc.rs::title_pre_check` changed — the create-only gate ahead of this rank is built by a new function and asked a second time, both only under an entry that carries `new: true`; no singleton of the shipped packs stands under one, and this rank's own lines are the previous release's
+crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	unchanged	-
+crates/cli/src/doc.rs::id_from_field_guard::write.id-from-field#1	unchanged	-
+crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::title_pre_check` changed — the create-only gate ahead of this rank is built by a new function, and asked a second time of the same home: the second look differs from the first only where a file arrives between two reads of one command; this rank's own lines are the previous release's
+crates/cli/src/doc.rs::machine_maintained_field_guard::write.machine-maintained-field#1	unchanged	-
+crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1	unchanged	caller: the eight write leaves of `crates/cli/src/doc.rs` changed (`run_set_field`, `run_unset_field`, `run_set_slot`, `run_add_item`, `run_remove_item`, `run_doc_rename`, `run_create`, `run_author`) — in each this guard is the first check behind the address's parse, ahead of every changed line
+crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1	unchanged	caller: `crates/cli/src/doc.rs::free_destination` changed — a new arm behind both calls of this refusal, reached only where neither answered: a destination whose home holds an entry that is no regular file, refused there by the store's own site. `state::create_incumbent`, which the second call turns on, changed in one line that answers as it did: a regular file, or a link that leads to one
+crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1	unchanged	caller: `crates/cli/src/doc.rs::run_retitle_item` changed — the binding of what `read_or_copy_in` hands back gained a field, and the acknowledgement one argument; the first decides nothing and the second stands behind this refusal. In `read_or_copy_in`, beside the path, a guard over a linked worktree's docs and the copy-in's own read of the baseline now answer earlier, each as its own refusal: states taken from this one, none brought
+crates/cli/src/doc.rs::slug_override_enum_refusal::write.identity-change#1	unchanged	-
+crates/cli/src/doc.rs::trailer_key_refusal::schema-conformance.field-value-conformant#1	unchanged	-
+crates/cli/src/doc_code_probe/mod.rs::dangling::dynamic#1	unchanged	-
+crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	unchanged	-
+crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	unchanged	-
+crates/cli/src/ingest.rs::unaddressable_identity_finding::ingest.unaddressable-identity#1	unchanged	-
+crates/cli/src/ingest.rs::wrong_location_finding::ingest.wrong-location#1	unchanged	-
+crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a binding ahead of this refusal that refuses nothing, and behind it a refusal of its own for a migration asked from a linked worktree, ranked below this one by its own comment
+crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` changed — a refusal of its own for a migration asked from a linked worktree now stands ahead of this one and answers earlier under its own code, whose site has its cases: states taken from this refusal, none brought. What git says of the source is asked as it was
+crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1	unchanged	answered in part: the code `migrate-corpus.destination-collision` is claimed there and has its answer — its caller `destination_collision_finding` changed, and what stands at a relocation's destination now picks the refusal and its route; the eleven other codes the function mints are handed over by callers that are the previous release's
+crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	unchanged	-
+crates/cli/src/milestone.rs::foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
+crates/cli/src/milestone.rs::mint_foreign_bytes_finding::milestone.foreign-bytes#1	unchanged	-
+crates/cli/src/milestone.rs::subtask_staged_prose_finding::milestone.staged-prose#1	unchanged	-
+crates/cli/src/milestone.rs::unverified_foreign_finding::milestone.foreign-bytes#1	unchanged	-
+crates/cli/src/milestone.rs::unverified_subtask_prose_finding::milestone.staged-prose#1	unchanged	-
+crates/cli/src/milestone.rs::unwind_failed_finding::milestone.unwind-failed#1	unchanged	-
+crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	unchanged	caller: `crates/cli/src/cli.rs::validate_store_in_repo` changed — one closure, the file-state family's question of what git says of a drifted doc against `HEAD` (it read the blob before); the walk that finds a vacated home asks it nothing
+crates/cli/src/orphan.rs::orphaned_instance_finding::schema-conformance.orphaned-instance#1	unchanged	caller: `crates/cli/src/cli.rs::validate_store_in_repo` changed — one closure, the file-state family's question of what git says of a drifted doc against `HEAD` (it read the blob before); the walk that finds an orphaned instance asks it nothing
+crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	unchanged	-
+crates/cli/src/relocate.rs::installed_root_refusal::config.workbench-root#1	unchanged	-
+crates/cli/src/relocate.rs::refuse::dynamic#1	unchanged	answered in part: the code `write.already-present` is claimed there and has its answer — in its caller `displace_foreign_squatter` the destination's own entry is asked and no longer through a link, so a link to nothing at a recorded home reaches the refusal; `move_doc`'s change stands behind its call, and the other callers are the previous release's
+crates/cli/src/rename.rs::refuse::dynamic#1	unchanged	answered in part: the codes `store.not-found` and `write.already-present` are claimed there and have their cases — in its caller `run` both conditions are asked of the home's own entry and no longer through a link; the door's other kinds of refusal are worded by lines that are the previous release's, behind the question of the doc's own home
+crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	unchanged	-
+crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	unchanged	-
+crates/cli/src/render.rs::validation_store::reconciliation.rename#1	unchanged	-
+crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-ahead#1	unchanged	-
+crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-current#1	unchanged	-
+crates/cli/src/repo.rs::finding_at::dynamic#1	unchanged	-
+crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	unchanged	-
+crates/cli/src/start.rs::head_shape_refusal::amend.head-shape#1	unchanged	-
+crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	unchanged	-
+crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	unchanged	-
+crates/cli/src/start.rs::read_named_workflow::workflow-refs.suppressed-malformed#1	unchanged	-
+crates/cli/src/start.rs::read_named_workflow::workflow.verb-routed#1	unchanged	-
+crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1	unchanged	caller: `crates/cli/src/start.rs::compose_core`, `compose_minted_in_repo` and `compose_task_workflow` changed — each gained one field of what it composes, which checkout the compose stands in, and `compose_core` a refusal of its own for a doc-only workflow minted from a linked worktree; all of it stands behind the workflow's definition being read, which is where this refuses
+crates/cli/src/start.rs::shadowed_definition_ids::config.shadow-id-collision#1	unchanged	-
+crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	unchanged	-
+crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	unchanged	-
+crates/cli/src/task.rs::bind::task-bind.undeclared-role#1	unchanged	-
+crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	unchanged	-
+crates/cli/src/task.rs::discard_staged_prose_finding::task-discard.staged-prose#1	unchanged	-
+crates/cli/src/task.rs::discard_unverified_foreign_finding::task-discard.foreign-bytes#1	unchanged	-
+crates/cli/src/task.rs::discard_unverified_prose_finding::task-discard.staged-prose#1	unchanged	-
+crates/cli/src/task.rs::no_committed_doc::store.not-found#1	unchanged	-
+crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1	unchanged	caller: `crates/cli/src/rename.rs::run` changed — the question of what stands at the doc's own home, at a referrer's and at the destination is asked of the entry itself; this refusal is asked ahead of all three, by its own comment ahead of every other gate of the door
+crates/cli/src/task.rs::reject_malformed_slug_head::store.malformed-slug#1	unchanged	-
+crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1	unchanged	caller: `crates/cli/src/doc.rs::resolve` changed — one field more on the active task, the checkout the invocation stands in, read behind this refusal, which is the first statement there as at every other door that calls it. The other two callers the count names by name do not call it
+crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	unchanged	-
+crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1	unchanged	caller: `crates/cli/src/migrate.rs::migrate_in_repo` and `crates/cli/src/rename.rs::run` changed — at the first, a binding ahead of this refusal and a guard over a linked worktree behind it; at the second, the question of what stands at the doc's own home is asked of the entry and no longer through a link, ahead of this refusal, and answers earlier under the store's code. The slug's length is asked as it was at all four doors
+crates/cli/src/task.rs::retire_untrackable_finding::finalize.retire-untrackable#1	unchanged	-
+crates/engine/src/cascade.rs::into_finding::dynamic#1	unchanged	-
+crates/engine/src/cascade.rs::into_finding::dynamic#2	unchanged	-
+crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	unchanged	-
+crates/engine/src/compose.rs::blocking_workflow_refs::dynamic#1	unchanged	-
+crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#1	unchanged	-
+crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#2	unchanged	-
+crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1	unchanged	caller: `crates/cli/src/start.rs::compose_core`, `compose_minted_in_repo` and `compose_task_workflow` changed — each gained one field of what it composes; and in `compose_core` a refusal of its own now answers earlier for a doc-only workflow minted from a linked worktree, under its own code, whose site has its cases. No changed line computes the fills this check walks
+crates/engine/src/file_state.rs::rename_strong_finding::reconciliation.rename#1	unchanged	-
+crates/engine/src/file_state.rs::rename_weak_finding::reconciliation.rename#1	unchanged	-
+crates/engine/src/finalize.rs::base_mismatch_finding::finalize.base-mismatch#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it
+crates/engine/src/finalize.rs::base_overlap_finding::finalize.base-mismatch#1	unchanged	-
+crates/engine/src/finalize.rs::migration_no_replacement_finding::finalize.migration-no-replacement#1	unchanged	-
+crates/engine/src/finalize.rs::no_such_task_finding::finalize.no-task#1	unchanged	-
+crates/engine/src/finalize.rs::promote_io_finding::finalize.promote-io#1	unchanged	-
+crates/engine/src/finalize.rs::render_io_finding::finalize.render-io#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` changed — it gained a parameter (the claims git holds at a home) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before that, so the change stands behind it
+crates/engine/src/finalize.rs::residual_task_area_finding::finalize.no-task#1	unchanged	-
+crates/engine/src/finalize.rs::task_missing_finding::finalize.no-task#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it
+crates/engine/src/finding.rs::block::dynamic#1	unchanged	-
+crates/engine/src/finding.rs::blocking::dynamic#1	unchanged	-
+crates/engine/src/finding.rs::graded::dynamic#1	not-counted	the count takes the rows whose severity is written `blocking`; this one's is handed in — it is the body of `Finding::graded`, the constructor every graded site calls
+crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	unchanged	-
+crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	unchanged	-
+crates/engine/src/milestone.rs::cross_group_collision_finding::join.same-doc-clash#1	unchanged	-
+crates/engine/src/milestone.rs::isolation_finding::join.area-isolation#1	unchanged	-
+crates/engine/src/milestone.rs::missing_provenance_finding::join.missing-provenance#1	unchanged	-
+crates/engine/src/milestone.rs::missing_schema_finding::join.unknown-type#1	unchanged	-
+crates/engine/src/milestone.rs::no_criteria_finding::milestone.no-criteria#1	unchanged	-
+crates/engine/src/milestone.rs::read_back_finding::milestone.record-read-back#1	unchanged	-
+crates/engine/src/milestone.rs::record_flip_finding::milestone.record-flip#1	unchanged	caller: `crates/engine/src/milestone.rs::discard_record`, `discard_sub_task_item` and `join_record` changed — one line each, the write of the flipped record (now in place and through no link); this refusal is over the flip, which returns before the write
+crates/engine/src/milestone.rs::residual_collision_finding::milestone.serial-collision#1	unchanged	-
+crates/engine/src/milestone.rs::residual_milestone_area_finding::milestone.unknown#1	unchanged	-
+crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	unchanged	-
+crates/engine/src/milestone.rs::settled_sub_task_finding::milestone.terminal#1	unchanged	caller: `crates/engine/src/milestone.rs::discard_sub_task_item` changed — one line, the write of the settled record; this refusal is the check of the sub-task's state, which returns before it
+crates/engine/src/milestone.rs::splice_finding::join.self-ref-rewrite#1	unchanged	-
+crates/engine/src/milestone.rs::stale_base_finding::milestone.stale-base#1	unchanged	-
+crates/engine/src/milestone.rs::store_block::dynamic#1	unchanged	-
+crates/engine/src/milestone.rs::sub_task_collision_finding::milestone.sub-task-collision#1	unchanged	-
+crates/engine/src/milestone.rs::sub_task_finalize_finding::finalize.milestone-sub-task#1	unchanged	caller: `crates/cli/src/task.rs::finalize` changed — a guard over a linked worktree's docs, the homes git holds, the version stamp, what counts as a pending config change; this refusal is the function's first check and returns before every one of them
+crates/engine/src/milestone.rs::terminal_milestone_finding::milestone.terminal#1	unchanged	-
+crates/engine/src/milestone.rs::unknown_milestone_finding::milestone.unknown#1	unchanged	-
+crates/engine/src/override_default.rs::delta_block::dynamic#1	unchanged	-
+crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	unchanged	-
+crates/engine/src/parse.rs::ceiling_violations::conformance.slot-setext-heading#1	unchanged	-
+crates/engine/src/parse.rs::parse_item_slots::conformance.item-slot-delimiter-shadowed#1	unchanged	-
+crates/engine/src/parse.rs::parse_item_slots::conformance.item-slot-label-missing#1	unchanged	-
+crates/engine/src/parse.rs::parse_items::conformance.item-anchor-duplicate#1	unchanged	-
+crates/engine/src/parse.rs::parse_items::conformance.item-anchor-malformed#1	unchanged	-
+crates/engine/src/parse.rs::parse_items::conformance.item-heading-unanchored#1	unchanged	-
+crates/engine/src/parse.rs::parse_sections::conformance.header-not-first#1	unchanged	caller: `crates/cli/src/doc.rs::run_list` changed — one line, a note printed after the listing; and it discards this parse's refusal where it calls it
+crates/engine/src/parse.rs::parse_sections::conformance.section-missing#1	unchanged	caller: `crates/cli/src/doc.rs::run_list` changed — one line, a note printed after the listing; and it discards this parse's refusal where it calls it
+crates/engine/src/parse.rs::parse_sections::conformance.section-renamed#1	unchanged	caller: `crates/cli/src/doc.rs::run_list` changed — one line, a note printed after the listing; and it discards this parse's refusal where it calls it
+crates/engine/src/parse.rs::read_field_block_str::conformance.duplicate-field#1	unchanged	-
+crates/engine/src/parse.rs::read_field_block_str::conformance.malformed-field-block#1	unchanged	-
+crates/engine/src/parse.rs::read_field_block_str::conformance.unknown-field#1	unchanged	-
+crates/engine/src/parse.rs::read_marked_field_group::conformance.orphaned-sentinel#1	unchanged	-
+crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	unchanged	-
+crates/engine/src/state.rs::collision_finding::task.serial-collision#1	unchanged	-
+crates/engine/src/state.rs::empty_title_finding::create.empty-title#1	unchanged	-
+crates/engine/src/state.rs::gate_blocked_finding::create.gate-blocked#1	unchanged	-
+crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1	unchanged	caller: `crates/engine/src/state.rs::stage_minted` is new — `create`'s steps 3 to 5, moved out so that the one probe of the home is handed down; this refusal is its first statement, as it was `create`'s third step, and no line ahead of it refuses
+crates/engine/src/state.rs::residual_collision_finding::task.serial-collision#1	unchanged	-
+crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1	unchanged	caller: `crates/engine/src/state.rs::create` changed — two parameters more and the one probe of the home, all behind this refusal, which is its first statement; the other caller, `create_admission`, is the previous release's
+crates/engine/src/state.rs::unslugable_title_finding::write.unslugable-title#1	unchanged	-
+crates/engine/src/store.rs::block::dynamic#1	unchanged	caller: none changed — every caller of this `block` stands in `crates/engine/src/store.rs`, whose diff adds items and changes no function that calls it; the changed callers the count's rule names are functions of `crates/cli/src/doc.rs`, which call that file's own `block` and `DocFailure::block`, of the same name
+crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	unchanged	-
+crates/engine/src/validate.rs::blocking_conformance::dynamic#1	unchanged	-
+crates/engine/src/validate.rs::owner_artifact_present::owner-artifact.present#1	unchanged	-
+crates/engine/src/validate.rs::version_ahead_break::schema-conformance.schema-version-ahead#1	unchanged	-
+crates/engine/src/validate.rs::version_currency_break::schema-conformance.schema-version-current#1	unchanged	-
+crates/engine/src/write.rs::blocking_write::dynamic#1	unchanged	-
+crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#1	unchanged	-
+crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#2	unchanged	-

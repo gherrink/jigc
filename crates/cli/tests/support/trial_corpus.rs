@@ -275,12 +275,29 @@ pub struct TrialCorpus {
     /// The [`FixturePack`] every child composes, when this corpus was built with one
     /// ([`Self::build_with_pack`]); `None` is the embedded-pack default.
     pack: Option<PathBuf>,
+    /// **The binary this corpus was built on and every child of it runs** — cargo's of
+    /// this tree where nobody handed one in ([`Self::build_on`]).
+    binary: PathBuf,
+}
+
+/// Cargo's binary of this tree: what a corpus is built on where nobody hands one in.
+fn cargos_binary() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_jigc"))
 }
 
 impl TrialCorpus {
     /// Build `state` in a fresh throwaway corpus, over the **embedded** packs.
     pub fn build(state: State) -> Self {
-        Self::build_over(state, None)
+        Self::build_over(state, None, cargos_binary())
+    }
+
+    /// Build `state` **on the binary handed in**, over the embedded packs: the state is
+    /// that binary's own — every managed byte of it was written by `binary` — and every
+    /// later child of the corpus, and of a copy of it, is `binary` too. The byte table
+    /// builds a prepared state so for the binary it then asks
+    /// (`crates/cli/tests/byte_table.rs`), which may be another release's.
+    pub fn build_on(binary: &Path, state: State) -> Self {
+        Self::build_over(state, None, binary.to_path_buf())
     }
 
     /// Build `state` in a fresh throwaway corpus whose every child composes `pack`
@@ -289,7 +306,7 @@ impl TrialCorpus {
     /// The pack outlives the corpus by construction: the caller holds the
     /// [`FixturePack`], which cleans itself up on drop.
     pub fn build_with_pack(state: State, pack: &FixturePack) -> Self {
-        Self::build_over(state, Some(pack.path().to_path_buf()))
+        Self::build_over(state, Some(pack.path().to_path_buf()), cargos_binary())
     }
 
     /// A **never-adopted** corpus — `git init` plus the one initial commit, and **no
@@ -318,12 +335,13 @@ impl TrialCorpus {
             state: None,
             live_task: None,
             pack: None,
+            binary: cargos_binary(),
         };
         corpus.git_init();
         corpus
     }
 
-    fn build_over(state: State, pack: Option<PathBuf>) -> Self {
+    fn build_over(state: State, pack: Option<PathBuf>, binary: PathBuf) -> Self {
         let root = unique_root(state.name());
         fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
         fs::create_dir_all(root.join("home")).expect("create the corpus home dir");
@@ -333,6 +351,7 @@ impl TrialCorpus {
             state: Some(state),
             live_task: None,
             pack,
+            binary,
         };
         corpus.git_init();
         // Managed state through the binary: `setup` installs the `.jigc/` workbench,
@@ -381,6 +400,7 @@ impl TrialCorpus {
             state: self.state,
             live_task: self.live_task.clone(),
             pack: self.pack.clone(),
+            binary: self.binary.clone(),
         }
     }
 
@@ -455,7 +475,7 @@ impl TrialCorpus {
     /// corpus's own [`FixturePack`] when it was built with one. Either way the pack the
     /// child reads is chosen here, never inherited.
     pub fn jigc(&self, args: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        let mut command = Command::new(&self.binary);
         command
             .args(args)
             .current_dir(self.repo())
@@ -501,7 +521,7 @@ impl TrialCorpus {
     /// defaults to the repository root, which is exactly the assumption a cwd axis has to
     /// stop making.
     pub fn jigc_stdin_from(&self, cwd: &std::path::Path, args: &[&str], stdin: &str) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        let mut command = Command::new(&self.binary);
         command
             .args(args)
             .current_dir(cwd)
