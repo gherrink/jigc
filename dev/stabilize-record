@@ -28,6 +28,7 @@
 #
 #   opening.md                              the opening record — the human-led step's, never
 #                                           this script's
+#   opening-facts.md                        the opening's fact sheet — never this script's
 #   run.md                                  the run's facts: its stop mode, its two bounds,
 #                                           the previous release, the default scope and
 #                                           the clauses of its closing condition — and,
