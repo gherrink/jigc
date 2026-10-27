@@ -1142,17 +1142,21 @@ pub fn aimed(kind: Kind, line: &Line) -> Result<(), &'static str> {
                     may do where it acts",
         );
     }
-    // The stamped file of a cache, and nothing beside it (`C4`): the docs declare those bytes
-    // the cache's own, rebuildable from the committed docs, and the human's ruling of
-    // 2026-10-12 makes a rebuildable cache no loss — so no bytes of the user's are at stake
-    // there, and a plant aimed at it would be a cell that turns on nothing the line governs.
+    // The stamped file of a cache, and nothing beside it (`C4`). The cache's own bytes there
+    // are no loss (the human's ruling of 2026-10-12); but an entry of the user's standing at
+    // that path — a link, a directory, a file — is the user's (the rows' record's §6, entries
+    // 23 and 25), and the comparison reds a door that writes over one (the first of the fixes
+    // after the review of the task `B10`). No plant aims there yet: aiming one adds a need in
+    // every row, which `wf-byte-table-rest` carries (corrected 2026-10-27, by the sixth of
+    // those fixes — the reason read *"no bytes of the user's stand there"*, narrower than true).
     // What else stands in the cache's directory is no place of the line's.
     if let Allows::Files(Where::Path(place), May::Invalidated(stamped)) = line.allows
         && place == stamped
     {
         return Err(
-            "the line's place is a cache's stamped file alone, whose bytes the docs declare the \
-             cache's own and rebuildable: no bytes of the user's stand there",
+            "the line's place is a cache's stamped file alone: an entry of the user's standing \
+             there is the user's, and a door that writes over one is red, but no plant aims there \
+             yet — a need in every row, carried by `wf-byte-table-rest`",
         );
     }
     let one_file = |place: Where| !matches!(place, Where::Under(_));

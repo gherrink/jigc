@@ -9,17 +9,17 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 760 cells: the acceptance's twelve, the task family's
-//! seventy-eight** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
+//! `migrate`, `task amend`) — and 782 cells: the acceptance's twelve, the task family's
+//! eighty-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
 //! spelling `doc-only` and seven its spelling `--approve`), **`milestone finalize`'s
-//! spelling `squash: false` four, the install family's hundred and thirty-one** (`setup`,
+//! spelling `squash: false` four, the install family's hundred and thirty-four** (`setup`,
 //! `uninstall`, `ingest`, `unmanage`), **the doc family's hundred and thirty-nine** (its
 //! eight leaves), **the milestone family's record
-//! doors' seventy** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
-//! thirty-six** (`provision`, `execute`, `join`) **and its terminals' sixty-nine**
+//! doors' seventy-three** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
+//! thirty-six** (`provision`, `execute`, `join`) **and its terminals' seventy-two**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
-//! under `squash: false`), **the movers family's seventy-nine and eighty-five** (`rename`,
-//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-seven**, of which
+//! under `squash: false`), **the movers family's eighty-three and ninety** (`rename`,
+//! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-eight**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
 //! rows and the cells, a family a file under
@@ -2359,8 +2359,8 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
     // `C4`, the human's ruling of 2026-10-26 on the rows' record's §6, entry 7: in every row.
     (&["setup"], "C4", NO_COMMIT_TOOK_THE_INDEX),
     (&["uninstall"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["ingest"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["unmanage"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["ingest"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["unmanage"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
     (
         &["task", "finalize"],
         "C4",
@@ -2372,14 +2372,14 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C4",
         ITS_OWN_LINE_INVALIDATES_THE_INDEX,
     ),
-    (&["doc", "add-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "remove-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "retitle-item"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "rename"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "set-field"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "set-slot"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "create"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["doc", "author"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["doc", "add-item"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "remove-item"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "retitle-item"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "rename"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "set-field"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "set-slot"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "create"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["doc", "author"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
     (&["milestone", "create"], "C4", NO_COMMIT_TOOK_THE_INDEX),
     (&["milestone", "add-task"], "C4", NO_COMMIT_TOOK_THE_INDEX),
     (
@@ -2387,18 +2387,18 @@ const EXCUSES_NOTHING: &[(&[&str], &str, &str)] = &[
         "C4",
         NO_COMMIT_TOOK_THE_INDEX,
     ),
-    (&["milestone", "provision"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["milestone", "execute"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["milestone", "join"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["milestone", "provision"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["milestone", "execute"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["milestone", "join"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
     (&["milestone", "discard"], "C4", NO_COMMIT_TOOK_THE_INDEX),
     (&["rename"], "C4", ITS_OWN_LINE_INVALIDATES_THE_INDEX),
-    (&["relocate"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["relocate"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
     (&["migrate-corpus"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["config", "set"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["start"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["workflow"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["migrate"], "C4", NO_COMMIT_TOOK_THE_INDEX),
-    (&["task", "amend"], "C4", NO_COMMIT_TOOK_THE_INDEX),
+    (&["config", "set"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["start"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["workflow"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["migrate"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
+    (&["task", "amend"], "C4", THIS_LEAF_LANDS_NO_COMMIT),
 ];
 
 /// What would use a line of `uninstall`'s whose change lands at a tracked path, and the
@@ -2492,6 +2492,14 @@ const ITS_OWN_LINE_INVALIDATES_THE_INDEX: &str = "nothing can: the leaf's own li
 const NO_COMMIT_TOOK_THE_INDEX: &str = "a cell of this leaf that lands a commit and takes `.jigc/index/edges.json` away or writes \
      it again in the same run: none does, on either binary — a cell that lands a commit leaves the \
      index's file as it stood";
+
+/// What would use `C4` at a door whose row lets no commit: nothing — the line is in force
+/// only where the command landed a commit of its own, and a commit this door landed would be
+/// git's state moved outside its allowance before `C4` is asked (added 2026-10-27, by the
+/// sixth of the fixes after the review of the task `B10`, its note 9).
+const THIS_LEAF_LANDS_NO_COMMIT: &str = "nothing can: this leaf's row lets no commit, and the line is in force only where the \
+     command landed a commit of its own — a commit this door landed would be git's state moved \
+     outside its allowance";
 
 /// What would use a line of the ruling that stands in a row whose leaf has no milestone.
 const NO_CELL_OF_THIS_LEAF: &str = "no cell of this leaf is expected to: the ruling's lines stand in every row, and this \
@@ -2608,6 +2616,59 @@ fn excused_otherwise(
         }
     }
     out
+}
+
+/// **What `C4` says would use it, at each leaf where it excuses nothing, is the leaf's
+/// own** — added 2026-10-27, by the sixth of the fixes after the review of the task `B10`
+/// (its note 9). `C4` lets the edge index's file go only where the command landed a commit
+/// of its own, so at a leaf whose row lets no commit the reason is that the door lands
+/// none ([`THIS_LEAF_LANDS_NO_COMMIT`]), and at a leaf whose row lets one, that none of its
+/// cells' commits took the index ([`NO_COMMIT_TOOK_THE_INDEX`]). Read off the rows: a row
+/// lets a commit where one of its lines, of any spelling, is [`Allows::Commit`]. *Red
+/// first*: before the two reasons were told apart, every leaf's was the second, and the
+/// nineteen rows that let no commit were each named — the eight `doc` leaves, `start`,
+/// `workflow`, `migrate`, `task amend`, `relocate`, `config set`, `ingest`, `unmanage`, and
+/// `milestone provision`, `execute` and `join`; the review counted twelve of them.
+#[test]
+fn c4s_reason_where_it_excuses_nothing_says_whether_the_leaf_lands_a_commit() {
+    let lets_a_commit = |row: &Row| {
+        row.lines
+            .iter()
+            .any(|line| matches!(line.allows, Allows::Commit(_)))
+    };
+    let mut wrong = Vec::new();
+    for row in rows() {
+        let Some((_, _, reason)) = EXCUSES_NOTHING
+            .iter()
+            .find(|(leaf, id, _)| *leaf == row.leaf && *id == AFTER_A_COMMIT.id)
+        else {
+            continue;
+        };
+        if *reason == ITS_OWN_LINE_INVALIDATES_THE_INDEX {
+            continue;
+        }
+        let owed = if lets_a_commit(row) {
+            NO_COMMIT_TOOK_THE_INDEX
+        } else {
+            THIS_LEAF_LANDS_NO_COMMIT
+        };
+        if *reason != owed {
+            wrong.push(format!(
+                "`jigc {}`: its row {} commit, and `C4`'s reason says `{reason}`",
+                row.leaf.join(" "),
+                if lets_a_commit(row) {
+                    "lets a"
+                } else {
+                    "lets no"
+                },
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "`C4` where it excuses nothing, the reason against the row:\n\n  {}",
+        wrong.join("\n  ")
+    );
 }
 
 /// **Every line of a row excuses a difference in some cell the gate runs, or is named** —
@@ -10341,7 +10402,7 @@ fn a_finalize_may_take_the_edge_indexs_file_away_and_no_other_file() {
 /// outside its allowance*), and a refusal that landed no commit nothing beyond `C1`'s
 /// rebuild.
 ///
-/// Red first, twice: with every row as it stood, no row carried the line; with the line in
+/// Red first, three times: with every row as it stood, no row carried the line; with the line in
 /// force at any run that acted, the door that commits nothing came out *holds* with the
 /// index's file gone; and with the line over the index's whole directory, the second file
 /// written again by a commit came out *holds*.
@@ -14061,6 +14122,63 @@ fn every_key_has_its_heading_in_the_findings() {
         "the keys and their entries in the findings:\n\n  {}\n\na key has its entry in \
          `…/reshape/byte-table-findings.md`, under a heading that names it, saying which of \
          the doc and the code is wrong",
+        wrong.join("\n  ")
+    );
+}
+
+/// **Every key the findings head as live that the record does not list** — the reverse of
+/// [`unheaded`]: a heading ``### `r1-…` `` that does not say *retired*, whose key no line
+/// of the record's list names.
+fn live_and_unlisted(findings: &str, listed: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (key, after) in findings
+        .lines()
+        .filter_map(|line| line.strip_prefix("### `"))
+        .filter_map(|rest| rest.split_once('`'))
+    {
+        if !key.starts_with("r1-") || after.starts_with(" — retired") || !seen.insert(key) {
+            continue;
+        }
+        if !listed.contains(&key) {
+            out.push(format!(
+                "`{key}` is headed in the findings as live, and the record's list does not name it"
+            ));
+        }
+    }
+    out
+}
+
+/// **Every key the findings head as live is listed in the table's record** — the reverse
+/// of [`every_key_has_its_heading_in_the_findings`], so the record's list of keys, which
+/// the run's opening reads, is every live key and not the ones somebody remembered (added
+/// 2026-10-27, by the sixth of the fixes after the review of the task `B10`, the third
+/// fix's left-open). On a fixture, fault by fault; then the committed findings against the
+/// committed record. *Red first*: against the record as the task wrote it, it named the two
+/// keys the second and fifth of those fixes added to the findings and not to the record.
+#[test]
+fn every_live_heading_of_the_findings_is_listed_in_the_tables_record() {
+    const FIXTURE_FINDINGS: &str = "# The findings\n\n\
+        ### `r1-setup-loses`\n\nwhy.\n\n\
+        ### `r1-setup-loses` — three more cells\n\n\
+        ### `r1-setup-moved` — retired 2026-10-18\n\n\
+        ### `r1-setup-stays`\n\n\
+        ### What the other cells show\n";
+    says(
+        &live_and_unlisted(FIXTURE_FINDINGS, &["r1-setup-loses"]),
+        &[("`r1-setup-stays`", "the record's list does not name it")],
+    );
+    says(
+        &live_and_unlisted(FIXTURE_FINDINGS, &["r1-setup-loses", "r1-setup-stays"]),
+        &[],
+    );
+
+    let wrong = live_and_unlisted(FINDINGS, &listed_keys(THE_TABLES_RECORD));
+    assert!(
+        wrong.is_empty(),
+        "the live keys of the findings and the record's list of keys:\n\n  {}\n\nevery live \
+         key has its line in `…/reshape/byte-table-record.md` → §2, which the run's opening \
+         reads",
         wrong.join("\n  ")
     );
 }
