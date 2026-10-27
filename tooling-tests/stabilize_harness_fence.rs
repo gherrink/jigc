@@ -5412,3 +5412,34 @@ fn u_a_verifier_hands_on_every_printed_route_it_did_not_run_as_printed() {
         }
     }
 }
+
+/// **A door the previous release does not have is NOT COMPARABLE in the verifier's
+/// definition, as the record and the harness take it** (the row
+/// `wf-regression-not-comparable`, discharged 2026-10-27). The definition said such a block
+/// is `regression: false`, with *not comparable* in a basis no filing holds — so on record
+/// it read as *red there too*. The value is one word in three homes: the definition that
+/// says it, the record script that takes it, and the harness that sends it.
+#[test]
+fn a_door_the_previous_release_does_not_have_is_not_comparable_in_the_definition_the_record_and_the_harness()
+ {
+    const VALUE: &str = "\"not-comparable\"";
+    let definition = &definitions()["finding-verifier"];
+    assert!(
+        definition.contains(&format!("is `regression: {VALUE}`")),
+        "the verifier's definition says the value step 4 establishes"
+    );
+    assert!(
+        !definition.contains("is `regression: false`, with *not comparable*"),
+        "and no longer files it as `false`"
+    );
+    let record =
+        fs::read_to_string(repo_root().join("dev/stabilize-record")).expect("read the script");
+    let harness = fs::read_to_string(repo_root().join(".claude/workflow-sources/stabilize.js"))
+        .expect("read the harness");
+    assert!(
+        record.contains(&format!("NOT_COMPARABLE = {VALUE}"))
+            && harness.contains("const NOT_COMPARABLE = 'not-comparable'")
+            && harness.contains("enum: [true, false, 'not-comparable']"),
+        "the record script takes the value, and the harness's return schema and its fact send it"
+    );
+}

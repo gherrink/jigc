@@ -512,11 +512,12 @@ function unasserted(role, reporter, result, expected) {
   return '(' + reporter + ') returned ' + (SHA256_RE.test(String(result.asserted_sha256)) ? 'the `asserted_sha256` ' + result.asserted_sha256 : 'an `asserted_sha256` that is no sha256') + ', which is not the candidate\'s binary (' + expected + '): nothing it drove is evidence about this candidate'
 }
 
+const NOT_COMPARABLE = 'not-comparable'
 function regressionOf(reporter, result, previous) {
   const gap = lacks('verify', result).find((n) => n.then === 'unknown')
   const ran = result.ran_on || {}
   const why = gap ? lacksWhy(reporter, gap)
-    : typeof result.regression !== 'boolean' ? '(' + reporter + ') returned a `regression` that is neither true nor false'
+    : typeof result.regression !== 'boolean' && result.regression !== NOT_COMPARABLE ? '(' + reporter + ') returned a `regression` that is neither true, false nor `' + NOT_COMPARABLE + '`'
       : ran.previous !== previous ? '(' + reporter + ') returned ' + (SHA256_RE.test(String(ran.previous)) ? 'the hash ' + ran.previous : 'a hash that is no sha256') + ' for the previous release\'s binary, which is not the one it was handed (' + previous + '): what its regression fact rests on was not that release'
         : null
   return why ? { regression: null, unknown: why } : { regression: result.regression, unknown: null }
@@ -850,7 +851,7 @@ function triageRecord(ctx, entries) {
       const t = { key: e.key, grade: e.grade }
       if (e.grade === 'out-of-scope') t.bound = e.bound
       if (e.verdict) t.verdict = e.verdict
-      if (e.verdict === 'confirmed' && typeof e.regression === 'boolean') t.regression = e.regression
+      if (e.verdict === 'confirmed' && (typeof e.regression === 'boolean' || e.regression === NOT_COMPARABLE)) t.regression = e.regression
       if (e.verdict && e.fork) t.fork = e.fork
       return t
     }),
@@ -1035,7 +1036,7 @@ const VERIFY_SCHEMA = {
     halt: HALT,
     key: { type: 'string' },
     verdict: { type: 'string', enum: ['confirmed', 'refuted'] },
-    regression: { type: 'boolean', description: 'with confirmed only' },
+    regression: { enum: [true, false, 'not-comparable'], description: 'with confirmed only: true where the repro is green on the previous release, false where it is red there too, not-comparable where it cannot run there because its door is one that release does not have' },
     basis: { type: 'string' },
     contested: { type: 'boolean' },
     asserted_sha256: { type: 'string', description: 'the sha256 you asserted for the candidate before you drove it' },
@@ -2022,6 +2023,7 @@ function selfTest() {
   const without = (drop) => { const r = JSON.parse(JSON.stringify(knows)); drop(r); return r }
   check('a regression fact is taken only as a boolean with the previous binary\'s hash behind it, and is unknown otherwise — never false', JSON.stringify(regressionOf('v', knows, 'c'.repeat(64))) === JSON.stringify({ regression: true, unknown: null }) && regressionOf('v', without((r) => { r.regression = false }), 'c'.repeat(64)).regression === false && [without((r) => { delete r.regression }), without((r) => { delete r.ran_on.previous }), without((r) => { delete r.ran_on }), without((r) => { r.regression = 'no' }), without((r) => { r.ran_on.previous = 'd'.repeat(64) }), without((r) => { r.regression = null })].every((r) => regressionOf('v', r, 'c'.repeat(64)).regression === null && isText(regressionOf('v', r, 'c'.repeat(64)).unknown)) && regressionOf('verify-p1-k', without((r) => { delete r.regression }), 'c'.repeat(64)).unknown.startsWith('(verify-p1-k) returned no `regression` — ') && regressionOf('v', without((r) => { delete r.ran_on.previous }), 'c'.repeat(64)).unknown.startsWith('(v) returned no `ran_on.previous` — ') && regressionOf('v', without((r) => { r.ran_on.previous = 'x`; rm -r /' }), 'c'.repeat(64)).unknown.includes('a hash that is no sha256') && !regressionOf('v', without((r) => { r.ran_on.previous = 'x`; rm -r /' }), 'c'.repeat(64)).unknown.includes('rm -r'))
   check('a confirmed finding whose regression fact is unknown is recorded with the field LEFT OUT, and one that is known with its boolean', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: null }, { key: 'f-2', new: false, grade: 'breaks', verdict: 'confirmed', regression: false }, { key: 'f-3', new: false, grade: 'breaks', verdict: 'confirmed' }, { key: 'f-4', new: false, grade: 'breaks', verdict: 'refuted', regression: true }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed' }, { key: 'f-2', grade: 'breaks', verdict: 'confirmed', regression: false }, { key: 'f-3', grade: 'breaks', verdict: 'confirmed' }, { key: 'f-4', grade: 'breaks', verdict: 'refuted' }]))
+  check('a door the previous release does not have is NOT COMPARABLE: taken with that binary\'s hash behind it, unknown without, and recorded as it is', regressionOf('v', without((r) => { r.regression = NOT_COMPARABLE }), 'c'.repeat(64)).regression === NOT_COMPARABLE && regressionOf('v', without((r) => { r.regression = NOT_COMPARABLE; delete r.ran_on.previous }), 'c'.repeat(64)).regression === null && regressionOf('v', without((r) => { r.regression = 'not comparable' }), 'c'.repeat(64)).regression === null && JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: NOT_COMPARABLE }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: NOT_COMPARABLE }]))
   check('what a stage holds takes the ends its table names, and no other', JSON.stringify(HELD_TAKES) === JSON.stringify({ build: ['green'], gate: ['green', 'red'], check: ['green', 'red', 'void'], record: ['green', 'red'], probe: ['green'] }) && Object.keys(HELD_TAKES).every((use) => HELD_TAKES[use].every((ends) => HELD_ENDS[ends])) && !Object.keys(HELD_TAKES).some((use) => ['running', 'dead', 'unread'].some((ends) => HELD_TAKES[use].includes(ends))))
   check('a held command that may still run is named with the one call that answers once it is over', mayRun({ name: 'gate-c1-a1', ends: 'running' }) && mayRun({ name: 'gate-c1-a1', ends: 'unread', started: true }) && !mayRun({ name: 'gate-c1-a1', ends: 'unread', started: false }) && !mayRun({ name: 'gate-c1-a1', ends: 'dead' }) && !mayRun({ name: 'gate-c1-a1', ends: 'void' }) && !mayRun({ ends: 'running' }) && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running', output: '/tmp/scratch-1/hold/gate-c1-a1/output' }).includes('`dev/stabilize-step hold-wait --scratch /tmp/scratch-1 --name gate-c1-a1`') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'running' }).includes('MAY STILL RUN') && heldThen('/tmp/scratch-1', { name: 'gate-c1-a1', ends: 'dead' }) === null)
   check('a held command that did not end as the stage needs it is said by its job and the tool\'s word', heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`gate-c1-a1`') && heldFault('the candidate\'s gate', { name: 'gate-c1-a1', ends: 'void', why: 'no-verdict' }).includes('`no-verdict`') && heldFault('x', { ends: 'unread' }).includes(HELD_ENDS.unread) && JSON.stringify(heldSaid({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o', verdict: '/v', facts: {} })) === JSON.stringify({ name: 'n', kind: 'gate', ends: 'dead', why: 'no-exit', output: '/o' }))

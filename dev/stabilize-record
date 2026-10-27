@@ -372,13 +372,20 @@
 #                      human's at once (THE ROUTE).
 #         regression   with confirmed and only with it: true when the repro is green on
 #                      the previous release's binary, false when it is red there too —
-#                      the verifier's fact. ABSENT, OR null, WHERE THE VERIFIER DOES NOT
-#                      KNOW: it was handed no binary of the previous release, the door is
-#                      one that release does not have, its return does not back the
-#                      claim. The cell is then `-` beside `confirmed`, the finding is
-#                      graded confirmed and routed as one, and `state` names it
-#                      (regression_unknown): an unknown fact is never written as `no`.
-#                      Anything else — a word, a number — is refused (bad-value).
+#                      the verifier's fact — and "not-comparable" WHERE IT CANNOT RUN
+#                      THERE, BECAUSE ITS DOOR IS ONE THAT RELEASE DOES NOT HAVE: a fact
+#                      too, and neither of the other two. "A regression of the run" is
+#                      green there and red on the candidate (ruling 5 of 2026-10-05), so
+#                      such a finding is no regression — graded confirmed, and routed as a
+#                      confirmed non-regression is, by its door — and it is not "red there
+#                      too" either: the cell says `not-comparable`, never `no`. ABSENT, OR
+#                      null, WHERE THE VERIFIER DOES NOT KNOW: it was handed no binary of
+#                      the previous release, its return does not back the claim. The cell
+#                      is then `-` beside `confirmed`, the finding is graded confirmed and
+#                      routed as one, and `state` names it (regression_unknown): an
+#                      unknown fact is never written as `no`, and a door the previous
+#                      release does not have is not unknown. Anything else — another word,
+#                      a number — is refused (bad-value).
 #         fork         with a verdict and only with one: A FORK — the verifier found the
 #                      finding to contest a settled decision, so what is done about it is
 #                      the human's to rule and no fixer's. One object, all three named:
@@ -461,8 +468,8 @@
 #         refutation   beside refuted, and required there: does-not-reproduce | intended |
 #                      breaks-no-clause
 #         reason       beside undrivable, and required there: why, in a word
-#         regression   beside confirmed: true | false, or not said where the verifier does
-#                      not know
+#         regression   beside confirmed: true | false | "not-comparable" (triage-set:
+#                      regression), or not said where the verifier does not know
 #         previous     the sha256 of the previous release's binary, where it drove one
 #         contested    ONLY WHERE THE VERIFIER FOUND THE FINDING TO CONTEST A SETTLED
 #                      DECISION — beside whichever verdict it reached: THE BASIS, what is
@@ -498,9 +505,10 @@
 #         (iv)  THE BINARY IS THE ROUND'S: `candidate` is the hash the round's record names
 #               (round-set: binary), or the filing is refused (bad-value) — a verdict on
 #               another binary is no verdict. AND A REGRESSION IS A FACT ONLY WITH THE
-#               PREVIOUS RELEASE'S BINARY BEHIND IT: without `previous`, or with the
-#               candidate's own hash there, the filing is taken and the fact is UNKNOWN —
-#               filed as not said, never as `no` (the call prints why: `unknown`).
+#               PREVIOUS RELEASE'S BINARY BEHIND IT — and so is "not-comparable", which
+#               says what that binary lacks: without `previous`, or with the candidate's
+#               own hash there, the filing is taken and the fact is UNKNOWN — filed as not
+#               said, never as `no` (the call prints why: `unknown`).
 #         (v)   ONCE IS ONCE PER KEY PER ROUND: a second filing for the finding — under
 #               whatever attempt — and one for a finding whose verdict the round's triage
 #               record holds are refused (exists).
@@ -578,8 +586,9 @@
 #       it. A file that is not that text to the byte, under its own seal, is no filed
 #       verdict (vet; state: filed).
 #       Prints {"verdict": the path, "sha256": the hash of the file's bytes, "key", "word":
-#       the verdict, "regression": true | false | null, "unknown": why a regression that
-#       was said is not kept, or null, "contested": whether the filing says a basis,
+#       the verdict, "regression": true | false | "not-comparable" | null, "unknown":
+#       why a regression that was said is not kept, or null, "contested": whether the
+#       filing says a basis,
 #       "handed_on": [{key, proposed, kind, origin, beyond}], "leads": the keys of the
 #       items entered as a lead}.
 #
@@ -1085,8 +1094,9 @@
 #                                      row of the queue is of. `verified` adds up to
 #                                      `budget.spent`.
 #                        confirmed     {inside, outside}: each [{key, regression: true |
-#                                      false | null}] — the findings confirmed in this
-#                                      round, by whether the door is in its test set
+#                                      false | "not-comparable" | null}] — the
+#                                      findings confirmed in this round, by whether the
+#                                      door is in its test set
 #                        contested     [{key, verdict: as the record's cell says it, with
 #                                      its word, inside, by, basis}] — THE FINDINGS A
 #                                      VERIFIER CONTESTED AND NOBODY RULED, routed human
@@ -2395,6 +2405,14 @@ VERIFIED_GRADES = ("confirmed", "regression", "refuted")
 # The triage grades the verifier is sent, and the two verdicts it returns.
 SENT_ON = ("breaks", "unclear")
 VERDICTS = ("confirmed", "refuted")
+# A confirmed finding's regression fact, where its verifier knows it: true — green on the
+# previous release's binary — false — red there too — or NOT COMPARABLE: the repro cannot run
+# there, because its door is one that release does not have. That is no regression of the
+# run (ruling 5 of 2026-10-05: green there, red on the candidate) and no "red there too",
+# and it is known: the verifier drove that binary and saw the door missing. Each is said in
+# the round's triage record by its own cell, and `-` where nobody knows the fact.
+NOT_COMPARABLE = "not-comparable"
+REGRESSION_CELLS = {True: "yes", False: "no", NOT_COMPARABLE: NOT_COMPARABLE}
 # How a grade cell cites its declared bound.
 OUT_OF_SCOPE = "out-of-scope: "
 GRADERS = {
@@ -4621,6 +4639,12 @@ def an_order(given):
     distinct(given, "order: the class")
 
 
+def a_regression_fact(value):
+    """Whether `value` is a regression fact a verifier can say of a finding it confirmed:
+    true, false or not comparable (REGRESSION_CELLS). Not knowing is saying none."""
+    return isinstance(value, bool) or value == NOT_COMPARABLE
+
+
 def graded_by_the_row(row):
     """THE LEDGER'S GRADE AND ITS GRADER, AS THEY FOLLOW FROM A ROW OF A ROUND'S TRIAGE RECORD
     — ITS ONE DEFINITION for an entry's writer (the header: triage-set): the verdict where the
@@ -4683,15 +4707,15 @@ def triage_entry(entry):
         word = ": " + one_of(entry["refutation"], tuple(REFUTATIONS), what + ": refutation") if "refutation" in entry else ""
         return key, [grade, "refuted" + word, "-", fork]
     regression = entry.get("regression")
-    if regression is not None and not isinstance(regression, bool):
-        refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too — and says nothing (the field absent, or null) where it does not: %s is none of the three" % (what, shown(regression)))
+    if regression is not None and not a_regression_fact(regression):
+        refuse("bad-value", "%s: confirmed says whether the finding is a regression where its verifier knows — `regression` is true when the repro is green on the previous release, false when it is red there too, `%s` when it cannot run there because its door is one that release does not have — and says nothing (the field absent, or null) where it does not: %s is none of the four" % (what, NOT_COMPARABLE, shown(regression)))
     if regression is None:
-        # THE VERIFIER DOES NOT KNOW — it was handed no binary of the previous release, the
-        # door is one that release does not have, its return does not back the claim. The
-        # cell says so (`-` beside `confirmed`), the finding is confirmed, and the state
-        # names it: never `no`, which would be a fact nobody established.
+        # THE VERIFIER DOES NOT KNOW — it was handed no binary of the previous release, its
+        # return does not back the claim. The cell says so (`-` beside `confirmed`), the
+        # finding is confirmed, and the state names it: never `no`, which would be a fact
+        # nobody established.
         return key, [grade, "confirmed", "-", fork]
-    return key, [grade, "confirmed", "yes" if regression else "no", fork]
+    return key, [grade, "confirmed", REGRESSION_CELLS[regression], fork]
 
 
 def triage_set(args):
@@ -4783,8 +4807,8 @@ def verdict(args):
     if ("reason" in given) != (word == UNDRIVABLE) or (word == UNDRIVABLE and (not isinstance(reason, str) or len(reason) > SLUG_MAX or not SLUG.fullmatch(reason))):
         refuse("bad-value", "%s: %s says why nobody here can drive the finding, as `reason` — a word: a-z0-9 words joined by single `-`, at most %d characters — and no other verdict does" % (what, UNDRIVABLE, SLUG_MAX))
     regression = given.get("regression")
-    if regression is not None and (word != "confirmed" or not isinstance(regression, bool)):
-        refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, or not said — not %s beside `%s`" % (what, shown(regression), word))
+    if regression is not None and (word != "confirmed" or not a_regression_fact(regression)):
+        refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, `%s`, or not said — not %s beside `%s`" % (what, NOT_COMPARABLE, shown(regression), word))
     # CONTESTED, WITH ITS BASIS (the header: verdict): what the finding contests, and why, in
     # the verifier's own words — beside whichever verdict it reached. The member IS the
     # basis: `true` says that a finding is contested and not what or why, and is refused.
@@ -5561,7 +5585,7 @@ def sealed(text):
             and record["verdict"] in VERDICTS + (UNDRIVABLE,)
             and (record["verdict"] == "refuted") == (isinstance(record["refutation"], str) and record["refutation"] in REFUTATIONS)
             and (record["verdict"] == UNDRIVABLE) == isinstance(record["reason"], str)
-            and (record["regression"] is None or (isinstance(record["regression"], bool) and record["verdict"] == "confirmed"))
+            and (record["regression"] is None or (a_regression_fact(record["regression"]) and record["verdict"] == "confirmed"))
             and (record[CONTESTED] is None or (isinstance(record[CONTESTED], str) and bool(record[CONTESTED].strip())))
             and isinstance(record["candidate"], str)
             and bool(SHA256.fullmatch(record["candidate"]))
@@ -5872,7 +5896,7 @@ def view_text(read):
     rows = [["%s %s" % (rate["kind"], rate["origin"])] + [str(n) for n in row] for rate, row in zip(shown["rates"], numbers)]
     rows.append(["all"] + [str(sum(column)) for column in zip(*numbers)])
     lines += header(columns) + ["| %s |" % " | ".join(row) for row in rows]
-    regression = {True: "a regression", False: "no regression: it is red on the previous release too", None: "whether it is a regression is not known"}
+    regression = {True: "a regression", False: "no regression: it is red on the previous release too", NOT_COMPARABLE: "not comparable: its door is one the previous release does not have", None: "whether it is a regression is not known"}
     for side, title in (("inside", "Confirmed inside the round's test set"), ("outside", "Confirmed outside it")):
         lines += ["", "## %s — %d" % (title, len(shown["confirmed"][side])), ""]
         lines += ["- %s — %s" % (tick(row["key"]), regression[row["regression"]]) for row in shown["confirmed"][side]] or ["None."]
@@ -6457,7 +6481,7 @@ def read_state(run_dir, run):
             # refutation is, why nobody here can drive the finding.
             verdict, _, word = row[3].partition(": ")
             known = row[3] == "-" or (verdict in VERDICTS and not word) or (verdict == "refuted" and word in REFUTATIONS) or (verdict == UNDRIVABLE and bool(SLUG.fullmatch(word)))
-            if row[1] != inside_cell(side) or (grade is not None and grade not in TRIAGE_GRADES) or not known or row[4] not in ("yes", "no", "-") or (not marked and (fork is None) != (row[6] == "-")) or (fork is not None and row[3] == "-"):
+            if row[1] != inside_cell(side) or (grade is not None and grade not in TRIAGE_GRADES) or not known or row[4] not in tuple(REGRESSION_CELLS.values()) + ("-",) or (not marked and (fork is None) != (row[6] == "-")) or (fork is not None and row[3] == "-"):
                 spoiled(rel, "holds a row for %s that does not follow from the round's doors and the triage vocabulary" % key)
             triage[key] = {
                 "round": number_,
@@ -6466,7 +6490,7 @@ def read_state(run_dir, run):
                 "grade": grade,
                 "bound": bound,
                 "verdict": None if row[3] == "-" else verdict,
-                "regression": None if row[4] == "-" else row[4] == "yes",
+                "regression": None if row[4] == "-" else {cell_: fact for fact, cell_ in REGRESSION_CELLS.items()}[row[4]],
                 "found_with": as_data(row[5]),
                 "fork": dict(zip(FORK_FIELDS, fork.groups())) if fork else None,
             }
@@ -6643,7 +6667,7 @@ def read_state(run_dir, run):
             # A FILED VERDICT GRADES ITS ROW as a recorded one does: the verifier's word —
             # and nothing, where nobody could drive the finding: the grade it had stands.
             said_ = verified[key]["record"]
-            grade, bound, grader = ("regression" if said_["regression"] else said_["verdict"]), None, "verify-real"
+            grade, bound, grader = ("regression" if said_["regression"] is True else said_["verdict"]), None, "verify-real"
         finding = {
             "key": key,
             "doctype": untick(row[1]),
@@ -6872,7 +6896,7 @@ def take_filed(run_dir, run):
                 inside_cell(judged["door"]),
                 "-" if judged["grade"] is None else OUT_OF_SCOPE + judged["bound"] if judged["bound"] else judged["grade"],
                 judged["verdict"] + (": " + word if word else ""),
-                "-" if judged["regression"] is None else "yes" if judged["regression"] else "no",
+                "-" if judged["regression"] is None else REGRESSION_CELLS[judged["regression"]],
                 cell(judged["found_with"]),
                 # THE VERIFIER'S OWN CELL: the mark where its filing says the verdict is
                 # contested — the kind alone — and the basis stays in the file.

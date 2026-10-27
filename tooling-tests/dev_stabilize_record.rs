@@ -4729,8 +4729,8 @@ fn row_at(key: &str, door: &str) -> Value {
 /// confirmed one, and named** (the coordinator's eighth group of the pass that followed the
 /// core's review, ruled by the orchestrator: *record more, trust less*). A verifier can
 /// confirm a finding and not know whether it is a regression — the previous release's
-/// binary was not handed to it, the door is one that release does not have, its return
-/// lacks that binary's hash. `triage-set` refused such an entry, and with it the whole
+/// binary was not handed to it, its return lacks that binary's hash (a door that release
+/// does not have is no such case: it is `not-comparable`, a fact of its own). `triage-set` refused such an entry, and with it the whole
 /// batch: the stage halted at its record after every instrument ran — or the harness wrote
 /// `no`, a false fact. Now `regression` absent, or null, is taken with `confirmed`, the
 /// cell is `-`, and the state NAMES the finding (`regression_unknown`) for as long as it is
@@ -19034,6 +19034,193 @@ fn a_verdict_on_another_binary_is_no_verdict_and_a_confirmed_one_without_the_pre
     let mut refuted = filing("r-1", "refuted");
     refuted["regression"] = json!(true);
     file(&rig, "1", &refuted).refused(BAD_VALUE, "a regression beside a refutation");
+}
+
+/// **A door the previous release does not have is NOT COMPARABLE, one meaning from the
+/// filing to the state** (the row `wf-regression-not-comparable`; ruling 5 of *2026-10-05 —
+/// The stabilization workflow, as ruled*: *"a regression of the run" is a fact — the repro
+/// is green on the previous release's binary and red on the candidate*). A repro that cannot
+/// run on the previous release because its door is not there is neither green there nor red
+/// there: it is no regression and no *red there too*, and it is no fact nobody established
+/// either — the verifier drove that binary and saw the door missing. So it is a value of its
+/// own, `not-comparable`, beside `confirmed` only and only with the previous release's hash
+/// behind it, as `true` and `false` are: in the filing, the call's print, the round's
+/// triage record, the state, the stop's view — never `no`, never `-`, never named unknown,
+/// and never graded or routed as a regression.
+#[test]
+fn a_door_the_previous_release_does_not_have_is_not_comparable_from_the_filing_to_the_state() {
+    let rig = a_filing_run("not-comparable", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    begun_attempt(&rig, "1");
+    reported(&rig, "r-1", "1");
+    let before = rig.snapshot();
+    // Beside a verdict that is not `confirmed` it is refused, as a regression is.
+    let mut refuted = filing("r-1", "refuted");
+    refuted["regression"] = json!("not-comparable");
+    refuted["previous"] = json!(sha256('d'));
+    file(&rig, "1", &refuted).refused(BAD_VALUE, "not comparable beside a refutation");
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+
+    let said = |key: &str, previous: Value| {
+        let mut given = filing(key, "confirmed");
+        given["regression"] = json!("not-comparable");
+        if !previous.is_null() {
+            given["previous"] = previous;
+        }
+        if key != "r-1" {
+            reported(&rig, key, "1");
+        }
+        let seen = file(&rig, "1", &given);
+        seen.must(OK, &format!("the filing of {key}"));
+        let printed = seen.json();
+        json!([printed["regression"], printed["unknown"]])
+    };
+    assert_eq!(
+        said("r-1", json!(sha256('d'))),
+        json!(["not-comparable", null]),
+        "the door is not on the previous release, and its binary is behind the claim"
+    );
+    assert_eq!(
+        said("r-2", Value::Null),
+        json!([null, "no-previous-hash"]),
+        "not comparable is a fact only with the previous release's binary behind it"
+    );
+    let filed_text = rig.read(&filed_path("verify-r-1", "1"));
+    assert!(
+        filed_text.contains(r#""regression": "not-comparable""#),
+        "the filed file holds the value: {filed_text}"
+    );
+
+    // THE STATE, before any record holds the verdict: confirmed, not comparable, routed as
+    // a confirmed non-regression by its door, and named unknown nowhere.
+    let read = rig.state();
+    let said_of = |read: &Value| {
+        json!([
+            finding(read, "r-1")["grade"],
+            routed(read, "r-1"),
+            finding(read, "r-1")["triage"]["regression"],
+            read["regression_unknown"],
+            read["view"]["confirmed"]["inside"]
+        ])
+    };
+    let expected = json!([
+        "confirmed",
+        at("fix", "inside"),
+        "not-comparable",
+        ["r-2"],
+        [{"key": "r-1", "regression": "not-comparable"}, {"key": "r-2", "regression": null}]
+    ]);
+    assert_eq!(said_of(&read), expected, "{read}");
+
+    // THE RECORD that takes the file: the round's triage record says it in its cell, the
+    // ledger's grade is `confirmed` by verify-real, and the state reads back the same.
+    recorded(&rig, &["r-1", "r-2"]).must(OK, "the record that takes the two filings");
+    let cells: Vec<Value> = triaged(&rig)
+        .into_iter()
+        .map(|row| json!([row[0], row[3], row[4]]))
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            json!(["`r-1`", "confirmed", "not-comparable"]),
+            json!(["`r-2`", "confirmed", "-"])
+        ],
+        "the cell that says not comparable, beside the one that says unknown"
+    );
+    let ledger = table(&rig.read(&ledger_path()), &LEDGER_COLUMNS);
+    assert_eq!(
+        ledger
+            .iter()
+            .filter(|row| row[0] == "`r-1`")
+            .map(|row| json!([row[6], row[7]]))
+            .collect::<Vec<_>>(),
+        [json!(["confirmed", "verify-real"])],
+        "graded confirmed, never regression"
+    );
+    let read = rig.state();
+    assert_eq!(
+        said_of(&read),
+        expected,
+        "read back from the record: {read}"
+    );
+    let view = rig.read(&view_path("1"));
+    assert!(
+        view.contains(
+            "- `r-1` — not comparable: its door is one the previous release does not have"
+        ),
+        "{view}"
+    );
+}
+
+/// **A triage entry carries *not comparable* as the filing does** — the path of a run
+/// without an order, where the harness sends the verifier's fact in the entry: the cell, the
+/// state's fact, the grade and the route, and named unknown nowhere. Any other word is still
+/// refused.
+#[test]
+fn a_triage_entry_says_not_comparable_and_the_state_reads_it_back() {
+    let rig = Rig::new("not-comparable-entry");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+    )
+    .must(OK, "round 1's scope");
+    rig.run(
+        &ledger_add(RUN),
+        &json!([row_at("f-new", INSIDE), row_at("f-out", EXCLUDED)]).to_string(),
+    )
+    .must(OK, "the round's findings");
+    let before = rig.snapshot();
+    for wrong in [
+        json!("not comparable"),
+        json!("comparable"),
+        json!("Not-Comparable"),
+    ] {
+        let entry = json!([{"key": "f-new", "grade": "breaks", "verdict": "confirmed", "regression": wrong}]);
+        rig.run(&triage_set(RUN, "1"), &entry.to_string())
+            .refused(BAD_VALUE, "a word that is not the value");
+    }
+    let refuted = json!([{"key": "f-new", "grade": "breaks", "verdict": "refuted", "regression": "not-comparable"}]);
+    rig.run(&triage_set(RUN, "1"), &refuted.to_string())
+        .refused(BAD_VALUE, "not comparable beside a refutation");
+    assert_eq!(rig.snapshot(), before);
+    let entries = json!([
+        {"key": "f-new", "grade": "breaks", "verdict": "confirmed", "regression": "not-comparable"},
+        {"key": "f-out", "grade": "unclear", "verdict": "confirmed", "regression": "not-comparable"},
+    ]);
+    rig.run(&triage_set(RUN, "1"), &entries.to_string()).must(
+        OK,
+        "two findings at doors the previous release does not have",
+    );
+    let cells: Vec<Value> = table(&rig.read(&triage_path("1")), &TRIAGE_COLUMNS)
+        .into_iter()
+        .map(|row| json!([row[0], row[3], row[4]]))
+        .collect();
+    assert_eq!(
+        cells,
+        [
+            json!(["`f-new`", "confirmed", "not-comparable"]),
+            json!(["`f-out`", "confirmed", "not-comparable"])
+        ]
+    );
+    let read = rig.state();
+    let of = |key: &str| {
+        let finding = finding(&read, key);
+        json!([
+            finding["grade"],
+            finding["route"],
+            finding["why"],
+            finding["triage"]["regression"]
+        ])
+    };
+    assert_eq!(
+        json!([of("f-new"), of("f-out"), read["regression_unknown"]]),
+        json!([
+            ["confirmed", "fix", "inside", "not-comparable"],
+            ["confirmed", "human", "outside", "not-comparable"],
+            []
+        ]),
+        "{read}"
+    );
 }
 
 /// **A filed verdict counts before any record holds it** (`T3a`; ruling 4 of 2026-10-10: *a

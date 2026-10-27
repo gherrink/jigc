@@ -3771,6 +3771,38 @@ fn a_return_is_held_to_its_keys_its_binaries_and_its_commit_before_it_is_taken()
         "L11: the verifier said `regression: false` on another binary of the previous release — the record holds no `no`: {state}"
     );
 
+    // … AND A DOOR THE PREVIOUS RELEASE DOES NOT HAVE IS NOT COMPARABLE (the row
+    // `wf-regression-not-comparable`): the verifier drove that binary, its hash is the one it
+    // was handed, and the fact it returned is carried as it is — never `no`, never unknown,
+    // never a regression.
+    let sim = Sim::opened("not-comparable", &one_area());
+    let mut new_door = verdict(key, "confirmed");
+    new_door["regression"] = json!("not-comparable");
+    let ran = sim.invoke(
+        sim.args("test", json!({})),
+        json!({"scope": one_door(),
+               "agents": {"area-a:review": review, "triage:p1": graded(std::slice::from_ref(&one), &["area-a-review"]),
+                          format!("verify:{key}"): new_door}}),
+    );
+    assert_eq!(
+        ran.result["status"], "triaged",
+        "not comparable: {}",
+        ran.result
+    );
+    let state = sim.state();
+    assert_eq!(
+        json!([
+            ran.result["unverified"],
+            state["ledger"][0]["grade"],
+            state["ledger"][0]["triage"]["verdict"],
+            state["ledger"][0]["triage"]["regression"],
+            state["regression_unknown"],
+            ran.result["named"]["regression_unknown"]
+        ]),
+        json!([[], "confirmed", "confirmed", "not-comparable", [], 0]),
+        "not comparable, from the verifier's return to the state: {state}"
+    );
+
     // M7 — a reviewer is handed the candidate's binary and returns the hash it asserted:
     // another hash voids its item, as a driver's does (turned by the second repair plan's
     // `X1`: it halted the stage).
