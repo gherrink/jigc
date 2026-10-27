@@ -3079,17 +3079,35 @@ enum GitMute {
     /// No `git` on `PATH` at all.
     NoGitOnPath,
     /// git refuses the repository over its ownership (`safe.directory`) — every git
-    /// command exits 128, `rev-parse` included. Simulated with git's own test switch.
+    /// command exits 128, `rev-parse` included. Simulated with git's own test switch,
+    /// **with every config scope that can carry a `safe.directory` exception masked**
+    /// ([`OWNERSHIP_REFUSED_ENV`]). The switch only says the owner differs; an exception
+    /// still lets git in, and a GitHub-hosted runner ships one for every directory in its
+    /// system config (`[safe] directory = *`), so unmasked this cell was a repository git
+    /// answers in — and `setup`'s dirty-install refusal there was the right answer.
     OwnershipRefused,
     /// `.git/HEAD` is not a ref — git no longer recognises the repository at all.
     GarbageHead,
 }
 
+/// [`GitMute::OwnershipRefused`]'s environment: git's switch that takes every path for
+/// another user's, and every scope a `safe.directory` exception can come from shut off —
+/// the system file, the global one (and with it the XDG one), and the two environment
+/// channels of command-line config. Shutting them is what makes the cell a refusal on any
+/// machine, whatever its own config says.
+const OWNERSHIP_REFUSED_ENV: &[(&str, &str)] = &[
+    ("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_COUNT", "0"),
+    ("GIT_CONFIG_PARAMETERS", ""),
+];
+
 /// What a muted cell runs `jigc` — and the route's printed command — under.
 #[derive(Default)]
 struct Muted {
     path: Option<PathBuf>,
-    env: Option<(&'static str, &'static str)>,
+    env: &'static [(&'static str, &'static str)],
 }
 
 impl GitMute {
@@ -3154,12 +3172,12 @@ impl GitMute {
                 fs::create_dir_all(&empty).expect("create an empty PATH dir");
                 Muted {
                     path: Some(empty),
-                    env: None,
+                    env: &[],
                 }
             }
             GitMute::OwnershipRefused => Muted {
                 path: None,
-                env: Some(("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")),
+                env: OWNERSHIP_REFUSED_ENV,
             },
             GitMute::GarbageHead => {
                 fs::copy(repo.join(".git/HEAD"), aside.join("HEAD.kept")).expect("keep HEAD");
@@ -3195,7 +3213,7 @@ impl Muted {
         if let Some(path) = &self.path {
             command.env("PATH", path);
         }
-        if let Some((key, value)) = self.env {
+        for (key, value) in self.env {
             command.env(key, value);
         }
     }
