@@ -84,7 +84,10 @@
 //! row with its brief, the doors of a round an item covers, the untriaged rows, a pending
 //! batch — and the stand-in runs each as the prompt spells it, fails the run where one is
 //! refused, and reports what it printed; and every prompt an agent was handed is reported,
-//! so that a test can hold that no text of the record is in one.
+//! so that a test can hold that no text of the record is in one. **The lookup kit is such a
+//! read** (the reshape's plan, `K1b`): where a prompt spells its call it is the first call
+//! the prompt spells and the first the stand-in runs, and it is answered 0, or 27 for a part
+//! the rig does not hold — which is reported, and is no halt.
 //!
 //! **The trace is a golden** (`tooling-tests/fixtures/stabilize-test-stage.trace`): every
 //! phase, every agent launched — its label, its definition, its model, its phase — and
@@ -352,6 +355,40 @@ struct Ran {
 }
 
 impl Ran {
+    /// THE AGENTS THAT RAN THE LOOKUP KIT (the reshape's plan, `K1b`), each with the role its
+    /// call named, in launch order — held first: an agent whose prompt spells the kit's call
+    /// ran it as its FIRST read of the record, as spelled, and was answered (0, or 27 for a
+    /// part the rig does not hold); and an agent whose prompt spells none ran none.
+    fn ran_the_kit(&self) -> Vec<(String, String)> {
+        const KIT: &str = "dev/stabilize-record kit ";
+        let mut out: Vec<(String, String)> = Vec::new();
+        for (label, prompt) in &self.prompts {
+            let spelled = prompt.contains(&format!("`{KIT}"));
+            let first = self.reads.iter().find(|(by, _, _)| by == label);
+            match first {
+                Some((_, command, printed)) if command.starts_with(KIT) => {
+                    assert!(
+                        spelled && ["exit 0", "exit 27"].contains(&printed.as_str()),
+                        "`{label}` ran `{command}`, which its prompt spells, and was answered: {printed}"
+                    );
+                    let role = command
+                        .split(" --role ")
+                        .nth(1)
+                        .expect("the kit's call names a role")
+                        .to_owned();
+                    if !out.iter().any(|(by, _)| by == label) {
+                        out.push((label.clone(), role));
+                    }
+                }
+                _ => assert!(
+                    !spelled,
+                    "`{label}` was handed the kit's call, and its first read was {first:?}"
+                ),
+            }
+        }
+        out
+    }
+
     fn agents(&self) -> Vec<&str> {
         self.trace
             .iter()
@@ -953,6 +990,26 @@ fn a_test_stage_runs_from_the_git_state_to_the_pushed_record() {
         verified(&ran),
         [OUTSIDE, INSIDE, REFUTED],
         "one wave, in the queue's rank: the route item first, then the behaviour items as the ledger has them"
+    );
+    // … AND EVERY AGENT BUT THE STAGE'S OWN STEPS — its git steps, its preflights and its
+    // scope — RAN THE LOOKUP KIT FIRST (the reshape's plan, `K1b`): the instruments, the one
+    // triage, every verifier.
+    let kit: Vec<String> = ran
+        .ran_the_kit()
+        .into_iter()
+        .map(|(label, _)| label)
+        .collect();
+    assert_eq!(
+        kit,
+        ran.agents()
+            .into_iter()
+            .filter(|label| {
+                !label.starts_with("git:")
+                    && !["preflight", "preflight-second", "scope"].contains(label)
+            })
+            .map(str::to_owned)
+            .collect::<Vec<_>>(),
+        "the agents that ran the kit"
     );
 
     // (2) EXACTLY ONE REPORT PER LAUNCHED REPORTER, on disk and committed — by the stage's two
@@ -4352,6 +4409,76 @@ fn an_advocate_or_an_independent_drive_that_returns_no_hash_is_no_fork_and_the_s
 fn a_confirmed_verdict_without_its_regression_fact_is_recorded_as_confirmed_with_the_fact_unknown()
 {
     a_needed_field_left_out_voids_what_its_reporter_was_launched_for(&ABSENT_ARMS[6..], true);
+}
+
+/// **Every agent of a role the lookup kit has a row for runs it as its first read — on
+/// either path** (the reshape's plan, `K1b`). The prompts are the two paths' alike, so a run
+/// WITHOUT an order is handed the kit's call too: here the whole road of that path — two
+/// instruments, a triage pass, the verifier, the advocate of its contested verdict and the
+/// independent drive of the proposal — each ran the kit first, with its own role's word, and
+/// was answered (27 here: the rig holds neither the rig tool nor the pinning document, and the
+/// kit says so); no other agent ran it; and the stage records as it did, the kit being a read
+/// that writes nothing. The path of a run with a queue is held where its whole stage runs
+/// (`a_test_stage_runs_from_the_git_state_to_the_pushed_record`).
+#[test]
+fn every_agent_of_a_role_the_kit_has_a_row_for_runs_it_first_on_either_path() {
+    if !can_run() {
+        return;
+    }
+    let key = "doc-set-drops-a-slot";
+    let sim = Sim::opened(
+        "kit-without-an-order",
+        &Opening {
+            clauses: vec!["audit-clean"],
+            items: json!([
+                item("area-a", "audit-area", "audit-clean"),
+                item("drive-a", "audit-drive", "audit-clean")
+            ]),
+            bounds: vec![],
+            rows: json!([]),
+        },
+    );
+    let mut contested = verdict(key, "confirmed");
+    contested["contested"] = json!(true);
+    let script = json!({
+        "scope": one_door(),
+        "agents": {
+            "area-a:review": found(&[finding("a-1", "a slot is dropped", "jigc doc set", "audit-clean")]),
+            "drive-a:drive": nothing(),
+            "triage:p1": graded(
+                &[entry(key, "area-a-review a-1", "jigc doc set", "audit-clean", "breaks")],
+                &["area-a-review"],
+            ),
+            format!("verify:{key}"): contested,
+            format!("advocate:{key}"): {"status": "argued", "verdict": "robust-now",
+                "case": "The robust case.", "proposal": "A change.", "driven": [], "undriven": [], "left_open": []},
+            format!("proposal:{key}"): {"status": "driven", "holds": true, "steps": [], "undriven": [], "left_open": []},
+        },
+    });
+    let ran = sim.invoke(sim.args("test", json!({})), script);
+    assert_eq!(
+        json!([
+            ran.result["status"],
+            ran.result["forks"].as_array().map(Vec::len)
+        ]),
+        json!(["triaged", 1]),
+        "{}",
+        ran.result
+    );
+    assert_eq!(
+        ran.ran_the_kit(),
+        [
+            ("area-a:review", "review"),
+            ("drive-a:drive", "drive"),
+            ("triage:p1", "triage"),
+            (format!("verify:{key}").as_str(), "verify"),
+            (format!("advocate:{key}").as_str(), "advocate"),
+            (format!("proposal:{key}").as_str(), "proposal"),
+        ]
+        .map(|(label, role)| (label.to_owned(), role.to_owned())),
+        "every agent of a role the kit has a row for, and no other: {:?}",
+        ran.agents()
+    );
 }
 
 // ---------------------------------------------------------------------------

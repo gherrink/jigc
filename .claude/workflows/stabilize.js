@@ -478,7 +478,7 @@ function reportCall(ctx, name) {
   return typed(RECORD_TOOL, 'report ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + reportFile(ctx, name))
 }
 function reportLine(ctx, name) {
-  return LABELS.report + ' ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' — write your report, whole, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL, and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + ' (with one more `--scratch` for each scratch root of your own outside that one).'
+  return LABELS.report + ' ' + stageFlags(ctx) + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' — write your report ONCE, when what it reports is done, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL; a correction is made in that file WITH YOUR EDIT TOOL, never by writing it whole again; and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + ' (with one more `--scratch` for each scratch root of your own outside that one).'
 }
 function below(scratch, path) {
   return path.startsWith(scratch + '/') ? path.slice(scratch.length + 1) : path
@@ -1266,6 +1266,9 @@ function doorsRead(run, round, item) {
 function kitRead(run, role) {
   return 'kit --run ' + run + ' --role ' + role
 }
+function kitLine(run, role) {
+  return 'YOUR FIRST CALL, before anything else: ' + typed(RECORD_TOOL, kitRead(run, role)) + ' — it prints what every agent of your role looks up: the rules of a report, the slug rule, ' + (ROLES[role].drives ? 'the rig and how a binary is named to it, ' : '') + 'the format of a repro block, and the run\'s closing condition, each read from the file that owns it. Read them there, and look none of them up again. A part it says is NOT PRINTED you read at the file it names; the call then exits 27, which is an answer and no halt.'
+}
 function rowRead(run, key) {
   return 'row --run ' + run + ' --key ' + key
 }
@@ -1298,6 +1301,7 @@ function unitPrompt(ctx, launch, name, step, unit, built, handed) {
     'STABILIZATION RUN `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage — ' + step.task + ': `' + unit.item + '`. ' + opening(ctx),
     launch.line(name),
   ]
+  if (role.drives) lines.unshift(kitLine(ctx.run, step.role))
   if (role.drives) lines.push(binaryLine(built, step.image, ctx.scratch))
   lines.push(briefLine(ctx, unit))
   lines.push('Candidate: label ' + built.candidate.label + ', commit ' + built.candidate.sha + '. Scratch root: `' + ctx.scratch + '` — mint your own directory under it.')
@@ -1309,6 +1313,7 @@ function unitPrompt(ctx, launch, name, step, unit, built, handed) {
 function triagePrompt(ctx, launch, name, sources, pass) {
   const others = launch.names.filter((n) => n !== name)
   return [
+    kitLine(ctx.run, 'triage'),
     'TRIAGE — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage, pass ' + pass + '. ' + opening(ctx),
     launch.line(name),
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.' + (pass > 1 ? ' This is pass ' + pass + ': it grades only what the agents of the pass before left open; every other finding of the stage was graded then, and is not handed to you again.' : ''),
@@ -1323,6 +1328,7 @@ function oneTriagePrompt(ctx, launch, name, sources) {
       : '- ' + s.reporter + ' — report: ' + (s.report ? '`' + s.report + '`' : '(none)') + ' — ' + findingsOf(s) + ' finding(s):')
     + (s.read ? '' : '\n' + s.findings.map((f, i) => '   ' + (i + 1) + '. ' + f).join('\n'))
   return [
+    kitLine(ctx.run, 'triage'),
     'TRIAGE — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', the `' + ctx.stage + '` stage: THE STAGE\'S ONE TRIAGE. ' + opening(ctx),
     launch.line(name) + ' UNDER THIS PROMPT THAT IS A HALT\'S ROAD, AND YOU TAKE IT ONLY WHERE YOU HALT: where you grade, the `triage` call below writes the file at the path a report of your name and attempt has — your report, rendered from your entries — and a report handed over beside it for the same attempt would be refused.',
     'The reporters this stage has launched so far, each with one report of attempt ' + ctx.attempt + ' — a report of the stage beside these is the partial stage you halt on: ' + (others.join(' · ') || '(none)') + '.',
@@ -1334,6 +1340,7 @@ function oneTriagePrompt(ctx, launch, name, sources) {
 }
 function verifyPrompt(ctx, launch, name, entry, redrive, built) {
   return [
+    kitLine(ctx.run, 'verify'),
     'VERIFY-REAL — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', ONE finding. ' + opening(ctx),
     launch.line(name),
     binaryLine(built, false, ctx.scratch),
@@ -1345,10 +1352,10 @@ function verifyPrompt(ctx, launch, name, entry, redrive, built) {
 const PRINTED_ROUTE = 'A ROUTE YOU SAW PRINTED AND DID NOT RUN AS PRINTED IS AN ENTRY OF `hands_on`, whether or not it looks right to you: a route is confirmed only by being run as printed, and one you ran as printed belongs to your verdict.'
 function verdictPrompt(ctx, launch, name, key, built, handOn) {
   return [
+    kitLine(ctx.run, 'verify'),
     'VERIFY-REAL — stabilization run `' + ctx.run + '`, round ' + ctx.round + ', ONE finding: the row `' + key + '` of the run\'s ledger. ' + opening(ctx),
     launch.line(name),
     binaryLine(built, false, ctx.scratch),
-    'YOUR FIRST READ, before anything else: ' + typed(RECORD_TOOL, kitRead(ctx.run, 'verify')) + ' — it prints what every verifier looks up: the rules of a report, the slug rule, the rig and how a binary is named to it, the format of a repro block, and the run\'s closing condition. Read them there, and look none of them up again.',
     'THE FINDING IS A ROW, AND YOU READ IT BY ITS KEY: ' + typed(RECORD_TOOL, rowRead(ctx.run, key)) + ' prints it whole — its door, the clause it is said to break, its repro, its grade where triage graded it, its class, and for an item a verifier handed on, who handed it on and under which finding. This prompt carries none of it.',
     'YOUR VERDICT IS ONE FILE, AND YOU FILE IT ONCE — after your report is handed over, and before you return. Write it — ONE JSON object, its members as your definition has them — to the file `' + filingFile(ctx, name) + '` WITH YOUR FILE TOOL, and file it by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'verdict --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + filingFile(ctx, name)) + ' (with one more `--scratch` for each scratch root of your own outside that one). THE TWO HASHES ARE MEMBERS OF THAT FILE, and no word of the call: `candidate` is the sha256 you asserted for the candidate\'s binary under the `' + LABELS.binary + '` line, and `previous` the one you asserted for the previous release\'s, wherever you drove it.',
     (handOn == null
@@ -1361,6 +1368,7 @@ function verdictPrompt(ctx, launch, name, key, built, handOn) {
 }
 function advocatePrompt(ctx, launch, name, fork, built) {
   return [
+    kitLine(ctx.run, 'advocate'),
     'A FORK of the stabilization run `' + ctx.run + '`, round ' + ctx.round + ' — finding `' + fork.key + '` (' + fork.kind + '). ' + opening(ctx),
     launch.line(name),
     binaryLine(built, false, ctx.scratch),
@@ -1371,10 +1379,11 @@ function advocatePrompt(ctx, launch, name, fork, built) {
   ].join('\n')
 }
 function reportHandOver(ctx, name) {
-  return 'Write it, whole, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL — its last line is `<!-- end of report -->` — and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + '; return the path it prints as `report`. A refusal about your text you repair in the file, and hand it over again; any other refusal you return as your halt, verbatim. Never remove, recursively, a path built from variables, and read every exit status from the command itself, bare.'
+  return 'Write it ONCE, when what it reports is done, to the file `' + reportFile(ctx, name) + '` WITH YOUR FILE TOOL — its last line is `<!-- end of report -->`; a correction is made in that file WITH YOUR EDIT TOOL, never by writing it whole again — and hand it over by ONE plain call, typed as it stands: ' + reportCall(ctx, name) + '; return the path it prints as `report`. A refusal about your text you repair in the file, and hand it over again; any other refusal you return as your halt, verbatim. Never remove, recursively, a path built from variables, and read every exit status from the command itself, bare.'
 }
 function proposalPrompt(ctx, name, fork, advocate, built) {
   return [
+    kitLine(ctx.run, 'proposal'),
     'You drive a PROPOSAL you did not write. A fork of the stabilization run `' + ctx.run + '` (round ' + ctx.round + ', finding `' + fork.key + '`) goes to the human with an advocate\'s case; a proposal is a claim, and before the human sees it somebody other than its author runs it end to end — through every OTHER party\'s next step (implementation/milestone-planning-workflow.md, Settle: the claim-driven rule). You are that somebody. Your brief is to REFUTE it: assume a step the advocate reports as passing does not pass.',
     'The proposal, as its author returned it: ' + (advocate.proposal || '(none returned — read it from the report)'),
     'The advocate\'s report, handed to you: ' + (advocate.report ? '`' + advocate.report + '`' : '(none)') + '. The steps it says it drove:\n' + ((advocate.driven || []).map((d) => '   - ' + d.step + ' — ' + d.command + ' — ' + d.result).join('\n') || '   (none)'),
@@ -1745,6 +1754,8 @@ function selfTest() {
   for (const role of Object.keys(ROLES)) {
     for (const label of Object.keys(LABELS)) check('the ' + role + ' prompt and ' + LABELS[label], carries(prompts[role], label) === ROLES[role].labels.includes(label))
   }
+  const kitFirst = (role) => 'YOUR FIRST CALL, before anything else: `dev/stabilize-record kit --run rc24-tier1 --role ' + role + '` — it prints what every agent of your role looks up: '
+  check('every prompt of a role that drives, and the triage\'s, opens with the lookup kit\'s call, under its own role, and no other prompt names it', Object.keys(ROLES).every((role) => (ROLES[role].drives || role === 'triage' ? prompts[role].startsWith(kitFirst(role)) && prompts[role].split('`dev/stabilize-record kit ').length === 2 : !prompts[role].includes('stabilize-record kit'))) && prompts.verify.includes('the rig and how a binary is named to it') && !prompts.triage.includes('the rig'))
   check('a record step opens with its label', prompts.record.startsWith(LABELS.record) && rulingsRecordPrompt(fix, 1, 'fix/rc24-tier1', taken[taken.length - 1].rulings, {}).text.startsWith(LABELS.record))
   check('the preflight builds nothing and holds no gate: it is told so, and handed neither', prompts.preflight.includes('NO BUILD AND NO GATE IS YOURS') && prompts.preflight.includes('the tip of `fix/rc24-tier1`') && !/git archive|dev\/gate|cargo|built from commit|path_check/.test(prompts.preflight) && prompts.preflight.includes('   - ci: its brief is the `brief` of the item\'s row — `dev/stabilize-record item --run rc24-tier1 --item ci`') && PREFLIGHT_SCHEMA.properties.candidate === undefined && PREFLIGHT_SCHEMA.properties.previous === undefined)
   check('a round\'s base is the earlier candidate, or the previous release\'s commit', prompts.scope.includes('base = ' + 'd'.repeat(40)) && scopePrompt(ctx, launcher(ctx), 'scope', { sha: 'c'.repeat(40), label: 'c1', base: null, earlier: false, scope: null, previous: previousOf({ facts }), fallback: 'everything' }).includes('base = ' + 'e'.repeat(40) + ' (the previous release, 1.0.0-rc.24'))
@@ -1754,6 +1765,7 @@ function selfTest() {
   const reds = redSources([{ item: 'regression-set', clause: 'working-product', verdict: '/tmp/scratch-1/hold/regression-set-c2-a4/verdict.json', output: '/tmp/scratch-1/hold/regression-set-c2-a4/output' }, { item: 'ci', clause: 'gate-green', report: testReport(tested, 'preflight-second') }])
   const kinds = [{ reporter: 'row-3-source', report: 'a.md', findings: ['F1 — x', 'F2 — y'] }, leftOpenSource('scope', 's.md', ['a door nobody listed'])].concat(reds, handed)
   const one = oneTriagePrompt(tested, launcher(tested), 'triage', kinds)
+  check('the one triage opens with the lookup kit\'s call', one.startsWith(kitFirst('triage')))
   const under = (name) => one.split('\n').filter((line, i, all) => line.startsWith('- ' + name + ' — ') || (line.startsWith('   ') && all.slice(0, i).reverse().find((l) => l.startsWith('- ')).startsWith('- ' + name + ' — ')))
   check('a red result is a source under the key its row is filed with, with where its evidence lies', reds.length === 2 && reds[0].reporter === RED_PREFIX + 'regression-set' && reds[1].reporter === 'red-ci' && reds.every((r) => findingsOf(r) === 1 && isSlug(r.reporter)) && testReport(tested, 'preflight-second') === 'completions/artifacts/rc24-tier1/r2/reports/test/preflight-second.a4.md')
   check('the one triage\'s prompt names every source kind: a reporter, what was left open, a red held check, a red check an agent read, the rows nobody graded', ['row-3-source', 'scope', 'red-regression-set', 'red-ci', LEDGER_SOURCE].every((name) => under(name).length >= 1) && one.includes('Grade every finding below — 7 in all, from 5 source(s).'))
@@ -1788,7 +1800,7 @@ function selfTest() {
   const [kitCall, rowCall, filingCall] = ['`dev/stabilize-record kit --run rc24-tier1 --role verify`', '`dev/stabilize-record row --run rc24-tier1 --key f-1`', '`dev/stabilize-record verdict --run rc24-tier1 --round 2 --reporter verify-f-1 --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/verdict/r2/verify-f-1.a4.json`']
   check('a wave is as many verifiers as the digest prints keys of the queue, and a filing says one of three verdicts', WAVE === 8 && FILED_WORDS.join() === 'confirmed,refuted,undrivable')
   check('a verdict is filed where the record script files one, and written first to a file under the scratch root', verdictFile(tested, filer) === 'completions/artifacts/rc24-tier1/r2/verdicts/verify-f-1.a4.json' && filingFile(tested, filer) === '/tmp/scratch-1/verdict/r2/verify-f-1.a4.json' && verdictFile(Object.assign({}, tested, { attempt: 5 }), filer) !== verdictFile(tested, filer))
-  check('a verifier that files is handed the kit\'s call, the read of its row and the call that files its verdict, each spelled whole and in that order', [kitCall, rowCall, filingCall].every((call) => files.includes(call)) && files.indexOf(kitCall) < files.indexOf(rowCall) && files.indexOf(rowCall) < files.indexOf(filingCall) && files.includes('to the file `/tmp/scratch-1/verdict/r2/verify-f-1.a4.json` WITH YOUR FILE TOOL'))
+  check('a verifier that files is handed the kit\'s call, the read of its row and the call that files its verdict, each spelled whole and in that order — the kit\'s its first line', files.startsWith(kitFirst('verify')) && [kitCall, rowCall, filingCall].every((call) => files.includes(call)) && files.indexOf(kitCall) < files.indexOf(rowCall) && files.indexOf(rowCall) < files.indexOf(filingCall) && files.includes('to the file `/tmp/scratch-1/verdict/r2/verify-f-1.a4.json` WITH YOUR FILE TOOL'))
   check('it is handed its key, and nothing of its row: no door, no clause, no grade and no repro is in the prompt', files.includes('ONE finding: the row `f-1` of the run\'s ledger') && files.includes('This prompt carries none of it.') && !files.includes(entry.door) && !files.includes(entry.clause) && !files.includes(entry.repro) && !files.includes('triage\'s grade'))
   check('it carries its report line and its binary line with both binaries, and the two hashes are members of its file and no word of its call', carries(files, 'report') && carries(files, 'binary') && files.includes('; previous release `/tmp/scratch-1/bin/previous/jigc`') && files.includes('THE TWO HASHES ARE MEMBERS OF THAT FILE, and no word of the call') && !filingCall.includes('b'.repeat(64)) && !filingCall.includes('a'.repeat(64)))
   check('it is told how many of what it hands on enter the queue — the opening\'s number — or that none does where the opening names none', files.includes('AT MOST 2 ENTER THE QUEUE') && files.includes('the first 2 that carry the evidence of their kind') && !files.includes('ENTERS NO QUEUE') && verdictPrompt(tested, launcher(tested), filer, 'f-1', built, null).includes('WHAT YOU HAND ON ENTERS NO QUEUE') && !verdictPrompt(tested, launcher(tested), filer, 'f-1', built, null).includes('AT MOST') && verdictPrompt(tested, launcher(tested), filer, 'f-1', built, 0).includes('AT MOST 0 ENTER THE QUEUE'))
@@ -1830,7 +1842,7 @@ function selfTest() {
   const finishing = preflightPrompt(ctx, launcher(ctx), 'preflight', { image: false, sha: 'c'.repeat(40), label: 'c2', branch: 'fix/rc24-tier1', checks: [], crossModel: false, tested: true })
   check('a finishing preflight is told that the candidate is the commit the round tested, and not HEAD', finishing.includes('the commit round 2 tested, an ancestor of `fix/rc24-tier1`') && finishing.includes('THE CANDIDATE IS NOT `HEAD` HERE') && finishing.includes('commit ' + 'c'.repeat(40) + ' must be an ancestor of `HEAD`') && !finishing.includes('`git ') && !prompts.preflight.includes('NOT `HEAD`'))
   check('a fork is recorded with the verdict it rides on, and with no other entry', JSON.stringify(triageRecord(ctx, [{ key: 'f-1', new: false, grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', new: false, grade: 'breaks', fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }]).triage) === JSON.stringify([{ key: 'f-1', grade: 'breaks', verdict: 'confirmed', regression: false, fork: { kind: 'contested', case: 'robust-now', drive: 'holds' } }, { key: 'f-2', grade: 'breaks' }]))
-  check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('to the file `/tmp/scratch-1/report/r2/test/x.a4.md` WITH YOUR FILE TOOL') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('`dev/stabilize-record report --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/report/r2/test/x.a4.md`') && reportFile(ctx, 'scope') === '/tmp/scratch-1/report/r2/fix.c3/scope.a4.md')
+  check('a report line gives the flags', launch.line('scope') === reportLine(ctx, 'scope') && reportLine(ctx, 'scope').startsWith('REPORT: --run rc24-tier1 --round 2 --stage fix --cycle 3 --reporter scope --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').startsWith('REPORT: --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 ') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('write your report ONCE, when what it reports is done, to the file `/tmp/scratch-1/report/r2/test/x.a4.md` WITH YOUR FILE TOOL; a correction is made in that file WITH YOUR EDIT TOOL, never by writing it whole again;') && reportLine(Object.assign({}, ctx, { stage: 'test' }), 'x').includes('`dev/stabilize-record report --run rc24-tier1 --round 2 --stage test --reporter x --attempt 4 --scratch /tmp/scratch-1 --from /tmp/scratch-1/report/r2/test/x.a4.md`') && reportFile(ctx, 'scope') === '/tmp/scratch-1/report/r2/fix.c3/scope.a4.md')
   check('a binary line gives the path and the hash, and the one plain call that asserts it', binaryLine(built, true, '/tmp/scratch-1').includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc` prints ONE line of JSON whose `content_sha256` must be that sha256') && binaryLine(built, true, '/tmp/scratch-1').endsWith(' Return the sha256 you asserted for the candidate as `asserted_sha256`.') && !binaryLine(built, true).includes('stabilize-step') && prompts.review.includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc`') && prompts.verify.includes('`dev/stabilize-step hash --scratch /tmp/scratch-1 --file bin/c2/jigc`') && binaryLine(built, true).startsWith('BINARY: candidate `/tmp/scratch-1/bin/c2/jigc` sha256 ' + 'b'.repeat(64)) && binaryLine(built, true).includes('jigc-trial:c2') && !binaryLine(built, false).includes('jigc-trial:c2'))
   check('every chain is staffed from the roles', Object.keys(CHAINS).concat(['fix-diff']).every((kind) => (CHAINS[kind] || FIX_AUDIT).every((stepList) => stepList.every((s) => ROLES[s.role] && isSlug(s.as) && !s.as.includes('-') && (s.hands || []).every((h) => (CHAINS[kind] || FIX_AUDIT).some((earlier) => earlier.some((e) => e.as === h)))))))
 

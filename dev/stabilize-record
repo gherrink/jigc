@@ -2766,8 +2766,8 @@ KIT_PARTS = {
 # THE ROLES, as the harness launches them (.claude/workflows/stabilize.js, ROLES), and the
 # parts each is printed: a role that is handed a binary reads every part; the triage drives
 # nothing, and reads nothing of the rig. A role without a row is refused. (A second place
-# for who drives, declared: the harness's own table says it of its roles, and nothing holds
-# the two to each other until the task that makes a prompt name this call — K1b.)
+# for who drives, declared: the harness's own table says it of its roles, and the harness's
+# fence holds the two equal — tooling-tests/stabilize_harness_fence.rs, the kit's arm, K1b.)
 KIT_DRIVES = ("review", "drive", "verify", "advocate", "proposal")
 KIT_ROLES = dict({role: ("rules", "slug", "rig", "repro", CONDITION) for role in KIT_DRIVES}, triage=("rules", "slug", "repro", CONDITION))
 # Why a stretch is not printed: its opening line is not in its file, or its closing line

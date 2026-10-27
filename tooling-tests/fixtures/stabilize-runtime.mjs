@@ -157,8 +157,9 @@
 //                                  file to its hash. IT RUNS NO GATE and makes no commit:
 //                                  both are git steps (`git:hold-*:record-*`, `git:record:*`)
 //
-// AND EVERY AGENT RUNS THE READS ITS PROMPT NAMES — `dev/stabilize-record item`, `item-doors`,
-// `untriaged`, `pending`, `row`, each as the prompt spells it: what a brief, a door list, the
+// AND EVERY AGENT RUNS THE READS ITS PROMPT NAMES — `dev/stabilize-record kit` first where the
+// prompt spells it, and `item`, `item-doors`, `untriaged`, `pending`, `row`, each as the prompt
+// spells it: what a brief, a door list, the
 // untriaged rows, a pending batch's subject and a finding's row are, an agent reads from the
 // record by key, and a read that fails fails the run. What each read printed is reported (`reads`), and
 // every prompt an agent was handed (`prompts`): the suite holds both.
@@ -329,11 +330,19 @@ function writeReport(label, prompt, said) {
 
 // ---- what an agent reads by key ----
 // Every read of the record its prompt names, run as spelled: the commands are the prompt's.
+// THE LOOKUP KIT among them (the reshape's plan, K1b): where a prompt spells its call, that
+// call is the FIRST the prompt spells, and the stand-in runs it first; its answer is text for
+// the agent, so what is reported of it is its exit status — 0, or 27, the kit's word for a
+// part it does not print (this rig holds neither the rig tool nor the pinning document), an
+// answer and no halt. Any other status fails the run, as a refused read does.
 function readByKey(label, prompt) {
-  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:item|item-doors|untriaged|pending|row) [^`]+)`/g)) {
+  const kit = span(prompt, 'dev/stabilize-record kit --run ')
+  if (kit && (prompt.match(/`dev\/[^`]*`/) || [''])[0] !== '`' + kit + '`') fail('the prompt of `' + label + '` spells the lookup kit\'s call, and not as the first call it spells')
+  for (const [, command] of prompt.matchAll(/`(dev\/stabilize-record (?:kit|item|item-doors|untriaged|pending|row) [^`]+)`/g)) {
     const out = sh(command)
-    if (out.code !== 0) fail('the read `' + command + '` that the prompt of `' + label + '` names was refused: ' + out.stderr)
-    reads.push({ label, command, printed: out.stdout.trim() })
+    const isKit = command === kit
+    if (out.code !== 0 && !(isKit && out.code === 27)) fail('the read `' + command + '` that the prompt of `' + label + '` names was refused: ' + out.stderr)
+    reads.push({ label, command, printed: isKit ? 'exit ' + out.code : out.stdout.trim() })
   }
 }
 
@@ -656,13 +665,10 @@ function verifier(label, prompt, opts) {
   const name = / --reporter (\S+)/.exec(command)
   if (!file || !name || !name[1].startsWith('verify-')) fail('the prompt of `' + label + '` spells a `dev/stabilize-record verdict` call that names no file to read, or no verifier\'s reporter: ' + command)
   const key = name[1].slice('verify-'.length)
-  // THE KIT FIRST: what every verifier looks up, by the call the prompt spells. It exits 27
-  // where a part is not printed — an answer, and no halt.
+  // THE KIT FIRST: what every verifier looks up, by the call the prompt spells — run with
+  // the other reads by key (`readByKey`), ahead of them all.
   const kit = span(prompt, 'dev/stabilize-record kit --run ')
   if (!kit || prompt.indexOf('`' + kit + '`') > prompt.indexOf('`' + command + '`')) fail('the prompt of `' + label + '` spells no lookup kit\'s call ahead of the call that files its verdict')
-  const looked = sh(kit)
-  if (looked.code !== 0 && looked.code !== 27) fail('the kit the prompt of `' + label + '` spells was refused: ' + looked.stderr)
-  reads.push({ label, command: kit, printed: 'exit ' + looked.code })
   // THE FINDING IS A ROW IT READ BY ITS KEY (`readByKey`): the row of the key it files for.
   const row = reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record row '))
   if (!row || JSON.parse(row.printed).row.key !== key) fail('the prompt of `' + label + '` names no read that prints the row of `' + key + '`, the finding its verdict is filed for')

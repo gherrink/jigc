@@ -272,12 +272,13 @@ fn quoted_in(source: &str, declaration: &str) -> Vec<String> {
         .collect()
 }
 
-/// A role of the script's roles table: the agent type it is launched as, and the labels
-/// of the lines its prompt carries, by their key in `LABELS`.
+/// A role of the script's roles table: the agent type it is launched as, the labels of the
+/// lines its prompt carries, by their key in `LABELS`, and whether it drives.
 struct Role {
     name: String,
     agent_type: String,
     labels: Vec<String>,
+    drives: bool,
 }
 
 fn roles(source: &str) -> Vec<Role> {
@@ -306,6 +307,7 @@ fn roles(source: &str) -> Vec<Role> {
                 name,
                 agent_type,
                 labels,
+                drives: line.contains("drives: true"),
             }
         })
         .collect()
@@ -662,7 +664,74 @@ fn d_each_label_is_spelled_as_every_definition_that_binds_on_it_spells_it() {
             role.name
         );
     }
+
+    // THE REPORT LINE AND THE PARAGRAPH THAT BINDS ON IT AGREE (the reshape's plan, `K1b` and
+    // `KR`): a report is written once, when what it reports is done, and a correction is made
+    // in it with the edit tool — never by writing it whole again (the third count: 31 of 80
+    // verifiers wrote theirs whole more than once, 28 of the 32 repeated writes after further
+    // commands). The line says so, the paragraph of every definition that binds on the line
+    // says so, and every role sent the line holds an edit tool to do it with.
+    let report = &labels["report"];
+    let line = function(&full, "reportLine").to_lowercase();
+    for said in REPORT_ONCE {
+        assert!(line.contains(said), "the report line says `{said}`: {line}");
+    }
+    assert!(
+        !line.contains("whole, to the file"),
+        "the report line no longer has the report written whole: {line}"
+    );
+    let reporters: Vec<&Role> = roles
+        .iter()
+        .filter(|role| role.labels.iter().any(|key| key == "report"))
+        .collect();
+    assert!(
+        reporters.len() >= 8,
+        "the scan found the roles sent `{report}`: {}",
+        reporters.len()
+    );
+    for role in reporters {
+        let name = &role.agent_type;
+        let definition = &definitions[name];
+        let paragraph = definition
+            .split("\n\n")
+            .find(|paragraph| {
+                paragraph.contains(&format!(
+                    "It binds only when your prompt carries a `{report}` line"
+                ))
+            })
+            .unwrap_or_else(|| panic!("{name}.md has the paragraph that binds on `{report}`"))
+            .to_lowercase();
+        for said in REPORT_ONCE {
+            assert!(
+                paragraph.contains(said),
+                "{name}.md's paragraph on `{report}` says `{said}`, as the line does"
+            );
+        }
+        assert!(
+            !paragraph.contains("write the whole report"),
+            "{name}.md's paragraph on `{report}` no longer has the report written whole"
+        );
+        // The tool line of the definition's front matter; none is every tool.
+        let tools = definition
+            .lines()
+            .skip(1)
+            .take_while(|line| *line != "---")
+            .find(|line| line.starts_with("tools:"));
+        assert!(
+            tools.is_none_or(|tools| tools.split([' ', ',']).any(|tool| tool == "Edit")),
+            "`{}` is told to correct its report with its edit tool, and {name}.md grants none: {tools:?}",
+            role.name
+        );
+    }
 }
+
+/// What the report line and the paragraph that binds on it both say of how a report is
+/// written, in lower case (arm (d)).
+const REPORT_ONCE: [&str; 3] = [
+    "once, when what it reports is done",
+    "with your edit tool",
+    "never by writing it whole again",
+];
 
 // ---------------------------------------------------------------------------
 // (e) the repeated paragraphs
@@ -3371,7 +3440,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     let prompt = function(&full, "verdictPrompt");
     assert!(
         prompt.contains("typed(RECORD_TOOL, 'verdict --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + filingFile(ctx, name))")
-            && prompt.contains("typed(RECORD_TOOL, kitRead(ctx.run, 'verify'))")
+            && prompt.contains("kitLine(ctx.run, 'verify')")
             && prompt.contains("typed(RECORD_TOOL, rowRead(ctx.run, key))")
             && prompt.contains("launch.line(name)")
             && prompt.contains("binaryLine(built, false, ctx.scratch)")
@@ -3383,7 +3452,7 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
         "a verifier's prompt spells the call that files its verdict whole — the run, the round, the reporter, the attempt, the file — names the kit and the read of its row, carries the report and the binary lines, and says what the return is held to"
     );
     assert!(
-        prompt.find("kitRead(").expect("as above") < prompt.find("rowRead(").expect("as above")
+        prompt.find("kitLine(").expect("as above") < prompt.find("rowRead(").expect("as above")
             && prompt.find("rowRead(").expect("as above")
                 < prompt.find("'verdict --run '").expect("as above"),
         "the kit first, then the row, then the filing"
@@ -3732,6 +3801,157 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             );
         }
     }
+
+    // (13) THE KIT'S TEXT IS IN NO PROMPT (the reshape's plan, `K1b`): a prompt names the
+    // lookup kit's call, and the agent reads what it prints at the call — so no line the kit
+    // prints of a part, read from the file that owns it, stands anywhere in the script.
+    let kit = kit_text();
+    assert!(
+        kit.len() >= 60,
+        "the lines the kit prints were found where the record script reads them: {}",
+        kit.len()
+    );
+    let copied = |script: &str| -> Vec<String> {
+        kit.iter()
+            .filter(|line| script.contains(line.as_str()))
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        copied(&full),
+        Vec::<String>::new(),
+        "the script carries text of the kit: a prompt names the kit's call, and the agent reads the kit there"
+    );
+    let planted = format!("const PLANTED = '{}'\n{full}", kit[kit.len() / 2]);
+    assert_eq!(
+        copied(&planted).len(),
+        1,
+        "a line of the kit put into the script is found"
+    );
+}
+
+/// A line of the record script's Python as its tokens: each double-quoted string, unquoted,
+/// and each bare word — what a table of literals is read by.
+fn py_tokens(line: &str) -> Vec<(bool, String)> {
+    let mut tokens = Vec::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '"' {
+            let mut text = String::new();
+            while let Some(c) = chars.next() {
+                match c {
+                    '"' => break,
+                    '\\' => text.extend(chars.next()),
+                    c => text.push(c),
+                }
+            }
+            tokens.push((true, text));
+        } else if c.is_ascii_alphabetic() || c == '_' {
+            let mut word = String::from(c);
+            while let Some(&c) = chars.peek() {
+                if !(c.is_ascii_alphanumeric() || c == '_') {
+                    break;
+                }
+                word.push(c);
+                chars.next();
+            }
+            tokens.push((false, word));
+        }
+    }
+    tokens
+}
+
+/// WHAT THE LOOKUP KIT PRINTS OF ITS PARTS (`dev/stabilize-record`: `KIT_PARTS`), but the
+/// closing condition, which is an entry of the log: every stretch of every part, read from
+/// the file that owns it as that script reads it — a script's help is its comment lines
+/// after the first, each without its `#` and one space — and kept as its lines of at least
+/// forty characters, trimmed: a shorter line could be any text's, and is no evidence that
+/// the kit was copied.
+fn kit_text() -> Vec<String> {
+    let script =
+        fs::read_to_string(repo_root().join(RECORD_SCRIPT)).expect("read the record script");
+    let prog = py_tokens(
+        script
+            .lines()
+            .find(|line| line.starts_with("PROG = "))
+            .expect("the script names itself"),
+    )
+    .pop()
+    .expect("its name")
+    .1;
+    let at = script
+        .find("\nKIT_PARTS = {\n")
+        .expect("the record script's table of the kit's parts");
+    let table = &script[at + 1..];
+    let table = &table[..table.find("\n}\n").expect("the table closes")];
+    let mut kept: Vec<String> = Vec::new();
+    for row in table.lines().skip(1) {
+        // `"part": (title, home…, HEADER | TEXT, ((opens, ends), …))`, where a string
+        // followed by `PROG` is formatted with the script's name, and `None` ends at the end.
+        let tokens = py_tokens(row);
+        let kind = tokens
+            .iter()
+            .position(|(quoted, word)| !quoted && (word == "HEADER" || word == "TEXT"))
+            .unwrap_or_else(|| panic!("a part is read as a header or as a text: {row}"));
+        let home: String = tokens[2..kind]
+            .iter()
+            .map(|(quoted, word)| match (quoted, word.as_str()) {
+                (true, _) => word.clone(),
+                (false, "PROG") => prog.clone(),
+                _ => panic!("a part's home is strings and the script's name: {row}"),
+            })
+            .collect();
+        let mut bounds: Vec<Option<String>> = Vec::new();
+        for (quoted, word) in &tokens[kind + 1..] {
+            match (quoted, word.as_str()) {
+                (true, _) => bounds.push(Some(word.clone())),
+                (false, "PROG") => {
+                    let last = bounds.last_mut().and_then(Option::as_mut);
+                    let last = last.unwrap_or_else(|| panic!("`% PROG` formats a string: {row}"));
+                    *last = last.replace("%s", &prog);
+                }
+                (false, "None") => bounds.push(None),
+                _ => panic!("a stretch is two strings, or a string and `None`: {row}"),
+            }
+        }
+        assert!(
+            !bounds.is_empty() && bounds.len().is_multiple_of(2),
+            "a part has its stretches, each a pair: {row}"
+        );
+        let text = fs::read_to_string(repo_root().join(&home))
+            .unwrap_or_else(|e| panic!("read `{home}`, a home of the kit: {e}"));
+        let lines: Vec<&str> = if tokens[kind].1 == "HEADER" {
+            text.lines()
+                .skip(1)
+                .take_while(|line| line.starts_with('#'))
+                .map(|line| line[1..].strip_prefix(' ').unwrap_or(&line[1..]))
+                .collect()
+        } else {
+            text.lines().collect()
+        };
+        for pair in bounds.chunks(2) {
+            let opens = pair[0].as_deref().expect("a stretch opens at a line");
+            let at: Vec<usize> = (0..lines.len())
+                .filter(|&n| lines[n].starts_with(opens))
+                .collect();
+            assert_eq!(at.len(), 1, "one line of `{home}` opens `{opens}`");
+            let rest = &lines[at[0] + 1..];
+            let end = match &pair[1] {
+                None => rest.len(),
+                Some(ends) => rest
+                    .iter()
+                    .position(|line| line.starts_with(ends.as_str()))
+                    .unwrap_or_else(|| panic!("a line of `{home}` after `{opens}` opens `{ends}`")),
+            };
+            for line in &lines[at[0]..at[0] + 1 + end] {
+                let line = line.trim();
+                if line.chars().count() >= 40 && !kept.iter().any(|k| k == line) {
+                    kept.push(line.to_owned());
+                }
+            }
+        }
+    }
+    kept
 }
 
 // ---------------------------------------------------------------------------
@@ -4313,6 +4533,10 @@ const HELD_IN: &[(&str, &str)] = &[
         "every reporter's prompt, through `launch.line`",
     ),
     ("binaryLine", "every driving agent's prompt"),
+    (
+        "kitLine",
+        "the prompt of every role the lookup kit has a row for, as its first line",
+    ),
     ("branchLine", "the record's and the fixer's"),
     ("briefLine", "a unit's prompt"),
     ("doorLines", "a unit's prompt, and the cross-model pass's"),
@@ -5441,5 +5665,276 @@ fn a_door_the_previous_release_does_not_have_is_not_comparable_in_the_definition
             && harness.contains("const NOT_COMPARABLE = 'not-comparable'")
             && harness.contains("enum: [true, false, 'not-comparable']"),
         "the record script takes the value, and the harness's return schema and its fact send it"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The lookup kit, named first by the prompt of every role it has a row for
+// ---------------------------------------------------------------------------
+
+/// The one composer launched under a role the kit has a row for whose prompt names no kit:
+/// a runtime probe's reviewer, launched as `review`. A probe works on no run (arm (q)), and
+/// the kit is a read of one.
+const KIT_ON_NO_RUN: (&str, &str) = (
+    "probeReviewPrompt",
+    "a runtime probe works on no run (arm (q)), and the kit is a read of a run",
+);
+
+/// The roles the record script's lookup kit has a row for, and of them the roles that are
+/// handed a binary — its `KIT_ROLES` and `KIT_DRIVES`, read off the script.
+fn kit_roles(script: &str) -> (BTreeSet<String>, BTreeSet<String>) {
+    let line = |opens: &str| {
+        script
+            .lines()
+            .find(|line| line.starts_with(opens))
+            .unwrap_or_else(|| panic!("the record script declares `{opens}`"))
+    };
+    let drives: BTreeSet<String> = py_tokens(line("KIT_DRIVES = ("))
+        .into_iter()
+        .filter(|(quoted, _)| *quoted)
+        .map(|(_, word)| word)
+        .collect();
+    // `dict({role: (…) for role in KIT_DRIVES}, other=(…), …)`: every role that drives, and
+    // each keyword after the comprehension.
+    let roles = line("KIT_ROLES = dict({role: ");
+    let after = "for role in KIT_DRIVES}";
+    let rest = &roles[roles
+        .find(after)
+        .unwrap_or_else(|| panic!("a row for every role that drives: {roles}"))
+        + after.len()..];
+    let mut all = drives.clone();
+    for (n, _) in rest.match_indices("=(") {
+        all.insert(word_before(&rest[..n]));
+    }
+    (all, drives)
+}
+
+/// The identifier a text ends with.
+fn word_before(text: &str) -> String {
+    let word: String = text
+        .chars()
+        .rev()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    word.chars().rev().collect()
+}
+
+/// Every role each composer's prompt is launched under, read off the script's calls of
+/// `roleStep`: a call that names its role and its composer — and the call of the chains,
+/// whose step names its role, and whose prompt is `crossModelPrompt` for the cross-model
+/// pass's step and `unitPrompt` for every other. A call whose prompt is no composer's is
+/// listed under the empty name.
+fn launched_under(full: &str) -> BTreeMap<String, BTreeSet<String>> {
+    let source = code(full);
+    let mut under: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for line in source.lines() {
+        let Some(at) = line.find("roleStep(") else {
+            continue;
+        };
+        if line.trim_start().starts_with("function roleStep(") {
+            continue;
+        }
+        let call = &line[at + "roleStep(".len()..];
+        if let Some(role) = call.strip_prefix('\'') {
+            let role = &role[..role.find('\'').expect("a role's name closes")];
+            let composer = call
+                .match_indices('(')
+                .map(|(n, _)| word_before(&call[..n]))
+                .find(|word| word.ends_with("Prompt"))
+                .unwrap_or_default();
+            under.entry(composer).or_default().insert(role.to_owned());
+            continue;
+        }
+        assert!(
+            call.starts_with("step.role, ") && call.contains("promptOf(step, name)"),
+            "a call of `roleStep` names its role, or is the chains' — read it again: {line}"
+        );
+        let chooses = source
+            .lines()
+            .find(|line| line.trim_start().starts_with("const promptOf = "))
+            .expect("the chains' composer");
+        assert!(
+            chooses.contains("(step.crossModel ? crossModelPrompt(")
+                && chooses.contains(" : unitPrompt("),
+            "the chains' prompt is the cross-model pass's for its step and a unit's for every other — read it again: {chooses}"
+        );
+        let chains = &source[source.find("\nconst CHAINS = {\n").expect("the chains")..];
+        let chains = &chains[..chains.find("\n}\n").expect("the chains close")];
+        let audit = source
+            .lines()
+            .find(|line| line.starts_with("const FIX_AUDIT = "))
+            .expect("the audit of a fix diff");
+        for step in format!("{chains}\n{audit}").split("{ as: '").skip(1) {
+            let step = &step[..step.find('}').expect("a step closes")];
+            let role = step.split("role: '").nth(1).expect("a step names its role");
+            let role = &role[..role.find('\'').expect("it closes")];
+            let composer = if step.contains("crossModel: true") {
+                "crossModelPrompt"
+            } else {
+                "unitPrompt"
+            };
+            under
+                .entry(composer.to_owned())
+                .or_default()
+                .insert(role.to_owned());
+        }
+    }
+    under
+}
+
+/// The first code span of a prompt that opens with `dev/` — the first call it spells.
+fn first_call(prompt: &str) -> Option<String> {
+    prompt
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .map(str::trim)
+        .find(|span| span.starts_with("dev/"))
+        .map(str::to_owned)
+}
+
+/// **Every prompt of a role the lookup kit has a row for names the kit's call as its first
+/// call** (the reshape's plan, `K1b`; the third count: 283 of the verifiers' 2,095 turns did
+/// nothing but look up what the kit prints). The roles are read off the two scripts and none
+/// is listed here: the record script's roles that drive ARE the harness's (`KIT_DRIVES`
+/// against `ROLES`' `drives` — the second place that says who drives, declared by `K1a`, held
+/// here), and every role the kit has a row for is one the harness launches. Then, under
+/// `node`, every prompt the script composes ([`PROMPTS`]) is read: a prompt launched under
+/// such a role spells the kit's call FIRST, with its own role's word, once, as one plain
+/// invocation; every other prompt spells none. The one exception is [`KIT_ON_NO_RUN`].
+#[test]
+fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
+    let full = harness();
+    let script =
+        fs::read_to_string(repo_root().join(RECORD_SCRIPT)).expect("read the record script");
+    let roles = roles(&full);
+    let drives: BTreeSet<String> = roles
+        .iter()
+        .filter(|role| role.drives)
+        .map(|role| role.name.clone())
+        .collect();
+    let (kit, kit_drives) = kit_roles(&script);
+    assert!(
+        drives.len() >= 5,
+        "the scan found the roles that drive: {drives:?}"
+    );
+    assert_eq!(
+        kit_drives, drives,
+        "the roles the kit prints the rig to (left) are the roles the harness hands a binary (right)"
+    );
+    let names: BTreeSet<String> = roles.iter().map(|role| role.name.clone()).collect();
+    assert!(
+        kit.len() > drives.len() && kit.is_subset(&names),
+        "every role the kit has a row for is a role the harness launches: {kit:?}"
+    );
+
+    // Which composer is launched under which role, read off the calls.
+    let under = launched_under(&full);
+    for role in &kit {
+        assert!(
+            under
+                .iter()
+                .any(|(composer, roles)| !composer.is_empty() && roles.contains(role)),
+            "a composer's prompt is launched under `{role}`: {under:?}"
+        );
+    }
+    assert!(
+        under.get("").is_none_or(|roles| roles.is_disjoint(&kit)),
+        "a prompt launched under a role the kit has a row for is a composer's: {under:?}"
+    );
+    assert!(
+        under
+            .get(KIT_ON_NO_RUN.0)
+            .is_some_and(|roles| roles.iter().all(|role| kit.contains(role))),
+        "the exception `{}` is launched under a role the kit has a row for — {}; else it is stale",
+        KIT_ON_NO_RUN.0,
+        KIT_ON_NO_RUN.1
+    );
+
+    if !node_or_skip(&format!(
+        "no prompt of {HARNESS} was composed and held to the kit's call"
+    )) {
+        return;
+    }
+    let mut faults: Vec<String> = Vec::new();
+    let mut held: BTreeMap<String, usize> = BTreeMap::new();
+    let mut exception = false;
+    for ((name, what, text), (_, _, row)) in composed(None).into_iter().zip(PROMPTS) {
+        let at = if what.is_empty() {
+            name.clone()
+        } else {
+            format!("{name} ({what})")
+        };
+        let text = match text {
+            Ok(text) => text,
+            Err(error) => {
+                faults.push(format!("{at}: the script composes none — {error}"));
+                continue;
+            }
+        };
+        let kits = text.matches("`dev/stabilize-record kit ").count();
+        if name == KIT_ON_NO_RUN.0 {
+            exception = true;
+            if kits != 0 {
+                faults.push(format!(
+                    "{at}: it spells the kit's call, and {}",
+                    KIT_ON_NO_RUN.1
+                ));
+            }
+            continue;
+        }
+        // The role this prompt is launched under: its composer's one, or — for a composer
+        // launched under several — the role its row names.
+        let role = under.get(&name).map(|roles| {
+            if roles.len() == 1 {
+                roles.first().expect("one role").clone()
+            } else {
+                let named = row.split("role: '").nth(1).unwrap_or_else(|| {
+                    panic!("`{name}` is launched under {roles:?}: its row names which")
+                });
+                named[..named.find('\'').expect("it closes")].to_owned()
+            }
+        });
+        match role.filter(|role| kit.contains(role)) {
+            Some(role) => {
+                let call = format!("dev/stabilize-record kit --run rc24 --role {role}");
+                if first_call(&text).as_deref() != Some(call.as_str()) {
+                    faults.push(format!(
+                        "{at}: launched as `{role}`, its first call is {:?} and not `{call}`",
+                        first_call(&text)
+                    ));
+                }
+                if kits != 1 {
+                    faults.push(format!("{at}: it spells the kit's call {kits} times"));
+                }
+                if let Some(fault) = call_fault(&call) {
+                    faults.push(format!("{at}: {fault}"));
+                }
+                *held.entry(role).or_default() += 1;
+            }
+            None => {
+                if kits != 0 {
+                    faults.push(format!(
+                        "{at}: launched as {:?}, which the kit has no row for, it spells the kit's call",
+                        under.get(&name)
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        exception,
+        "the prompts' table composes `{}`",
+        KIT_ON_NO_RUN.0
+    );
+    assert_eq!(
+        faults,
+        Vec::<String>::new(),
+        "the kit's call, prompt by prompt"
+    );
+    assert_eq!(
+        held.keys().cloned().collect::<BTreeSet<_>>(),
+        kit,
+        "a prompt of every role the kit has a row for is composed and held: {held:?}"
     );
 }
