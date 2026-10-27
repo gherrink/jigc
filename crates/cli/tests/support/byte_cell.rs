@@ -766,6 +766,40 @@ pub enum Holding {
     AllTheLinesChanged,
 }
 
+/// **What a line of the index asks of it** ([`Allows::Staged`]) — beside what it lets: the
+/// main checkout's index staged at the places the row's lines of the file layer wrote.
+///
+/// A change a line of the file layer let the command make at a path — a regular file or a
+/// link made, written or taken away; never a directory, which the index holds no entry for
+/// — is **one the index can take** where the main checkout's index held the path before
+/// the command, or a regular file or a link stands there after it: a file taken away that
+/// git never held has nothing to stage. Such a change **stands staged** where the index's
+/// entry at the path after the command is not what it was before it, and **stands
+/// unstaged** where it is: what it moved to is the other lines' to judge, a line of the
+/// index or a commit's. The two demands are the sibling of
+/// [`Holding::AllTheLinesChanged`], which demands a commit: a line lets a write happen, and
+/// these say what must stand after it. Added 2026-10-27, by the fourth of the fixes after
+/// the review of the task `B10` (its note 5): until then a line of the index let the index
+/// be staged and demanded nothing, so a door that should have staged and did not held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stages {
+    /// **Nothing need stand staged**: the line lets the index be staged, and asks nothing.
+    MayStage,
+    /// **Every change the named lines let the command make stands staged**, where the index
+    /// can take it — the human's ruling of 2026-10-19 on the rows' record's §6, entry 21:
+    /// `migrate-corpus --no-commit` *"stages exactly the paths the migration touched — both
+    /// halves of a move — and commits nothing"*. One left unstaged is written outside the
+    /// allowance: the row stages it.
+    AllTheChangesOf(&'static [&'static str]),
+    /// **The changes the named lines let the command make stand staged together, or none
+    /// does** — one change that reaches the index in halves is none of the docs' to let:
+    /// a root knob's re-point is the knob and the moves its value needs, and a commit of
+    /// what is staged that lands the moves without the knob leaves a clone with its docs at
+    /// homes its cascade does not resolve (the findings, §23). A change of the named lines
+    /// left unstaged beside one staged is written outside the allowance.
+    AllOrNoneOf(&'static [&'static str]),
+}
+
 /// What a line allows.
 #[derive(Clone, Copy, Debug)]
 pub enum Allows {
@@ -773,8 +807,8 @@ pub enum Allows {
     /// A commit on the checked-out branch.
     Commit(Holding),
     /// The main checkout's index staged at the places the row's lines of the file layer
-    /// wrote.
-    Staged,
+    /// wrote — and what must stand staged after the command ([`Stages`]).
+    Staged(Stages),
     /// A worktree's registration removed, with its checkout, at a path under this
     /// directory of the repository.
     Unregistered(&'static str),
@@ -4155,7 +4189,7 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 .push(format!("the registration `{name}` is not what it was")),
         }
     }
-    let staging = tally.line_for(|allows| matches!(allows, Allows::Staged | Allows::Commit(_)));
+    let staging = tally.line_for(|allows| matches!(allows, Allows::Staged(_) | Allows::Commit(_)));
     let places: BTreeSet<&String> = before
         .checkouts
         .keys()
@@ -4212,6 +4246,71 @@ pub fn compare(row: &Row, seen: &Seen<'_>) -> Result<Verdict, String> {
                 .push(format!("the checkout at `{place}` is not what it was")),
         }
     }
+
+    // What a line of the index in force demands stands staged after the command ([`Stages`]):
+    // read over every path whose entry the command changed — a plant's carried by a move
+    // with them — and pushed once all are read.
+    let mut unstaged: Vec<String> = Vec::new();
+    for (_, line) in tally.in_force() {
+        let (named, whole) = match line.allows {
+            Allows::Staged(Stages::AllTheChangesOf(named)) => (named, false),
+            Allows::Staged(Stages::AllOrNoneOf(named)) => (named, true),
+            _ => continue,
+        };
+        let (Some(was), Some(is)) = main else {
+            continue;
+        };
+        let by_a_named_line = |path: &str| {
+            tally.in_force().any(|(_, by)| {
+                named.contains(&by.id)
+                    && matches!(by.allows, Allows::Files(place, _) if tally.placed(place, path))
+            })
+        };
+        // Each change of the named lines that the index can take, and whether it stands
+        // staged: the index's entry at its path is not what it was.
+        let changes: Vec<(&str, bool)> = before
+            .files
+            .keys()
+            .chain(after.files.keys())
+            .collect::<BTreeSet<&String>>()
+            .into_iter()
+            .filter_map(|path| {
+                let (then, now) = (before.files.get(path), after.files.get(path));
+                if then.zip(now).is_some_and(|(then, now)| then.same(now)) {
+                    return None;
+                }
+                let rel = in_repo(path)?;
+                let takes = was.index.contains_key(rel)
+                    || matches!(now, Some(Entry::File { .. } | Entry::Link(_)));
+                (takes && by_a_named_line(path))
+                    .then(|| (path.as_str(), was.index.get(rel) != is.index.get(rel)))
+            })
+            .collect();
+        let staged = changes.iter().filter(|(_, staged)| *staged).count();
+        if whole && (staged == 0 || staged == changes.len()) {
+            continue;
+        }
+        for (path, _) in changes.iter().filter(|(_, staged)| !*staged) {
+            unstaged.push(if whole {
+                format!(
+                    "`{path}` is not what it was under a line of `{}`, and stands unstaged \
+                     beside {staged} change(s) of theirs that stand staged: its row's line \
+                     `{}` stages their changes together, or none of them",
+                    named.join("`, `"),
+                    line.id
+                )
+            } else {
+                format!(
+                    "`{path}` is not what it was under a line of `{}`, and the main \
+                     checkout's index does not stand at it: its row's line `{}` stages that \
+                     change",
+                    named.join("`, `"),
+                    line.id
+                )
+            });
+        }
+    }
+    tally.outside.extend(unstaged);
 
     // Every class the cell is red in, in the order they are read: the first is its
     // classification, the others stand beside it.

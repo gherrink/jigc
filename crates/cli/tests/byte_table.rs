@@ -174,7 +174,7 @@ families![install, task, milestone, doc, movers, mint];
 use crate::support::byte_cell::{
     self, Aim, Allows, Built, Checkout, Classification, Commit, Condition, Ended, Entry, Holding,
     Kind, Layer, Lead, Line, Listed, Manifest, Mark, May, Plant, Planted, Prepared, Quote, REPO,
-    Refusal, Row, Seen, Staged, Stands, Unit, When, Where, blob_of,
+    Refusal, Row, Seen, Staged, Stages, Stands, Unit, When, Where, blob_of,
 };
 use crate::support::route_case::{self, Place, Step};
 use crate::support::scratch::ScratchDir;
@@ -2622,7 +2622,7 @@ fn every_line_of_a_row_excuses_a_difference_in_some_cell_or_is_named() {
     const TWO: Row = Row {
         leaf: &["task", "finalize"],
         ..row(&[
-            line("F1", Allows::Staged),
+            line("F1", Allows::Staged(Stages::MayStage)),
             line("F2", Allows::Commit(Holding::TheIndex)),
         ])
     };
@@ -3525,11 +3525,11 @@ fn a_lines_quote_is_held_to_its_docs_text() {
     };
     const RESTS: Line = Line {
         quotes: &[HELD],
-        ..line("F1", Allows::Staged)
+        ..line("F1", Allows::Staged(Stages::MayStage))
     };
     const FIXTURE_ROW: Row = row(&[
         RESTS,
-        line("F2", Allows::Staged),
+        line("F2", Allows::Staged(Stages::MayStage)),
         Line {
             id: "G1, a second place",
             ..RESTS
@@ -3539,7 +3539,7 @@ fn a_lines_quote_is_held_to_its_docs_text() {
                 words: "Other words.",
                 ..HELD
             }],
-            ..line("F3", Allows::Staged)
+            ..line("F3", Allows::Staged(Stages::MayStage))
         },
         Line { id: "F1", ..RESTS },
     ]);
@@ -5214,8 +5214,24 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
         }
         .came_to()
     };
-    let (class, why) = came(&moved);
+    // The knob staged beside its moves holds; left unstaged beside them, as the product
+    // leaves it, it is *written outside its allowance* since the fourth of the fixes after
+    // the review of the task `B10` (its note 5): `CS5` stages a re-point whole, or none of it.
+    let whole = then(&moved, |m| {
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index.insert(
+            ".jigc/config/manifest.yaml".to_string(),
+            staged("scalar:\n  docs-root: notes\n"),
+        );
+    });
+    let (class, why) = came(&whole);
     assert_eq!(class, Classification::Holds, "the docs-root move: {why:#?}");
+    let (class, why) = came(&moved);
+    assert_eq!(
+        class,
+        Classification::WrittenOutside,
+        "the docs-root move, the knob left unstaged: {why:#?}"
+    );
     let (class, why) = came(&parked);
     assert!(
         class.is_red(),
@@ -5256,6 +5272,13 @@ fn a_moved_doc_lands_at_its_doctypes_home() {
                 m,
                 ".jigc/config/manifest.yaml",
                 "scalar:\n  placement-root: notes\n",
+            );
+            // The knob staged beside its moves: `CS5` stages a re-point whole, or none of it
+            // (the fourth of the fixes after the review of the task `B10`).
+            let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+            main.index.insert(
+                ".jigc/config/manifest.yaml".to_string(),
+                staged("scalar:\n  placement-root: notes\n"),
             );
         })
     };
@@ -5688,7 +5711,7 @@ fn a_retire_deletes_only_what_head_holds_there() {
                 "X1",
                 Allows::Files(Where::Path(byte_cell::THE_RETIRED), May::Retired),
             ),
-            line("X2", Allows::Staged),
+            line("X2", Allows::Staged(Stages::MayStage)),
         ])
     };
     let argv: &[&str] = &["probe", "m"];
@@ -6140,8 +6163,9 @@ fn a_migrated_doc_keeps_its_prose() {
     // human's ruling of 2026-10-19 on the rows' record's §6, entry 21: *"stages exactly the
     // paths the migration touched — both halves of a move — and commits nothing"* (`MG4`,
     // red first: the staged migration came out *git's state moved*, no line staging it).
-    // Written and left unstaged, as the product does, it holds too: a line lets a write
-    // happen, and does not demand it.
+    // Written and left unstaged, as the product does, it is *written outside its allowance*
+    // since the fourth of the fixes after the review of the task `B10` (its note 5): `MG4`
+    // demands the staging. Until then it held — a line let a write happen, and demanded none.
     let unstaged = then(&before, |m| {
         written(m, "docs/decisions/one-way.md", V2);
     });
@@ -6152,7 +6176,7 @@ fn a_migrated_doc_keeps_its_prose() {
     });
     for (case, after, want) in [
         ("staged", &staged_too, Classification::Holds),
-        ("unstaged", &unstaged, Classification::Holds),
+        ("unstaged", &unstaged, Classification::WrittenOutside),
     ] {
         let (class, why) = came(&before, after, Some("--no-commit"));
         assert_eq!(class, want, "`--no-commit`, the migration {case}: {why:#?}");
@@ -6203,8 +6227,14 @@ fn a_migrated_doc_keeps_its_prose() {
         assert!(class.is_red(), "{case}: came out {class}, {why:#?}");
     }
     // A line of the user's in the old changelog, in no commit: the migration carries it to
-    // the doc's new home — under `--no-commit`, it holds there; and a commit that carries it
-    // carries what `HEAD` never held at the old home.
+    // the doc's new home; and a commit that carries it carries what `HEAD` never held at the
+    // old home. Under `--no-commit` it held there, the move left unstaged, until the fourth
+    // of the fixes after the review of the task `B10` (its note 5): `MG4` demands the move
+    // staged, both halves, so left unstaged it is *written outside its allowance* — and
+    // staged, the user's line rides into the index with it, which no line stages: *git's
+    // state moved*, the class of `r1-migrate-corpus-commits-an-uncommitted-edit-at-a-doc-it-
+    // migrates`, whose robust answer is to refuse that doc. No cell plants an edit under the
+    // spelling.
     const MINE: &str = "A line of the user's.\n";
     let edited = then(&before, |m| {
         written(m, "docs/changelog/changelog.md", &format!("{OLD}{MINE}"))
@@ -6236,11 +6266,23 @@ fn a_migrated_doc_keeps_its_prose() {
         }
         .came_to()
     };
+    let staged_move = then(&moved(false), |m| {
+        let main = m.checkouts.get_mut(REPO).expect("the main checkout");
+        main.index.remove("docs/changelog/changelog.md");
+        main.index
+            .insert("CHANGELOG.md".to_string(), staged(&format!("{NEW}{MINE}")));
+    });
+    let (class, why) = carried(&staged_move, Some("--no-commit"));
+    assert_eq!(
+        class,
+        Classification::GitMoved,
+        "the user's line carried with its doc, and staged with the move: {why:#?}"
+    );
     let (class, why) = carried(&moved(false), Some("--no-commit"));
     assert_eq!(
         class,
-        Classification::Holds,
-        "the user's line carried with its doc: {why:#?}"
+        Classification::WrittenOutside,
+        "the user's line carried with its doc, the move left unstaged: {why:#?}"
     );
     let (class, why) = carried(&moved(true), None);
     assert_eq!(
@@ -6317,6 +6359,11 @@ fn a_migrated_doc_keeps_its_prose() {
         main.index
             .insert("docs/decisions/one-way.md".to_string(), staged(V1));
     });
+    // Left unstaged, it held until the fourth of the fixes after the review of the task
+    // `B10` (its note 5), and is *written outside its allowance* now: `MG4` demands the
+    // migration staged. *Not held here*: the migration staged over a doc the index held and
+    // `HEAD` never did — the index's entry is judged as a commit's would be, against what
+    // `HEAD` held, so it reads *git's state moved*; no cell builds the case (left open).
     let (class, why) = came(
         &staged_only,
         &then(&staged_only, |m| {
@@ -6326,8 +6373,9 @@ fn a_migrated_doc_keeps_its_prose() {
     );
     assert_eq!(
         class,
-        Classification::Holds,
-        "a decision staged and never committed, migrated in the working tree: {why:#?}"
+        Classification::WrittenOutside,
+        "a decision staged and never committed, migrated in the working tree and left \
+         unstaged: {why:#?}"
     );
 }
 
@@ -10729,6 +10777,212 @@ fn a_refusal_leaves_the_file_state_record_as_it_was() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// **What a line of the index demands stands staged after the command** ([`Stages`]) — the
+/// sibling of a commit that holds all the lines changed (`U9`), which demands a commit. A
+/// line lets a write happen and, until the fourth of the fixes after the review of the task
+/// `B10` (its note 5), demanded none: so `migrate-corpus --no-commit`, which the human ruled
+/// on 2026-10-19 *"stages exactly the paths the migration touched — both halves of a
+/// move"*, held where it staged nothing, and a root knob's re-point held where it staged
+/// its moves and left the knob they follow unstaged.
+///
+/// Under **all the changes of** the named lines: a tracked file rewritten and left
+/// unstaged, a tracked file taken away and its entry left in the index, and a file made
+/// where nothing stood — the new half of a move — left untracked are each *written outside
+/// its allowance*; the same changes staged hold, and so do a file taken away that git never
+/// held, which has nothing to stage, and a change of a line the demand does not name — a
+/// cache. Under **all or none of** them: the moves staged and the knob left unstaged is
+/// *written outside its allowance*; everything staged, nothing staged, and a knob that moves
+/// nothing left unstaged each hold. A line that only lets the index be staged asks nothing,
+/// as before.
+///
+/// Red first: with the demands written and not yet read, the four cases that are owed red
+/// came out *holds*.
+#[test]
+fn what_a_line_of_the_index_demands_stands_staged_after_the_command() {
+    const DOC: &str = "docs/a.md";
+    const GONE: &str = "docs/b.md";
+    const ARRIVED: &str = "notes/a.md";
+    const KNOB: &str = ".jigc/config/manifest.yaml";
+    const HASHES: &str = "repo/.jigc/state/file-state.json";
+    const ALL_OF: Row = row(&[
+        line("K1", Allows::Files(Where::Path(DOC), May::WriteWhole)),
+        line("K2", Allows::Files(Where::Path(GONE), May::Removed)),
+        line(
+            "K3",
+            Allows::Files(Where::Under(".jigc/state"), May::Rebuilt),
+        ),
+        line("K4", Allows::Staged(Stages::AllTheChangesOf(&["K1", "K2"]))),
+    ]);
+    const KNOB_LINES: [Line; 3] = [
+        line("R1", Allows::Files(Where::Path(KNOB), May::WriteWhole)),
+        line("R2", Allows::Files(Where::Path(DOC), May::Removed)),
+        line("R3", Allows::Files(Where::Path(ARRIVED), May::WriteWhole)),
+    ];
+    const WHOLE: Row = row(&[
+        KNOB_LINES[0],
+        KNOB_LINES[1],
+        KNOB_LINES[2],
+        line(
+            "R4",
+            Allows::Staged(Stages::AllOrNoneOf(&["R1", "R2", "R3"])),
+        ),
+    ]);
+    const MAY: Row = row(&[
+        KNOB_LINES[0],
+        KNOB_LINES[1],
+        KNOB_LINES[2],
+        line("R4", Allows::Staged(Stages::MayStage)),
+    ]);
+    let at = |rel: &str| format!("{REPO}/{rel}");
+    fn index(m: &mut Manifest) -> &mut std::collections::BTreeMap<String, Staged> {
+        &mut m.checkouts.get_mut(REPO).expect("the main checkout").index
+    }
+    let stage = |m: &mut Manifest, rel: &str, bytes: &str| {
+        index(m).insert(rel.to_string(), staged(bytes));
+    };
+    let unstage = |m: &mut Manifest, rel: &str| {
+        index(m).remove(rel);
+    };
+    let before = then(&sandbox(), |m| {
+        for place in ["docs", ".jigc", ".jigc/config", ".jigc/state"] {
+            dir(m, &at(place));
+        }
+        put(m, &at(DOC), "one way\n");
+        put(m, &at(GONE), "the other way\n");
+        put(m, HASHES, "{}\n");
+        commit(
+            m,
+            "c1",
+            &[
+                (DOC, Some((0o100_644, "one way\n"))),
+                (GONE, Some((0o100_644, "the other way\n"))),
+            ],
+        );
+    });
+    use Classification::{Holds, WrittenOutside};
+    let mut wrong: Vec<String> = Vec::new();
+    let mut expect_over = |what: &str, row: Row, before: &Manifest, after: &Manifest, want| {
+        let (came, why) = Cell::of(row, before, after).came_to();
+        if came != want {
+            wrong.push(format!("{what}: wanted {want}, came to {came}, {why:?}"));
+        }
+    };
+    let mut expect = |what: &str, row: Row, after: &Manifest, want: Classification| {
+        expect_over(what, row, &before, after, want)
+    };
+
+    // All the changes of the named lines.
+    let rewritten = then(&before, |m| put(m, &at(DOC), "one way, migrated\n"));
+    expect(
+        "all of: a tracked file rewritten, left unstaged",
+        ALL_OF,
+        &rewritten,
+        WrittenOutside,
+    );
+    expect(
+        "all of: a tracked file rewritten, staged",
+        ALL_OF,
+        &then(&rewritten, |m| stage(m, DOC, "one way, migrated\n")),
+        Holds,
+    );
+    expect(
+        "all of: a tracked file rewritten and staged, a cache the demand does not name \
+         rebuilt",
+        ALL_OF,
+        &then(&rewritten, |m| {
+            stage(m, DOC, "one way, migrated\n");
+            put(m, HASHES, "{\"hashes\":{}}\n");
+        }),
+        Holds,
+    );
+    let taken = then(&before, |m| {
+        m.files.remove(&at(GONE));
+    });
+    expect(
+        "all of: a tracked file taken away, its entry left in the index",
+        ALL_OF,
+        &taken,
+        WrittenOutside,
+    );
+    expect(
+        "all of: a tracked file taken away, its entry taken out of the index",
+        ALL_OF,
+        &then(&taken, |m| unstage(m, GONE)),
+        Holds,
+    );
+
+    // All or none of them: a re-point's knob and its moves.
+    let moved = then(&before, |m| {
+        m.files.remove(&at(DOC));
+        dir(m, &at("notes"));
+        put(m, &at(ARRIVED), "one way\n");
+        put(m, &at(KNOB), "scalar:\n  docs-root: notes\n");
+    });
+    let moves_staged = then(&moved, |m| {
+        unstage(m, DOC);
+        stage(m, ARRIVED, "one way\n");
+    });
+    expect(
+        "all or none: the moves staged, the knob left unstaged",
+        WHOLE,
+        &moves_staged,
+        WrittenOutside,
+    );
+    expect(
+        "all or none: the moves and the knob staged",
+        WHOLE,
+        &then(&moves_staged, |m| {
+            stage(m, KNOB, "scalar:\n  docs-root: notes\n")
+        }),
+        Holds,
+    );
+    expect("all or none: nothing staged", WHOLE, &moved, Holds);
+    expect(
+        "all or none: a knob that moves nothing, left unstaged",
+        WHOLE,
+        &then(&before, |m| put(m, &at(KNOB), "scalar:\n  squash: false\n")),
+        Holds,
+    );
+    // A line that only lets the index be staged asks nothing, as before.
+    expect(
+        "may stage: the moves staged, the knob left unstaged",
+        MAY,
+        &moves_staged,
+        Holds,
+    );
+    // A file git never held, taken away: nothing to stage.
+    let untracked = then(&sandbox(), |m| {
+        dir(m, &at("docs"));
+        put(m, &at(GONE), "the other way\n");
+    });
+    expect_over(
+        "all of: a file git never held taken away",
+        ALL_OF,
+        &untracked,
+        &then(&untracked, |m| {
+            m.files.remove(&at(GONE));
+        }),
+        Holds,
+    );
+    // A file made where nothing stood — the new half of a move — is one the index can take.
+    let made = then(&untracked, |m| put(m, &at(DOC), "one way\n"));
+    expect_over(
+        "all of: a file made where nothing stood, left untracked",
+        ALL_OF,
+        &untracked,
+        &made,
+        WrittenOutside,
+    );
+    expect_over(
+        "all of: a file made where nothing stood, staged",
+        ALL_OF,
+        &untracked,
+        &then(&made, |m| stage(m, DOC, "one way\n")),
+        Holds,
+    );
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// **A refusal is the refusal the cell names**: a cell of the table says which refusal it
 /// expects — the exit code, and words the output holds — and one that refuses with another
 /// code, or without saying so, is *not the listed outcome*. A refusal that also changed
@@ -13012,6 +13266,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::RefusedAndChanged,
         &["migrate-corpus-a-hook-that-rejects"],
     ),
+    // `--no-commit` stages exactly the paths the migration touched — the human's ruling of
+    // 2026-10-19 on the rows' record's §6, entry 21 — and `MG4` demands it since the fourth of
+    // the fixes after the review of the task `B10` (its note 5): the migration left unstaged.
+    (
+        "r1-migrate-corpus-no-commit-leaves-the-migration-unstaged",
+        Classification::WrittenOutside,
+        &["migrate-corpus-no-commit-a-decision-below-its-version"],
+    ),
     // The movers (the task `B8`, its fourth commit): `relocate`'s keys and `config set`'s.
     // `relocate`'s exit is the human's ruling R1 of 2026-10-20 — an acting sweep exits
     // non-zero where an act it was asked for did not happen — and the second note's cell
@@ -13115,6 +13377,27 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
             "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
             "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
+        ],
+    ),
+    // A root knob's re-point stages its moves and leaves the knob they follow unstaged — the
+    // findings' §23, and `CS5`'s demand since the fourth of the fixes after the review of the
+    // task `B10` (its note 5): every cell of a re-point that moved a doc and acted.
+    (
+        "r1-config-set-stages-a-root-knobs-moves-and-leaves-the-knob-they-follow-unstaged",
+        Classification::WrittenOutside,
+        &[
+            "config-set-docs-root-to-notes",
+            "config-set-a-change-staged-at-the-manifest",
+            "config-set-an-edit-to-the-decision",
+            "config-set-a-change-staged-at-the-decision",
+            "config-set-a-doc-of-the-users-beside-the-decisions-new-home",
+            "config-set-a-doc-the-user-committed-beside-the-decisions-new-home",
+            "config-set-a-file-of-the-users-beside-the-baseline",
+            "config-set-placement-root-to-notes",
+            "config-set-placement-root-an-edit-to-the-roadmap",
+            "config-set-placement-root-a-change-staged-at-the-roadmap",
+            "config-set-placement-root-a-doc-of-the-users-beside-the-roadmaps-new-home",
+            "config-set-placement-root-a-doc-the-user-committed-beside-the-roadmaps-new-home",
         ],
     ),
     // The mint family (the task `B9`, its third commit): a re-entry over a file of the

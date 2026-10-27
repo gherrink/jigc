@@ -20,8 +20,8 @@ use super::{
 };
 use crate::support::byte_cell::{
     A_DOC, A_NEW_HOME, A_PRIOR_DOC, Aim, Allows, Cell, Holding, Kind, Lead, Line, Listed, May,
-    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, THE_DOC, THE_NEW_DOC, Typed, Unit, When,
-    Where,
+    PRIOR_HOME, Plant, Prepared, Quote, Row, Spelling, Stages, THE_DOC, THE_NEW_DOC, Typed, Unit,
+    When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -271,7 +271,7 @@ pub const RELOCATE: Row = Row {
         ),
         swept(
             "RL2",
-            Allows::Staged,
+            Allows::Staged(Stages::MayStage),
             &[
                 A_MOVE_LANDS_IN_THE_INDEX,
                 A_SWEEP_DOES_ALL_IT_CAN[0],
@@ -390,11 +390,13 @@ pub const MIGRATE_CORPUS: Row = Row {
         // The human's ruling of 2026-10-19 on the record's §6, entry 21: `--no-commit` stages
         // exactly the paths the migration touched, both halves of a move, and commits
         // nothing — the sentence of `design/write-commands.md`, which the ruling found right.
+        // A demand since the fourth of the fixes after the review of `B10` (its note 5): every
+        // change of the migration's two lines stands staged, where it let the index be.
         Line {
             spelling: Some("--no-commit"),
             ..line(
                 "MG4",
-                Allows::Staged,
+                Allows::Staged(Stages::AllTheChangesOf(&["MG1", "MG1, from a prior home"])),
                 &[Quote {
                     doc: "design/write-commands.md",
                     heading: MIGRATE_CORPUS_SECTION,
@@ -484,15 +486,25 @@ pub const CONFIG_SET: Row = Row {
                 words: "the gitignored `.jigc/state/file-state.json` the move primitive re-keys on every call",
             }],
         ),
+        // The knob and the moves its value needs stand staged together, or none of them does
+        // — since the fourth of the fixes after the review of `B10` (its note 5), where the line
+        // let the moves be staged and the knob they follow be left unstaged: one config change,
+        // which reaches a commit with its task or on its own, never in halves (the findings,
+        // §23, under the human's ruling on the record's §6, entry 19).
         line(
             "CS5",
-            Allows::Staged,
+            Allows::Staged(Stages::AllOrNoneOf(&["CS1", "CS2", "CS2, at its new home"])),
             &[
                 A_MOVE_LANDS_IN_THE_INDEX,
                 Quote {
                     doc: "design/overrides.md",
                     heading: THE_CONFIG_VERBS,
                     words: "none of the six verbs commits anything",
+                },
+                Quote {
+                    doc: "DECISIONS.md",
+                    heading: "The ruling on entry 19 — the human's, of 2026-10-19, option A, as the orchestrating session handed it on",
+                    words: "Also a config change need to be committed. Either when it belongs into a task or individual.",
                 },
             ],
         ),

@@ -17,7 +17,7 @@
 use super::{AFTER_A_COMMIT, ON_A_REFUSAL, THE_INDEX_IS_REBUILT_BY_ITS_NEXT_READ, refuses};
 use crate::support::byte_cell::{
     Aim, Allows, Cell, Condition, Holding, Kind, Lead, Line, Listed, Mark, May, Plant, Prepared,
-    Quote, Row, Spelling, THE_RETIRED, Typed, Unit, When, Where,
+    Quote, Row, Spelling, Stages, THE_RETIRED, Typed, Unit, When, Where,
 };
 use crate::support::route_case::{Place, Step};
 use crate::support::trial_corpus::State;
@@ -107,7 +107,7 @@ pub const FINALIZE: Row = Row {
         ),
         line(
             "T3",
-            Allows::Staged,
+            Allows::Staged(Stages::MayStage),
             &[
                 Quote {
                     doc: "design/finalize.md",

@@ -2,6 +2,56 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-27 — A line of the index may demand what stands staged after the command: `MG4` every change of the migration's two lines, `CS5` a re-point's knob and its moves together or none of them; the two keys of a write the product should make are held by cells, fifteen of them *holds* to *written outside its allowance* on both binaries (the byte table, task B10, after its review: the fourth of its fixes)
+
+**What.** The review of the task `B10`, its note 5: the reason the record gave for its two "should make" keys — *"a line lets a write happen and never demands one"* — was not exact. The frame does demand a commit: a commit that holds all the lines changed (`U9`) makes a change left out of it *written outside its allowance*. A sibling demand, *what the lines changed stands staged*, could be built the same way, and both keys had a buildable cell: `migrate-corpus --no-commit`'s staging, and a root knob's staged half. *Why it matters:* `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged` carries a ruling of the human's (entry 21, 2026-10-19) that no cell held, so a product fixed to the ruling and one that ignores it both read green.
+
+**The frame** ([byte_cell.rs](crates/cli/tests/support/byte_cell.rs)). `Allows::Staged` carries what it demands, a `Stages`. A change a named line made at a path counts only where the index can take it: the main checkout's index held the path before, or a regular file or a link stands there after. Directories don't count, and neither does a file taken away that git never held. Such a change **stands staged** where the index's entry at its path is not what it was. What the entry moved to is judged, as before, by the index's own check.
+
+- **`MayStage`** — lets, demands nothing: `RL2` and `T3`, and the fixtures.
+- **`AllTheChangesOf`** — each change stands staged. `MG4`, over `MG1` and `MG1, from a prior home`: the ruling's *"stages exactly the paths the migration touched — both halves of a move"*.
+- **`AllOrNoneOf`** — they stand staged together, or none does. `CS5`, over `CS1`, `CS2` and `CS2, at its new home`. A re-point is one config change, and the ruling on entry 19 has a config change reach a commit *"when it belongs into a task or individual"*, which a commit of the staged moves without the knob is neither. `CS5` now quotes that sentence (the rows' record, §4c).
+
+A change left unstaged where the demand wants it is *written outside its allowance*, as `U9`'s is.
+
+**Why all-or-none at `CS5`, not all.** The finding behind it (§23) is unruled. Its robust answer is that `config set` commits the re-point whole. The other sensible fix stages the knob beside its moves. Both hold under all-or-none: everything staged, or everything committed, moves every entry. A plain *all* would also redden every knob that moves nothing, such as `finalize.fan-out.squash`, which stages nothing and which no ruling says should. That choice is this fix's reading, the stricter one until the human rules the finding.
+
+**Red first.** [`what_a_line_of_the_index_demands_stands_staged_after_the_command`](crates/cli/tests/byte_table.rs) is new. With the demands written and not yet read, its four owed-red cases came out *holds*:
+- a tracked file rewritten and left unstaged;
+- a tracked file taken away with its entry left in the index;
+- a file made where nothing stood, left untracked;
+- the moves staged with the knob left unstaged.
+
+Its controls held before and after: the same changes staged; a cache the demand does not name; a file git never held taken away; nothing staged; a knob that moves nothing; and `MayStage` over the half-staged re-point.
+
+Three fences written to the old reading are brought to it:
+- `a_migrated_doc_keeps_its_prose`: `--no-commit` left unstaged is red now. Staged, a relocation that carries an uncommitted line of the user's reads *git's state moved* — the line rides into the index, the class of `r1-migrate-corpus-commits-an-uncommitted-edit-at-a-doc-it-migrates`.
+- `a_moved_doc_lands_at_its_doctypes_home`: the two re-points hold with the knob staged beside the moves, and the `docs-root` one is red with the knob left unstaged.
+
+**What moved — on both binaries.** The whole table was printed again on this fix's tree: the previous release's rebuild (`accf3996…ab5d`, checked) and this tree's debug build, 433 s, no gate beside it. **Fifteen cells moved, each from *holds* to *written outside its allowance*, the same on both binaries; no other cell moved** in classification, exit, listing, mark or key.
+- `migrate-corpus-no-commit-a-decision-below-its-version`, now red under `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged`.
+- Twelve `config set` cells in the gate, now red under `r1-config-set-stages-a-root-knobs-moves-and-leaves-the-knob-they-follow-unstaged`. These are every cell of a root knob's re-point that moved a doc and acted: the base cells of both knobs, an edit and a change staged at the moved doc, a change staged at the manifest, a doc beside the new home (untracked or committed), and a file beside the baseline.
+- Two on demand: `config-set-docs-root-to-notes-in-refs-post-hoc` and `…-in-vendored`.
+
+The block `needs` is the committed record's byte for byte. The block `excused` is too, but for the line the second fix moved (`setup`'s `C2`). In `pairs`, *holds/holds* went from 291 to 276 and *written outside/written outside* from 46 to 61.
+
+**The counts this changes**, brought into the records by the sixth fix:
+- red here: 175 to 190 — in the gate 161 to 174, on demand 14 to 16;
+- red on the previous release: 269 to 284;
+- red on both: 174 to 189;
+- keys with cells: 43 to 45;
+- keys no cell can see: 22 to 20, and none of them now *"of a write the product should make"*;
+- expected-red entries: 45 to 47;
+- the committed on-demand print's two lines.
+
+No regression is added, since every moved cell is red on both binaries.
+
+### Left open
+
+- **`all or none` is this fix's reading of an unruled finding**, named above for the human to reverse with §23's ruling.
+- **A doc only the index held, migrated and staged under `--no-commit`, reads *git's state moved*.** The index's entry is judged as a commit's would be, against what `HEAD` held (the word arm of `written_by_a_line`), so no product holds there. No cell builds the case; the fence says so where it would stand.
+- **`RL2`'s moves are let, not demanded**, because no finding says `relocate` leaves a half. The class's members were counted by the record (§2): the keys *"of a write the product should make"* were two, and both are held now.
+
 ## 2026-10-27 — A writing door the product gains cannot be scheduled: the count's leaves are held to the previous release's 36 write leaves, frozen in the suite; the handler of a scheduled leaf is held to its text at the previous release by a hash; and every key has its heading in the findings. Red first, and no cell is touched (the byte table, task B10, after its review: the third of its fixes)
 
 **What.** The review of the task `B10` found, as its H3, that [`implementation/pinning.md`](implementation/pinning.md) → §7 claimed more than the fences held. It said a scheduled line must be a leaf the committed count holds untouched since the previous release, *"which a new leaf never is"*. But `every_scheduled_leaf_is_one_the_count_holds_untouched` reads a markdown table that a person writes ([the count](completions/artifacts/M55/stabilization-build/reshape/byte-table-leaves-touched-since-rc24.md)). The review's probe gave a new leaf, `task brand-new`, a count line *untouched* and a scheduled line, and both fences stayed silent. Its second half (the lead L3): a later change to the handler of a scheduled leaf was seen by no fence. And its note 7: no test read [the findings](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md), so *"a key has its entry"* was unfenced. *Why it matters:* §7's claim is the only thing that makes a new writing command arrive with its row. A claim that a hand-written line can switch off is a door left open for the next leaf.
