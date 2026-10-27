@@ -4,6 +4,8 @@ What the byte table ([byte_table.rs](../../../../../crates/cli/tests/byte_table.
 
 **No ledger holds these keys.** Until a stabilization run is opened they certify themselves, as the route catalog's do.
 
+*Changed 2026-10-27, with the record of the human's ruling of that day on the rows' record's §6, entry 1 (iii), option A — a refusal leaves no work area it minted: §1 gains the doc-only finding of the sentence no design doc has, `r1-storage-design-does-not-say-a-refusal-leaves-no-work-area-it-minted` — a key of its own, beside the second fix's on the file↔state record, since that one is words that are wrong and this one a sentence that is missing. No cell's classification moved, on either binary.*
+
 *Changed 2026-10-27, with the sixth of the fixes after the review of the task `B10` (its record notes, and the numbers): §27 is sharpened as the review's note 8 asks — the doc-code probe is jigc's own image or the override; the fence is an allowlist of what production code may launch, over every `Command::new` outside tests, counted again (66 sites, where the review counted 90 — it read the `git` calls inside test modules as production); the **CLI** renders; what the rendered `Spawn:` line looks like under the dialect's grammar; the sentences of the class, five in four docs; and which profile renders where none, or a second, is installed (the review's lead L2) as an open part of the finding. §29 is new: an unreadable file↔state record is refused with a route that deletes the baseline, *"a rebuildable cache and holds nothing of yours"* — the reason the human's ruling of 2026-10-26 makes wrong, and the route itself in question — one key, no cell, `r1-a-write-refuses-an-unreadable-file-state-record-with-a-route-that-deletes-the-baseline`, its repro run as printed on both binaries. The headings of §24 and §25 count what they hold since the fourth of these fixes, §28's cells counted in §28 alone. The six refusals of §28 that name a wrong cause are leads for the route catalog, which [the table's record](byte-table-record.md) → §4 lists. No cell's classification moved.*
 
 *Changed 2026-10-27, with the fifth of the fixes after the review of the task `B10` (its lead L1): §28 is new — the plant kind *L, at a directory on the way*, 22 cells, and the key `r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository` with nine of them; §17's `r1-milestone-record-doors-refuse-and-leave-the-directories-they-made` gains two.*
@@ -308,6 +310,22 @@ and of the bytes that stay:
 — and → *Edge index lifecycle* names one committing door, the finalize, whose phase 7 *"invalidates the stamp"*. No sentence says what another door that commits may do to the index, nor that no door must remove it — which left the rows' record's §6, entry 7 open for `task discard`.
 
 **The ruling**: **any door that commits may remove or rebuild `.jigc/index/edges.json`; none is required to, and none is faulted for it** — the stamp covers every commit, so no door removes the file for correctness. **What follows**: one sentence of `design/storage.md`, under *Edge index lifecycle*, saying so. No product change; the table carries the ruling as `C4`, a line in every row.
+
+### `r1-storage-design-does-not-say-a-refusal-leaves-no-work-area-it-minted`
+
+*Recorded 2026-10-27, for the human's ruling of that day on the rows' record's §6, entry 1 (iii), option A. For the stabilization run's ledger: a design doc that is to say what a ruling decided; whether the product is wrong is not shown. Not edited in this lane.*
+
+**What the docs say.** `design/storage.md` → *Source of truth* counts the task's working area among the things that are not the source of truth:
+
+> Every other artifact — the staging working area, the edge index, the file↔state hashes — is either a rebuildable cache or a transient working copy.
+
+— and says nothing of what a refusal leaves of an area it made. `design/team-ready-state.md` → *The commit model — path-scoped commit at each milestone op* says it of the record-only doors alone, on a failure of their commit: *"leaving no residue and re-baselining nothing"*, and *"A door unwinds its own mint with it"* (the rows' record's `MC5`). No sentence says it of every door that mints an area — a task's (`jigc start`, `jigc migrate`, `jigc task amend`) or a milestone's and its sub-tasks' (`milestone create`, `add-task`, `add-from-spec`) — nor of a refusal before the commit.
+
+**The ruling**: **a refusal leaves no work area it minted.** A task's or a milestone's area a command created before it refused is gone after the refusal; it is no cache, since a later command reads such an area as authority. *Why*: the human's ruling of 2026-10-14 on the rows' record's §6, entry 2 — every refusal of `setup` leaves the repository as it was — and `CLAUDE.md`'s *writes are transactional*.
+
+**Its own key, not `r1-storage-design-calls-the-file-state-record-a-rebuildable-cache-where-it-is-the-baseline`'s.** That key is words that are wrong — seven sentences calling one artifact, the file↔state record, rebuildable — and its fix rewrites them; this one is a sentence no doc has, a rule over every door that mints an area, and its fix adds it — as entry 7's missing sentence got `r1-storage-design-does-not-say-a-commit-at-any-door-may-take-the-edge-index-away`. The two meet at the sentence above, which names both artifacts: a fixer who takes either reads the other.
+
+**What follows**: one sentence in `design/storage.md` → *Source of truth*, or beside it, saying that a refusal leaves no work area it minted, and `design/team-ready-state.md`'s rule read as an instance of it. **The product**: not shown wrong — no cell of the table shows a refusal that left an area at a minted id, on this tree or on the previous release. **The table** carries the ruling as it carried the reading before it: no line that holds on a refusal names a minted place.
 
 ## 2. The acceptance's cells — none is red on this tree's binary
 
