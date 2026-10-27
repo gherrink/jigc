@@ -160,8 +160,8 @@ Each is the latest release within the major in use on 2026-10-01, and each major
 | Required status checks | **`ci-ok` only** | One aggregate that `needs` every CI job (below), so adding a job never means editing the ruleset, and a job left out of `ci-ok` reddens a fence instead of going unrequired. |
 | Branch must be up to date | **no** | A milestone branch is not rebased onto every release-PR merge; the merge commit carries the integration, and CI runs on the PR's merge ref anyway. |
 | Merge method | **merge commits only** — squash and rebase off | release-plz computes versions and changelogs from the conventional commits of the merged history ([Versioning](#versioning)); a squash would collapse a milestone into one subject. |
-| Required approvals | none | The human is the only reviewer; his merge is the approval. |
-| Bypass | **none, the human included** | A bypass the human holds is a bypass every agent holding his credentials holds (What agents may not do, below). |
+| Required approvals | none | The human is the only reviewer; their merge is the approval. |
+| Bypass | **none, the human included** | A bypass the human holds is a bypass every agent holding their credentials holds (What agents may not do, below). |
 
 **Applied at the end of the switch, by the human** — after the switch's own PR is open and green, so that PR is the first one under the rules; if the ruleset lands before the merge, the switch PR is simply merged through it. **Until it is applied, the ruleset blocks only force-push and deletion**, and the deny list below is the only thing between an agent and a push to `main`.
 
@@ -219,7 +219,7 @@ Each is the latest release within the major in use on 2026-10-01, and each major
 
 ## The one-time bootstrap
 
-*Settled — the order inside M54:* a **pre-public audit** whose verdict the human signs off → **the human flips the repository public** and adds himself as the `release` environment's required reviewer, with `can_admins_bypass: false` → the *before* CI measurement → the restructure → the CI rework and the *after* measurement → release-plz, the GitHub App and this bootstrap → the dry-run rehearsal → **the rc.22 publish**.
+*Settled — the order inside M54:* a **pre-public audit** whose verdict the human signs off → **the human flips the repository public** and adds themselves as the `release` environment's required reviewer, with `can_admins_bypass: false` → the *before* CI measurement → the restructure → the CI rework and the *after* measurement → release-plz, the GitHub App and this bootstrap → the dry-run rehearsal → **the rc.22 publish**.
 
 **The audit.** A full-history secret scan (gitleaks) plus a targeted grep for tokens, keys, `.env` files and credentials. A real secret is rotated or revoked **first**, and history is rewritten only if something live is found. Personal data already in history (home paths, the work email, session transcripts) is accepted. Third-party or client data is **redacted at HEAD — or history is rewritten if it is sensitive.** A rewrite breaks citations, and that breakage is then handled deliberately, never discovered: the SHA-pinned `manifest_freeze_fence::historical` window (`2c5eee5~1 → 7ada302`) and the `ci.yml` comment naming it, every doc that cites a commit SHA, and the trial harness's build-by-sha.
 

@@ -377,8 +377,8 @@ The third count (`prebuild-census.md`, beside this plan) ranked what the canary'
 - *A filed verdict is on this machine's disk until the stage's second record*; and who filed it is not something the script can know.
 - *After the opening, every edit of the route catalog — a case, a reason, an expected-red entry, the site list — moves through a round*, because it is a product test (ruling 7, adjustment ii). A case cannot be tuned between rounds by a direct commit.
 - *The unreached route items are ruled by key, many in one invocation*; a ruling over a class is a row due at the first stop.
-- *Whether a finding an instrument finds again in a later round is verified again, and whether round N's unreached items compete for round N+1's budget*, are his before round 2's `test`; the build does what the record script does today — yes to both.
-- *The order of classes is his at the opening*, with the count's rates beside it.
+- *Whether a finding an instrument finds again in a later round is verified again, and whether round N's unreached items compete for round N+1's budget*, are theirs before round 2's `test`; the build does what the record script does today — yes to both.
+- *The order of classes is theirs at the opening*, with the count's rates beside it.
 
 ### Settled as an engineer — and how
 
@@ -452,7 +452,7 @@ Nothing here launches a stage. The human drives every run.
 
 ## 9. The small canary, redone
 
-One `test` stage in a throwaway clone with a bare remote of its own, set up by `dev/stabilize-canary` after the join; the invocation is printed by the tool and made by the human in a session of his own.
+One `test` stage in a throwaway clone with a bare remote of its own, set up by `dev/stabilize-canary` after the join; the invocation is printed by the tool and made by the human in a session of their own.
 
 **Two doors.** `jigc setup`, where the review row and the plants are; and **a command the pilot does not catalogue and that lists few sites** — `jigc task discard`, four blocking sites by the count, unless `S0`'s list says otherwise — for the route hunt. A hunter at `jigc setup` would find its sites catalogued and have nothing to do. **And one scripted trial arm, as a held check (`K6`)** — so that the one kind of hold nothing has run for real is run once where a mistake costs nothing; it needs the trial image, **which the stage holds as a command (`K7b`): no agent waits for it with a loop of its own, so a session that asks for permissions is not stopped by it**; its first build pays the whole 25 minutes (`K7` saves on the second).
 

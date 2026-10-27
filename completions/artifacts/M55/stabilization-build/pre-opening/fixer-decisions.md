@@ -80,7 +80,7 @@ Then the rest, where both the recommendation and the cheap alternative are a doc
 
 - **Situation.** In a fan-out, one sub-task is dropped with `jigc task discard <sub>`; its worktree under `.jigc/worktrees/<sub>` is still there with `git add`-ed files. `jigc milestone finalize <m>` refuses before landing — exit 3, `milestone.unlanded-work`, keyed at the worktree — and prints `git -C <worktree> stash`, then the same finalize, or `jigc milestone discard`. Tests: `the_boundary_refuses_over_what_a_settled_sub_tasks_registration_holds`, `a_settled_sub_tasks_staged_path_is_kept_by_the_stash_the_refusal_prints`.
 - **rc.24.** Exit 0; the staged files went with the worktree and were named afterwards as "not recoverable".
-- **Decided.** The fixer (`e842342e`), inside the words of the human's ruling on worktree registrations but never put to him by name. `unlanded_work`, `crates/cli/src/milestone.rs`.
+- **Decided.** The fixer (`e842342e`), inside the words of the human's ruling on worktree registrations but never put to them by name. `unlanded_work`, `crates/cli/src/milestone.rs`.
 - **Alternatives.** Reverse: `staged_is_held` becomes `!checkout` there — one line plus the two tests; the files are then destroyed at exit 0 again.
 - **Clause.** First. Inside scope: "discard one, land the rest" is normal use — my reading.
 - **Changes code?** Yes — `milestone finalize`; row 3.
@@ -104,7 +104,7 @@ Then the rest, where both the recommendation and the cheap alternative are a doc
 - **Alternatives.** (a) refuse here too — one predicate and cells, and it fires on most "discard one, land the rest" runs; (b) move the consent to `task discard` (item 5); (c) declare it.
 - **Clause.** First: bytes no git object holds, destroyed at exit 0, in normal use. Inside scope unless declared out — my reading.
 - **Changes code?** Yes for (a) or (b), row 3; docs only for (c).
-- **Recommendation.** Record as a declared bound beside M46's, with its reach — but only the human can declare it: it sits inside the clause's words. If he will not, (a) is the fix that is affordable now.
+- **Recommendation.** Record as a declared bound beside M46's, with its reach — but only the human can declare it: it sits inside the clause's words. If they will not, (a) is the fix that is affordable now.
 
 ## 7 · `5f5b273a`-1 · Which error code names "this doc's home is not an ordinary file" outside finalize
 

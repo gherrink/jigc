@@ -2,7 +2,7 @@
 
 *Kept here until a record commit carries them into `DECISIONS.md` and the run's opening record. Each is the human's unless marked otherwise.*
 
-## Round 1's hunts — ruled 2026-10-06 (question 21, option A; his words: "for question 21 go as recommended yes")
+## Round 1's hunts — ruled 2026-10-06 (question 21, option A; their words: "for question 21 go as recommended yes")
 
 Round 1 runs **the review rows only, plus one cross-cutting reviewer** — no per-area audit.
 
@@ -13,7 +13,7 @@ Round 1 runs **the review rows only, plus one cross-cutting reviewer** — no pe
 - The audit of each fix round's own diff, inside the `fix` stage, is unchanged.
 - This revises what the approved plan listed for round 1 ("the audit over the product paths of `5f5b273a..c1`, the review rows and trial arms the pass touched").
 
-## The row table — ruled 2026-10-06 (question 22, option A; his words: "agree with A")
+## The row table — ruled 2026-10-06 (question 22, option A; their words: "agree with A")
 
 **All seven rows as proposed** (`review-rows-proposal.md`): install members · teardown · worktree registrations · home occupancy · home shape · reconciliation · the linked-worktree guard.
 
@@ -21,7 +21,7 @@ Round 1 runs **the review rows only, plus one cross-cutting reviewer** — no pe
 - *Why row 7 stays:* the guard was added by the pass, the audit of round 3 found it firing where it must not (a worktree of a bare repository, a submodule, a separate git directory — every printed route a dead end; one of the four regressions the pass introduced), and round 4 rewrote it in six commits nobody independent has read.
 - **A stated limit, accepted with the table:** no row reads the guides and the help text as a whole. Sixteen commits of the pass moved guide text; each row checks only the sentences that state its own behaviour. An eighth row for the guides was named as the way to change that and was not asked for. It goes into the opening record as a limit of round 1's test set.
 
-## Cross-model passes in round 1 — ruled 2026-10-06 (question 23, option B; his words: "Take B and do it for 6 and 3")
+## Cross-model passes in round 1 — ruled 2026-10-06 (question 23, option B; their words: "Take B and do it for 6 and 3")
 
 **Two rows get a Codex source pass: row 6 (reconciliation) and row 3 (worktree registrations).** They are named per item in the `test` invocation (`crossModel: [<row 6's item>, <row 3's item>]`); no other item gets one; the Claude source pass of each row runs regardless.
 
@@ -36,11 +36,11 @@ Round 1 runs **the review rows only, plus one cross-cutting reviewer** — no pe
 - The trial arms and the occasion for the inconsistency arm.
 - The port rehearsal's design.
 
-## The fixer decisions never put to the human — his rulings, 2026-10-06, one at a time
+## The fixer decisions never put to the human — their rulings, 2026-10-06, one at a time
 
 *Sheet: `fixer-decisions.md` beside this file (item numbers are the ledger's, `findings-ledger.md` → Open at the close → (a) 1–20, (b) 21–23). Asked in the order: 10, 4, 6, 5, 17, 7, 8, 11, 9, 18, 15, 1, 2, 19, 20, 12, 21, 22, then 13, 3, 16, 14, 23.*
 
-| Ledger item | What | Ruling | His words | Options not taken |
+| Ledger item | What | Ruling | Their words | Options not taken |
 |---|---|---|---|---|
 | 10 + 4 (`e842342e`-1, -3) | `milestone finalize` refuses before landing while a sub-task worktree holds work it would drop — an unreachable commit, staged files in a worktree whose directory is gone, or a discarded sub-task's staged files — under the new code `milestone.unlanded-work` | **Confirmed as built.** Owed: the code named in the migration guide and the worked examples (`4F-4`). | "agree with A" | reverse to the registration ruling's wording (land at exit 0 and name what was dropped); keep the refusal under a sibling door's code, whose route ends at a `--force` this door does not have |
 | 6 (`e842342e`-5) | A discarded sub-task's unstaged edits and untracked files are deleted when the milestone lands (exit 0, named afterwards; the same on rc.24) | **Fix now: `milestone finalize` refuses here too** — over unstaged edits and untracked, non-ignored files in a discarded sub-task's worktree, under `milestone.unlanded-work` with the same kind of route as the staged case; ignored files (build output) stay named, not refused. **A product change — to be built before the run opens** (below). | "agree with A" | move the question to `jigc task discard` (see item 5); declare it a bound |
@@ -48,7 +48,7 @@ Round 1 runs **the review rows only, plus one cross-cutting reviewer** — no pe
 
 **A consequence for the order of work (the orchestrator's, from the design reviewer's point):** every ruling in this table that changes product code is built **before the run opens**, as ordinary fixes on the loop branch (test first, full gate, one finding per commit), so that round 1's hunts read the code as ruled — a fix made after the hunts would have to be hunted again.
 
-| Ledger item | What | Ruling | His words | Options not taken |
+| Ledger item | What | Ruling | Their words | Options not taken |
 |---|---|---|---|---|
 | 17 (`4E-13`, `f0b1120a`) | `jigc setup` when git itself cannot answer (corrupt index, no `git`, an unsafe-directory refusal): refuses before any write, with or without `--force`, under `setup.dirty-install-path` — the code of "uncommitted changes in a file the install would replace" | **`--force` does not pass (confirmed); the refusal gets a finding code of its own** — under the shared code the usual remedy is `--force`, which this refusal does not honour. **A product change, built before the run opens**: one new code with its registry row, docs and cells (cost unverified). | "agree with B" | confirm both (shared code); `--force` installs blind (driven by the fixer: in two of three cases it then failed later with files already replaced) |
 | 7 + 8 (`5f5b273a`-1, -2; also `f031d31e`, `048724d0`) | Which finding code names "this doc's (or milestone record's) file is a symlink or other non-regular entry" — today `finalize.promote-clobber` at `rename` and the movers, `reconciliation.conflict-block` at the record commands, `milestone.record-exists` at `milestone create` | **One finding code of its own for "this path is not an ordinary file", at every command that meets that shape.** The two collision cases at the milestone boundary (two docs to one path; a doc onto a path a worktree staged) keep `finalize.promote-clobber`. **A product change, built before the run opens**; the fixer reports the real reach before committing if it is larger than about five commands with registry rows, docs and cells. Note: it moves the code of one case rc.24 already refused (a record link to different content, `reconciliation.conflict-block`). | "agree with B" | confirm as built (each command keeps the existing code its fixer chose — the sheet author's recommendation) |
@@ -92,7 +92,7 @@ Two of these add a finding code (2, 3), one a stored record (10), one changes th
 
 **Owed docs:** `milestone.unlanded-work` named in the migration guide and the worked examples (`4F-4`). **For round 1's trial:** the fan-out arm scores "told to file after landing" as expected.
 
-## The regression set's shape — ruled 2026-10-06 (question 24, option A; his words: "For question 24 agree A as proposed")
+## The regression set's shape — ruled 2026-10-06 (question 24, option A; their words: "For question 24 agree A as proposed")
 
 **Two parts, both in the existing test framework (the project's rule rejects a separate script-runner):**
 
@@ -105,7 +105,7 @@ Two of these add a finding code (2, 3), one a stored record (10), one changes th
 
 # Taken after the first record of these decisions was handed to a builder — to be carried by the next record commit
 
-## The blind trial's arms in round 1, and the inconsistency arm's occasion — ruled 2026-10-06 (question 25, option B; his words: "Agree with B")
+## The blind trial's arms in round 1, and the inconsistency arm's occasion — ruled 2026-10-06 (question 25, option B; their words: "Agree with B")
 
 - **Arms:** (a) the fan-out and (b) the amend-correction run as on rc.24 (steered, two turns), on an image built from the candidate's commit. **No fourth blind arm**; `setup` and `uninstall` are covered by scripted, non-blind walk arms and by review rows 1 and 2. (The orchestrator's proposal, put with the question; no objection.)
 - **(c) the inconsistency arm:** the occasion is **a flat contradiction the agent has to notice** — a managed decision doc states one value and the code another (the example given: a cap of 1,000 in the doc, 10,000 in the code) — on the clean-prose corpus, adopted, built by a scripted arm. **Two turns, scored separately:** turn 1 gives ordinary work next to the contradiction and no hint; turn 2 asks, in the product's own language, for a record of anything in the docs that disagrees with the code. Turn 1 shows whether an agent reaches for the findings channel on its own; turn 2 whether it can use the channel when asked. Kept apart from the fan-out arm (a report from a fan-out worktree is refused by design).
@@ -114,16 +114,16 @@ Two of these add a finding code (2, 3), one a stored record (10), one changes th
 - **Open, asked next:** what counts as passing — the outcome classes are fixed before the run. A trap to rule on with it: the findings workflow's own text tells the agent it is "not reconciling them now", so where fixing the doc is within the agent's task, fixing it silently is arguably designed behaviour.
 - Facts: `trial-arms-facts.md` beside this file.
 
-## What counts as passing the blind trial — ruled 2026-10-06 (question 26, option A; his words: "Agree with A")
+## What counts as passing the blind trial — ruled 2026-10-06 (question 26, option A; their words: "Agree with A")
 
 **The clause "usable by agents" is green when the agent can do each thing it sets out to do:** the fan-out arm reaches its best outcome class; the amend arm reaches its best outcome class; and in the inconsistency arm's **second, asked** turn the agent files through the findings channel. The **first, unprompted** turn is recorded with whatever class it reaches and does not decide; a miss there is a recorded finding about the guidance, not a blocker; a silent fix there is the product's designed behaviour where fixing is within the agent's task, and is recorded as such.
 
 - **Over** a stricter bar (the unprompted turn must at least mention the contradiction; a miss blocks and is answered in the guidance) and a more lenient one (in the asked turn, recording through jigc by any door counts).
-- *Why, as put to him:* the clause is about whether agents can use the product; whether one agent notices something unprompted depends on the model and the task's framing at least as much as on jigc, and each arm is a single session — making one sample decisive invites the hunt-by-sampling loop he ruled against.
-- **Under every option:** an arm whose occasion did not fire (the evidence shows the agent never read both sides) is **void, not failed** — it runs once more automatically and then comes to the human (his ruling on a clause with no green result); and in the fan-out arm "told to file after landing" is the expected outcome (his ruling on ledger item 14).
+- *Why, as put to them:* the clause is about whether agents can use the product; whether one agent notices something unprompted depends on the model and the task's framing at least as much as on jigc, and each arm is a single session — making one sample decisive invites the hunt-by-sampling loop they ruled against.
+- **Under every option:** an arm whose occasion did not fire (the evidence shows the agent never read both sides) is **void, not failed** — it runs once more automatically and then comes to the human (their ruling on a clause with no green result); and in the fan-out arm "told to file after landing" is the expected outcome (their ruling on ledger item 14).
 - The outcome classes of the three arms are those of the rc.24 record (`completions/artifacts/RC-rc24/README.md`), fixed before the run; the inconsistency arm's table gains the split by turn.
 
-## The port rehearsal's shape — ruled 2026-10-06 (question 27, option B; his words: "Agree on B")
+## The port rehearsal's shape — ruled 2026-10-06 (question 27, option B; their words: "Agree on B")
 
 **A scripted walk on a clone, plus one real migration by an agent.**
 - **The copy:** a plain `git clone` of this repository with its remote removed, an isolated `$HOME`, the candidate's binary — never a linked worktree (doc writes there are refused).
