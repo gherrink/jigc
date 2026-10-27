@@ -24,6 +24,8 @@ Two operating modes, each with its own loop:
 
 The conventions below apply across both — and to the loop that takes a build to a version ready to release, the [stabilization workflow](implementation/stabilization-workflow.md) (open → test → rule → fix → close). **Rules of judgment the human has set for every workflow** — the first: neither the doc nor the code is the oracle; the behaviour that makes sense wins, and whichever of them is wrong changes — live in [implementation/working-principles.md](implementation/working-principles.md), one section each; they are pointed at from here, never restated.
 
+**Before you judge, hunt or build, look in [implementation/tooling.md](implementation/tooling.md)** — one row per tool and deterministic instrument of this repository (`dev/`, the trial tooling, the byte table, the route catalog, the regression set, the harnesses), the question each answers and how it is called; a tool lands in the same commit as its row, and `tooling-tests/tooling_index.rs` holds it ([working-principles.md](implementation/working-principles.md) → *Deterministic first*).
+
 **Branches** (since 2026-10-01 — [DECISIONS.md](DECISIONS.md) → *the branching switch*). **This is the branch model's one home**; the lifecycle an increment walks is [increment-workflow.md](implementation/increment-workflow.md) → Branches, and `main`'s ruleset is [release.md](implementation/release.md) → The main branch.
 
 | Branch | What it carries | Who makes it |

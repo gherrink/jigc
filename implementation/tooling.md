@@ -1,0 +1,82 @@
+# Tooling — every tool and deterministic instrument of this repository, and the question each answers
+
+**Look here before you judge, hunt or build.** jigc is deterministic, so much of what an agent sets out to establish a script or a test can establish too, and most of the scripts and tests that can are already built ([working-principles.md](working-principles.md) → *Deterministic first*, which also says what to do with a tool you suspect is wrong). This is the one index of them: one row per tool and per deterministic instrument — the question it answers, how it is called, the doc that owns it, and the test or fence that holds it true. **It points; it restates nothing** — what a tool does, its flags, its output and its exit statuses are its header's, which `--help` prints, and the rules it carries out are its owner's.
+
+**Who keeps it.** A tool is added, moved or removed in the same commit as its row. [`tooling-tests/tooling_index.rs`](../tooling-tests/tooling_index.rs) holds that: every entry of a home below has a row whose first cell links it, every path a row links exists, every row has its five cells — and every agent definition under `.claude/agents/` carries the one paragraph that points here. A row's question, call and owner are not read by the fence; they are kept true by whoever changes the tool.
+
+## Where tools live
+
+The registry: the homes whose every entry is a tool. An entry added to one of them reddens the fence until it has a row.
+
+| Home | One tool is | Not a tool |
+|---|---|---|
+| [dev/](../dev/) | each file | — |
+| [.claude/workflow-sources/](../.claude/workflow-sources/) | each file | — |
+| [.claude/workflows/](../.claude/workflows/) | each file | — |
+| [completions/](../completions/) | each directory | `artifacts` — the dated records of every milestone, trial and run |
+
+The instruments below that live among the product's tests (`crates/cli/tests/`, `tooling-tests/`) are not a home — most files there are tests, not tools — so each has its row by name.
+
+## The development tools (`dev/`)
+
+| Tool | The question it answers | How it is called | Owned by | Held by |
+|---|---|---|---|---|
+| [dev/gate](../dev/gate) | Is this tree fit to commit — fmt, clippy, build and the whole suite — and if not, which step and which tests? | `dev/gate` in the background (`--fast` is a pre-check, never a gate; `--private-target` beside another gate) | [dev-workflow.md](dev-workflow.md) → Gate | [dev_gate_report.rs](../tooling-tests/dev_gate_report.rs) |
+| [dev/jigc-rig](../dev/jigc-rig) | What does the binary do in an adopted corpus of a named state, or under a named un-concluded git state — from a shell, without writing a test? | `out=$(dev/jigc-rig <state>)`, then `eval "$out"` — two steps, stdout only; `--list-states`, `--print-only` | its header; [CLAUDE.md](../CLAUDE.md) → Build / lint / test | [dev_rig_parity.rs](../crates/cli/tests/dev_rig_parity.rs) |
+| [dev/runner-faithful](../dev/runner-faithful) | What does the CI runner see — a cargo command on a committed revision in a runner-shaped Linux container? | `dev/runner-faithful [--commit <rev>] cargo <args…>` | [dev-workflow.md](dev-workflow.md) → Gate | no suite of its own: its image asserts its shape when it is built |
+| [dev/branch-name](../dev/branch-name) | Is this branch name one the branch model allows? | `dev/branch-name <branch>` | [CLAUDE.md](../CLAUDE.md) → Branches | [branch_name_fence.rs](../crates/cli/tests/branch_name_fence.rs) |
+| [dev/merge-logs](../dev/merge-logs) | A merge stopped on conflicts in the append-only logs: what is the one right resolution? | `dev/merge-logs` inside the stopped merge | [dev-workflow.md](dev-workflow.md) → Before a pull request to `main` | [merge_logs_fence.rs](../tooling-tests/merge_logs_fence.rs) |
+| [dev/hygiene-scan](../dev/hygiene-scan) | Does a range of commits, or a tree, carry a term of the private denylist? | `dev/hygiene-scan [--tree] <denylist> <rev-list args…>` | [public-hygiene.md](public-hygiene.md) → The guard | [dev_gate_report.rs](../tooling-tests/dev_gate_report.rs) |
+| [dev/clean-litter](../dev/clean-litter) | The build tree has grown until it slows every gate: what drops it? | `dev/clean-litter` | [dev-workflow.md](dev-workflow.md) → Gate | [dev_gate_report.rs](../tooling-tests/dev_gate_report.rs) holds that the gate's warning names it; the cleaning itself, no suite |
+| [dev/crate-readme](../dev/crate-readme) | What README does crates.io show for `jigc` — the root README with absolute links? | `dev/crate-readme` (`--stdout` writes nothing) | [release.md](release.md) → What the package carries | [crate_readme.rs](../crates/cli/tests/crate_readme.rs) |
+| [dev/unpublished-versions](../dev/unpublished-versions) | Does this push carry a package version crates.io does not have yet? | `dev/unpublished-versions` — release.yml's check job | [release.md](release.md) → Publishing | [release_pipeline_fence.rs](../tooling-tests/release_pipeline_fence.rs), arm (l) |
+| [dev/install-release-plz](../dev/install-release-plz) | Install the one release-plz the release workflow runs, checked against its recorded digest | `dev/install-release-plz` — release.yml's release-plz jobs | [release.md](release.md) → Publishing | [release_pipeline_fence.rs](../tooling-tests/release_pipeline_fence.rs), arm (o) |
+| [dev/stabilize-record](../dev/stabilize-record) | Where does a stabilization run stand and what is its next step; what does a role read first (`kit`); and how does a report, a ledger row or a verdict reach the run's record? | `dev/stabilize-record <act> --run <run> …` — `--help` lists every act | [stabilization-workflow.md](stabilization-workflow.md) → Who owns which rule | [dev_stabilize_record.rs](../tooling-tests/dev_stabilize_record.rs) |
+| [dev/stabilize-step](../dev/stabilize-step) | Each git act of a stabilization run, as one command that checks itself; and the long commands a stage holds | `dev/stabilize-step <act> …` — the harness's `build-git` steps | [stabilization-workflow.md](stabilization-workflow.md) → Who owns which rule | [dev_stabilize_step.rs](../tooling-tests/dev_stabilize_step.rs) |
+| [dev/stabilize-harness](../dev/stabilize-harness) | Regenerate the invoked stabilization harness from its commented source | `dev/stabilize-harness` (`--stdout` writes nothing) | [stabilization-workflow.md](stabilization-workflow.md) → The harness's source | [dev_stabilize_harness.rs](../tooling-tests/dev_stabilize_harness.rs) |
+| [dev/stabilize-probe](../dev/stabilize-probe) | What does the Workflow runtime really do with a return, a relay or a document — judged by script, never by an agent's word? | run by a probe's agents, from the harness's probe invocation | [stabilization-workflow.md](stabilization-workflow.md) → The runtime probes | [dev_stabilize_probe.rs](../tooling-tests/dev_stabilize_probe.rs) |
+| [dev/regression-set](../dev/regression-set) | Does any test the previous release passed fail on the candidate's binary, beyond the list of intended changes? | `dev/regression-set run --previous <sha> --candidate <sha> --list <path> --scratch <dir>` | [stabilization-workflow.md](stabilization-workflow.md) → The regression set | [dev_regression_set.rs](../tooling-tests/dev_regression_set.rs) |
+| [dev/stabilize-canary](../dev/stabilize-canary) | Build the sealed place the small canary runs a whole `test` stage in, and check what it left | `dev/stabilize-canary setup …` · `dev/stabilize-canary check --root <root>` | [stabilization-workflow.md](stabilization-workflow.md) → The small canary | [dev_stabilize_canary.rs](../tooling-tests/dev_stabilize_canary.rs) |
+| [dev/stabilize-guard](../dev/stabilize-guard) | May this tool call of a run's agent write the run's repository? | a PreToolUse hook, never typed | [stabilization-workflow.md](stabilization-workflow.md) → The write guard | [dev_stabilize_guard.rs](../tooling-tests/dev_stabilize_guard.rs) |
+| [dev/stabilize-fence](../dev/stabilize-fence) | Run one shell command where nothing under the run's repository can be written | never typed: the guard rewrites a fenced agent's command into it | [stabilization-workflow.md](stabilization-workflow.md) → The write guard | [dev_stabilize_guard.rs](../tooling-tests/dev_stabilize_guard.rs) |
+| [dev/stabilize-guard-probe.js](../dev/stabilize-guard-probe.js) | Does the write guard fire, and is it obeyed, for an agent a Workflow launches in the human's session? | a Workflow script, by its path in the canary's clone (the canary's act `part-0`) | [stabilization-workflow.md](stabilization-workflow.md) → The write guard | [dev_stabilize_canary.rs](../tooling-tests/dev_stabilize_canary.rs) |
+
+## The deterministic instruments
+
+The regression set's first part is a tool of its own, [dev/regression-set](../dev/regression-set), and has its row above.
+
+| Instrument | The question it answers | How it is called | Owned by | Held by |
+|---|---|---|---|---|
+| [The byte table](../crates/cli/tests/byte_table.rs) ([its families](../crates/cli/tests/byte_table/)) | Does a writing command, over any prepared state with one plant, destroy bytes no git object holds, or write, commit or stage what its design doc does not allow? | `cargo test -p jigc --test g_migration byte_table::`; on another binary, its ignored arm under `JIGC_BYTE_TABLE_BINARY` | [pinning.md](pinning.md) → §7 | itself: every cell is a test, and its quote fence holds every line to its doc |
+| [The route catalog](../crates/cli/tests/route_catalog.rs) ([its cases](../crates/cli/tests/route_catalog/)) | Does a refusal's route work as printed, for every cause of every catalogued refusal site? | `cargo test -p jigc --test g_migration route_catalog::`; on another binary, its ignored arm under `JIGC_ROUTE_CATALOG_BINARY` | [pinning.md](pinning.md) → §6 | itself: every blocking site has a case, a reason or a scheduled row |
+| [The site list](../crates/cli/tests/route_catalog/sites.tsv) | Where does production source construct a finding — every site, with its command, code, severity and route? | read the file; `UPDATE_GOLDENS=1 cargo test -p jigc --test g_finalize refusal_site_list::` regenerates it | [pinning.md](pinning.md) → §6 | [refusal_site_list.rs](../crates/cli/tests/refusal_site_list.rs), equal to a scan of production source |
+| [The compose goldens](../crates/cli/tests/compose_goldens.rs) ([the bytes](../crates/cli/tests/goldens/compose/)) | What exactly does every composed surface print, and what did a pack edit change in it? | `cargo test -p jigc --test g_compose compose_goldens::`; `UPDATE_GOLDENS=1` regenerates | [pinning.md](pinning.md) → §1 | itself |
+| [The trial-shaped fixture builder](../crates/cli/tests/support/trial_corpus.rs) | An adopted corpus of a named state, built by driving the binary, for a Rust test | `trial_corpus::State` from a test; `dev/jigc-rig` is its shell twin | [pinning.md](pinning.md) → §4 | [dev_rig_parity.rs](../crates/cli/tests/dev_rig_parity.rs) holds the rig's states to it |
+| [The simulation of a stage](../tooling-tests/stabilize_simulation.rs) | What does the committed stabilization harness do through a whole `test` stage, step by step, without launching an agent? | `cargo test -p jigc --test g_tooling stabilize_simulation::` | [stabilization-workflow.md](stabilization-workflow.md) → The simulation of a stage | itself, and the golden beside it |
+
+## The harnesses
+
+| Harness | The question it answers | How it is called | Owned by | Held by |
+|---|---|---|---|---|
+| [The stabilization harness](../.claude/workflow-sources/stabilize.js) ([invoked](../.claude/workflows/stabilize.js)) | One stage of a stabilization run, from its first git step to its pushed record | the `stabilize` workflow; its source is edited, the invoked file regenerated by `dev/stabilize-harness` | [stabilization-workflow.md](stabilization-workflow.md) → Invoking the harness | [stabilize_harness_fence.rs](../tooling-tests/stabilize_harness_fence.rs) · [stabilize_simulation.rs](../tooling-tests/stabilize_simulation.rs) · [dev_stabilize_harness.rs](../tooling-tests/dev_stabilize_harness.rs) |
+| [The milestone-build harness](../.claude/workflows/milestone-build.js) | A whole milestone built from its roadmap decomposition, increment by increment | the `milestone-build` workflow | [increment-workflow.md](increment-workflow.md) → Orchestration | [merge_logs_fence.rs](../tooling-tests/merge_logs_fence.rs) (its sync step's log list) |
+
+## The trial tooling
+
+Each is a directory with its own README, which owns it; none is run by the gate. Which to reach for, and where the rig and the fixture builder take over, is [CLAUDE.md](../CLAUDE.md)'s paragraph on trial tooling.
+
+| Home | The question it answers | How it is called | Owned by | Held by |
+|---|---|---|---|---|
+| [completions/trial-corpus-template/](../completions/trial-corpus-template/) | A foreign, pre-jigc corpus for an adoption trial, and is it clean? | `instantiate.sh [--clean-prose]` · `check-corpus.sh` | [its README](../completions/trial-corpus-template/README.md) | its `self-test.sh`, run by hand |
+| [completions/trial-harness/](../completions/trial-harness/) | The isolated container a blind session runs in, pinned by commit or published version, and verified | `build-image.sh` · `verify-image.sh` · `verify-pair.sh` · `run-session.sh` | [its README](../completions/trial-harness/README.md) | `verify-image.sh` over each image it builds |
+| [completions/trial-driver/](../completions/trial-driver/) | Drive and score a trial session without an operator | `python3 run.py observe` · `seed` · `fork` · `plant` · `gate`; `walk.py` | [its README](../completions/trial-driver/README.md) | its `test_*.py`, `python3 run.py test`, run by hand |
+| [completions/workflow-eval/](../completions/workflow-eval/) | Does a real agent select, engage and complete the right workflow? | `run-eval.sh` · `eval.py` · `analyze.py` | [its README](../completions/workflow-eval/README.md) | its `selftest.sh`, run by hand |
+
+## Candidates
+
+The tools agents have asked for: the scripts they wrote and kept using, and the tools they needed and did not have, as each names them under **Tools** at the end of its work ([working-principles.md](working-principles.md) → *Deterministic first*). **The orchestrator adds to this list, triaging each one**: to be built into `dev/` with its tests, or declined with the reason. A candidate built leaves the list and becomes a row like any other, in the commit that builds it; a declined one stays, with its reason, so it is not asked for again unanswered.
+
+| Candidate | The question it would answer | Raised by | Triage |
+|---|---|---|---|
+
+*None yet.*
