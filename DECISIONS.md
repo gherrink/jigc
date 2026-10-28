@@ -2,6 +2,17 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-28 — The third re-review of the link-on-the-way guard: two regressions closed, `setup`'s hook route names the link, and eight keys recorded for the ledger (the human's ruling: no merge over a known regression; before the stabilization run's opening: no write through a link on the way)
+
+**What the third re-review of `424e27c3` found, and how each closed** — each a test of `link_on_the_way_axis.rs`, red on `424e27c3` first.
+
+- **S-1 — `jigc uninstall` passed any link it could not read as a link to nothing**, and a loop, a path through a file or an unreadable directory at `CLAUDE.md` then stopped the teardown halfway, after `.jigc` was removed. Only `NotFound` is a link to nothing; every other end falls to `link_end` and is refused before anything is removed, as before.
+- **S-2 — the remove-only route caught every directory inside `.git`.** It is for the repository, a directory above it, a directory the link stands in and `.git` itself; a directory inside `.git` is copied in again, as `design/storage.md` now says.
+- **`jigc setup`'s hook-link refusal named the script the link leads to as *the link*** (pre-existing): run as printed, its route removed the user's script. It names the link — its directory resolved, its own name kept — as the teardown's sibling does. The route catalog's cases under `r1-setup-install-hook-route-other-causes-unexamined`, `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null` and the hook-link half of `r1-p3-setup-install-hook-undriven-producers-and-causes` now hold; the ways that point the link at a script in no commit join `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path`.
+- **Notes.** `rollback::park` parks a pre-image at a free name directly below `displaced/` where a link stands on its nested way, rather than dropping it; `design/command-output-contract.md`'s `task diff` bullet says its `findings` carries the advisory; a stale *outside* in the route catalog's findings is corrected.
+
+**Recorded for the run's opening ledger, no fix here:** in [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md) §12 — `r1-link-refusals-print-an-outside-targets-absolute-path`, `r1-catalog-link-acts-never-check-the-route-asks-for-them`, `r1-uninstall-half-tears-down-over-a-hook-link-it-cannot-read`, `r1-validate-calls-a-doc-behind-an-in-repository-link-committed`; in [byte-table-findings.md](completions/artifacts/M55/stabilization-build/reshape/byte-table-findings.md) §30, listed in the table's record — `r1-config-set-writes-through-a-link-at-the-manifests-own-place`, `r1-storage-says-jigc-writes-only-inside-the-repository-and-the-hooks-directory-may-lie-outside`, `r1-workbench-link-check-starts-at-the-first-jigc-component`, `r1-a-json-read-with-no-findings-array-withholds-the-link-advisory`.
+
 ## 2026-10-28 — The second re-review of the link-on-the-way guard: a dry run refuses as its act does, the teardown passes a link to nothing and asks the hook, and nothing is parked past a link (the human's ruling A: a fourth cycle; before the stabilization run's opening: no write through a link on the way)
 
 **What the second re-review of `02699199` found, and how each closed.** Each is a test of `link_on_the_way_axis.rs`, red on `02699199` first.

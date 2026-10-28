@@ -3153,7 +3153,13 @@ fn edited_through_links(
         // writes nothing — no file is created where the link points. Refusing it would
         // keep a user from taking jigc out over an ordinary state (a bootstrap file moved
         // away); so the link is left as it is, and said after the teardown.
-        if std::fs::metadata(jigc_home.join(path)).is_err() {
+        // Nothing there, and only that (the third re-review's S-1): a loop, a path
+        // through a file or an unreadable directory is no link to nothing — the step's read
+        // fails on it after `.jigc` is gone — so it falls to `link_end`, which refuses it
+        // before anything is removed.
+        if std::fs::metadata(jigc_home.join(path))
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+        {
             to_nothing.push(path.to_string());
             continue;
         }
@@ -3207,15 +3213,19 @@ fn edited_through_links(
 /// fails with git's reason, as it always has.
 /// **Where a `pre-commit` hook that is a link leads, as the install and the teardown ask
 /// it** — `None` where the hook is no link, or a link to a file of this repository or of
-/// its hooks directory, which both follow. Otherwise the hook's displayed path, the hook's
-/// own path, and `None` for a link to nothing or `Some(why)` for a link out of both.
+/// its hooks directory, which both follow. Otherwise the link's displayed path (the link,
+/// never the file it leads to), the hook's own path, and `None` for a link to nothing or
+/// `Some(why)` for a link out of both.
 fn hook_link_end(jigc_home: &Path) -> Option<(String, PathBuf, Option<String>)> {
     let hooks_dir = resolve_hooks_dir(jigc_home).ok()?;
     let hook = precommit_hook_in(&hooks_dir);
     if !std::fs::symlink_metadata(&hook).is_ok_and(|entry| entry.file_type().is_symlink()) {
         return None;
     }
-    let shown = display_hook_path(jigc_home, &hook);
+    // The link itself, never where it leads (the third re-review's L-3): its directory
+    // resolved, its own name kept — a route that says *remove the link at …* must name the
+    // link, or, run as printed, it removes the user's script.
+    let shown = format!("{}/pre-commit", display_hook_path(jigc_home, &hooks_dir));
     let Ok(real) = std::fs::canonicalize(&hook) else {
         return Some((shown, hook, None));
     };
@@ -3236,14 +3246,9 @@ fn hook_link_end(jigc_home: &Path) -> Option<(String, PathBuf, Option<String>)> 
 /// ([`hook_link_end`]). A link to nothing reads as no hook, and a hook the teardown would
 /// remove whole or leave is no write through the link: neither refuses.
 fn hook_written_through_a_link(jigc_home: &Path, force: bool) -> Result<(), Finding> {
-    let Some((_, hook, Some(why))) = hook_link_end(jigc_home) else {
+    let Some((shown, hook, Some(why))) = hook_link_end(jigc_home) else {
         return Ok(());
     };
-    // The link itself, never where it leads: its directory resolved, its own name kept.
-    let shown = hook.parent().map_or_else(
-        || "pre-commit".to_string(),
-        |dir| format!("{}/pre-commit", display_hook_path(jigc_home, dir)),
-    );
     let Ok(existing) = std::fs::read_to_string(&hook) else {
         return Ok(());
     };

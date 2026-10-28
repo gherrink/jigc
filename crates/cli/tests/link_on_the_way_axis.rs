@@ -1004,3 +1004,72 @@ fn unwiring_through_a_link_keeps_the_link_and_takes_the_section() {
         "jigc's section is taken out of the file it leads to"
     );
 }
+
+// ── The third re-review of 2026-10-28: each finding, red first ──────────────────────
+
+/// **S-1 — only a link to nothing is passed over at uninstall**: a link at `CLAUDE.md` whose
+/// end cannot be read for another reason — a loop, a path through a file — is refused
+/// before anything is removed, as before the teardown learned to pass a link to nothing.
+#[test]
+fn uninstall_refuses_up_front_over_a_link_it_cannot_read() {
+    for (kind, target) in [("loop", "CLAUDE.md"), ("through a file", "README.md/x")] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let path = corpus.repo().join("CLAUDE.md");
+        fs::remove_file(&path).expect("remove");
+        std::os::unix::fs::symlink(target, &path).expect("an odd link");
+        corpus.git(&["add", "-A"]);
+        corpus.git(&["commit", "-q", "-m", "an odd link"]);
+        let before = repository(&corpus);
+        let out = corpus.jigc(&["uninstall"]);
+        assert!(
+            out.status.code() == Some(1) && said(&out).contains("uninstall.unwire-reference"),
+            "a {kind}: refused under the step's code:\n{}",
+            said(&out)
+        );
+        assert_eq!(
+            repository(&corpus),
+            before,
+            "a {kind}: refused and removed something"
+        );
+    }
+}
+
+/// **S-2 — a directory inside git's own directory is copied in, as before**: only the
+/// repository, a directory above it, a directory the link stands in, and `.git` itself are
+/// routed at the link's removal.
+#[test]
+fn a_link_into_a_directory_inside_gits_directory_is_copied_in() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::create_dir_all(corpus.repo().join(".git/mydecisions")).expect("mkdir");
+    fs::write(corpus.repo().join(".git/mydecisions/a.md"), "# A\n").expect("theirs");
+    fs::create_dir_all(corpus.repo().join("docs")).expect("mkdir docs");
+    std::os::unix::fs::symlink("../.git/mydecisions", corpus.repo().join("docs/decisions"))
+        .expect("link");
+    let out = corpus.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
+    let text = said(&out);
+    assert!(
+        out.status.code() == Some(1) && text.contains("holding a copy of what it leads to"),
+        "a link into `.git/mydecisions` is routed at its copy:\n{text}"
+    );
+}
+
+/// **L-3 — `jigc setup`'s hook-link refusal names the link, never the script it leads to**:
+/// its route, run as printed, removes the link and leaves the user's script.
+#[test]
+fn setups_hook_link_refusal_names_the_link() {
+    let bare = TrialCorpus::build_never_adopted();
+    let outside = bare.repo().parent().expect("a parent").join("hook-script");
+    fs::create_dir_all(&outside).expect("mkdir");
+    fs::write(outside.join("pre-commit"), "#!/bin/sh\necho mine\n").expect("their script");
+    let hook = bare.repo().join(".git/hooks/pre-commit");
+    fs::create_dir_all(hook.parent().expect("a parent")).expect("mkdir hooks");
+    std::os::unix::fs::symlink(outside.join("pre-commit"), &hook).expect("link");
+    let out = bare.jigc(&["setup"]);
+    let text = said(&out);
+    assert!(
+        out.status.code() == Some(1)
+            && text.contains("remove the link at `.git/hooks/pre-commit`")
+            && !text.contains("remove the link at `/"),
+        "the route names the link:\n{text}"
+    );
+}

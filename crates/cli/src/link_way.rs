@@ -68,16 +68,17 @@ pub enum WayOut {
     /// path, reached through no other link: move that directory into the link's place. A
     /// copy would leave two.
     MoveIn(String),
-    /// The link leads to a directory outside the repository (and not above it), or to one
-    /// inside it only through another link: put a copy of what it leads to in the link's
-    /// place, as a real directory. What stands there is the user's and stays.
+    /// The link leads to a directory outside the repository (and not above it), to one
+    /// inside git's own directory, or to one inside the repository only through another
+    /// link: put a copy of what it leads to in the link's place, as a real directory. What
+    /// stands there is the user's and stays.
     CopyIn,
     /// The link leads to no directory — to nothing, or to a file: remove it; jigc makes
     /// the directory itself where it needs one.
     Remove,
     /// The link leads to a directory that holds it — the repository, an ancestor of the
-    /// repository, a directory it stands in — or into git's own directory: a copy of any
-    /// of them would hold the repository or the link again, so the route removes it.
+    /// repository, a directory it stands in — or to git's own directory itself: a copy of
+    /// any of them would hold the repository or the link again, so the route removes it.
     RemoveOnly,
 }
 
@@ -155,8 +156,8 @@ fn way_out(root: &Path, at: &str) -> WayOut {
     let real_directory =
         std::fs::symlink_metadata(&target).is_ok_and(|entry| entry.file_type().is_dir());
     // **What holds the link, or git's own directory, is never copied or moved in** (the
-    // second re-review's N-3): the repository itself, a directory above it, or anything
-    // inside `.git` — a copy of any of them would hold the repository, or the link, again.
+    // second re-review's N-3): the repository itself, a directory above it, or `.git` — a
+    // copy of any of them would hold the repository, or the link, again.
     let canonical = target.canonicalize().ok();
     let holds_the_repository = roots.iter().any(|root| {
         root.starts_with(&target)
@@ -164,14 +165,20 @@ fn way_out(root: &Path, at: &str) -> WayOut {
                 .as_ref()
                 .is_some_and(|real| root.starts_with(real))
     });
-    let in_gits = inside.as_ref().is_some_and(|rel| {
-        rel.components()
-            .next()
-            .is_some_and(|first| first.as_os_str() == ".git")
-    });
+    // `.git` itself, and not a directory inside it (the third re-review's S-2): a copy of
+    // `.git/<dir>` holds neither the repository nor the link, so it is copied in as any
+    // directory outside the repository's own tree is.
+    let in_gits = inside.as_ref().is_some_and(|rel| rel.as_os_str() == ".git");
     if holds_the_repository || in_gits {
         return WayOut::RemoveOnly;
     }
+    // A directory inside git's own directory is no directory of the repository's: git
+    // records nothing there, so what it holds is copied in, never moved out of git's.
+    let inside = inside.filter(|rel| {
+        rel.components()
+            .next()
+            .is_some_and(|first| first.as_os_str() != ".git")
+    });
     let inside = inside.filter(|rel| !rel.as_os_str().is_empty()).map(|rel| {
         rel.components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())

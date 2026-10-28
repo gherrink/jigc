@@ -1748,3 +1748,23 @@ command grep -c 'rebuildable cache and holds nothing of yours' "$RIG/v"   # 1 on
 ```
 
 *Run as printed on both binaries on 2026-10-27: each answer as its comment says.*
+
+## 30. Ledger keys left by the reviews of the link-on-the-way guard — no cell, no fix here
+
+*2026-10-28, recorded at the close of the guard's fourth fix cycle so that the run's opening ledger takes them in. Each is a key with its repro; none is fixed on this branch and no cell holds it. Drive each on a debug build of the branch's tip with `dev/jigc-rig --binary "$BIN" <state>`, from the repository's root.*
+
+### `r1-config-set-writes-through-a-link-at-the-manifests-own-place` — a separate class
+
+The rule of §28 is a link **on the way**; a link **at a workbench file's own place** is that file's question, and for `jigc config`'s writers no code answers it. `config set` writes the manifest with a raw `std::fs::write` (six production sites in `crates/cli/src/config.rs`), which follows a link at the file's place: the knob lands in the file outside, and git records only the link, so the value is in no commit. `persist` and `write_atomic` replace a leaf link rather than follow it, so the primitives are safe; how many of the workbench's other raw writers follow a leaf link is unbounded until each is read. Repro: `fresh`; write `scalar: {}` to a file outside and link `.jigc/config/manifest.yaml` to it; `jigc config set invocation-log true` — exit 0, the file outside holds the knob.
+
+### `r1-storage-says-jigc-writes-only-inside-the-repository-and-the-hooks-directory-may-lie-outside` — the doc names no exception
+
+`design/storage.md` → *No write through a link on the way* opens *jigc writes, moves and rebuilds only inside the repository*. With `.git/hooks` a link to a directory outside, `jigc setup` writes its `pre-commit` hook there (the ack prints its absolute path) and `jigc uninstall` removes it there. The rule's *why* does not apply — hooks are in no commit, and git follows that link to run the hook, as it follows an outside `core.hooksPath` jigc already honours — so the behaviour is right and the doc owes the one exception its sentence leaves out. Repro: `bare`; move `.git/hooks` out of the repository and link it back; `jigc setup`; `jigc uninstall`.
+
+### `r1-workbench-link-check-starts-at-the-first-jigc-component` — a lead
+
+`engine::state::workbench_link_on_the_way` walks from the **first** `.jigc` component of the path it is handed. A repository below an unrelated ancestor directory named `.jigc`, with a link between that ancestor and the repository, would have every workbench write refused. Not driven. Repro shape: a repository at `<dir>/.jigc/x/repo` with `x` a link; any write.
+
+### `r1-a-json-read-with-no-findings-array-withholds-the-link-advisory` — declared open
+
+Under `--format json` a read form's link-on-the-way advisory rides only in a document with a `findings` array; a successful read whose document has none — `doc show`, `doc list`, `doc schema`, `task list`, `describe`, `config get` / `list`, `start --explain`, `workflow --preview`, orientation with no active task — and every single-key `{"error": …}` reject withhold it, so a JSON-only driver learns of the link only when a write refuses. Declared in `DECISIONS.md` (the re-review's entry, *Left open*). Repro: `committed-singletons`; link `docs/decisions` out of the repository; `jigc --format json doc list` — no `store.link-on-the-way` in either stream.

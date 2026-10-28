@@ -42,7 +42,7 @@
 
 ## 2. The keys, as the run's ledger will take them
 
-*Usable alone.* Every live key of [the findings](byte-table-findings.md), **sixty-nine**, one line each, grouped by the door that does it and then by what it does — the suite holds that every key the findings head as live is here and every key here has its heading (`every_live_heading_of_the_findings_is_listed_in_the_tables_record`, `every_key_has_its_heading_in_the_findings`). A line reads:
+*Usable alone.* Every live key of [the findings](byte-table-findings.md), **seventy-three**, one line each, grouped by the door that does it and then by what it does — the suite holds that every key the findings head as live is here and every key here has its heading (`every_live_heading_of_the_findings_is_listed_in_the_tables_record`, `every_key_has_its_heading_in_the_findings`). A line reads:
 
 `key` — **doors** · **red here / on rc.24** (cells; *+n on demand* where cells off the gate carry it) · **class** · **reg.** · **wrong** · **ruling** · **fix pass**
 
@@ -183,7 +183,7 @@ Four keys are retired and are not listed: `r1-setup-makes-a-cache-directory-no-s
 - `r1-workflow-re-entry-takes-a-file-of-the-users-as-the-sub-tasks-commit-doc` — workflow (a sub-task's first re-entry) · 4/4 · not listed · no · code and doc (`design/write-commands.md` → *Sub-agent re-entry*) · entry 25 (2026-10-26) · —
 - `r1-workflow-re-entry-replaces-a-link-of-the-users-where-the-sub-tasks-commit-doc-goes` — workflow · 1/1 · lost · no · code and doc, as above; one fix closes both · entry 25 (2026-10-26), and entry 23 · —
 
-### More than one door — seven keys, none red here and none on rc.24 since the fix of 2026-10-28 (nine and nine until it)
+### More than one door — eleven keys, none red here and none on rc.24 since the fix of 2026-10-28 (nine and nine until it)
 
 *A link on the way*
 - `r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository` — workflow, relocate (2), config set (3), task finalize, migrate-corpus (2) · **fixed 2026-10-28**: 0/9 here (refusing, `store.link-on-the-way`), 9/9 on rc.24 · was outside (1), git moved (5), refusal changed (3) · no · code · entry 25 (2026-10-26), *the check follows no link*, and entry 23; the human's ruling B of 2026-10-28 · —
@@ -199,6 +199,12 @@ Four keys are retired and are not listed: `r1-setup-makes-a-cache-directory-no-s
 
 *What a refusal leaves of an area it minted*
 - `r1-storage-design-does-not-say-a-refusal-leaves-no-work-area-it-minted` — every door that mints an area: start, migrate, task amend, milestone create, add-task, add-from-spec · no cell · — · no · doc (`design/storage.md` → *Source of truth*; `design/team-ready-state.md` says it of the record-only doors alone) · entry 1 (iii) (2026-10-27) · —
+
+*Left by the reviews of the link-on-the-way guard, 2026-10-28 — recorded for the ledger, no fix ([the findings](byte-table-findings.md) §30)*
+- `r1-config-set-writes-through-a-link-at-the-manifests-own-place` — config set (and every raw writer of the workbench that follows a link at a file's own place, unbounded) · no cell · — · no · code: a separate class from the link on the way · — · —
+- `r1-storage-says-jigc-writes-only-inside-the-repository-and-the-hooks-directory-may-lie-outside` — setup, uninstall · no cell · — · no · doc (`design/storage.md` → *No write through a link on the way*) · — · —
+- `r1-workbench-link-check-starts-at-the-first-jigc-component` — every door that writes the workbench · no cell (a lead, not driven) · — · no · code · — · —
+- `r1-a-json-read-with-no-findings-array-withholds-the-link-advisory` — every read form under `--format json` · no cell · — · no · code or contract, declared open · — · —
 
 **No key has a cell of `ingest`, `unmanage`, `rename`, `start`, `migrate`, `task amend`, `milestone provision`, `milestone execute` or `milestone join`**: every cell of theirs holds, or refuses having changed nothing, on this tree.
 

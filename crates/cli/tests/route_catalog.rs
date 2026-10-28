@@ -401,36 +401,17 @@ fn cases() -> Vec<&'static Case> {
 /// §1 and §3); the others are no finding of the canary's and were minted with the cases, in
 /// `completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md`.
 const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
-    (
-        HOOK_END,
-        Classification::SameRefusalAgain,
-        &[
-            "setup-hook-link-out-to-a-directory-pointed-at-a-committed-script",
-            "setup-hook-link-out-to-a-directory-pointed-at-a-new-script",
-            "setup-hook-link-out-to-a-directory-removed",
-            "setup-hook-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hook-link-out-to-a-script-pointed-at-a-new-script",
-            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-new-script",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-committed-script",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-new-script",
-        ],
-    ),
-    (
-        HOOK_END,
-        Classification::WitnessChanged,
-        &[
-            "setup-hook-link-out-to-a-script-removed",
-            "setup-hooks-path-inside-link-out-to-a-script-removed",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-removed",
-        ],
-    ),
+    // `r1-setup-install-hook-route-other-causes-unexamined` and
+    // `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null` hold no case since
+    // 2026-10-28: the hook's link refusal names the link itself, and its route, followed,
+    // holds — removed, or pointed at a committed script — at every place the link leads
+    // (the third re-review of the link-on-the-way guard, its L-3). The way that points it
+    // at a script in no commit is `NEW_SCRIPT`'s, below, as it already was over a link to
+    // nothing.
     (
         HOOK_RELATIVE,
         Classification::SameRefusalAgain,
         &[
-            "setup-hook-relative-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
             "setup-hook-write-hook-a-directory",
             "setup-hook-write-hook-unreadable",
         ],
@@ -441,23 +422,15 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["setup-hook-write-in-a-worktree-of-a-bare-repository"],
     ),
     (
-        HOOK_RELATIVE,
-        Classification::WitnessChanged,
-        &["setup-hook-relative-link-out-to-a-script-removed"],
-    ),
-    (
-        HOOK_DEVICE,
-        Classification::SameRefusalAgain,
-        &[
-            "setup-hook-link-to-dev-null-pointed-at-a-committed-script",
-            "setup-hook-link-to-dev-null-pointed-at-a-new-script",
-            "setup-hook-link-to-dev-null-removed",
-        ],
-    ),
-    (
         NEW_SCRIPT,
         Classification::AnotherFailure,
         &[
+            "setup-hook-link-out-to-a-directory-pointed-at-a-new-script",
+            "setup-hook-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hook-link-to-dev-null-pointed-at-a-new-script",
+            "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-new-script",
             "setup-hook-link-to-nothing-pointed-at-a-new-script",
             "setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script",
             "setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script",
@@ -870,11 +843,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
     ),
 ];
 
-// The canary's keys — the route of the hook's link refusal names where the link leads, and
-// not the link.
-const HOOK_END: &str = "r1-setup-install-hook-route-other-causes-unexamined";
+// The canary's key whose cases at the hook's write are still red. Its cases of the hook's
+// link refusal, and those of `r1-setup-install-hook-route-other-causes-unexamined` and
+// `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null`, hold since 2026-10-28, when
+// the refusal named the link itself rather than where it leads.
 const HOOK_RELATIVE: &str = "r1-p3-setup-install-hook-undriven-producers-and-causes";
-const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null";
 
 /// The canary's key for an install from a worktree of a bare repository: the install home is
 /// the folder that holds the repository, the hook's write is refused there, and the
@@ -899,7 +872,8 @@ const NEW_FILE: &str = "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-in
 /// The hook's link pointed at a script in no commit: the re-run writes and stages the
 /// install, splices its block into the script, and then refuses to commit. The route says
 /// *a script inside this repository*, and is held to any script in the checkout by the
-/// human's ruling of 2026-10-12.
+/// human's ruling of 2026-10-12 — over a link to nothing, and since 2026-10-28 over every
+/// link the refusal names (out of the repository, to a directory, to `/dev/null`).
 const NEW_SCRIPT: &str =
     "r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path";
 /// On an unborn `HEAD`, the root `.gitignore`'s route followed by its second way out: the
