@@ -1,7 +1,7 @@
 //! The route catalog's cases for `jigc uninstall` — the family's table, declared by
 //! `crates/cli/tests/route_catalog.rs`, which says what a case is held to.
 //!
-//! **What stands here** is every blocking site of `jigc uninstall`, eighteen. The
+//! **What stands here** is every blocking site of `jigc uninstall`, twenty. The
 //! refusals a teardown meets before it removes anything: no repository to tear down in, or
 //! no `$HOME` (`locate_finding`, two sites); the adapter profile not loaded (reached
 //! through `JIGC_ADAPTERS_DIR` and no other way); and the four guards over what `.jigc/`
@@ -10,7 +10,10 @@
 //! working area or the parking home, an open task's staged doc, and any other file under
 //! `.jigc/` that no index has a copy of. Then the seven steps that remove, each a site:
 //! `.jigc/` itself, the reference in `CLAUDE.md`, the three kinds of entry in the settings
-//! file, the `pre-commit` hook, the guide. Each of the eighteen has a row of [`READINGS`].
+//! file, the `pre-commit` hook, the guide. And, before all of those, the two files the
+//! teardown edits in place — `CLAUDE.md` and the settings file — each a link it will not
+//! follow (`edited_through_links`, since 2026-10-28). Each of the twenty has a row of
+//! [`READINGS`].
 //!
 //! **A step that removes has one route for every error of its callee** — *ensure … is
 //! writable* over one entry it names — so its causes are the callee's errors, and a case
@@ -1071,12 +1074,14 @@ macro_rules! step_refused {
 }
 
 /// **The bit, and not the link** — which of the two the refusal is over in the two cases
-/// whose state is a link to a file outside the repository that may not be written.
+/// whose state is a link to a file that may not be written: the hook's, to a script
+/// outside the repository, and the reference host's, to a file inside it.
 const THE_BIT_NOT_THE_LINK: Option<(Over, &str)> = Some((
     Over::TheBound,
-    "with the file outside the owner's to write, the teardown writes through the link at \
-     exit 0 and refuses nothing — driven by hand at both paths (the findings file, *Seen, \
-     and no case*)",
+    "with the file the link leads to the owner's to write, the teardown writes through the \
+     link at exit 0 and refuses nothing — driven by hand at both paths (the findings file, \
+     *Seen, and no case*; the host's again on 2026-10-28, with its link moved inside the \
+     repository)",
 ));
 
 /// Run a shell line at the repository's root — a `git` alias, where a state has no step
@@ -1158,23 +1163,88 @@ const HOST_A_FIFO: [Case; 1] = step_refused!(
     "a special file stands at `CLAUDE.md`",
     plant: [sh!("rm CLAUDE.md"), Step::Fifo(Place::Repo(CLAUDE_MD))],
 );
-/// The reference's host is a link to a file of somebody's outside the repository — a copy
-/// of the host as the install left it — that may not be written. The file is a witness.
-const HOST_A_LINK_OUT: [Case; 1] = [Case {
-    name: "uninstall-reference-host-a-link-to-a-read-only-file-outside",
+/// The reference's host is a link to a file inside the repository — a copy of the host as
+/// the install left it — that may not be written. **Inside, since 2026-10-28**: a link that
+/// leads out of the repository is refused before the teardown removes anything
+/// ([`EDITED_THROUGH_HOST`]), as `jigc setup` refuses it, so only a link the teardown
+/// follows reaches this step.
+const HOST_A_LINK_IN: [Case; 1] = [Case {
+    name: "uninstall-reference-host-a-link-to-a-read-only-file-inside",
     site: UNWIRE,
-    cause: "`CLAUDE.md` is a link to a file outside the repository that holds the \
-            reference and may not be written",
+    cause: "`CLAUDE.md` is a link to a file inside the repository that holds the reference \
+            and may not be written",
     state: installed![sh!(
-        "cp CLAUDE.md ../outside/CLAUDE.md && rm CLAUDE.md && ln -s \
-         \"$PWD/../outside/CLAUDE.md\" CLAUDE.md && chmod 444 ../outside/CLAUDE.md"
+        "cp CLAUDE.md instructions.md && rm CLAUDE.md && ln -s instructions.md CLAUDE.md \
+         && chmod 444 instructions.md"
     )],
     acts: &[Act::MakeWritable(Operand::Span(0)), Act::Run(1)],
     holds: torn_down![],
-    witnesses: &["theirs", "CLAUDE.md"],
     over: THE_BIT_NOT_THE_LINK,
     ..UNINSTALL
 }];
+// ---------------------------------------------------------------------------
+// `edited_through_links` · the two files the teardown edits, a link at either that it
+// does not follow
+// ---------------------------------------------------------------------------
+
+const EDITED_THROUGH_HOST: &str =
+    "crates/cli/src/setup.rs::edited_through_links::uninstall.unwire-reference#dynamic-1";
+const EDITED_THROUGH_SETTINGS: &str =
+    "crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1";
+
+/// **A file the teardown edits in place is a link out of the repository, followed the one
+/// way the case can take**: the file itself put in the link's place — a copy of what it led
+/// to — and the command again. The link was planted after the install and is in no commit,
+/// so the clause on committing does not apply; the route's other way, *point it at a
+/// regular file inside this repository*, is a row of the site's reading. The file outside,
+/// a copy of the member as the install left it, is a witness: the teardown must not edit
+/// it.
+macro_rules! edited_through_a_link_out {
+    ($name:literal, $site:expr, $cause:literal, $path:literal, $outside:literal $(,)?) => {
+        [Case {
+            name: $name,
+            site: $site,
+            cause: $cause,
+            state: installed![Step::Git(&[
+                "-c",
+                concat!(
+                    "alias.plant=!cp ",
+                    $path,
+                    " ../outside/",
+                    $outside,
+                    " && rm ",
+                    $path,
+                    " && ln -s \"$PWD/../outside/",
+                    $outside,
+                    "\" ",
+                    $path
+                ),
+                "plant",
+            ])],
+            acts: &[Act::PutTheFileItself(Operand::Span(0)), Act::Run(1)],
+            holds: torn_down![],
+            witnesses: &["theirs", $outside],
+            ..UNINSTALL
+        }]
+    };
+}
+const HOST_A_LINK_OUT: [Case; 1] = edited_through_a_link_out!(
+    "uninstall-reference-host-a-link-out-the-file-itself-put-there-and-re-run",
+    EDITED_THROUGH_HOST,
+    "`CLAUDE.md` is a link to a file outside the repository, which the teardown would \
+     edit in place",
+    "CLAUDE.md",
+    "CLAUDE.md",
+);
+const SETTINGS_A_LINK_OUT: [Case; 1] = edited_through_a_link_out!(
+    "uninstall-settings-a-link-out-the-file-itself-put-there-and-re-run",
+    EDITED_THROUGH_SETTINGS,
+    "the settings file is a link to a file outside the repository, which the teardown \
+     would edit in place",
+    ".claude/settings.json",
+    "settings.json",
+);
+
 // --- `uninstall.remove-allowlist`
 
 const SETTINGS_READ_ONLY: [Case; 1] = step_refused!(
@@ -1440,7 +1510,9 @@ pub const CASES: &[&[Case]] = &[
     &HOST_NOT_TEXT,
     &HOST_UNREADABLE,
     &HOST_A_FIFO,
+    &HOST_A_LINK_IN,
     &HOST_A_LINK_OUT,
+    &SETTINGS_A_LINK_OUT,
     &SETTINGS_READ_ONLY,
     &SETTINGS_A_DIRECTORY,
     &SETTINGS_NOT_TEXT,
@@ -1501,6 +1573,15 @@ const THE_STEP_BEFORE_READS: Why = Why::NotConstructible(
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
 /// derivation; the causes that have no case, each with why; and the ways out of its route
 /// that are not followed, each with why.
+/// Why a link the teardown will not follow is followed at one end only.
+const ONE_ROUTE_EVERY_END: Why = Why::NotConstructible(
+    "one route for every end, and one constructor: the end is a clause of the message \
+     (`link_end`, the same function `jigc setup` asks, whose ends its own cases follow). The \
+     way out — the file itself put in the link's place — is the same act over each, and the \
+     case over a link out of the repository follows it; over a link to nothing it has no \
+     bytes to copy",
+);
+
 pub const READINGS: &[Reading] = &[
     Reading {
         site: NOT_IN_A_REPOSITORY,
@@ -1887,10 +1968,70 @@ pub const READINGS: &[Reading] = &[
                      here — the step finds no permit and writes nothing",
         without_case: &[BYTES_CANNOT_BE_WRITTEN],
         not_followed: &[(
-            "the write refused through a link to a file outside the repository",
+            "the write refused through a link to a file that may not be written",
             Why::NotConstructible(
                 "one arm — the write fails — followed at the file that may not be written; \
-                 a link out is followed at the reference's host, the step before",
+                 a link is followed at the reference's host, the step before. A link out of \
+                 the repository reaches neither: it is refused before the teardown starts, \
+                 under this code at `edited_through_links`",
+            ),
+        )],
+    },
+    Reading {
+        site: EDITED_THROUGH_HOST,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 0″, before the guards and before anything is removed",
+            "crates/cli/src/setup.rs::edited_through_links and link_end — which ends of a link the teardown follows: the ones `jigc setup` follows",
+            "crates/cli/src/regular_file.rs::blocker — a link at the file's own path, asked without following",
+        ],
+        causes: 4,
+        derivation: "a link at `CLAUDE.md` that `link_end` refuses: one that leads out of \
+                     the repository, to nothing, to an entry inside it that is no regular \
+                     file, or into git's own directory. A link on the way to it is the \
+                     link-on-the-way guard's, asked just before",
+        without_case: &[
+            ("a link to nothing", ONE_ROUTE_EVERY_END),
+            (
+                "a link to an entry inside the repository that is no regular file",
+                ONE_ROUTE_EVERY_END,
+            ),
+            ("a link into git's own directory", ONE_ROUTE_EVERY_END),
+        ],
+        not_followed: &[(
+            "*or point it at a regular file inside this repository*",
+            Why::NotConstructible(
+                "the teardown then edits the file the link leads to, which holds no \
+                 reference of jigc's unless it is a copy of the host: the case would \
+                 plant the answer it is held to",
+            ),
+        )],
+    },
+    Reading {
+        site: EDITED_THROUGH_SETTINGS,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 0″, before the guards and before anything is removed",
+            "crates/cli/src/setup.rs::edited_through_links and link_end",
+            "crates/cli/src/regular_file.rs::blocker",
+        ],
+        causes: 4,
+        derivation: "as at the reference's host: a link at the settings file that leads \
+                     out of the repository, to nothing, to an entry that is no regular \
+                     file, or into git's own directory. Where both files are such links the \
+                     refusal carries the host's code, the step that edits first",
+        without_case: &[
+            ("a link to nothing", ONE_ROUTE_EVERY_END),
+            (
+                "a link to an entry inside the repository that is no regular file",
+                ONE_ROUTE_EVERY_END,
+            ),
+            ("a link into git's own directory", ONE_ROUTE_EVERY_END),
+        ],
+        not_followed: &[(
+            "*or point it at a regular file inside this repository*",
+            Why::NotConstructible(
+                "the teardown then edits the file the link leads to, which holds none of \
+                 jigc's entries unless it is a copy of the settings file: the case would \
+                 plant the answer it is held to",
             ),
         )],
     },

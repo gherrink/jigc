@@ -753,11 +753,19 @@ fn refuse_on_link_on_the_way(command: &Command, format: Format) -> Option<Outcom
             &crate::link_way::refusal(&links),
         ));
     }
-    // A read form runs, and says so. Orientation is what a session reads on its stdout,
-    // so it carries the report there ahead of its own text; every other read form on
-    // stderr, where it leaves a pinned output contract untouched.
-    let line = render::finding_line(&crate::link_way::advisory(&links), false);
-    if command.is_orientation() && format != Format::Json {
+    // A read form runs, and says so. Under `--format json` each stream is one document,
+    // so the report is held for the document that has a `findings` array to carry it
+    // (`link_way::hold_for_the_document`) and never printed as a line beside it.
+    // Otherwise orientation, which a session reads on its stdout, carries it there ahead
+    // of its own text, and every other read form on stderr, where it leaves a pinned
+    // output contract untouched.
+    let advisory = crate::link_way::advisory(&links);
+    if format == Format::Json {
+        crate::link_way::hold_for_the_document(advisory);
+        return None;
+    }
+    let line = render::finding_line(&advisory, false);
+    if command.is_orientation() {
         println!("{line}");
     } else {
         eprintln!("{line}");
@@ -813,8 +821,9 @@ impl Command {
 
     /// **Whether this parsed command only reads** — a `VERB_KINDS` `Read` leaf, or the read
     /// forms of a writing leaf: `start` with no intent and no task (orientation, `--explain`,
-    /// or a composing workflow, which mints nothing), `start --explain`, and `workflow
-    /// --preview`.
+    /// or a composing workflow, which mints nothing), `start --explain`, `workflow
+    /// --preview`, and the two dry runs — `migrate-corpus --dry-run` and `task finalize
+    /// --dry-run`, which print what the act would do and change nothing.
     pub fn reads_only(&self) -> bool {
         verb_kind(self.leaf()) == Some(VerbKind::Read)
             || matches!(
@@ -825,6 +834,10 @@ impl Command {
                     ..
                 } | Command::Start { explain: true, .. }
                     | Command::Workflow { preview: true, .. }
+                    | Command::MigrateCorpus { dry_run: true, .. }
+                    | Command::Task {
+                        verb: TaskCommand::Finalize { dry_run: true, .. }
+                    }
             )
     }
 

@@ -691,7 +691,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "uninstall-hook-read-only",
             "uninstall-hook-unreadable",
             "uninstall-reference-host-a-directory",
-            "uninstall-reference-host-a-link-to-a-read-only-file-outside",
+            "uninstall-reference-host-a-link-to-a-read-only-file-inside",
             "uninstall-reference-host-not-utf-8",
             "uninstall-reference-host-unreadable",
             "uninstall-settings-a-directory",
@@ -857,10 +857,14 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "repoint-failed-a-stale-key-and-a-file-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
             "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
-            // Since 2026-10-28 the unmanage arm too: with the stale key gone, the link at the
-            // new home is the user's entry, which no mover moves aside any more (the review's
-            // S1), so the re-point is refused again — over the link, which the route never
-            // named because it took the link for a managed doc.
+            // Since 2026-10-28 the unmanage arm too — by the outer code only. With the stale
+            // key gone, the link at the new home is the user's entry, which no mover moves
+            // aside any more (the review's S1), so the re-point is refused under
+            // `config.repoint-failed` again, wrapping **another** refusal:
+            // `store.home-not-regular-file` over the link, whose own route is right and is
+            // followed at its own case (`config.rs`, a link at the doc's new home). The
+            // defect this key names is the first refusal's — it called the link a managed
+            // doc — not the second's.
             "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-home-unmanaged",
         ],
     ),
@@ -1656,8 +1660,8 @@ const fn claim(code: &'static str, minted_at: &'static str) -> Claim {
 /// row claims it. The arm asks for one row a code; the second site of `locate_finding` was
 /// found by reading it.
 ///
-/// **The other ten are kept by reading, and no arm demands them.** Their codes are listed
-/// sites' codes as well, so the vocabulary arm has nothing to ask; what the two functions
+/// **The others are kept by reading, and no arm demands them.** Their codes are listed
+/// sites' codes as well, so the vocabulary arm has nothing to ask; what those functions
 /// add is a second refusal under each code, with a route of its own. A row here that
 /// outlives its site or its code is named
 /// ([`a_row_for_a_site_that_is_gone_is_named`]); a code one of these functions starts to
@@ -1701,6 +1705,10 @@ const CLAIMS: &[Claim] = &[
     claim("setup.inject-allowlist", MERGED_THROUGH),
     claim("setup.secrets-gitignore", MERGED_THROUGH),
     claim("setup.init-project-layer", MERGED_THROUGH),
+    // By reading — `edited_through_links`: the codes of the two teardown steps that edit a
+    // file in place, raised where that file is a link the teardown will not follow.
+    claim("uninstall.unwire-reference", EDITED_THROUGH),
+    claim("uninstall.remove-allowlist", EDITED_THROUGH),
     // By reading, and in part ([`IN_PART`]) — the codes of three dynamic sites whose path
     // the fix pass changed, each read where the door hands it to its `refuse`:
     // `RefusalKind::NoSuchDoc` and `OccupiedDestination` at `jigc rename`, whose two
@@ -1714,9 +1722,11 @@ const CLAIMS: &[Claim] = &[
     claim("migrate-corpus.destination-collision", CORPUS_BLOCKED),
 ];
 
-/// The two dynamic sites of `setup.rs` whose codes are listed sites' codes as well.
+/// The dynamic sites of `setup.rs` whose codes are listed sites' codes as well.
 const REPLACED_PATH: &str = "crates/cli/src/setup.rs::replaced_path_refusal::dynamic#1";
 const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dynamic#1";
+/// The teardown's sibling of [`MERGED_THROUGH`], whose codes are listed sites' codes too.
+const EDITED_THROUGH: &str = "crates/cli/src/setup.rs::edited_through_links::dynamic#1";
 
 /// **The code-shaped literals of a catalogued prefix that are no finding's code**, each
 /// with why — a file name, say.

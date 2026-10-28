@@ -3116,6 +3116,56 @@ fn merged_through_links(
     ))
 }
 
+/// **The teardown's sibling of [`merged_through_links`]** — each `(path, code)` is a file
+/// `jigc uninstall` edits in place; a link at one is followed only where `jigc setup`
+/// follows one ([`link_end`]: to a regular file inside this checkout, ignored or not), and
+/// every other end refuses before anything is removed, under the code of the step that
+/// edits that file (the first such step's, where several refuse). A link on the way to
+/// one is the link-on-the-way guard's, asked just before.
+fn edited_through_links(jigc_home: &Path, members: &[(&str, &'static str)]) -> Result<(), Finding> {
+    let mut code = None;
+    let mut states: Vec<String> = Vec::new();
+    let mut acts: Vec<String> = Vec::new();
+    for &(path, member_code) in members {
+        let Some(blocker) = crate::regular_file::blocker(jigc_home, path) else {
+            continue;
+        };
+        if blocker.shape != crate::regular_file::ForeignEntry::Symlink || !blocker.at_leaf() {
+            continue;
+        }
+        if let LinkEnd::Refused(why) = link_end(jigc_home, path) {
+            code.get_or_insert(member_code);
+            states.push(format!("{} and {why}", blocker.describe()));
+            acts.push(format!(
+                "replace the link at `{path}` with the file it points at — a copy, in the \
+                 link's place — or point it at a regular file inside this repository"
+            ));
+        }
+    }
+    let Some(code) = code else {
+        return Ok(());
+    };
+    Err(Finding::block(
+        code,
+        format!(
+            "{} — `jigc uninstall` edits the file at {}, and it follows a link there only to \
+             a regular file inside this repository, as `jigc setup` does. Nothing was removed",
+            states.join("; "),
+            if states.len() == 1 {
+                "that path"
+            } else {
+                "each of those paths"
+            },
+        ),
+        format!(
+            "{} — committing the change where git tracks the link — then re-run `jigc \
+             uninstall`. `--force` does not change this: it consents to deleting bytes, not \
+             to following a link",
+            acts.join("; "),
+        ),
+    ))
+}
+
 /// **The refusal a `pre-commit` hook that is a link draws when it leads out of both the
 /// repository and its own hooks directory** — the fifth merged-into member, asked where
 /// the other four are ([`merged_through_links`]).
@@ -4920,6 +4970,24 @@ fn uninstall(
     if !links.is_empty() {
         return Err(crate::link_way::finding(&links));
     }
+    // 0″. **No file the teardown edits is reached through a link it would not follow at
+    //     install** (the review of 2026-10-28, NS4). The settings file and the bootstrap
+    //     line's file are edited in place, through whatever is at their paths, so a link
+    //     there is followed exactly as far as `jigc setup` follows one ([`link_end`]) and
+    //     no further: to a regular file inside this checkout. `--force` is not consulted.
+    edited_through_links(
+        jigc_home,
+        &[
+            (
+                profile.reference().map_or("CLAUDE.md", |r| r.file.as_str()),
+                "uninstall.unwire-reference",
+            ),
+            (
+                profile.allowlist.file.as_str(),
+                "uninstall.remove-allowlist",
+            ),
+        ],
+    )?;
 
     // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
     //    on a tree that holds the sole copy of four kinds of work.

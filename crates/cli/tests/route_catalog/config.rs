@@ -523,6 +523,30 @@ const THE_LOGS_HOME_A_LINK: [Case; 1] = the_home_a_link!(
     holds: THE_LOG_AT_ITS_NEW_HOME,
 );
 
+/// **A link somebody made stands at the doc's new home** — to a directory outside the
+/// repository, and no key for it in the record. Until 2026-10-28 the sweep parked it in the
+/// workbench as the entry it is, and every door after refused over the link jigc had put
+/// there; it is now refused where it stands, under the store's one code for a home that is
+/// no regular file, and the route the frame lifts is that refusal's: *move the link at
+/// `<home>` out of the doc's home — it is yours, and jigc moves no link — …, then re-run
+/// this command* (the review's S1; the re-review's NS5).
+const A_LINK_AT_THE_DOCS_NEW_HOME: [Case; 1] = [Case {
+    name: "repoint-failed-a-link-at-the-docs-new-home-moved-out-and-re-run",
+    site: REPOINT_FAILED,
+    cause: "`placement-root`: a symbolic link to a directory outside the repository stands \
+            at the doc's new home, with no key for it in the record — jigc moves no link, \
+            so the relocation refuses over it",
+    state: a_committed_log![
+        Step::Dir(Place::Outside("elsewhere")),
+        Step::Dir(Place::Repo("handbook")),
+        Step::Link(Place::Repo(THE_LOG_MOVED), Place::Outside("elsewhere")),
+    ],
+    refusing: PLACEMENT_ROOT,
+    acts: &[Act::MoveLinkOut(Operand::Span(0)), Act::Rerun],
+    holds: THE_LOG_AT_ITS_NEW_HOME,
+    ..C
+}];
+
 /// **The record of what jigc manages holds a key at the new home, and something stands
 /// there.** Made by a re-point that went through, then undone by hand: the doc moved back
 /// with `git mv`, the knob's manifest removed, both committed — the record still holds the
@@ -655,6 +679,7 @@ pub const CASES: &[&[Case]] = &[
     &THE_LOGS_HOME_A_LINK,
     &A_FILE_AT_A_HOME_THE_RECORD_HOLDS,
     &A_LINK_AT_A_HOME_THE_RECORD_HOLDS,
+    &A_LINK_AT_THE_DOCS_NEW_HOME,
 ];
 
 /// The sites of the family that have no case, each with why.
@@ -748,7 +773,7 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/config.rs::route_placement_root_repoint_strands, crates/cli/src/relocate.rs::relocate_stranded, relocate_one, displace_foreign_squatter, move_doc — the `placement-root` floor: the source's shape, the file in the way moved into the workbench, the read, the move",
             "crates/cli/src/config.rs::write_scalar — the knob's write: the manifest read, parsed, written",
         ],
-        causes: 14,
+        causes: 15,
         derivation: "the `docs-root` floor, a failure a doc: the destination cannot be \
                      captured — a file where a directory of the new home must be; the move \
                      fails — a file at the destination, git's index locked, the doc's own \
@@ -757,7 +782,8 @@ pub const READINGS: &[Reading] = &[
                      read — gone from the working tree, with no file in the way and with \
                      one that was parked first; the doc's own home no regular file; the \
                      new home one the record holds a key for, with a file or with a link \
-                     to nothing standing at it — 6. The knob's write: the manifest a \
+                     to nothing standing at it; the new home a link somebody made, with no \
+                     key for it, which jigc moves no more (2026-10-28) — 7. The knob's write: the manifest a \
                      directory, no YAML, not writable — 3. And any of them where the undo \
                      could not put a path back — 1",
         without_case: &[

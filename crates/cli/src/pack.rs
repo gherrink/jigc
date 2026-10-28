@@ -2128,6 +2128,26 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     Ok(pack)
 }
 
+/// **The pack-set as [`make_pack`] assembles it, without its gates** — for one caller only:
+/// the link-on-the-way guard ([`crate::link_way::store_links`]), which reads the doctypes'
+/// homes ahead of a door that makes its own [`make_pack`] call, where the freeze gate, the
+/// ref-target fence and the workflow sweeps fire and are answered under their own codes.
+/// Asked here they would cost every command the whole assertion suite a second time
+/// (measured 2026-10-28: about 13 ms of a debug build's run), and an error they raise is
+/// the door's to report, never the guard's — the guard stands down on any error here.
+///
+/// `compose_methodology` composes the methodology pack whether or not the project layer
+/// carries the marker yet: `jigc setup` writes that marker, so the homes it is about to
+/// install over are both packs' — asked before the marker exists, the guard would read
+/// only the dev pack's and miss a link on the way to a methodology home.
+pub(crate) fn make_pack_ungated(compose_methodology: bool) -> anyhow::Result<Box<dyn PackSource>> {
+    let project_config = discover_project_config();
+    let listed = discover_pack_list(project_config.as_deref())?;
+    let compose_methodology =
+        compose_methodology || discover_compose_marker(project_config.as_deref())?;
+    make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)
+}
+
 /// CWD-discover the project's `.jigc/config/` layer: resolve **jigc_home** from the
 /// process CWD and return `<jigc_home>/.jigc/config` when it is a directory. No repo /
 /// no `.jigc/config/` is `None` — the cold-start floor, never an error. The **single**
@@ -2146,20 +2166,6 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
 /// finalized from the root and refused `finalize.base-mismatch` from a worktree over the
 /// same history: with no methodology pack composed there is no `milestone-record` schema,
 /// so the record-only-advance carve-out could not classify its own bookkeeping commits.
-/// **The pack-set as [`make_pack`] assembles it, without its gates** — for one caller only:
-/// the link-on-the-way guard ([`crate::link_way::store_links`]), which reads the doctypes'
-/// homes ahead of a door that makes its own [`make_pack`] call, where the freeze gate, the
-/// ref-target fence and the workflow sweeps fire and are answered under their own codes.
-/// Asked here they would cost every command the whole assertion suite a second time
-/// (measured 2026-10-28: about 13 ms of a debug build's run), and an error they raise is
-/// the door's to report, never the guard's — the guard stands down on any error here.
-pub(crate) fn make_pack_ungated() -> anyhow::Result<Box<dyn PackSource>> {
-    let project_config = discover_project_config();
-    let listed = discover_pack_list(project_config.as_deref())?;
-    let compose_methodology = discover_compose_marker(project_config.as_deref())?;
-    make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)
-}
-
 fn discover_project_config() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let project_config = crate::repo::jigc_home(&cwd)?.join(".jigc").join("config");

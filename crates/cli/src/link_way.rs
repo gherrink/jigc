@@ -65,14 +65,15 @@ pub const LINK_ON_THE_WAY: &str = "store.link-on-the-way";
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WayOut {
     /// The link leads to a real directory **inside** the repository, at this repo-relative
-    /// path: move that directory into the link's place. A copy would leave two.
+    /// path, reached through no other link: move that directory into the link's place. A
+    /// copy would leave two.
     MoveIn(String),
-    /// The link leads to a directory outside the repository (or to one inside it only
-    /// through another link): put a copy of what it leads to in the link's place, as a
-    /// real directory. What stands outside is the user's and stays.
+    /// The link leads to a directory outside the repository, to one inside it only through
+    /// another link, or to one inside git's own directory: put a copy of what it leads to
+    /// in the link's place, as a real directory. What stands there is the user's and stays.
     CopyIn,
-    /// The link leads to no directory — to nothing, or to a file: remove it; jigc makes the
-    /// directory itself where it needs one.
+    /// The link leads to no directory — to nothing, or to a file — or to a directory it
+    /// stands in: remove it; jigc makes the directory itself where it needs one.
     Remove,
 }
 
@@ -150,13 +151,26 @@ fn way_out(root: &Path, at: &str) -> WayOut {
             .next()
             .is_some_and(|first| first.as_os_str() != ".git")
     });
+    let inside = inside.filter(|rel| !rel.as_os_str().is_empty()).map(|rel| {
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/")
+    });
     match inside {
-        Some(rel) if real_directory && !rel.as_os_str().is_empty() => WayOut::MoveIn(
-            rel.components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/"),
-        ),
+        // A link to a directory it stands in — an ancestor of its own place — leads to
+        // nothing a move or a copy could put there: the directory would go into itself.
+        Some(rel) if at == rel || at.starts_with(&format!("{rel}/")) => WayOut::Remove,
+        // Moved in only where the target is reached through **no** link: walked from the
+        // root without following one, every component of its spelling — itself included —
+        // a real directory (the re-review's NS2). A target behind a second link is the
+        // user's directory wherever that link leads, and is copied in, never moved.
+        Some(rel)
+            if real_directory
+                && crate::regular_file::link_on_the_way(root, &format!("{rel}/-")).is_none() =>
+        {
+            WayOut::MoveIn(rel)
+        }
         _ if target.is_dir() => WayOut::CopyIn,
         _ => WayOut::Remove,
     }
@@ -179,17 +193,37 @@ fn states(links: &[&Link]) -> String {
         .join("; ")
 }
 
-/// The route: a clause a link, then the commit and the re-run.
+/// Whether a link stands in the part of the workbench `.jigc/.gitignore` keeps out of
+/// every commit ([`crate::gitignore::ENTRIES`]) — where no commit holds it, so the route
+/// asks none.
+fn in_no_commit(at: &str) -> bool {
+    at.strip_prefix(".jigc/")
+        .and_then(|below| below.split('/').next())
+        .is_some_and(|first| {
+            crate::gitignore::ENTRIES
+                .lines()
+                .any(|entry| entry.trim_end_matches('/') == first)
+        })
+}
+
+/// The route: a clause a link, then the commit where git may track one, and the re-run.
+/// A link in the gitignored part of the workbench is in no commit, so where every link is,
+/// the route asks for none (the re-review's N-e).
 fn route(links: &[&Link]) -> Route {
     let noun = if links.len() == 1 { "link" } else { "links" };
-    Route::human(format!(
-        "{} — committing the change where git tracks the {noun} — then re-run this command",
-        links
-            .iter()
-            .map(|link| link.clause())
-            .collect::<Vec<_>>()
-            .join("; "),
-    ))
+    let clauses = links
+        .iter()
+        .map(|link| link.clause())
+        .collect::<Vec<_>>()
+        .join("; ");
+    Route::human(if links.iter().all(|link| in_no_commit(&link.at)) {
+        format!("{clauses}, then re-run this command")
+    } else {
+        format!(
+            "{clauses} — committing the change where git tracks the {noun} — then re-run \
+             this command"
+        )
+    })
 }
 
 /// **The reason**, true of a link inside the repository as of one outside it.
@@ -214,6 +248,27 @@ pub fn finding(links: &[Link]) -> Finding {
         ),
         route(&links),
     )
+}
+
+/// **The advisory a read form owes under `--format json`, held for its one document.**
+/// A JSON driver reads exactly one document per stream, so the report never prints as a
+/// loose line there: the guard holds it ([`hold_for_the_document`]) and the document that
+/// has a `findings` array carries it — orientation's active-task rows, beside a posture
+/// breach, and a rejecting read form's findings envelope. A document with no such array (a
+/// read's own content, a single-key `{"error": …}`) withholds it; the next command that
+/// writes refuses over the same links under [`LINK_ON_THE_WAY`], so nothing is lost.
+static HELD_FOR_THE_DOCUMENT: std::sync::OnceLock<Finding> = std::sync::OnceLock::new();
+
+/// Hold a read form's advisory for its JSON document ([`HELD_FOR_THE_DOCUMENT`]) — once
+/// per process, by the guard, before dispatch.
+pub fn hold_for_the_document(advisory: Finding) {
+    let _ = HELD_FOR_THE_DOCUMENT.set(advisory);
+}
+
+/// The advisory held for this invocation's JSON document, if the guard held one.
+#[must_use]
+pub fn held_for_the_document() -> Option<&'static Finding> {
+    HELD_FOR_THE_DOCUMENT.get()
 }
 
 /// **The report a read form makes** — the same state, code and route as [`finding`], at
@@ -410,8 +465,8 @@ pub enum Homes {
     /// The homes the project layer resolves; none where it cannot be read — the door then
     /// answers that state itself, under its own code.
     Current,
-    /// The same, and the pack's defaults where no project layer stands yet — `jigc setup`,
-    /// which is about to lay one out over those homes.
+    /// The same, and the packs' defaults where no project layer stands yet — `jigc setup`,
+    /// which is about to lay one out over those homes, the methodology pack's included.
     CurrentOrDefault,
     /// None: the door asks the homes its own act reaches (`jigc config set`).
     None,
@@ -424,8 +479,10 @@ fn schemas_at(jigc_home: &Path, homes: Homes) -> Option<Vec<Schema>> {
     if homes == Homes::None || (!laid_out && homes == Homes::Current) {
         return None;
     }
-    // The ungated assembly: the door that runs next asserts the pack-set itself.
-    let pack = crate::pack::make_pack_ungated().ok()?;
+    // The ungated assembly: the door that runs next asserts the pack-set itself. `setup`
+    // composes the methodology pack whether or not a marker is on disk yet — it is the
+    // door that writes that marker, so every home of both packs is one it installs over.
+    let pack = crate::pack::make_pack_ungated(homes == Homes::CurrentOrDefault).ok()?;
     crate::start::resolved_schemas(pack.as_ref(), &project_config)
         .ok()
         .map(|schemas| schemas.into_values().collect())
@@ -604,6 +661,12 @@ mod tests {
             "{route}"
         );
         assert!(route.contains("where git tracks the links"), "{route}");
+        let ignored = finding(&[link(".jigc/index", WayOut::Remove)]);
+        let route = ignored.route.as_ref().expect("routed").to_string();
+        assert!(
+            !route.contains("committing") && route.ends_with("then re-run this command"),
+            "a link in the gitignored workbench asks no commit: {route}"
+        );
         let report = advisory(&[link("a", WayOut::CopyIn)]);
         assert_eq!(
             (report.code.as_str(), report.severity),

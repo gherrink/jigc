@@ -85,6 +85,7 @@ unassigned	crates/cli/src/rollback.rs	rollback_conflict_finding	dynamic	1	graded
 validate	crates/cli/src/setup.rs	binary_mismatch_finding	store-version.binary-mismatch	1	graded	advisory	literal	variable	-
 setup	crates/cli/src/setup.rs	commit_install	setup.install-commit	1	block	blocking	literal	prose	resolve the repository state named above, then re-run `jigc setup`
 uninstall	crates/cli/src/setup.rs	dirty_worktree_finding	uninstall.dirty-worktree	1	block	blocking	literal	variable	-
+unassigned	crates/cli/src/setup.rs	edited_through_links	dynamic	1	block	blocking	code	prose	{} — committing the change where git tracks the link — then re-run `jigc uninstall`. `--force` does not change this: it consents to deleting bytes, not to following a link ; 
 setup	crates/cli/src/setup.rs	finding	setup.install-commit	1	block	blocking	literal	variable	-
 setup	crates/cli/src/setup.rs	forced_install_path_finding	setup.forced-install-path	1	graded	advisory	literal	prose	check each path — `{show}` where the install commit carries it; where jigc regenerated the path, git never held a copy of what was there, so recovery is your own backup or nothing show HEAD -- <path>
 uninstall	crates/cli/src/setup.rs	foreign_bytes_finding	uninstall.foreign-bytes	1	block	blocking	literal	prose	move what you need out of the paths above, or delete the ones you do not (`rm -r` takes them — jigc has no verb that clears `.jigc/displaced/`), then re-run `jigc uninstall`; or, once you have confirmed they hold nothing you need, `jigc uninstall --force` deletes them with the install

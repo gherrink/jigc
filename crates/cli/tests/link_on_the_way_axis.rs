@@ -203,7 +203,10 @@ fn the_guard_reports_at_exactly_the_read_forms() {
         }
         if guard == LinkGuard::Reports && kind != VerbKind::Read {
             assert!(
-                matches!(*leaf, ["start"] | ["workflow"]),
+                matches!(
+                    *leaf,
+                    ["start"] | ["workflow"] | ["migrate-corpus"] | ["task", "finalize"]
+                ),
                 "`jigc {}` reports, and is no read leaf nor a read form of one",
                 argv.join(" ")
             );
@@ -216,6 +219,12 @@ fn the_guard_reports_at_exactly_the_read_forms() {
         (&["start", "--task", "a-task"], false),
         (&["workflow", "single-task", "--preview"], true),
         (&["workflow", "single-task", "--task", "a-task"], false),
+        // The dry runs read only (the re-review's N-a): `migrate-corpus --dry-run` writes
+        // nothing at all, `task finalize --dry-run` commits nothing.
+        (&["migrate-corpus", "--dry-run"], true),
+        (&["migrate-corpus"], false),
+        (&["task", "finalize", "a-task", "--dry-run"], true),
+        (&["task", "finalize", "a-task"], false),
     ] {
         assert_eq!(
             guard_of(argv) == LinkGuard::Reports,
@@ -583,4 +592,156 @@ fn every_link_is_named_in_one_refusal() {
     let out = corpus.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
     refused_naming(&out, ".jigc/index", "two links");
     refused_naming(&out, "docs/decisions", "two links");
+}
+
+// ── The re-review of 2026-10-28: each finding, red first ────────────────────────────
+
+/// The read forms the re-review drove: every argv the guard reports at, from the minimal
+/// table, and the read forms of writing leaves, a task `fix-a-typo` minted beforehand.
+fn read_forms() -> Vec<Vec<&'static str>> {
+    let mut forms: Vec<Vec<&'static str>> = MINIMAL_ARGV
+        .iter()
+        .map(|(leaf, tail)| leaf.iter().chain(tail.iter()).copied().collect::<Vec<_>>())
+        .filter(|argv| guard_of(argv) == LinkGuard::Reports)
+        .map(|argv| {
+            argv.into_iter()
+                .map(|word| if word == "a-task" { "fix-a-typo" } else { word })
+                .collect()
+        })
+        .collect();
+    for extra in [
+        &["start", "--explain"][..],
+        &["start", "--workflow", "router"],
+        &["workflow", "single-task", "--preview"],
+        &["migrate-corpus", "--dry-run"],
+        &["task", "finalize", "fix-a-typo", "--dry-run"],
+    ] {
+        forms.push(extra.to_vec());
+    }
+    forms
+}
+
+/// **NB1 — no read form writes past a link in the workbench, whatever it rebuilds.** A
+/// corpus with a task minted and an ordinary commit after it (so the edge index is stale
+/// and a read rebuilds it), then each place the workbench keeps — `.jigc` itself, its
+/// index, its state, its tasks — moved out of the repository with what it holds and linked
+/// back; every read form is run and what the link leads to is held byte for byte.
+#[test]
+fn no_read_form_writes_past_a_linked_workbench_place() {
+    let base = TrialCorpus::build(State::CommittedSingletons);
+    let minted = base.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
+    assert_eq!(minted.status.code(), Some(0), "{}", said(&minted));
+    let mut failures = Vec::new();
+    for place in [".jigc", ".jigc/index", ".jigc/state", ".jigc/tasks"] {
+        let corpus = base.copy_state();
+        fs::write(corpus.repo().join("README.md"), "moved on\n").expect("edit");
+        corpus.git(&["add", "README.md"]);
+        corpus.git(&["commit", "-q", "-m", "an ordinary commit"]);
+        let outside = corpus
+            .repo()
+            .parent()
+            .expect("a parent")
+            .join("outside-place");
+        let at = corpus.repo().join(place);
+        fs::create_dir_all(&at).expect("the place stands");
+        fs::rename(&at, &outside).expect("move the place out");
+        std::os::unix::fs::symlink(&outside, &at).expect("link it back");
+        for argv in read_forms() {
+            let before = snapshot(&outside, &[]);
+            let out = corpus.jigc(&argv);
+            if snapshot(&outside, &[]) != before {
+                failures.push(format!(
+                    "`jigc {}` over a link at `{place}` wrote past it (exit {:?}):\n{}",
+                    argv.join(" "),
+                    out.status.code(),
+                    said(&out)
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// **NS2 — the move-in route never moves a directory reached through a second link**: a
+/// link whose in-repository spelling runs through another link is copied in, never moved.
+#[test]
+fn the_move_in_route_never_moves_a_directory_reached_through_a_second_link() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let outside = outside_of(&corpus, "vendor-out");
+    fs::create_dir_all(outside.join("dec")).expect("mkdir");
+    std::os::unix::fs::symlink(&outside, corpus.repo().join("vendor")).expect("link vendor");
+    fs::create_dir_all(corpus.repo().join("docs")).expect("mkdir docs");
+    std::os::unix::fs::symlink("../vendor/dec", corpus.repo().join("docs/decisions"))
+        .expect("link through vendor");
+    let out = corpus.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
+    let text = said(&out);
+    assert!(
+        !text.contains("move the directory `vendor/dec`"),
+        "the route moves a directory reached through another link:\n{text}"
+    );
+    assert!(text.contains("holding a copy"), "{text}");
+}
+
+/// **NS3 — `setup` refuses a link at a home of every pack it is installing**, the
+/// methodology pack's included.
+#[test]
+fn setup_over_a_linked_methodology_home_refuses() {
+    let bare = TrialCorpus::build_never_adopted();
+    let outside = outside_of(&bare, "research-out");
+    fs::create_dir_all(bare.repo().join("docs")).expect("mkdir docs");
+    std::os::unix::fs::symlink(&outside, bare.repo().join("docs/research")).expect("link");
+    let before = repository(&bare);
+    let out = bare.jigc(&["setup"]);
+    refused_naming(
+        &out,
+        "docs/research",
+        "setup over a linked methodology home",
+    );
+    assert_eq!(
+        repository(&bare),
+        before,
+        "setup refused and changed the repository"
+    );
+}
+
+/// **NS4 — `jigc uninstall` never edits a settings file that is a link out of the
+/// repository**, `--force` or not: the file's own entry is refused under the step's code,
+/// as `jigc setup` refuses it, and nothing is written.
+#[test]
+fn uninstall_never_edits_a_settings_file_that_is_a_link_out() {
+    for force in [false, true] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let outside = corpus
+            .repo()
+            .parent()
+            .expect("a parent")
+            .join("settings-out");
+        fs::create_dir_all(&outside).expect("mkdir");
+        let settings = corpus.repo().join(".claude/settings.json");
+        fs::copy(&settings, outside.join("settings.json")).expect("copy out");
+        fs::remove_file(&settings).expect("remove");
+        std::os::unix::fs::symlink(outside.join("settings.json"), &settings).expect("link");
+        let (repo_before, outside_before) = (repository(&corpus), snapshot(&outside, &[]));
+        let argv: &[&str] = if force {
+            &["uninstall", "--force"]
+        } else {
+            &["uninstall"]
+        };
+        let out = corpus.jigc(argv);
+        let text = said(&out);
+        assert!(
+            out.status.code() == Some(1) && text.contains("uninstall.remove-allowlist"),
+            "{argv:?} refuses the linked settings file under its step's code:\n{text}"
+        );
+        assert_eq!(
+            snapshot(&outside, &[]),
+            outside_before,
+            "{argv:?} wrote past the link"
+        );
+        assert_eq!(
+            repository(&corpus),
+            repo_before,
+            "{argv:?} refused and changed the repository"
+        );
+    }
 }

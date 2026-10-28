@@ -1364,12 +1364,13 @@ pub const READINGS: &[Reading] = &[
             "crates/engine/src/finalize.rs::shape_refusal, store_home_refusal, promote_sink_refusal — the committing doors' wording, by unit (a task, a migration, a milestone, the promote's sink, a door of the store) and by exit (rename or move out, move out, the regular file itself)",
             "crates/cli/src/rename.rs::foreign_home, foreign_destination — `jigc rename`: the doc's own home, a referrer's, the destination",
             "crates/cli/src/relocate.rs::refuse_foreign_source — the move primitive, behind `jigc relocate` and both root knobs",
+            "crates/cli/src/relocate.rs::displace_foreign_squatter, relocate_one, relocate_stranded — the relocation's destination, behind `jigc relocate` and `placement-root`: a link there refused where it stands and never parked (2026-10-28)",
             "crates/cli/src/doc.rs::free_destination, already_exists_refusal with crates/engine/src/state.rs::create_only_home_refusal — the in-task rename's destination, and a create under an entry that only creates",
             "crates/cli/src/milestone.rs::record_shape_block and crates/engine/src/milestone.rs — the five doors that rewrite the milestone's record, and `jigc milestone create`",
             "crates/cli/src/migrate_corpus.rs::queue_or_refuse, destination_collision_finding — `jigc migrate-corpus`: a doc's own home, a relocation's destination",
             "crates/cli/tests/home_shape_one_code.rs — the product's own registry of the constructor's callers and the commands that reach each, as a lead",
         ],
-        causes: 32,
+        causes: 34,
         derivation: "a cause is a door and what it met. The task's finalize: a doc it minted \
                  over a link to nothing, a link to a file, a directory; a doc under a fixed \
                  identity over a link; a committed doc it edits over a link to a copy, a \
@@ -1382,7 +1383,8 @@ pub const READINGS: &[Reading] = &[
                  referrer's, the destination a link in no commit, a committed one, a \
                  directory — 5. `jigc doc rename`'s destination — 1. A create and an author \
                  under an entry that only creates — 2. The two root knobs and `jigc \
-                 relocate`, where the move primitive refuses — 2. `jigc migrate-corpus`, a \
+                 relocate`, where the move primitive refuses — 2. `placement-root` and `jigc \
+                 relocate` over a link at a doc's new home — 2. `jigc migrate-corpus`, a \
                  doc's own home and a relocation's destination — 2. And a special file at \
                  any of them, which the constructor words as a third shape — counted with \
                  the door, never constructed: a declared bound",
@@ -1418,6 +1420,21 @@ pub const READINGS: &[Reading] = &[
                     "the refusal reaches its reader inside the message of \
                  `config.repoint-failed`, and the frame reads a refusal by the finding \
                  that carries its code. Both are followed at that site, in `config.rs`",
+                ),
+            ),
+            (
+                "`jigc config set placement-root`: a link at the new home of a doc the re-point moves",
+                Why::NotConstructible(
+                    "the refusal reaches its reader inside the message of \
+                 `config.repoint-failed`, and the frame reads a refusal by the finding \
+                 that carries its code. It is followed at that site, in `config.rs`",
+                ),
+            ),
+            (
+                "`jigc relocate`: a link at the new home of a doc it moves",
+                Why::NotConstructible(
+                    "the door moves the instances of a doctype no manifest governs, and every \
+                 shipped doctype is governed by one: it takes a pack of the reader's own",
                 ),
             ),
             (

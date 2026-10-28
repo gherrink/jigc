@@ -37,6 +37,11 @@
 //!   6. [`the_text_arm_of_a_rejection_still_frames_it`] — the negative cell: agent-text is
 //!      untouched by all of the above (the goldens and `commit_rejected_axis` are the
 //!      assertion; this is the cheap cross-check that the two arms were split, not swapped).
+//!   8. [`a_read_form_over_a_link_on_the_way_keeps_one_document`] — 2026-10-28, the re-review
+//!      of the link-on-the-way guard (its NS1): a read form runs over a link on the way and
+//!      owes an advisory, which under `--format json` rides **inside** the document that has a
+//!      `findings` array — a rejecting read form's envelope, orientation's active-task rows —
+//!      and is withheld from a single-key `{"error": …}`; never a line beside either.
 //!   7. [`setup_and_uninstall_reject_on_the_declared_findings_arm`] — M52 Increment 1 / T2:
 //!      the **third root shape**. `setup` and `uninstall` are the only doors in the binary
 //!      whose `--format json` reject was neither of the two declared arms — they serialized a
@@ -574,4 +579,67 @@ fn setup_and_uninstall_reject_on_the_declared_findings_arm() {
             "[{label}] the text arm is prose, never the document; stderr:\n{stderr}",
         );
     }
+}
+
+/// **Arm 8 — a read form over a link on the way keeps one document** (2026-10-28, the
+/// re-review's NS1). Each read form below rejects, while a link out of the repository
+/// stands on the way to the ADR home: stdout is empty and stderr is **one** document — the
+/// findings envelope carrying the guard's advisory as a finding, or the single-key
+/// `{"error": …}`, which withholds it. Orientation's own document carries the link in its
+/// active task's `findings`, the way a posture breach rides there, and prints nothing
+/// beside it. Red on `26474b80`, where the advisory printed as a line ahead of the envelope.
+#[test]
+fn a_read_form_over_a_link_on_the_way_keeps_one_document() {
+    use crate::support::trial_corpus::{State, TrialCorpus};
+    const CODE: &str = "store.link-on-the-way";
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let minted = corpus.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
+    assert_eq!(minted.status.code(), Some(0), "the task mints");
+    let outside = corpus
+        .repo()
+        .parent()
+        .expect("a parent")
+        .join("decisions-out");
+    fs::create_dir_all(&outside).expect("mkdir outside");
+    fs::create_dir_all(corpus.repo().join("docs")).expect("mkdir docs");
+    std::os::unix::fs::symlink(&outside, corpus.repo().join("docs/decisions")).expect("link");
+    for argv in [
+        &["doc", "show", "no-such-doc"][..],
+        &["task", "validate", "no-such-task"],
+        &["task", "diff", "no-such-task"],
+        &["doc", "schema", "no-such-type"],
+        &["workflow", "no-such-wf", "--preview"],
+        &["config", "get", "no-such-key"],
+    ] {
+        let mut full = vec!["--format", "json"];
+        full.extend_from_slice(argv);
+        let what = format!("`jigc {}`", full.join(" "));
+        let out = corpus.jigc(&full);
+        assert_eq!(out.status.code(), Some(1), "{what} rejects");
+        assert!(out.stdout.is_empty(), "{what}: stdout is empty on a reject");
+        let doc = one_document(&String::from_utf8_lossy(&out.stderr), &what);
+        if doc.get("error").is_some() {
+            continue;
+        }
+        let findings = findings_of(&doc, &what);
+        assert!(
+            findings.iter().any(|f| f["code"] == CODE),
+            "{what}: the envelope carries the link as a finding: {doc}"
+        );
+    }
+    let out = corpus.jigc(&["--format", "json", "start"]);
+    assert_eq!(out.status.code(), Some(0), "orientation runs");
+    let doc = one_document(
+        &String::from_utf8_lossy(&out.stdout),
+        "orientation's stdout",
+    );
+    assert!(
+        doc["tasks"][0]["findings"].to_string().contains(CODE),
+        "the active task's row carries the link: {doc}"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).trim().is_empty(),
+        "orientation prints nothing beside its document: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
