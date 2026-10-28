@@ -9,11 +9,21 @@
 # of a named commit (implementation/dev-workflow.md -> Gate; DECISIONS.md -> M54 S10).
 #
 # What the image is faithful TO, each a deliberate choice:
-#   - ubuntu:24.04, the image `ubuntu-latest` runners track, with git from the stock apt
-#     archive (whatever version 24.04 ships), build-essential (tree-sitter's grammars
-#     compile C), python3 (the dogfood apparatus and the trial driver are Python) and jq
-#     (the `ci-ok` aggregate step calls it, and `ci_matrix_fence` drives that step's body
-#     verbatim; GitHub's ubuntu-latest image ships it).
+#   - ubuntu:24.04, the image `ubuntu-latest` runners track, with build-essential
+#     (tree-sitter's grammars compile C), python3 (the dogfood apparatus and the trial
+#     driver are Python) and jq (the `ci-ok` aggregate step calls it, and
+#     `ci_matrix_fence` drives that step's body verbatim; GitHub's ubuntu-latest image
+#     ships it).
+#   - git as the runner gets it, never the stock archive's: the runner image's own
+#     install script (actions/runner-images, images/ubuntu/scripts/build/install-git.sh)
+#     adds the git-core PPA, installs git from it, appends `[safe] directory = *` to
+#     /etc/gitconfig and removes the PPA again — so a runner has the PPA's newest git
+#     (2.56.0 on image 20261025, where 24.04's archive has 2.43) and a system config that
+#     trusts every directory. This image runs the same steps, byte for byte where they
+#     write. The PPA keeps only its newest build, so the layer that installs git is
+#     rebuilt once a week (its build arg is the ISO week), as the runner image is
+#     refreshed; the header names the git that ran, to set beside the `git version` a CI
+#     job's Checkout step prints.
 #   - the toolchain rust-toolchain.toml names, read from THE COMMIT THAT RUNS and passed
 #     as build args, never copied here, so a toolchain bump cannot leave the image behind.
 #     It is rustup's DEFAULT toolchain, because a packaged .crate carries no
@@ -22,8 +32,10 @@
 #     user is removed so `runner` takes uid 1000). git falls back to the gecos name when
 #     no user.name is set; an empty one makes an unconfigured commit fail instead of
 #     inventing an identity, which is the posture a fresh runner has.
-#   - NO git config at any level (system, global, XDG) and no GIT_CONFIG_* variable: the
-#     absence is real, not masked. A build-time assertion refuses the image otherwise.
+#   - exactly the runner's git config: the system file holds `safe.directory=*` and
+#     nothing else, and there is NO global or XDG config and no GIT_CONFIG_* variable —
+#     the absence is real, not masked. A build-time assertion refuses the image otherwise,
+#     and refuses a git that did not come from the PPA.
 #   - CARGO_HOME, RUSTUP_HOME and CARGO_TARGET_DIR under /home/runner, inside.
 #
 # The source is a git bundle of the named commit's history, docker-cp'd in and cloned
@@ -88,7 +100,8 @@
 #               asserted: the container stops before anything runs if nproc is not <n>.
 #
 # It prints its header on stderr -- commit (not in registry mode), platform, cpus (nproc),
-# toolchain, git -- from inside the container, so the lines describe what actually ran.
+# toolchain, git and the git config it reads -- from inside the container, so the lines
+# describe what actually ran.
 #
 # Exit status: cargo's, when cargo ran; for `tarball` and `registry`, 0 when every step
 # passed and 1 at the first step that failed. 2 on a usage error; 125 when the run could not be set up
@@ -176,6 +189,9 @@ if [ -z "$platform" ]; then
     platform=$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}') || die "cannot read the docker host's platform"
 fi
 image="jigc-runner-faithful:$channel-$(printf '%s' "$platform" | tr '/' '-')"
+# The key of the layer that installs git: the ISO week, so that layer -- and only it and
+# the posture after it -- is rebuilt weekly from the PPA's newest git, as the runner image is.
+git_week=$(date -u +%G-W%V)
 
 tmp_root=${TMPDIR:-/tmp}
 work=$(mktemp -d "${tmp_root%/}/runner-faithful.XXXXXX") || die "mktemp failed"
@@ -185,6 +201,7 @@ say "building $image (cached layers are reused); log: $work/build.log"
 docker build --platform "$platform" \
     --build-arg "RUST_TOOLCHAIN=$channel" \
     --build-arg "RUST_COMPONENTS=$components" \
+    --build-arg "GIT_WEEK=$git_week" \
     -t "$image" - >"$work/build.log" 2>&1 <<'DOCKERFILE'
 FROM ubuntu:24.04
 
@@ -196,7 +213,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git build-essential python3 jq \
+ && apt-get install -y --no-install-recommends ca-certificates curl build-essential python3 jq \
+        software-properties-common gpg-agent \
  && rm -rf /var/lib/apt/lists/*
 
 RUN userdel --remove ubuntu 2>/dev/null || true
@@ -219,13 +237,30 @@ RUN test -n "$RUST_TOOLCHAIN" || { echo 'no RUST_TOOLCHAIN build arg' >&2; exit 
  && rm /tmp/rustup-init.sh \
  && rustc --version && cargo --version
 
+# git, as the runner image's install-git.sh installs it: the git-core PPA added, git
+# installed from it, the system config appended (its bytes are that script's), the PPA
+# removed. After the toolchain, so the weekly refresh (GIT_WEEK) rebuilds this layer and
+# leaves the toolchain's cached.
+USER root
+ARG GIT_WEEK
+RUN test -n "$GIT_WEEK" || { echo 'no GIT_WEEK build arg' >&2; exit 1; }; \
+    add-apt-repository -y ppa:git-core/ppa \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && printf '[safe]\n        directory = *\n' >> /etc/gitconfig \
+ && add-apt-repository -y --remove ppa:git-core/ppa \
+ && rm -rf /var/lib/apt/lists/*
+USER runner
+
 # The posture, asserted at build time so an image that drifted from it never exists.
 RUN set -e; \
     test -z "$(getent passwd runner | cut -d: -f5)" || { echo 'posture: the gecos field is not empty' >&2; exit 1; }; \
-    for f in /etc/gitconfig "$HOME/.gitconfig" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do \
+    case "$(dpkg-query -W -f='${Version}' git)" in *ppa*) ;; *) echo "posture: git is not the PPA's: $(dpkg-query -W -f='${Version}' git)" >&2; exit 1 ;; esac; \
+    for f in "$HOME/.gitconfig" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do \
         test ! -e "$f" || { echo "posture: git config present: $f" >&2; exit 1; }; \
     done; \
-    test -z "$(git config --list --show-origin 2>&1)" || { echo 'posture: git config --list is not empty' >&2; exit 1; }; \
+    test "$(git config --list --show-origin 2>&1)" = "$(printf 'file:/etc/gitconfig\tsafe.directory=*')" \
+        || { echo 'posture: git config --list is not exactly the system safe.directory=*' >&2; git config --list --show-origin >&2; exit 1; }; \
     if git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then echo 'posture: git can invent an identity' >&2; exit 1; fi; \
     if env | grep -q '^GIT_CONFIG'; then echo 'posture: a GIT_CONFIG_* variable is set' >&2; exit 1; fi; \
     cc --version >/dev/null; python3 --version; jq --version; git --version
@@ -345,6 +380,7 @@ say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
 say "cpus      $(nproc)"
 say "toolchain $(rustc --version)"
 say "git       $(git --version)"
+say "gitconfig $(git config --list --show-scope | grep -v "^local" | tr "\t\n" "  ")(the local config of the clone aside)"
 '
 # With --cpus, the cap is asserted before anything runs. $cpus is a validated integer,
 # so interpolating it here is safe; an environment variable would reach cargo too.
