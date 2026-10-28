@@ -717,6 +717,118 @@ fn breach_against(
     })
 }
 
+/// **The link-on-the-way guard** — one gate, in front of every door that writes the
+/// repository: no directory on the way to what the store writes is a symbolic link
+/// ([`crate::link_way`], the rule's one home in code; `design/storage.md` → *No write
+/// through a link on the way*; `DECISIONS.md` → 2026-10-28).
+///
+/// Its subject is **every leaf but the ones [`LINK_GUARD_EXCEPTIONS`] names with a reason**
+/// — the opposite default to [`BEHALF_DOORS`]' classification, and on purpose: a door added
+/// tomorrow writes the workbench as every door does, so it is guarded the moment clap
+/// parses it, and standing it down is a sentence someone has to write. The question is the
+/// store's write surface ([`crate::link_way::store_links`]): `.jigc` and every directory in
+/// it, and every directory on the way to every doctype's resolved home. It is asked before
+/// any door runs, so the refusal comes before the first write at every door, and before git
+/// is asked anything — which is what keeps the answer the same on every git
+/// (`git mv` past a link is refused from git 2.56 and followed before it).
+///
+/// **It never fires outside a git repository**, and stands down for the homes where the
+/// project layer or the cascade cannot be read: the door then reports that state under its
+/// own code, as it did before this guard. **A working directory it cannot read** takes the
+/// one seam every reader of the cwd here takes ([`cwd_or_refusal`]), so the fault keeps its
+/// one answer.
+fn refuse_on_link_on_the_way(command: &Command, format: Format) -> Option<Outcome> {
+    let leaf = command.leaf();
+    if LINK_GUARD_EXCEPTIONS.iter().any(|row| row.door == leaf) {
+        return None;
+    }
+    let cwd = match cwd_or_refusal(format) {
+        Ok(cwd) => cwd,
+        Err(refusal) => return Some(refusal),
+    };
+    let links = crate::link_way::store_links(&cwd, true);
+    if links.is_empty() {
+        return None;
+    }
+    Some(crate::invocation_log::operational_failure(
+        format,
+        &crate::link_way::refusal(&links),
+    ))
+}
+
+/// One leaf the link-on-the-way guard stands down at, and why.
+pub struct LinkGuardException {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// Why the guard does not stand in front of it.
+    pub reason: &'static str,
+}
+
+/// The reason every reading leaf shares: it writes nothing in the repository, so nothing it
+/// does lands past a link. `link_on_the_way_axis` drives each of them over a linked
+/// workbench and a linked home and holds what the link leads to byte for byte.
+const READS_ONLY: &str = "reads only — it writes nothing in the repository, so nothing it does \
+                          lands past a link";
+
+/// **The leaves [`refuse_on_link_on_the_way`] does not guard**, each with its reason — every
+/// other leaf is guarded. `link_on_the_way_axis` holds every row to a leaf of
+/// [`BEHALF_DOORS`] and drives every leaf, guarded or not.
+pub const LINK_GUARD_EXCEPTIONS: &[LinkGuardException] = &[
+    LinkGuardException {
+        door: &["setup"],
+        reason: "asks the way to every install member itself, before its first write, under \
+                 the code of the member it would write (`setup.write-bootstrap`, \
+                 `setup.write-guide`) — this guard's model, at the door that installs where \
+                 no project layer stands yet",
+    },
+    LinkGuardException {
+        door: &["uninstall"],
+        reason: "removes the workbench whole, and a removal takes a link as the entry it is \
+                 and follows none — so nothing is written past one, and a refusal would keep \
+                 a user from taking jigc out of a repository whose workbench they linked",
+    },
+    LinkGuardException {
+        door: &["describe"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["validate"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["doc", "show"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["doc", "schema"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["doc", "list"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["task", "list"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["task", "diff"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["config", "get"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["config", "list"],
+        reason: READS_ONLY,
+    },
+    LinkGuardException {
+        door: &["milestone", "list-tasks"],
+        reason: READS_ONLY,
+    },
+];
+
 /// **The refusal `jigc task finalize` would make in `cwd`'s repository** — the posture
 /// `jigc task validate` previews (M52 Increment 3 / T6;
 /// `completions/artifacts/M52/settle-record.md` → D2.6 as amended by §4).
@@ -823,6 +935,11 @@ impl Cli {
         // Before any door runs: no repository posture reaches a door that commits or
         // moves on the user's behalf without that door having adjudicated it.
         if let Some(refusal) = refuse_on_posture(&self.command, self.format) {
+            return refusal;
+        }
+        // … and no door that writes the repository runs over a link on the way to what it
+        // writes ([`refuse_on_link_on_the_way`]).
+        if let Some(refusal) = refuse_on_link_on_the_way(&self.command, self.format) {
             return refusal;
         }
         match self.command {

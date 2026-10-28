@@ -722,7 +722,7 @@ const RENAME_CELLS: [Cell; 39] = [
     renames(
         "rename-a-link-to-a-directory-outside-at-the-decisions-directory",
         a_decision_and_its_citer!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
-        refuses(1, "docs/decisions"),
+        refuses(1, "`docs/decisions` is a symbolic link"),
         at("RN1", Kind::LinkOnTheWay),
     ),
     renames(
@@ -834,7 +834,7 @@ const RENAME_CELLS: [Cell; 39] = [
     renames(
         "rename-a-link-to-a-directory-outside-at-the-citing-docs-directory",
         a_decision_and_its_citer!(Lead::Plant(Plant::LinkToADir("docs/architecture"))),
-        refuses(1, "docs/architecture"),
+        refuses(1, "`docs/architecture` is a symbolic link"),
         at("RN2", Kind::LinkOnTheWay),
     ),
     renames(
@@ -1153,7 +1153,7 @@ const MIGRATE_CORPUS_CELLS: [Cell; 44] = [
     migrates(
         "migrate-corpus-a-link-to-a-directory-outside-at-the-decisions-directory",
         a_stale_decision!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
-        refuses(1, "docs/decisions"),
+        refuses(1, "`docs/decisions` is a symbolic link"),
         at("MG1", Kind::LinkOnTheWay),
     ),
     migrates(
@@ -1224,7 +1224,7 @@ const MIGRATE_CORPUS_CELLS: [Cell; 44] = [
     migrates(
         "migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory",
         a_stale_changelog!(Lead::Plant(Plant::LinkToADir("docs/changelog"))),
-        refuses(1, "docs/changelog"),
+        refuses(1, "`docs/changelog` is a symbolic link"),
         at("MG1, from a prior home", Kind::LinkOnTheWay),
     ),
     migrates(
@@ -1679,7 +1679,7 @@ const RELOCATE_CELLS: [Cell; 32] = [
     relocates(
         "relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory",
         a_stranded_note!(Lead::Plant(Plant::LinkToADir("docs/legacy-notes"))),
-        refuses(1, "docs/legacy-notes"),
+        refuses(1, "`docs/legacy-notes` is a symbolic link"),
         at("RL1", Kind::LinkOnTheWay),
     ),
     relocates(
@@ -1770,7 +1770,7 @@ const RELOCATE_CELLS: [Cell; 32] = [
     relocates(
         "relocate-a-link-to-a-directory-outside-at-the-notes-new-directory",
         a_stranded_note!(Lead::Plant(Plant::LinkToADir("docs/notes"))),
-        refuses(1, "docs/notes"),
+        refuses(1, "`docs/notes` is a symbolic link"),
         at("RL1, at its new home", Kind::LinkOnTheWay),
     ),
     relocates(
@@ -2025,7 +2025,7 @@ const fn sets(
 ///   manifest, the baseline and the staging are the knob's write and the move primitive's,
 ///   one for both knobs, and their plants stand at `docs-root`'s cells (added 2026-10-20,
 ///   after the review of the task `B8`, H5).
-const CONFIG_SET_CELLS: [Cell; 58] = [
+const CONFIG_SET_CELLS: [Cell; 60] = [
     cell(
         "config-set-docs-root-the-catalog-names",
         &["config", "set"],
@@ -2093,7 +2093,7 @@ const CONFIG_SET_CELLS: [Cell; 58] = [
     sets(
         "config-set-a-link-to-a-directory-outside-at-the-config-directory",
         a_committed_decision!(Lead::Plant(Plant::LinkToADir(".jigc/config"))),
-        refuses(1, ".jigc/config"),
+        refuses(1, "`.jigc/config` is a symbolic link"),
         at("CS1", Kind::LinkOnTheWay),
     ),
     sets(
@@ -2173,7 +2173,7 @@ const CONFIG_SET_CELLS: [Cell; 58] = [
     sets(
         "config-set-a-link-to-a-directory-outside-at-the-decisions-directory",
         a_committed_decision!(Lead::Plant(Plant::LinkToADir("docs/decisions"))),
-        refuses(1, "docs/decisions"),
+        refuses(1, "`docs/decisions` is a symbolic link"),
         at("CS2", Kind::LinkOnTheWay),
     ),
     sets(
@@ -2253,7 +2253,7 @@ const CONFIG_SET_CELLS: [Cell; 58] = [
     sets(
         "config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory",
         a_committed_decision!(Lead::Plant(Plant::LinkToADir("notes/decisions"))),
-        refuses(1, "notes/decisions"),
+        refuses(1, "`notes/decisions` is a symbolic link"),
         at("CS2, at its new home", Kind::LinkOnTheWay),
     ),
     sets(
@@ -2366,6 +2366,15 @@ const CONFIG_SET_CELLS: [Cell; 58] = [
         refuses(1, THE_ROADMAP),
         at("CS2", Kind::FileForADir),
     ),
+    // A link out of the repository at the roadmap's directory — the prior placement root,
+    // `docs` — which the re-point would move the roadmap out of (2026-10-28: the class's
+    // `placement-root` cell, which `CS2`'s need, met at `docs-root`'s, did not give it).
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-directory",
+        a_committed_roadmap!(Lead::Plant(Plant::LinkToADir("docs"))),
+        refuses(1, "`docs` is a symbolic link"),
+        at("CS2", Kind::LinkOnTheWay),
+    ),
     sets_the_placement_root(
         "config-set-placement-root-an-edit-to-the-roadmap",
         a_committed_roadmap!(Lead::Plant(Plant::Edit(THE_ROADMAP))),
@@ -2424,6 +2433,15 @@ const CONFIG_SET_CELLS: [Cell; 58] = [
         a_committed_roadmap!(Lead::Plant(Plant::Dir(THE_ROADMAPS_NEW_HOME))),
         refuses(1, THE_ROADMAPS_NEW_HOME),
         at("CS2, at its new home", Kind::DirForAFile),
+    ),
+    // And at the new root itself, `notes`, a link out of the repository: the value resolves
+    // outside the repository, which the knob refuses as a root before any re-point is
+    // planned (2026-10-28, the class's `placement-root` cell at its new home).
+    sets_the_placement_root(
+        "config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-new-directory",
+        a_committed_roadmap!(Lead::Plant(Plant::LinkToADir("notes"))),
+        refuses(1, "config.untrackable-root"),
+        at("CS2, at its new home", Kind::LinkOnTheWay),
     ),
     // Its twin under the same ruling's (A): a doc of the user's elsewhere in the new root
     // blocks nothing.

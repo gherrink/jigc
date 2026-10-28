@@ -1367,6 +1367,20 @@ fn route_docs_root_repoint_orphans(
         return relocated;
     }
     let new_root = normalize_docs_root(new_value);
+    // **A link on the way to a doc's prior home or its new one refuses the re-point before
+    // its first move** (2026-10-28; [`crate::link_way`]) — before the loop below creates a
+    // directory under the new root, so nothing is written past the link either.
+    let ends: Vec<String> = stranded
+        .iter()
+        .filter_map(|old_rel| {
+            reroot(old_rel, &old_docs_root, &new_root).map(|new_rel| [old_rel.clone(), new_rel])
+        })
+        .flatten()
+        .collect();
+    if let Some(link) = crate::link_way::first_of(repo_root, ends.iter().map(String::as_str)) {
+        failures.push(RepointBlocker::Raised(crate::link_way::finding(&[link])));
+        return relocated;
+    }
     let jigc_root = repo_root.join(".jigc");
     // The solicit/act honesty pair (round-2 D2+D3): name the sweep's basis and the git
     // state the moves land in (each is a staged `git mv`, committed by the operator's
@@ -1516,6 +1530,21 @@ fn route_placement_root_repoint_strands(
             .any(|rel| orphan::is_stranded(rel, prior, current))
     });
     if !strands {
+        return relocated;
+    }
+    // **A link on the way to a placement doctype's prior home or its new one refuses the
+    // re-point before its first move** (2026-10-28; [`crate::link_way`]) — asked of every
+    // pair at once, so a second pair's link cannot meet a first pair already moved.
+    let ends: Vec<&str> = pairs
+        .iter()
+        .flat_map(|(prior, current)| [prior, current])
+        .filter_map(|home| match home {
+            Home::Placement(file) => Some(file.as_str()),
+            Home::Location(_) => None,
+        })
+        .collect();
+    if let Some(link) = crate::link_way::first_of(repo_root, ends) {
+        failures.push(RepointBlocker::Raised(crate::link_way::finding(&[link])));
         return relocated;
     }
     // The solicit/act honesty pair the `docs-root` sibling prints: name the sweep's basis

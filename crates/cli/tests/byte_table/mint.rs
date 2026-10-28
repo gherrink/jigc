@@ -641,7 +641,7 @@ const WORKFLOW_CELLS: [Cell; 12] = [
     re_enters(
         "workflow-a-link-to-a-directory-outside-at-the-sub-tasks-docs-directory",
         a_sub_task_provisioned!(Lead::Plant(Plant::LinkToADir(".jigc/tasks/add-alpha/docs"))),
-        refuses(1, ".jigc/tasks/add-alpha/docs"),
+        refuses(1, "`.jigc/tasks/add-alpha/docs` is a symbolic link"),
         at("WF1", Kind::LinkOnTheWay),
     ),
     re_enters(

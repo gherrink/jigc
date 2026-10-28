@@ -36,6 +36,9 @@ pub mod gitignore;
 pub mod ingest;
 pub mod invocation_log;
 pub mod invoke;
+// jigc writes through no link on the way: the store's write surface asked at dispatch, the
+// refusal every door that meets the state raises (`design/storage.md` → the rule's home).
+pub mod link_way;
 pub mod locate;
 pub mod migrate;
 pub mod migrate_corpus;

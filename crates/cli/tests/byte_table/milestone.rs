@@ -1556,7 +1556,7 @@ const CREATE_CELLS: [Cell; 23] = [
         FRESH,
         &[Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
         CREATE_IT,
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("MC2", Kind::LinkOnTheWay),
     ),
     cell(
@@ -1810,7 +1810,7 @@ const ADD_TASK_CELLS: [Cell; 25] = [
             Lead::Plant(Plant::LinkToADir("docs/milestone-records")),
         ],
         ADD_A_SUB_TASK,
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("MA3", Kind::LinkOnTheWay),
     ),
     cell(
@@ -2119,7 +2119,7 @@ const ADD_FROM_SPEC_CELLS: [Cell; 25] = [
     seeds!(
         "milestone-add-from-spec-a-link-to-a-directory-outside-at-the-records-directory",
         [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("MS3", Kind::LinkOnTheWay)
     ),
     seeds!(
@@ -2774,7 +2774,7 @@ const DISCARD_CELLS: [Cell; 23] = [
         "milestone-discard-a-link-to-a-directory-outside-at-the-records-directory",
         [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))],
         DISCARD_IT,
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("MD1", Kind::LinkOnTheWay)
     ),
     discards!(
@@ -3087,7 +3087,7 @@ const FINALIZE_CELLS: [Cell; 33] = [
         FRESH,
         two_reporters_joined!([], [Lead::Plant(Plant::LinkToADir("docs/inconsistencies"))]),
         &["milestone", "finalize", "stage-reports"],
-        refuses(1, "docs/inconsistencies"),
+        refuses(1, "`docs/inconsistencies` is a symbolic link"),
         at("M2", Kind::LinkOnTheWay),
     ),
     finalizes(
@@ -3225,7 +3225,7 @@ const FINALIZE_CELLS: [Cell; 33] = [
             [Lead::Plant(Plant::LinkToADir("docs/milestone-records"))]
         ),
         FINALIZE_IT,
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("M5", Kind::LinkOnTheWay),
     ),
     finalizes(

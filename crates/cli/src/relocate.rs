@@ -91,6 +91,12 @@ pub enum RelocateRefusal {
     /// is. Raised by the shared move primitive ([`move_doc`], [`refuse_foreign_source`]), so
     /// it is one guard for every door that moves a doc (the rc.24 fix pass).
     ForeignSource,
+    /// A directory on the way to the source or the destination is a **symbolic link**: the
+    /// move would carry the doc out of the repository, or into wherever the link leads.
+    /// Raised by the shared move primitive ([`move_doc`]) and asked of a whole sweep before
+    /// its first move ([`relocate_stranded`]) — minted by [`crate::link_way`], the rule's
+    /// one home, and named here so the axis is total (2026-10-28).
+    LinkOnTheWay,
 }
 
 impl RelocateRefusal {
@@ -108,6 +114,7 @@ impl RelocateRefusal {
         RelocateRefusal::UntrackableDestination,
         RelocateRefusal::UnaddressableDestination,
         RelocateRefusal::ForeignSource,
+        RelocateRefusal::LinkOnTheWay,
     ];
 
     /// The finding code this refusal carries.
@@ -129,6 +136,9 @@ impl RelocateRefusal {
             // [`engine::finalize::store_home_refusal`], and named so the axis is total;
             // `the_foreign_source_row_reads_the_shipped_code` holds the two together.
             RelocateRefusal::ForeignSource => engine::store::HOME_NOT_REGULAR_FILE,
+            // Minted by `crate::link_way::finding`, reached through the move primitive and
+            // the sweep's own preflight.
+            RelocateRefusal::LinkOnTheWay => crate::link_way::LINK_ON_THE_WAY,
         }
     }
 }
@@ -272,6 +282,15 @@ pub fn move_doc(
     new_hash: &str,
 ) -> Result<()> {
     if old_rel != new_rel {
+        // **No move past a link on the way** (2026-10-28; [`crate::link_way`]): asked of
+        // both ends before git is, because git answers it differently by version — 2.56
+        // refuses a `git mv` into a destination beyond a symbolic link, 2.55 and older
+        // carry the file through it — and a source past one is a doc outside the
+        // repository. On the primitive, for the reason the destination's trackability is:
+        // one guard for every door that moves a doc.
+        if let Some(link) = crate::link_way::first_of(repo_root, [old_rel, new_rel]) {
+            return Err(crate::link_way::refusal(&[link]));
+        }
         if let Some(reason) = crate::trackable::untrackable_reason(repo_root, new_rel) {
             // **Coded at the primitive, which is where the check is** (M52 completion audit,
             // fix 5). `jigc rename` has refused this fault as `write.untrackable-destination`
@@ -705,6 +724,7 @@ pub(crate) fn relocate_stranded(
         blocked: Vec::new(),
         displaced: Vec::new(),
     };
+    let mut sweep: Vec<(String, String)> = Vec::new();
     for rel in orphan::committed_markdown(repo_root) {
         if !orphan::is_stranded(&rel, prior, current) {
             continue;
@@ -715,6 +735,21 @@ pub(crate) fn relocate_stranded(
         if dest == rel {
             continue; // already at the destination (is_stranded guards this — defensive).
         }
+        sweep.push((rel, dest));
+    }
+    // **A link on the way stops the sweep before its first move** (2026-10-28): it is on
+    // the way to every doc of the prior home, or of the new one, so it is the sweep's and
+    // not one doc's — and asked here, ahead of the loop, nothing is moved, parked or
+    // created before the refusal. The move primitive asks it again at each move.
+    if let Some(link) = crate::link_way::first_of(
+        repo_root,
+        sweep
+            .iter()
+            .flat_map(|(rel, dest)| [rel.as_str(), dest.as_str()]),
+    ) {
+        return Err(crate::link_way::refusal(&[link]));
+    }
+    for (rel, dest) in sweep {
         if let Some(schema) = schema
             && let Some(finding) = unaddressable_destination(repo_root, &rel, &dest, schema)
         {
