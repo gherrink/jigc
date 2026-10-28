@@ -203,10 +203,7 @@ fn the_guard_reports_at_exactly_the_read_forms() {
         }
         if guard == LinkGuard::Reports && kind != VerbKind::Read {
             assert!(
-                matches!(
-                    *leaf,
-                    ["start"] | ["workflow"] | ["migrate-corpus"] | ["task", "finalize"]
-                ),
+                matches!(*leaf, ["start"] | ["workflow"]),
                 "`jigc {}` reports, and is no read leaf nor a read form of one",
                 argv.join(" ")
             );
@@ -219,11 +216,12 @@ fn the_guard_reports_at_exactly_the_read_forms() {
         (&["start", "--task", "a-task"], false),
         (&["workflow", "single-task", "--preview"], true),
         (&["workflow", "single-task", "--task", "a-task"], false),
-        // The dry runs read only (the re-review's N-a): `migrate-corpus --dry-run` writes
-        // nothing at all, `task finalize --dry-run` commits nothing.
-        (&["migrate-corpus", "--dry-run"], true),
+        // The dry runs read only (the re-review's N-a), and forecast the act they print:
+        // the forecast obeys the gate it forecasts, so the guard refuses there as at the
+        // act (the second re-review's NS-A).
+        (&["migrate-corpus", "--dry-run"], false),
         (&["migrate-corpus"], false),
-        (&["task", "finalize", "a-task", "--dry-run"], true),
+        (&["task", "finalize", "a-task", "--dry-run"], false),
         (&["task", "finalize", "a-task"], false),
     ] {
         assert_eq!(
@@ -744,4 +742,265 @@ fn uninstall_never_edits_a_settings_file_that_is_a_link_out() {
             "{argv:?} refused and changed the repository"
         );
     }
+}
+
+// ── The second re-review of 2026-10-28: each finding, red first ─────────────────────
+
+/// A committed-singletons corpus with `fix-a-typo` authored and `README.md` staged — a task
+/// `jigc task finalize` would land.
+fn a_task_ready_to_land() -> TrialCorpus {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let task = corpus.start_workflow("quick-fix", "fix a typo");
+    corpus.set_field(&format!("commit:{task}#header/type"), &task, "fix");
+    corpus.set_slot(
+        &format!("commit:{task}#summary"),
+        &task,
+        "Fix a typo in the readme.\n",
+    );
+    fs::write(corpus.repo().join("README.md"), "typo fixed\n").expect("edit");
+    corpus.git(&["add", "README.md"]);
+    corpus
+}
+
+/// Move `place` (made where absent) out of `corpus`'s repository and link it back.
+fn link_out(corpus: &TrialCorpus, place: &str) -> std::path::PathBuf {
+    let at = corpus.repo().join(place);
+    let outside = corpus
+        .repo()
+        .parent()
+        .expect("a parent")
+        .join(format!("out-{}", place.replace('/', "-")));
+    fs::create_dir_all(&at).expect("the place stands");
+    fs::rename(&at, &outside).expect("move it out");
+    std::os::unix::fs::symlink(&outside, &at).expect("link it back");
+    outside
+}
+
+/// **NS-A — a dry run forecasts the refusal its act makes.** The forecast obeys the gate it
+/// forecasts: over a link on the way, `task finalize --dry-run` and `migrate-corpus
+/// --dry-run` exit as their acts exit, under the same code named once, and write nothing.
+#[test]
+fn a_dry_run_forecasts_the_refusal_its_act_makes() {
+    let base = a_task_ready_to_land();
+    let mut failures = Vec::new();
+    for place in ["docs/decisions", ".jigc/index"] {
+        for (dry, act) in [
+            (
+                &["task", "finalize", "fix-a-typo", "--dry-run"][..],
+                &["task", "finalize", "fix-a-typo"][..],
+            ),
+            (
+                &["migrate-corpus", "--dry-run"][..],
+                &["migrate-corpus"][..],
+            ),
+        ] {
+            let corpus = base.copy_state();
+            let outside = link_out(&corpus, place);
+            let before = (repository(&corpus), snapshot(&outside, &[]));
+            let forecast = corpus.jigc(dry);
+            let after_forecast = (repository(&corpus), snapshot(&outside, &[]));
+            let landed = corpus.jigc(act);
+            let text = said(&forecast);
+            if forecast.status.code() != landed.status.code()
+                || !text.contains(CODE)
+                || text.matches(CODE).count() != 1
+                || after_forecast != before
+            {
+                failures.push(format!(
+                    "over a link at `{place}`: `jigc {}` exited {:?}, `jigc {}` {:?}:\n{text}",
+                    dry.join(" "),
+                    forecast.status.code(),
+                    act.join(" "),
+                    landed.status.code(),
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// **NS-B — `jigc uninstall` over a link to nothing at a file it edits tears down**: there
+/// is nothing behind the link to take jigc's lines out of, so the link is left as it is,
+/// said, and nothing is created where it points.
+#[test]
+fn uninstall_over_a_link_to_nothing_tears_down_and_leaves_the_link() {
+    for file in ["CLAUDE.md", ".claude/settings.json"] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let path = corpus.repo().join(file);
+        fs::remove_file(&path).expect("remove");
+        std::os::unix::fs::symlink("gone.md", &path).expect("link to nothing");
+        corpus.git(&["add", "-A"]);
+        corpus.git(&["commit", "-q", "-m", "a link to nothing"]);
+        let out = corpus.jigc(&["uninstall"]);
+        let text = said(&out);
+        assert_eq!(out.status.code(), Some(0), "`{file}`:\n{text}");
+        assert!(!corpus.repo().join(".jigc").exists(), "`{file}`: torn down");
+        assert_eq!(
+            fs::read_link(&path).ok(),
+            Some(std::path::PathBuf::from("gone.md")),
+            "`{file}`: the user's link is left as it is"
+        );
+        let gone = path.parent().expect("a parent").join("gone.md");
+        assert!(
+            !gone.exists(),
+            "`{file}`: nothing is created where it points"
+        );
+        assert!(
+            text.contains(&format!("`{file}` is a symbolic link to nothing")),
+            "`{file}`: the link left is said:\n{text}"
+        );
+    }
+}
+
+/// **NS-C — no door parks past a link inside the parking home.** A link at
+/// `.jigc/displaced/<task>` to a directory outside: the finalize lands, writes nothing
+/// past the link, and the bytes it could not park stay in the repository.
+#[test]
+fn no_door_parks_past_a_link_inside_the_parking_home() {
+    let corpus = a_task_ready_to_land();
+    fs::write(
+        corpus.repo().join(".jigc/tasks/fix-a-typo/NOTES.md"),
+        "my own notes\n",
+    )
+    .expect("a file of the user's in the area");
+    let outside = corpus.repo().parent().expect("a parent").join("parked-out");
+    fs::create_dir_all(&outside).expect("mkdir");
+    fs::create_dir_all(corpus.repo().join(".jigc/displaced")).expect("mkdir");
+    std::os::unix::fs::symlink(&outside, corpus.repo().join(".jigc/displaced/fix-a-typo"))
+        .expect("link");
+    let out = corpus.jigc(&["task", "finalize", "fix-a-typo"]);
+    assert!(
+        snapshot(&outside, &[]).is_empty(),
+        "the finalize parked past the link:\n{}",
+        said(&out)
+    );
+    assert_eq!(
+        fs::read_to_string(corpus.repo().join(".jigc/tasks/fix-a-typo/NOTES.md")).ok(),
+        Some("my own notes\n".to_string()),
+        "the bytes it could not park stay in the area:\n{}",
+        said(&out)
+    );
+}
+
+/// **NS-D — `jigc uninstall` never rewrites a `pre-commit` hook through a link `jigc setup`
+/// would refuse**: a hook setup wrapped, then made a link to a copy outside the repository
+/// and its hooks directory, is refused under the step's code, `--force` or not, and the
+/// copy is untouched.
+#[test]
+fn uninstall_never_rewrites_a_hook_that_is_a_link_out() {
+    for force in [false, true] {
+        let bare = TrialCorpus::build_never_adopted();
+        let hook = bare.repo().join(".git/hooks/pre-commit");
+        fs::create_dir_all(hook.parent().expect("a parent")).expect("mkdir hooks");
+        fs::write(&hook, "#!/bin/sh\necho my own hook\n").expect("their hook");
+        assert_eq!(bare.jigc(&["setup"]).status.code(), Some(0), "setup");
+        let outside = bare.repo().parent().expect("a parent").join("hook-out");
+        fs::create_dir_all(&outside).expect("mkdir");
+        fs::copy(&hook, outside.join("pre-commit")).expect("copy out");
+        fs::remove_file(&hook).expect("remove");
+        std::os::unix::fs::symlink(outside.join("pre-commit"), &hook).expect("link");
+        let before = snapshot(&outside, &[]);
+        let argv: &[&str] = if force {
+            &["uninstall", "--force"]
+        } else {
+            &["uninstall"]
+        };
+        let out = bare.jigc(argv);
+        let text = said(&out);
+        assert!(
+            out.status.code() == Some(1) && text.contains("uninstall.remove-precommit"),
+            "{argv:?} refuses the linked hook under its step's code:\n{text}"
+        );
+        assert_eq!(
+            snapshot(&outside, &[]),
+            before,
+            "{argv:?} wrote past the link"
+        );
+        assert!(
+            bare.repo().join(".jigc").exists(),
+            "{argv:?} refused and removed the workbench"
+        );
+    }
+}
+
+/// **N-2 — `task diff`'s JSON document carries the link in its `findings`**, as every
+/// findings array a read form prints does.
+#[test]
+fn task_diffs_json_carries_the_link_in_its_findings() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let task = corpus.start_workflow("quick-fix", "fix a typo");
+    link_out(&corpus, "docs/decisions");
+    let out = corpus.jigc(&["--format", "json", "task", "diff", &task]);
+    assert_eq!(out.status.code(), Some(0), "{}", said(&out));
+    let doc: serde_json::Value = serde_json::from_slice(&out.stdout).expect("one document");
+    assert!(
+        doc["findings"].to_string().contains(CODE),
+        "the document carries the link: {doc}"
+    );
+}
+
+/// **N-3 — a link to the repository, to a directory it stands in, or into git's own
+/// directory is never routed at a copy**: a copy of any of them holds the repository (or
+/// the link) again, so the route removes the link.
+#[test]
+fn a_link_that_leads_to_what_holds_it_is_never_routed_at_a_copy() {
+    for target in ["..", "../.git", ".", "../docs"] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        fs::create_dir_all(corpus.repo().join("docs")).expect("mkdir docs");
+        std::os::unix::fs::symlink(target, corpus.repo().join("docs/decisions")).expect("link");
+        let out = corpus.jigc(&["start", "--workflow", "quick-fix", "fix a typo"]);
+        let text = said(&out);
+        assert!(
+            out.status.code() == Some(1)
+                && !text.contains("holding a copy")
+                && !text.contains("into its place")
+                && text.contains("remove the link at `docs/decisions`"),
+            "a link to `{target}` is routed at something other than its removal:\n{text}"
+        );
+    }
+}
+
+/// **N-4 — the bootstrap file is never followed into the workbench**, which `jigc
+/// uninstall` removes whole: `setup` refuses a `CLAUDE.md` that is a link into `.jigc`.
+#[test]
+fn setup_never_follows_the_bootstrap_file_into_the_workbench() {
+    let bare = TrialCorpus::build_never_adopted();
+    fs::create_dir_all(bare.repo().join(".jigc")).expect("mkdir");
+    fs::write(bare.repo().join(".jigc/mine.md"), "# Mine\n").expect("theirs");
+    std::os::unix::fs::symlink(".jigc/mine.md", bare.repo().join("CLAUDE.md")).expect("link");
+    bare.git(&["add", "-A"]);
+    bare.git(&["commit", "-q", "-m", "a bootstrap file in the workbench"]);
+    let out = bare.jigc(&["setup"]);
+    assert_eq!(out.status.code(), Some(1), "{}", said(&out));
+    assert_eq!(
+        fs::read_to_string(bare.repo().join(".jigc/mine.md")).ok(),
+        Some("# Mine\n".to_string()),
+        "setup merged into the workbench"
+    );
+}
+
+/// **N-5 — unwiring over a link never deletes the user's link and leaves jigc's section
+/// behind**: `CLAUDE.md` a link to an empty `AGENTS.md`, set up, then torn down — the link
+/// stands, and the file it leads to is empty again.
+#[test]
+fn unwiring_through_a_link_keeps_the_link_and_takes_the_section() {
+    let bare = TrialCorpus::build_never_adopted();
+    fs::write(bare.repo().join("AGENTS.md"), "").expect("empty");
+    std::os::unix::fs::symlink("AGENTS.md", bare.repo().join("CLAUDE.md")).expect("link");
+    bare.git(&["add", "-A"]);
+    bare.git(&["commit", "-q", "-m", "a linked bootstrap file"]);
+    assert_eq!(bare.jigc(&["setup"]).status.code(), Some(0), "setup");
+    let out = bare.jigc(&["uninstall"]);
+    assert_eq!(out.status.code(), Some(0), "{}", said(&out));
+    assert_eq!(
+        fs::read_link(bare.repo().join("CLAUDE.md")).ok(),
+        Some(std::path::PathBuf::from("AGENTS.md")),
+        "the user's link is kept:\n{}",
+        said(&out)
+    );
+    assert_eq!(
+        fs::read_to_string(bare.repo().join("AGENTS.md")).ok(),
+        Some(String::new()),
+        "jigc's section is taken out of the file it leads to"
+    );
 }

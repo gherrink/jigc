@@ -1,7 +1,7 @@
 //! The route catalog's cases for `jigc uninstall` — the family's table, declared by
 //! `crates/cli/tests/route_catalog.rs`, which says what a case is held to.
 //!
-//! **What stands here** is every blocking site of `jigc uninstall`, twenty. The
+//! **What stands here** is every blocking site of `jigc uninstall`, twenty-one. The
 //! refusals a teardown meets before it removes anything: no repository to tear down in, or
 //! no `$HOME` (`locate_finding`, two sites); the adapter profile not loaded (reached
 //! through `JIGC_ADAPTERS_DIR` and no other way); and the four guards over what `.jigc/`
@@ -12,8 +12,9 @@
 //! `.jigc/` itself, the reference in `CLAUDE.md`, the three kinds of entry in the settings
 //! file, the `pre-commit` hook, the guide. And, before all of those, the two files the
 //! teardown edits in place — `CLAUDE.md` and the settings file — each a link it will not
-//! follow (`edited_through_links`, since 2026-10-28). Each of the twenty has a row of
-//! [`READINGS`].
+//! follow (`edited_through_links`, since 2026-10-28) — and the `pre-commit` hook, the
+//! third, where the teardown would write it back through such a link
+//! (`hook_written_through_a_link`). Each of the twenty-one has a row of [`READINGS`].
 //!
 //! **A step that removes has one route for every error of its callee** — *ensure … is
 //! writable* over one entry it names — so its causes are the callee's errors, and a case
@@ -1074,14 +1075,13 @@ macro_rules! step_refused {
 }
 
 /// **The bit, and not the link** — which of the two the refusal is over in the two cases
-/// whose state is a link to a file that may not be written: the hook's, to a script
-/// outside the repository, and the reference host's, to a file inside it.
+/// whose state is a link to a file inside the repository that may not be written: the
+/// hook's, to a script, and the reference host's, to a file.
 const THE_BIT_NOT_THE_LINK: Option<(Over, &str)> = Some((
     Over::TheBound,
     "with the file the link leads to the owner's to write, the teardown writes through the \
      link at exit 0 and refuses nothing — driven by hand at both paths (the findings file, \
-     *Seen, and no case*; the host's again on 2026-10-28, with its link moved inside the \
-     repository)",
+     *Seen, and no case*; again on 2026-10-28, each link moved inside the repository)",
 ));
 
 /// Run a shell line at the repository's root — a `git` alias, where a state has no step
@@ -1413,25 +1413,56 @@ const HOOK_READ_ONLY: [Case; 1] = hook_refused!(
     ".git/hooks",
     plant: [shut!("444", ".git/hooks/pre-commit")],
 );
-/// The hook is a link to a script of somebody's outside the repository — a copy of the hook
-/// as the install left it — that may not be written. The script is a witness.
-const HOOK_A_LINK_OUT: [Case; 1] = [Case {
-    name: "uninstall-hook-a-link-to-a-read-only-script-outside",
+/// The hook is a link to a script inside the repository — a copy of the hook as the
+/// install left it — that may not be written. **Inside, since 2026-10-28**: a link that
+/// leads out of the repository and its hooks directory is refused before the teardown
+/// removes anything ([`HOOK_WRITTEN_THROUGH`]), as `jigc setup` refuses it, so only a link
+/// the teardown follows reaches this step.
+const HOOK_A_LINK_IN: [Case; 1] = [Case {
+    name: "uninstall-hook-a-link-to-a-read-only-script-inside",
     site: REMOVE_PRECOMMIT,
-    cause: "the hook is a link to a script outside the repository that holds jigc's block \
+    cause: "the hook is a link to a script inside the repository that holds jigc's block \
             and may not be written",
     state: installed![sh!(
-        "cp .git/hooks/pre-commit ../outside/pre-commit && rm .git/hooks/pre-commit && ln -s \
-         \"$PWD/../outside/pre-commit\" .git/hooks/pre-commit && chmod 444 \
-         ../outside/pre-commit"
+        "mkdir -p scripts && cp .git/hooks/pre-commit scripts/pre-commit && rm \
+         .git/hooks/pre-commit && ln -s ../../scripts/pre-commit .git/hooks/pre-commit && \
+         chmod 444 scripts/pre-commit"
     )],
     acts: &[
         Act::MakeWritable(Operand::Unprinted(".git/hooks")),
         Act::Run(0),
     ],
+    holds: &[
+        Check::Absent(Place::Repo(WORKBENCH)),
+        Check::Absent(Place::Repo(GUIDE_MD)),
+        Check::Lacks(Place::Repo("scripts/pre-commit"), "jigc"),
+        Check::Contains(Place::Repo("scripts/pre-commit"), "echo mine\n"),
+    ],
+    over: THE_BIT_NOT_THE_LINK,
+    ..UNINSTALL
+}];
+
+// --- `hook_written_through_a_link` · `uninstall.remove-precommit` before the teardown
+
+const HOOK_WRITTEN_THROUGH: &str =
+    "crates/cli/src/setup.rs::hook_written_through_a_link::uninstall.remove-precommit#1";
+
+/// **The hook is a link out of the repository and its hooks directory, which the teardown
+/// would write back** — their hook, wrapped by the install, moved to a copy outside and
+/// linked back. Followed the one way the case can take: the script itself put in the
+/// link's place, and the command again. The copy outside is a witness.
+const HOOK_A_LINK_OUT: [Case; 1] = [Case {
+    name: "uninstall-hook-a-link-out-the-script-itself-put-there-and-re-run",
+    site: HOOK_WRITTEN_THROUGH,
+    cause: "the hook is a link to a script outside the repository and its hooks directory, \
+            which the teardown would write back without jigc's block",
+    state: installed![sh!(
+        "cp .git/hooks/pre-commit ../outside/pre-commit && rm .git/hooks/pre-commit && ln -s \
+         \"$PWD/../outside/pre-commit\" .git/hooks/pre-commit"
+    )],
+    acts: &[Act::PutTheFileItself(Operand::Span(0)), Act::Run(1)],
     holds: torn_down![],
     witnesses: &["theirs", "pre-commit"],
-    over: THE_BIT_NOT_THE_LINK,
     ..UNINSTALL
 }];
 /// **The one state the route's words are true of**: an install over a repository with no
@@ -1529,6 +1560,7 @@ pub const CASES: &[&[Case]] = &[
     &HOOK_UNREADABLE,
     &HOOK_A_FIFO,
     &HOOK_READ_ONLY,
+    &HOOK_A_LINK_IN,
     &HOOK_A_LINK_OUT,
     &A_HOOK_OF_JIGCS_IN_A_READ_ONLY_HOOKS_DIRECTORY,
     &GUIDE_IN_A_READ_ONLY_DIRECTORY,
@@ -2032,6 +2064,28 @@ pub const READINGS: &[Reading] = &[
                 "the teardown then edits the file the link leads to, which holds none of \
                  jigc's entries unless it is a copy of the settings file: the case would \
                  plant the answer it is held to",
+            ),
+        )],
+    },
+    Reading {
+        site: HOOK_WRITTEN_THROUGH,
+        read: &[
+            "crates/cli/src/setup.rs::uninstall — step 0″, before the guards and before anything is removed",
+            "crates/cli/src/setup.rs::hook_written_through_a_link, hook_link_end and classify_precommit_for_teardown — which link the teardown will not write through, and whether it would write at all",
+        ],
+        causes: 1,
+        derivation: "the hook is a link that leads out of this repository and its hooks \
+                     directory, and the teardown would write it back — a hook that holds \
+                     jigc's block and lines of their own. A link to nothing reads as no \
+                     hook, and a hook the teardown removes whole or leaves is no write \
+                     through the link: neither is a cause",
+        without_case: &[],
+        not_followed: &[(
+            "*or point it at a script inside this repository*",
+            Why::NotConstructible(
+                "the teardown then edits the script the link leads to, which holds jigc's \
+                 block only where it is a copy of the hook: the case would plant the answer \
+                 it is held to",
             ),
         )],
     },

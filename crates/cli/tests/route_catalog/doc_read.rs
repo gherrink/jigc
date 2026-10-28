@@ -1432,16 +1432,19 @@ pub const READINGS: &[Reading] = &[
             ),
             (
                 "`jigc relocate`: a link at the new home of a doc it moves",
-                Why::NotConstructible(
-                    "the door moves the instances of a doctype no manifest governs, and every \
-                 shipped doctype is governed by one: it takes a pack of the reader's own",
+                Why::NotBuilt(
+                    "the door moves the instances of a doctype no manifest governs, so the \
+                 state takes a pack of the reader's own; the byte table builds it \
+                 (`relocate-a-link-to-a-file-outside-at-the-notes-new-home`, \
+                 `relocate-a-link-to-nothing-at-the-notes-new-home`)",
                 ),
             ),
             (
                 "`jigc relocate`: the home of a doc it moves",
-                Why::NotConstructible(
-                    "the door moves the instances of a doctype no manifest governs, and every \
-                 shipped doctype is governed by one: it takes a pack of the reader's own",
+                Why::NotBuilt(
+                    "the door moves the instances of a doctype no manifest governs, so the \
+                 state takes a pack of the reader's own; the byte table builds it \
+                 (`relocate-a-link-to-a-file-outside-in-the-stranded-notes-place`)",
                 ),
             ),
             (

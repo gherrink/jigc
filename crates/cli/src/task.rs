@@ -7794,6 +7794,20 @@ pub(crate) fn displace_foreign_area(
         let from_line = render::repo_relative(jigc_home, &from);
         let to = free_displacement_path(home.join(&entry));
         let parent = to.parent().unwrap_or(&home);
+        // **Never past a link in the parking home** (the second re-review's NS-C): a link
+        // there — at `displaced`, at the unit's directory, or below it — would carry the
+        // entry wherever it leads. Asked before the directory is made, without following a
+        // link; the entry then stays in the area, which the teardown keeps and names.
+        if let Some(link) = engine::state::workbench_link_on_the_way(&to) {
+            unmoved.push(Unmoved {
+                path: from_line,
+                reason: format!(
+                    "`{link}` is a symbolic link on the way to its parking place, and jigc \
+                     writes nothing past a link"
+                ),
+            });
+            continue;
+        }
         if let Err(err) = std::fs::create_dir_all(parent) {
             unmoved.push(Unmoved {
                 path: from_line,

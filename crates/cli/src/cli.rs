@@ -841,17 +841,36 @@ impl Command {
             )
     }
 
+    /// **Whether this read form forecasts a writing act's outcome** — the two dry runs,
+    /// `migrate-corpus --dry-run` and `task finalize --dry-run`, which print what the act
+    /// would do and refuse where it would refuse. Such a forecast obeys the gate it
+    /// forecasts (M47 Inc 4 T3, `crate::task`'s dry-run arm; `crate::migrate_corpus::run`'s
+    /// *the identical report an applying run would print*): the act refuses over a link on
+    /// the way, so the forecast refuses too, under the same code, and still writes nothing.
+    /// `start --explain` and `workflow --preview` are read forms that forecast no act's
+    /// outcome — they show what a composition says — and report, as every other read form.
+    pub fn forecasts_a_write(&self) -> bool {
+        matches!(
+            self,
+            Command::MigrateCorpus { dry_run: true, .. }
+                | Command::Task {
+                    verb: TaskCommand::Finalize { dry_run: true, .. }
+                }
+        )
+    }
+
     /// **What the link-on-the-way guard does here** — stands down at a
-    /// [`LINK_GUARD_EXCEPTIONS`] leaf, reports at a read form ([`Command::reads_only`]),
-    /// and refuses everywhere else: over the current homes, the pack's defaults too at
-    /// `jigc setup` (which lays a project out over them), and none at `jigc config set`,
-    /// which asks the homes its own act reaches.
+    /// [`LINK_GUARD_EXCEPTIONS`] leaf, reports at a read form ([`Command::reads_only`])
+    /// that forecasts no writing act ([`Command::forecasts_a_write`]), and refuses
+    /// everywhere else: over the current homes, the pack's defaults too at `jigc setup`
+    /// (which lays a project out over them), and none at `jigc config set`, which asks the
+    /// homes its own act reaches.
     pub fn link_guard(&self) -> LinkGuard {
         let leaf = self.leaf();
         if let Some(row) = LINK_GUARD_EXCEPTIONS.iter().find(|row| row.door == leaf) {
             return LinkGuard::StandsDown(row.reason);
         }
-        if self.reads_only() {
+        if self.reads_only() && !self.forecasts_a_write() {
             return LinkGuard::Reports;
         }
         LinkGuard::Refuses(match leaf {

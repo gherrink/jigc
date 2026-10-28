@@ -683,7 +683,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "uninstall-guide-directory-read-only",
             "uninstall-hook-a-directory",
-            "uninstall-hook-a-link-to-a-read-only-script-outside",
+            "uninstall-hook-a-link-to-a-read-only-script-inside",
             "uninstall-hook-hooks-path-a-file",
             "uninstall-hook-hooks-path-dev-null",
             "uninstall-hook-hooks-path-empty",

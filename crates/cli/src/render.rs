@@ -3968,9 +3968,10 @@ pub struct TaskDiffView<'a> {
 /// absent-versus-empty rule — a discrimination a driver should never have to infer — and
 /// that is what makes the **empty state non-empty**: the verb printed zero bytes on both
 /// streams at exit 0 before this, silence a driver cannot tell from a crash. `findings`
-/// is **structurally always empty**: `task diff` is a pure reader and the exit-code
-/// taxonomy restricts the blocking verdict to the three gate verbs, so this verb raises
-/// none; the key is present anyway so a driver deserializes one envelope shape.
+/// raises no finding of its own: `task diff` is a pure reader and the exit-code taxonomy
+/// restricts the blocking verdict to the three gate verbs; the key is present anyway so a
+/// driver deserializes one envelope shape, and it carries the link-on-the-way advisory
+/// where a link stands on the way (the second re-review's N-2).
 pub fn task_diff(format: Format, view: &TaskDiffView<'_>) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
@@ -3983,7 +3984,12 @@ pub fn task_diff(format: Format, view: &TaskDiffView<'_>) -> String {
                 .iter()
                 .map(|doc| serde_json::json!({ "id": doc.id }))
                 .collect::<Vec<_>>(),
-            "findings": [],
+            // Empty but for the link-on-the-way advisory a read form's guard holds for its
+            // one document (`crate::link_way::hold_for_the_document`).
+            "findings": crate::link_way::held_for_the_document()
+                .cloned()
+                .into_iter()
+                .collect::<engine::finding::Findings>(),
         })),
         Format::Agent | Format::Human => {
             let mut out = String::new();

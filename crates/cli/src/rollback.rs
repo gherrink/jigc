@@ -790,7 +790,8 @@ impl PreImageFamily {
 /// Only [`std::path::Component::Normal`] components of the identity are walked, so an
 /// identity that is absolute or climbs with `..` parks nowhere rather than writing outside
 /// the workbench — `None`, and the finding then says the copy is gone rather than naming a
-/// path that is not there. The same `None` covers a write that simply failed.
+/// path that is not there. The same `None` covers a write that simply failed, and a link on
+/// the way inside the parking home, which no write goes past.
 fn park(jigc_root: &Path, door: ConflictDoor, identity: &str, bytes: &[u8]) -> Option<PathBuf> {
     let relative = Path::new(identity);
     let name = relative.file_name()?;
@@ -801,12 +802,18 @@ fn park(jigc_root: &Path, door: ConflictDoor, identity: &str, bytes: &[u8]) -> O
             _ => return None,
         }
     }
-    std::fs::create_dir_all(&dir).ok()?;
     let parked = dir.join(format!(
         "{}.pre-image.{}",
         name.to_string_lossy(),
         engine::tempname::unique_nanos(),
     ));
+    // Never past a link in the parking home (the second re-review's NS-C): asked before the
+    // directories are made, without following a link — and a copy that cannot be parked
+    // here is said to be gone, as for any write that fails.
+    if engine::state::workbench_link_on_the_way(&parked).is_some() {
+        return None;
+    }
+    std::fs::create_dir_all(&dir).ok()?;
     std::fs::write(&parked, bytes).ok()?;
     Some(parked)
 }

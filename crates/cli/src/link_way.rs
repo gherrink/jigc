@@ -68,13 +68,17 @@ pub enum WayOut {
     /// path, reached through no other link: move that directory into the link's place. A
     /// copy would leave two.
     MoveIn(String),
-    /// The link leads to a directory outside the repository, to one inside it only through
-    /// another link, or to one inside git's own directory: put a copy of what it leads to
-    /// in the link's place, as a real directory. What stands there is the user's and stays.
+    /// The link leads to a directory outside the repository (and not above it), or to one
+    /// inside it only through another link: put a copy of what it leads to in the link's
+    /// place, as a real directory. What stands there is the user's and stays.
     CopyIn,
-    /// The link leads to no directory — to nothing, or to a file — or to a directory it
-    /// stands in: remove it; jigc makes the directory itself where it needs one.
+    /// The link leads to no directory — to nothing, or to a file: remove it; jigc makes
+    /// the directory itself where it needs one.
     Remove,
+    /// The link leads to a directory that holds it — the repository, an ancestor of the
+    /// repository, a directory it stands in — or into git's own directory: a copy of any
+    /// of them would hold the repository or the link again, so the route removes it.
+    RemoveOnly,
 }
 
 /// **One link on the way** — the repo-relative path of the link, where it stands, and the
@@ -119,6 +123,12 @@ impl Link {
                  it needs it",
                 self.at
             ),
+            WayOut::RemoveOnly => format!(
+                "remove the link at `{}`, which leads to the repository, a directory that \
+                 holds the link, or git's own directory — no copy of those belongs in its \
+                 place, and jigc makes the directory where it needs one",
+                self.at
+            ),
         }
     }
 }
@@ -144,13 +154,24 @@ fn way_out(root: &Path, at: &str) -> WayOut {
         .find_map(|root| target.strip_prefix(root).ok().map(Path::to_path_buf));
     let real_directory =
         std::fs::symlink_metadata(&target).is_ok_and(|entry| entry.file_type().is_dir());
-    // A directory inside git's own directory is no directory of the repository's: git
-    // records nothing there, so what it holds is copied in, never moved out of git's.
-    let inside = inside.filter(|rel| {
+    // **What holds the link, or git's own directory, is never copied or moved in** (the
+    // second re-review's N-3): the repository itself, a directory above it, or anything
+    // inside `.git` — a copy of any of them would hold the repository, or the link, again.
+    let canonical = target.canonicalize().ok();
+    let holds_the_repository = roots.iter().any(|root| {
+        root.starts_with(&target)
+            || canonical
+                .as_ref()
+                .is_some_and(|real| root.starts_with(real))
+    });
+    let in_gits = inside.as_ref().is_some_and(|rel| {
         rel.components()
             .next()
-            .is_some_and(|first| first.as_os_str() != ".git")
+            .is_some_and(|first| first.as_os_str() == ".git")
     });
+    if holds_the_repository || in_gits {
+        return WayOut::RemoveOnly;
+    }
     let inside = inside.filter(|rel| !rel.as_os_str().is_empty()).map(|rel| {
         rel.components()
             .map(|c| c.as_os_str().to_string_lossy().into_owned())
@@ -160,7 +181,7 @@ fn way_out(root: &Path, at: &str) -> WayOut {
     match inside {
         // A link to a directory it stands in — an ancestor of its own place — leads to
         // nothing a move or a copy could put there: the directory would go into itself.
-        Some(rel) if at == rel || at.starts_with(&format!("{rel}/")) => WayOut::Remove,
+        Some(rel) if at == rel || at.starts_with(&format!("{rel}/")) => WayOut::RemoveOnly,
         // Moved in only where the target is reached through **no** link: walked from the
         // root without following one, every component of its spelling — itself included —
         // a real directory (the re-review's NS2). A target behind a second link is the
@@ -353,8 +374,12 @@ pub const WORKBENCH_DIRECTORIES: &[&str] = &[
     "logs",
 ];
 
-/// The parking home: jigc writes into it only at a name that is free, so what it holds —
-/// what a door parked there — is on the way to nothing jigc writes.
+/// The parking home. The walk asks its own entry and not what it holds — what a door
+/// parked there is the user's, and may itself be a link — so every writer into it asks
+/// the way at the act instead: a relocation's squatter at a free leaf directly below it,
+/// a working area's complement below `<unit>/` (`task::displace_foreign_area`), a
+/// rollback's pre-image below `<door>/…` (`rollback::park`), each refusing to write past a
+/// link inside it (`engine::state::workbench_link_on_the_way`).
 const DISPLACED: &str = "displaced";
 
 /// The fan-out worktrees' directory below the workbench — each entry there is a git
