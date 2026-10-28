@@ -573,7 +573,9 @@ fn committing_the_link_does_not_buy_a_write_through_it() {
 /// it into another directory — driven on this tree's parent: `.jigc -> ../store` had
 /// `../store/AGENT.md` regenerated, and the run then failed at its own `git add` (*beyond a
 /// symbolic link*), which no route could clear. Refused before the first write now, naming
-/// the link.
+/// the link — under `store.link-on-the-way` since 2026-10-28, the one code for the state at
+/// every command (`design/storage.md` → *No write through a link on the way*), where the
+/// member's own code answered until then.
 #[test]
 fn a_linked_directory_on_the_way_refuses_before_anything_is_written_below_it() {
     // `.jigc` itself, pointing out of the repository.
@@ -589,7 +591,7 @@ fn a_linked_directory_on_the_way_refuses_before_anything_is_written_below_it() {
         assert_refused_before_any_write(
             repo,
             &out,
-            refusal_code(".jigc/AGENT.md"),
+            "store.link-on-the-way",
             &head,
             "linked `.jigc`",
         );
@@ -618,7 +620,7 @@ fn a_linked_directory_on_the_way_refuses_before_anything_is_written_below_it() {
         assert_refused_before_any_write(
             repo,
             &out,
-            refusal_code(".jigc/config/.gitkeep"),
+            "store.link-on-the-way",
             &head,
             "linked `.jigc/config`",
         );
@@ -653,7 +655,7 @@ fn a_linked_directory_on_the_way_refuses_before_anything_is_written_below_it() {
         assert_refused_before_any_write(
             repo,
             &out,
-            refusal_code(GUIDE),
+            "store.link-on-the-way",
             &head,
             "linked `.claude/skills`",
         );

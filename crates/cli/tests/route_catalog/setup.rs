@@ -117,12 +117,6 @@ const MOVE_AWAY_AND_COMMIT: &[Act] = &[
     Act::Commit(Operand::Span(0)),
     Act::Run(1),
 ];
-const MAKE_DIRECTORY: &[Act] = &[Act::ReplaceWithDirectory(Operand::Span(0)), Act::Run(1)];
-const MAKE_DIRECTORY_AND_COMMIT: &[Act] = &[
-    Act::ReplaceWithDirectory(Operand::Span(0)),
-    Act::Commit(Operand::Span(0)),
-    Act::Run(1),
-];
 const REMOVE_BOTH: &[Act] = &[
     Act::Remove(Operand::Span(0)),
     Act::Remove(Operand::Span(1)),
@@ -302,41 +296,6 @@ macro_rules! replaced_directory {
                     Check::RegularFile(Place::Repo($member)),
                     Check::RegularFile(Place::Moved(concat!($member, "/kept"))),
                 ],
-                ..SETUP
-            },
-        ]
-    };
-}
-
-/// **A link standing in for a directory on the way to a member**: replaced by a real
-/// directory, where git does not track the link and where it is committed. `installed` is
-/// what stands afterwards beside the directory itself.
-macro_rules! linked_way {
-    (
-        $prefix:literal, $site:expr, $cause:expr, $link:literal,
-        plant: [$($plant:expr),* $(,)?],
-        installed: [$($installed:expr),* $(,)?],
-        witnesses: [$($witness:literal),* $(,)?] $(,)?
-    ) => {
-        [
-            Case {
-                name: concat!($prefix, "-replaced"),
-                site: $site,
-                cause: $cause,
-                state: &[$($plant,)*],
-                acts: MAKE_DIRECTORY,
-                holds: &[Check::Directory(Place::Repo($link)), $($installed,)*],
-                witnesses: &[$($witness,)*],
-                ..SETUP
-            },
-            Case {
-                name: concat!($prefix, "-committed-and-replaced"),
-                site: $site,
-                cause: $cause,
-                state: &[$($plant,)* COMMIT_IT[0], COMMIT_IT[1]],
-                acts: MAKE_DIRECTORY_AND_COMMIT,
-                holds: &[Check::Directory(Place::Repo($link)), $($installed,)*],
-                witnesses: &[$($witness,)*],
                 ..SETUP
             },
         ]
@@ -617,18 +576,6 @@ const AGENT_A_DIRECTORY: [Case; 2] = replaced_directory!(
     "`.jigc/AGENT.md` is a directory",
     ".jigc/AGENT.md"
 );
-const WORKBENCH_A_LINK: [Case; 2] = linked_way!(
-    "setup-workbench-a-link",
-    BOOTSTRAP,
-    "`.jigc`, on the way to `.jigc/AGENT.md`, is a link to a directory outside the repository",
-    ".jigc",
-    plant: [
-        Step::File(Place::Outside("store/theirs"), "theirs\n"),
-        Step::Link(Place::Repo(".jigc"), Place::Outside("store")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(AGENT_MD))],
-    witnesses: ["store/theirs", "store/AGENT.md", "store/version"],
-);
 const AGENT_A_FIFO: [Case; 1] = [Case {
     name: "setup-bootstrap-file-a-special-file",
     site: BOOTSTRAP,
@@ -706,19 +653,6 @@ const STAMP_A_FIFO: [Case; 1] = [Case {
     ..SETUP
 }];
 
-const LAYER_UNDER_A_LINK: [Case; 2] = linked_way!(
-    "setup-project-layer-a-link",
-    LAYER,
-    "`.jigc/config`, on the way to `.jigc/config/.gitkeep`, is a link to a directory outside \
-     the repository",
-    ".jigc/config",
-    plant: [
-        Step::File(Place::Outside("config/theirs"), "theirs\n"),
-        Step::Link(Place::Repo(".jigc/config"), Place::Outside("config")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(".jigc/config/.gitkeep"))],
-    witnesses: ["config/theirs", "config/.gitkeep", "config/packs.yaml"],
-);
 const LAYER_A_LINK: [Case; 2] = replaced_link!(
     "setup-layer-marker-a-link",
     LAYER,
@@ -792,49 +726,6 @@ const RECORD_A_FIFO: [Case; 1] = [Case {
     ..SETUP
 }];
 
-const GUIDE_UNDER_A_LINKED_ASSISTANT_DIRECTORY: [Case; 2] = linked_way!(
-    "setup-guide-under-a-linked-assistant-directory",
-    GUIDE,
-    "`.claude`, on the way to the guide, is a link to a directory outside the repository \
-     that holds no guide",
-    ".claude",
-    plant: [
-        Step::File(Place::Outside("dotclaude/theirs"), "theirs\n"),
-        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
-    witnesses: [
-        "dotclaude/theirs",
-        "dotclaude/settings.json",
-        "dotclaude/skills/jigc/SKILL.md",
-    ],
-);
-const GUIDE_UNDER_A_LINKED_SKILLS_DIRECTORY: [Case; 2] = linked_way!(
-    "setup-guide-under-a-linked-skills-directory",
-    GUIDE,
-    "`.claude/skills`, on the way to the guide, is a link to a directory outside the \
-     repository",
-    ".claude/skills",
-    plant: [
-        Step::File(Place::Outside("skills/theirs"), "theirs\n"),
-        Step::Link(Place::Repo(".claude/skills"), Place::Outside("skills")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
-    witnesses: ["skills/theirs", "skills/jigc/SKILL.md"],
-);
-const GUIDE_UNDER_A_LINKED_SKILL_DIRECTORY: [Case; 2] = linked_way!(
-    "setup-guide-under-a-linked-skill-directory",
-    GUIDE,
-    "`.claude/skills/jigc`, on the way to the guide, is a link to a directory outside the \
-     repository",
-    ".claude/skills/jigc",
-    plant: [
-        Step::File(Place::Outside("skill/theirs"), "theirs\n"),
-        Step::Link(Place::Repo(".claude/skills/jigc"), Place::Outside("skill")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(GUIDE_MD))],
-    witnesses: ["skill/theirs", "skill/SKILL.md"],
-);
 /// **Held.** `guide_ownership` reads the guide's path before the refusal is reached.
 const GUIDE_A_FIFO: [Case; 1] = [Case {
     name: "setup-guide-a-special-file",
@@ -981,70 +872,6 @@ const SETTINGS_INTO_GITS_DIRECTORY: [Case; 6] = link_ways!(
         Step::Link(Place::Repo(SETTINGS_JSON), Place::Repo(".git/theirs")),
     ],
     kept: [Check::RegularFile(Place::Repo(".git/theirs"))],
-    witnesses: [],
-);
-
-/// A guide that is not jigc's, at the end of a `.claude` that is a link: the install then
-/// leaves the guide alone, and the link is `.claude/settings.json`'s to answer for.
-const SETTINGS_UNDER_A_LINK_THAT_HOLDS_NONE: [Case; 2] = linked_way!(
-    "setup-settings-under-a-link-that-holds-none",
-    SETTINGS,
-    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory outside the \
-     repository that holds a guide of somebody's and no settings file",
-    ".claude",
-    plant: [
-        Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(SETTINGS_JSON))],
-    witnesses: ["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
-);
-const SETTINGS_UNDER_A_LINK_OUT: [Case; 2] = linked_way!(
-    "setup-settings-under-a-link-out-of-the-repository",
-    SETTINGS,
-    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory outside the \
-     repository that holds a guide of somebody's and a settings file",
-    ".claude",
-    plant: [
-        Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-        Step::File(Place::Outside("dotclaude/settings.json"), "{}\n"),
-        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
-    ],
-    installed: [Check::RegularFile(Place::Repo(SETTINGS_JSON))],
-    witnesses: ["dotclaude/skills/jigc/SKILL.md", "dotclaude/settings.json"],
-);
-const SETTINGS_UNDER_A_LINK_TO_A_DIRECTORY_THERE: [Case; 2] = linked_way!(
-    "setup-settings-under-a-link-to-a-directory-there",
-    SETTINGS,
-    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory inside the \
-     repository where `settings.json` is a directory",
-    ".claude",
-    plant: [
-        Step::File(Place::Repo("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-        Step::Dir(Place::Repo("dotclaude/settings.json")),
-        Step::Link(Place::Repo(".claude"), Place::Repo("dotclaude")),
-    ],
-    installed: [
-        Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-        Check::RegularFile(Place::Repo("dotclaude/skills/jigc/SKILL.md")),
-    ],
-    witnesses: [],
-);
-const SETTINGS_UNDER_A_LINK_INTO_GITS_DIRECTORY: [Case; 2] = linked_way!(
-    "setup-settings-under-a-link-into-gits-directory",
-    SETTINGS,
-    "`.claude`, on the way to `.claude/settings.json`, is a link to a directory inside git's \
-     own directory",
-    ".claude",
-    plant: [
-        Step::File(Place::Repo(".git/dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
-        Step::File(Place::Repo(".git/dotclaude/settings.json"), "{}\n"),
-        Step::Link(Place::Repo(".claude"), Place::Repo(".git/dotclaude")),
-    ],
-    installed: [
-        Check::RegularFile(Place::Repo(SETTINGS_JSON)),
-        Check::RegularFile(Place::Repo(".git/dotclaude/settings.json")),
-    ],
     witnesses: [],
 );
 
@@ -2846,13 +2673,11 @@ pub const CASES: &[&[Case]] = &[
     &HOOKS_PATH_OUTSIDE_OUT,
     &AGENT_A_LINK,
     &AGENT_A_DIRECTORY,
-    &WORKBENCH_A_LINK,
     &AGENT_A_FIFO,
     &TWO_REPLACED_LINKS,
     &STAMP_A_LINK,
     &STAMP_A_DIRECTORY,
     &STAMP_A_FIFO,
-    &LAYER_UNDER_A_LINK,
     &LAYER_A_LINK,
     &LAYER_A_DIRECTORY,
     &LAYER_A_FIFO,
@@ -2862,9 +2687,6 @@ pub const CASES: &[&[Case]] = &[
     &RECORD_A_LINK,
     &RECORD_A_DIRECTORY,
     &RECORD_A_FIFO,
-    &GUIDE_UNDER_A_LINKED_ASSISTANT_DIRECTORY,
-    &GUIDE_UNDER_A_LINKED_SKILLS_DIRECTORY,
-    &GUIDE_UNDER_A_LINKED_SKILL_DIRECTORY,
     &GUIDE_A_FIFO,
     &HOST_TO_NOTHING,
     &HOST_OUT,
@@ -2875,10 +2697,6 @@ pub const CASES: &[&[Case]] = &[
     &SETTINGS_OUT,
     &SETTINGS_TO_A_DIRECTORY,
     &SETTINGS_INTO_GITS_DIRECTORY,
-    &SETTINGS_UNDER_A_LINK_THAT_HOLDS_NONE,
-    &SETTINGS_UNDER_A_LINK_OUT,
-    &SETTINGS_UNDER_A_LINK_TO_A_DIRECTORY_THERE,
-    &SETTINGS_UNDER_A_LINK_INTO_GITS_DIRECTORY,
     &SEED_TO_NOTHING,
     &SEED_OUT,
     &SEED_TO_A_DIRECTORY,
@@ -3054,12 +2872,10 @@ const SHARED: [&str; 4] = [
     "crates/engine/src/store.rs::home_entry — the three shapes of an entry that is no regular file",
 ];
 
-/// Why a link at `.jigc` is no case of a site but the first replacing member's.
-const WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES: Why = Why::NotConstructible(
-    "a link at `.jigc` is in the way of `.jigc/AGENT.md` first, and the refusal is raised \
-     under the first blocked member's code — `setup.write-bootstrap`, the cases \
-     `setup-workbench-a-link-…`",
-);
+// What the sites below no longer count since 2026-10-28: a directory on the way to a
+// member that is a symbolic link is the link-on-the-way state, refused ahead of them under
+// its one code, `store.link-on-the-way` — its cases stand with that site's, in
+// `doc_read.rs`.
 
 /// Why the clause *committing the removal where git tracks the entry* is not followed over
 /// a special file.
@@ -3184,11 +3000,13 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 5,
-        derivation: "`.jigc/AGENT.md` is the first replacing member: one directory on its way \
-                     can be a link (`.jigc`), its own path can be a link, a directory or a \
-                     special file, and — counted here for the function — several entries can \
-                     be in the way at once. Where a link leads is not asked",
+        causes: 4,
+        derivation: "`.jigc/AGENT.md` is the first replacing member: its own path can be a \
+                     link, a directory or a special file, and — counted here for the \
+                     function — several entries can be in the way at once. Where a link leads \
+                     is not asked. A directory on the way that is a link is no cause here \
+                     since 2026-10-28: it is refused ahead of this site under \
+                     `store.link-on-the-way`",
         without_case: &[],
         not_followed: &[GIT_TRACKS_NO_FIFO],
     },
@@ -3201,13 +3019,11 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 4,
-        derivation: "`.jigc/version`: the directory on its way (`.jigc`), and its own path as \
-                     a link, a directory or a special file",
-        without_case: &[(
-            "`.jigc`, on the way to `.jigc/version`, is a link",
-            WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
-        )],
+        causes: 3,
+        derivation: "`.jigc/version`: its own path as a link, a directory or a special file. \
+                     A directory on the way that is a link is no cause here since 2026-10-28: \
+                     it is refused ahead of this site under `store.link-on-the-way`",
+        without_case: &[],
         not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
@@ -3219,14 +3035,12 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 5,
-        derivation: "`.jigc/config/.gitkeep`: two directories on its way (`.jigc`, \
-                     `.jigc/config`), and its own path as a link, a directory or a special \
-                     file",
-        without_case: &[(
-            "`.jigc`, on the way to `.jigc/config/.gitkeep`, is a link",
-            WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
-        )],
+        causes: 3,
+        derivation: "`.jigc/config/.gitkeep`: its own path as a link, a directory or a \
+                     special file. A directory on the way that is a link is no cause here \
+                     since 2026-10-28: it is refused ahead of this site under \
+                     `store.link-on-the-way`",
+        without_case: &[],
         not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
@@ -3238,25 +3052,12 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 5,
-        derivation: "`.jigc/config/packs.yaml`: two directories on its way (`.jigc`, \
-                     `.jigc/config`), and its own path as a link, a directory or a special \
-                     file",
-        without_case: &[
-            (
-                "`.jigc`, on the way to `.jigc/config/packs.yaml`, is a link",
-                WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
-            ),
-            (
-                "`.jigc/config`, on the way to `.jigc/config/packs.yaml`, is a link",
-                Why::NotConstructible(
-                    "a link at `.jigc/config` is in the way of `.jigc/config/.gitkeep` \
-                     first, the member written before this one — the refusal is raised \
-                     under `setup.init-project-layer`, the cases \
-                     `setup-project-layer-a-link-…`",
-                ),
-            ),
-        ],
+        causes: 3,
+        derivation: "`.jigc/config/packs.yaml`: its own path as a link, a directory or a \
+                     special file. A directory on the way that is a link is no cause here \
+                     since 2026-10-28: it is refused ahead of this site under \
+                     `store.link-on-the-way`",
+        without_case: &[],
         not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
@@ -3268,13 +3069,12 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 4,
-        derivation: "`.jigc/settings-entries.json`: the directory on its way (`.jigc`), and \
-                     its own path as a link, a directory or a special file",
-        without_case: &[(
-            "`.jigc`, on the way to `.jigc/settings-entries.json`, is a link",
-            WORKBENCH_LINK_IS_THE_BOOTSTRAP_FILES,
-        )],
+        causes: 3,
+        derivation: "`.jigc/settings-entries.json`: its own path as a link, a directory or a \
+                     special file. A directory on the way that is a link is no cause here \
+                     since 2026-10-28: it is refused ahead of this site under \
+                     `store.link-on-the-way`",
+        without_case: &[],
         not_followed: &[GIT_TRACKS_NO_FIFO],
     },
     Reading {
@@ -3288,10 +3088,12 @@ pub const READINGS: &[Reading] = &[
             SHARED[2],
             SHARED[3],
         ],
-        causes: 6,
-        derivation: "`.claude/skills/jigc/SKILL.md`: three directories on its way (`.claude`, \
-                     `.claude/skills`, `.claude/skills/jigc`), and its own path as a link, a \
-                     directory or a special file",
+        causes: 3,
+        derivation: "`.claude/skills/jigc/SKILL.md`: its own path as a link, a directory or a \
+                     special file. A directory on the way that is a link is no cause here \
+                     since 2026-10-28 (three until then: `.claude`, `.claude/skills`, \
+                     `.claude/skills/jigc`): it is refused ahead of this site under \
+                     `store.link-on-the-way`",
         without_case: &[
             (
                 "the guide's own path is a link",
@@ -3350,10 +3152,11 @@ pub const READINGS: &[Reading] = &[
             SHARED[1],
             SHARED[2],
         ],
-        causes: 8,
-        derivation: "`.claude/settings.json`: the link is at its own path or at `.claude`, \
-                     the one directory on its way, and either is refused at each of \
-                     `link_end`'s four ends",
+        causes: 4,
+        derivation: "`.claude/settings.json`: the link is at its own path, refused at each of \
+                     `link_end`'s four ends. A link at `.claude`, the one directory on its \
+                     way, is no cause here since 2026-10-28 (four more until then, one an \
+                     end): it is refused ahead of this site under `store.link-on-the-way`",
         without_case: &[],
         not_followed: &[],
     },
@@ -3398,18 +3201,13 @@ pub const READINGS: &[Reading] = &[
             SHARED[1],
             SHARED[2],
         ],
-        causes: 2,
+        causes: 1,
         derivation: "`.jigc/.gitignore` is the one member a link is never followed at, so \
                      `link_end` is not asked: the link is at its own path, wherever it \
-                     leads, or at `.jigc`, the directory on its way",
-        without_case: &[(
-            "`.jigc`, on the way to `.jigc/.gitignore`, is a link",
-            Why::NotConstructible(
-                "`replaced_path_refusal` is asked before this function and answers for a \
-                 link at `.jigc` under `setup.write-bootstrap` — the cases \
-                 `setup-workbench-a-link-…`",
-            ),
-        )],
+                     leads. A link at `.jigc`, the directory on its way, is no cause here \
+                     since 2026-10-28: it is refused ahead of this site under \
+                     `store.link-on-the-way`",
+        without_case: &[],
         not_followed: &[],
     },
     Reading {

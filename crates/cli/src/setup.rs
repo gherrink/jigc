@@ -1868,6 +1868,20 @@ fn install(
         guide_file.as_deref(),
         &[],
     );
+    // 0d″. **A directory on the way to a member that is a link is the link-on-the-way
+    //       state, under its one code** (2026-10-28, the review's S5): the same state every
+    //       other door refuses as `store.link-on-the-way`, so it is refused under that code
+    //       here too, ahead of the members' own codes, which keep the member's own entry —
+    //       a link, a directory, a special file at the file's place. Git's own directory
+    //       is not walked: the hook's place is git's to resolve.
+    let links: Vec<crate::link_way::Link> = members
+        .iter()
+        .filter(|member| !member.path.starts_with(".git/"))
+        .filter_map(|member| crate::link_way::on_the_way_to(jigc_home, &member.path))
+        .collect();
+    if !links.is_empty() {
+        return Err(crate::link_way::finding(&links));
+    }
     if let Some(refusal) = replaced_path_refusal(jigc_home, &members) {
         return Err(refusal);
     }
@@ -2978,6 +2992,15 @@ fn link_end(jigc_home: &Path, path: &str) -> LinkEnd {
              this repository"
         ));
     }
+    // The workbench, which `jigc uninstall` removes whole before it unwires anything (the
+    // second re-review's N-4): a member merged into a file there would go with it, and
+    // leave the link at the member's path leading to nothing.
+    if relative == ".jigc" || relative.starts_with(".jigc/") {
+        return LinkEnd::Refused(format!(
+            "leads to `{relative}`, inside jigc's own workbench, which `jigc uninstall` removes \
+             whole"
+        ));
+    }
     if git_path_ignored(jigc_home, &relative) {
         return LinkEnd::MergeableIgnored(relative);
     }
@@ -3102,6 +3125,77 @@ fn merged_through_links(
     ))
 }
 
+/// **The teardown's sibling of [`merged_through_links`]** — each `(path, code)` is a file
+/// `jigc uninstall` edits in place; a link at one is followed only where `jigc setup`
+/// follows one ([`link_end`]: to a regular file inside this checkout, ignored or not), and
+/// every other end refuses before anything is removed, under the code of the step that
+/// edits that file (the first such step's, where several refuse) — **but a link to
+/// nothing**, which no step writes through: it is returned, left as it is, and said
+/// ([`narrate_links_to_nothing`]). A link on the way to one is the link-on-the-way
+/// guard's, asked just before.
+fn edited_through_links(
+    jigc_home: &Path,
+    members: &[(&str, &'static str)],
+) -> Result<Vec<String>, Finding> {
+    let mut code = None;
+    let mut states: Vec<String> = Vec::new();
+    let mut acts: Vec<String> = Vec::new();
+    let mut to_nothing: Vec<String> = Vec::new();
+    for &(path, member_code) in members {
+        let Some(blocker) = crate::regular_file::blocker(jigc_home, path) else {
+            continue;
+        };
+        if blocker.shape != crate::regular_file::ForeignEntry::Symlink || !blocker.at_leaf() {
+            continue;
+        }
+        // **A link to nothing has nothing behind it to edit** (the second re-review's
+        // NS-B): the step that edits the file reads it first and finds no file, so it
+        // writes nothing — no file is created where the link points. Refusing it would
+        // keep a user from taking jigc out over an ordinary state (a bootstrap file moved
+        // away); so the link is left as it is, and said after the teardown.
+        // Nothing there, and only that (the third re-review's S-1): a loop, a path
+        // through a file or an unreadable directory is no link to nothing — the step's read
+        // fails on it after `.jigc` is gone — so it falls to `link_end`, which refuses it
+        // before anything is removed.
+        if std::fs::metadata(jigc_home.join(path))
+            .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound)
+        {
+            to_nothing.push(path.to_string());
+            continue;
+        }
+        if let LinkEnd::Refused(why) = link_end(jigc_home, path) {
+            code.get_or_insert(member_code);
+            states.push(format!("{} and {why}", blocker.describe()));
+            acts.push(format!(
+                "replace the link at `{path}` with the file it points at — a copy, in the \
+                 link's place — or point it at a regular file inside this repository"
+            ));
+        }
+    }
+    let Some(code) = code else {
+        return Ok(to_nothing);
+    };
+    Err(Finding::block(
+        code,
+        format!(
+            "{} — `jigc uninstall` edits the file at {}, and it follows a link there only to \
+             a regular file inside this repository, as `jigc setup` does. Nothing was removed",
+            states.join("; "),
+            if states.len() == 1 {
+                "that path"
+            } else {
+                "each of those paths"
+            },
+        ),
+        format!(
+            "{} — committing the change where git tracks the link — then re-run `jigc \
+             uninstall`. `--force` does not change this: it consents to deleting bytes, not \
+             to following a link",
+            acts.join("; "),
+        ),
+    ))
+}
+
 /// **The refusal a `pre-commit` hook that is a link draws when it leads out of both the
 /// repository and its own hooks directory** — the fifth merged-into member, asked where
 /// the other four are ([`merged_through_links`]).
@@ -3117,29 +3211,86 @@ fn merged_through_links(
 ///
 /// `None` when the hooks directory cannot be resolved: the install's own hook step then
 /// fails with git's reason, as it always has.
-fn hook_link_refusal(jigc_home: &Path) -> Option<Finding> {
+/// **Where a `pre-commit` hook that is a link leads, as the install and the teardown ask
+/// it** — `None` where the hook is no link, or a link to a file of this repository or of
+/// its hooks directory, which both follow. Otherwise the link's displayed path (the link,
+/// never the file it leads to), the hook's own path, and `None` for a link to nothing or
+/// `Some(why)` for a link out of both.
+fn hook_link_end(jigc_home: &Path) -> Option<(String, PathBuf, Option<String>)> {
     let hooks_dir = resolve_hooks_dir(jigc_home).ok()?;
     let hook = precommit_hook_in(&hooks_dir);
     if !std::fs::symlink_metadata(&hook).is_ok_and(|entry| entry.file_type().is_symlink()) {
         return None;
     }
-    let shown = display_hook_path(jigc_home, &hook);
-    let why = match std::fs::canonicalize(&hook) {
-        Err(_) => {
-            "leads to nothing, so installing would create a file wherever it points".to_string()
-        }
-        Ok(real) => {
-            let inside =
-                |dir: &Path| std::fs::canonicalize(dir).is_ok_and(|dir| real.starts_with(dir));
-            if inside(jigc_home) || inside(&hooks_dir) {
-                return None;
-            }
-            format!(
-                "leads out of this repository and its hooks directory, to `{}`",
-                crate::render::repo_relative(jigc_home, &real)
-            )
-        }
+    // The link itself, never where it leads (the third re-review's L-3): its directory
+    // resolved, its own name kept — a route that says *remove the link at …* must name the
+    // link, or, run as printed, it removes the user's script.
+    let shown = format!("{}/pre-commit", display_hook_path(jigc_home, &hooks_dir));
+    let Ok(real) = std::fs::canonicalize(&hook) else {
+        return Some((shown, hook, None));
     };
+    let inside = |dir: &Path| std::fs::canonicalize(dir).is_ok_and(|dir| real.starts_with(dir));
+    if inside(jigc_home) || inside(&hooks_dir) {
+        return None;
+    }
+    let why = format!(
+        "leads out of this repository and its hooks directory, to `{}`",
+        crate::render::repo_relative(jigc_home, &real)
+    );
+    Some((shown, hook, Some(why)))
+}
+
+/// **The teardown's hook rule** (the second re-review's NS-D) — `jigc uninstall` refuses,
+/// before anything is removed, where it would write the `pre-commit` hook back
+/// ([`PrecommitTeardown::RestoreForeign`]) through a link `jigc setup` would not follow
+/// ([`hook_link_end`]). A link to nothing reads as no hook, and a hook the teardown would
+/// remove whole or leave is no write through the link: neither refuses.
+fn hook_written_through_a_link(jigc_home: &Path, force: bool) -> Result<(), Finding> {
+    let Some((shown, hook, Some(why))) = hook_link_end(jigc_home) else {
+        return Ok(());
+    };
+    let Ok(existing) = std::fs::read_to_string(&hook) else {
+        return Ok(());
+    };
+    if !matches!(
+        classify_precommit_for_teardown(&existing, force),
+        PrecommitTeardown::RestoreForeign(_)
+    ) {
+        return Ok(());
+    }
+    Err(Finding::block(
+        "uninstall.remove-precommit",
+        format!(
+            "the `pre-commit` hook `{shown}` is a symbolic link and {why} — `jigc uninstall` \
+             takes its block out of the hook it finds, and it follows a link there only to a \
+             file of this repository, as `jigc setup` does. Nothing was removed"
+        ),
+        format!(
+            "replace the link at `{shown}` with the script it points at — a copy, in the \
+             link's place — or point it at a script inside this repository, then re-run `jigc \
+             uninstall`. `--force` does not change this: it consents to deleting bytes, not to \
+             following a link"
+        ),
+    ))
+}
+
+/// Say each file the teardown left because it is a link to nothing
+/// ([`edited_through_links`]) — on stderr, beside the summary, the channel this door's
+/// other narrations use: nothing is wrong and nothing blocks, but a thing left is said.
+fn narrate_links_to_nothing(paths: &[String]) {
+    for path in paths {
+        eprintln!(
+            "note: `{path}` is a symbolic link to nothing — jigc left it as it is: there is no \
+             file behind it to take jigc's lines out of, and none was created where it points"
+        );
+    }
+}
+
+fn hook_link_refusal(jigc_home: &Path) -> Option<Finding> {
+    let (shown, _, why) = hook_link_end(jigc_home)?;
+    let why = why.unwrap_or_else(|| {
+        "leads to nothing, so installing would create a file wherever it points".to_string()
+    });
     Some(Finding::block(
         "setup.install-hook",
         format!(
@@ -4882,6 +5033,54 @@ fn uninstall(
     profile: &AdapterProfile,
     force: bool,
 ) -> Result<UninstallSummary, Finding> {
+    // 0′. **No member is edited or removed past a link on the way** (2026-10-28, the
+    //     review's B1): the settings file, the bootstrap line's file and the guide sit
+    //     below directories the install wrote into, and a link there carries the teardown
+    //     wherever it leads. Asked before anything is removed, `--force` or not — the flag
+    //     consents to deleting bytes, never to following a link. `.jigc` is not asked:
+    //     its removal takes a link as the entry it is. Git's hook directory is git's.
+    let members: Vec<String> = [
+        Some(profile.allowlist.file.clone()),
+        profile.reference().map(|r| r.file.clone()),
+        profile
+            .guide()
+            .filter(|guide| adapter::validate_guide_target(guide).is_ok())
+            .map(|guide| guide.file.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let links: Vec<crate::link_way::Link> = members
+        .iter()
+        .filter_map(|member| crate::link_way::on_the_way_to(jigc_home, member))
+        .collect();
+    if !links.is_empty() {
+        return Err(crate::link_way::finding(&links));
+    }
+    // 0″. **No file the teardown edits is reached through a link it would not follow at
+    //     install** (the review of 2026-10-28, NS4). The settings file and the bootstrap
+    //     line's file are edited in place, through whatever is at their paths, so a link
+    //     there is followed exactly as far as `jigc setup` follows one ([`link_end`]) and
+    //     no further: to a regular file inside this checkout. `--force` is not consulted.
+    let links_to_nothing = edited_through_links(
+        jigc_home,
+        &[
+            (
+                profile.reference().map_or("CLAUDE.md", |r| r.file.as_str()),
+                "uninstall.unwire-reference",
+            ),
+            (
+                profile.allowlist.file.as_str(),
+                "uninstall.remove-allowlist",
+            ),
+        ],
+    )?;
+    //     The third file it edits in place, the `pre-commit` hook (the second re-review's
+    //     NS-D), by the rule `jigc setup` asks of it ([`hook_link_end`]): where the
+    //     teardown would write the hook back through a link that leads out of this
+    //     repository and its hooks directory, it refuses before anything is removed.
+    hook_written_through_a_link(jigc_home, force)?;
+
     // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
     //    on a tree that holds the sole copy of four kinds of work.
     if !force {
@@ -5038,6 +5237,7 @@ fn uninstall(
     if !left.is_empty() {
         narrate_left_settings_entries(&allowlist_file, &left, &claim);
     }
+    narrate_links_to_nothing(&links_to_nothing);
 
     // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; one that holds
     //    anything else as well (a foreign hook setup wrapped, a standalone one the adopter

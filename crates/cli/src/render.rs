@@ -907,7 +907,8 @@ pub fn validation_upgrade(
 ) -> String {
     match format {
         Format::Json => {
-            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            let mut value = serde_json::to_value(&*carrying_the_held_advisory(report))
+                .expect("validation report serializes");
             if let Some(object) = value.as_object_mut() {
                 object.insert("checked".to_string(), serde_json::Value::from(checked));
                 object.insert("guide".to_string(), serde_json::Value::from(guide));
@@ -972,7 +973,8 @@ pub fn validation_store(
     let flip = first_store_exit_flip(report);
     match format {
         Format::Json => {
-            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            let mut value = serde_json::to_value(&*carrying_the_held_advisory(report))
+                .expect("validation report serializes");
             if let Some(object) = value.as_object_mut() {
                 object.insert(
                     "scope".to_string(),
@@ -2037,6 +2039,29 @@ const SCOPE_RELATIVE_NOTE: &str = "note: severity is scope-relative — `advisor
 /// followed by the routing footer; JSON is the generic projection with no footer. The
 /// scope-dependent surfaces are the clean line, the trailer, and the per-finding gate label.
 ///
+/// **A findings report as its JSON document carries it** — with the link-on-the-way
+/// advisory a read form's guard held for this invocation's one document
+/// ([`crate::link_way::hold_for_the_document`]) appended, where there is one and the report
+/// does not carry it already. Every findings envelope a read form prints passes here — its
+/// own report, and a reject's on stderr — so the advisory rides inside the document under
+/// `--format json` and is never a line beside it (`design/storage.md` → *No write through a
+/// link on the way*).
+fn carrying_the_held_advisory(report: &ValidationReport) -> std::borrow::Cow<'_, ValidationReport> {
+    match crate::link_way::held_for_the_document() {
+        Some(advisory) if !report.findings.iter().any(|f| f.code == advisory.code) => {
+            let mut carried = report.clone();
+            carried.findings = report
+                .findings
+                .iter()
+                .cloned()
+                .chain(std::iter::once(advisory.clone()))
+                .collect();
+            std::borrow::Cow::Owned(carried)
+        }
+        _ => std::borrow::Cow::Borrowed(report),
+    }
+}
+
 /// `store_gates` is `Some(unbaselined)` for the **store** view only (M42 Inc 12 / T5): each
 /// finding that a `finalize` would actually stop on ([`gates_at_finalize`]) renders `blocking
 /// (gates at finalize) · …` rather than a bare `blocking ·` that exits 0. The **task** view passes
@@ -2053,7 +2078,7 @@ fn validation_scoped(
     store_gates: Option<&BTreeSet<String>>,
 ) -> String {
     match format {
-        Format::Json => json(report),
+        Format::Json => json(&*carrying_the_held_advisory(report)),
         Format::Agent | Format::Human => {
             let mut out = String::new();
             if report.findings.is_empty() {
@@ -3287,7 +3312,8 @@ fn with_carried_findings(block: String, findings: &Findings) -> String {
 pub fn finalize_landed(format: Format, report: &ValidationReport, landed: &Landed) -> String {
     match format {
         Format::Json => {
-            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            let mut value = serde_json::to_value(&*carrying_the_held_advisory(report))
+                .expect("validation report serializes");
             if let Some(object) = value.as_object_mut() {
                 object.insert(
                     "committed".to_string(),
@@ -3942,9 +3968,10 @@ pub struct TaskDiffView<'a> {
 /// absent-versus-empty rule — a discrimination a driver should never have to infer — and
 /// that is what makes the **empty state non-empty**: the verb printed zero bytes on both
 /// streams at exit 0 before this, silence a driver cannot tell from a crash. `findings`
-/// is **structurally always empty**: `task diff` is a pure reader and the exit-code
-/// taxonomy restricts the blocking verdict to the three gate verbs, so this verb raises
-/// none; the key is present anyway so a driver deserializes one envelope shape.
+/// raises no finding of its own: `task diff` is a pure reader and the exit-code taxonomy
+/// restricts the blocking verdict to the three gate verbs; the key is present anyway so a
+/// driver deserializes one envelope shape, and it carries the link-on-the-way advisory
+/// where a link stands on the way (the second re-review's N-2).
 pub fn task_diff(format: Format, view: &TaskDiffView<'_>) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
@@ -3957,7 +3984,12 @@ pub fn task_diff(format: Format, view: &TaskDiffView<'_>) -> String {
                 .iter()
                 .map(|doc| serde_json::json!({ "id": doc.id }))
                 .collect::<Vec<_>>(),
-            "findings": [],
+            // Empty but for the link-on-the-way advisory a read form's guard holds for its
+            // one document (`crate::link_way::hold_for_the_document`).
+            "findings": crate::link_way::held_for_the_document()
+                .cloned()
+                .into_iter()
+                .collect::<engine::finding::Findings>(),
         })),
         Format::Agent | Format::Human => {
             let mut out = String::new();

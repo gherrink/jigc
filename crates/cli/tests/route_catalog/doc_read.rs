@@ -27,7 +27,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Chosen, Cited, Operand, Own, Place, Promise, Says, Step,
+    Act, Case, Check, Chosen, Cited, LinkAndDirectory, Operand, Own, Place, Promise, Says, Step,
 };
 
 // The site, as the committed list of refusal sites names it.
@@ -1016,9 +1016,309 @@ const A_CREATE_ONLY_ENTRY_OVER_A_LINK: [Case; 2] = [
     },
 ];
 
+// ---------------------------------------------------------------------------
+// A link on the way — `store.link-on-the-way`, the refusal every door that writes raises
+// before its first write over a symbolic link at a directory on the way to what it writes
+// (2026-10-28, the human's ruling B; `design/storage.md` → *No write through a link on the
+// way*)
+// ---------------------------------------------------------------------------
+
+// The site, as the committed list of refusal sites names it.
+const LINK_ON_THE_WAY: &str = "crates/cli/src/link_way.rs::finding::store.link-on-the-way#1";
+
+/// What every case of the site shares: a task minted under `record-decision`, the door
+/// the guard stands in front of — any writing door would do, and this one writes the
+/// workbench and reads every home. A link out of the repository is replaced by a copy of
+/// what it leads to, the route's way for one.
+const L: Case = Case {
+    site: LINK_ON_THE_WAY,
+    refusing: &["start", "--workflow", "record-decision", "pick tabs"],
+    acts: &[Act::ReplaceWithACopy(Operand::Span(0)), Act::Rerun],
+    ..H
+};
+
+/// The decisions' directory a link to an empty directory outside the repository.
+const THE_DECISIONS_DIRECTORY_A_LINK: [Step; 3] = [
+    Step::Dir(Place::Outside("decisions")),
+    Step::Dir(Place::Repo("docs")),
+    Step::Link(Place::Repo("docs/decisions"), Place::Outside("decisions")),
+];
+const A_HOMES_DIRECTORY: &str = "any door that writes, where the guard in front of it asks \
+    the way to every doctype's home: the decisions' directory a symbolic link out of the \
+    repository";
+const A_HOMES_DIRECTORY_A_LINK: [Case; 3] = [
+    Case {
+        name: "link-on-the-way-a-homes-directory-replaced-with-a-copy-and-re-run",
+        cause: A_HOMES_DIRECTORY,
+        state: &[
+            SETUP,
+            THE_DECISIONS_DIRECTORY_A_LINK[0],
+            THE_DECISIONS_DIRECTORY_A_LINK[1],
+            THE_DECISIONS_DIRECTORY_A_LINK[2],
+        ],
+        holds: &[
+            Check::Directory(Place::Repo("docs/decisions")),
+            Check::Directory(Place::Repo(PICK_TABS)),
+        ],
+        ..L
+    },
+    Case {
+        name: "link-on-the-way-a-homes-directory-a-committed-link-replaced-committed-and-re-run",
+        cause: A_HOMES_DIRECTORY,
+        state: &[
+            SETUP,
+            THE_DECISIONS_DIRECTORY_A_LINK[0],
+            THE_DECISIONS_DIRECTORY_A_LINK[1],
+            THE_DECISIONS_DIRECTORY_A_LINK[2],
+            THAT_COMMITTED[0],
+            THAT_COMMITTED[1],
+        ],
+        acts: &[
+            Act::ReplaceWithACopy(Operand::Span(0)),
+            Act::Commit(Operand::Span(0)),
+            Act::Rerun,
+        ],
+        holds: &[
+            Check::Directory(Place::Repo("docs/decisions")),
+            Check::Directory(Place::Repo(PICK_TABS)),
+        ],
+        ..L
+    },
+    // The link leads to a directory that holds something: the copy holds it too, and what
+    // stands outside is untouched.
+    Case {
+        name: "link-on-the-way-a-homes-directory-with-content-replaced-with-a-copy-and-re-run",
+        cause: A_HOMES_DIRECTORY,
+        state: &[
+            SETUP,
+            Step::File(Place::Outside("decisions/kept.md"), "# Kept\n"),
+            Step::Dir(Place::Repo("docs")),
+            Step::Link(Place::Repo("docs/decisions"), Place::Outside("decisions")),
+        ],
+        holds: &[
+            Check::Contains(Place::Repo("docs/decisions/kept.md"), "# Kept"),
+            Check::Directory(Place::Repo(PICK_TABS)),
+        ],
+        witnesses: &["decisions/kept.md"],
+        ..L
+    },
+];
+const A_HOMES_DIRECTORY_A_LINK_INSIDE: [Case; 1] = [Case {
+    name: "link-on-the-way-a-homes-directory-a-link-inside-the-repository-its-target-moved-in-and-re-run",
+    cause: "any door that writes, where the guard in front of it asks the way to every \
+            doctype's home: the decisions' directory a symbolic link to another directory \
+            inside the repository, which holds something",
+    state: &[
+        SETUP,
+        Step::File(Place::Repo("kept/kept.md"), "# Kept\n"),
+        Step::Dir(Place::Repo("docs")),
+        Step::LinkTo(Place::Repo("docs/decisions"), "../kept"),
+    ],
+    acts: &[
+        Act::MoveDirectoryIn(LinkAndDirectory {
+            link: Operand::Span(0),
+            directory: Operand::Span(1),
+        }),
+        Act::Rerun,
+    ],
+    holds: &[
+        Check::Contains(Place::Repo("docs/decisions/kept.md"), "# Kept"),
+        Check::Absent(Place::Repo("kept")),
+        Check::Directory(Place::Repo(PICK_TABS)),
+    ],
+    ..L
+}];
+const A_WORKBENCH_DIRECTORY_A_LINK: [Case; 1] = [Case {
+    name: "link-on-the-way-a-workbench-directory-replaced-with-a-copy-and-re-run",
+    cause: "any door that writes, where the guard in front of it walks the workbench: a \
+            directory in it, the parking home `.jigc/displaced`, a symbolic link out of the \
+            repository",
+    state: &[
+        SETUP,
+        Step::Dir(Place::Outside("displaced")),
+        Step::Link(Place::Repo(".jigc/displaced"), Place::Outside("displaced")),
+    ],
+    holds: &[
+        Check::Directory(Place::Repo(".jigc/displaced")),
+        Check::Directory(Place::Repo(PICK_TABS)),
+    ],
+    ..L
+}];
+const A_WORKBENCH_DIRECTORY_A_LINK_TO_NOTHING: [Case; 1] = [Case {
+    name: "link-on-the-way-a-workbench-directory-a-link-to-nothing-removed-and-re-run",
+    cause: "any door that writes, where the guard in front of it walks the workbench: a \
+            place where jigc keeps a directory, the parking home `.jigc/displaced`, a \
+            symbolic link that leads nowhere",
+    state: &[
+        SETUP,
+        Step::LinkTo(Place::Repo(".jigc/displaced"), "nowhere"),
+    ],
+    acts: &[Act::Remove(Operand::Span(0)), Act::Rerun],
+    holds: &[
+        Check::Absent(Place::Repo(".jigc/displaced")),
+        Check::Directory(Place::Repo(PICK_TABS)),
+    ],
+    ..L
+}];
+const THE_WORKBENCH_A_LINK: [Case; 1] = [Case {
+    name: "link-on-the-way-the-workbench-a-link-replaced-with-a-copy-and-re-run",
+    cause: "any door that writes, where the guard in front of it walks the workbench: \
+            `.jigc` itself a symbolic link out of the repository, holding the project layer \
+            and every area",
+    state: &[
+        SETUP,
+        sh!("mv .jigc ../outside/workbench"),
+        Step::Link(Place::Repo(".jigc"), Place::Outside("workbench")),
+    ],
+    holds: &[
+        Check::Directory(Place::Repo(".jigc/config")),
+        Check::Directory(Place::Repo(PICK_TABS)),
+    ],
+    ..L
+}];
+const A_NEW_HOMES_DIRECTORY_A_LINK_AT_THE_RE_POINT: [Case; 1] = [Case {
+    name: "link-on-the-way-a-new-homes-directory-at-a-docs-root-re-point-replaced-with-a-copy-and-re-run",
+    cause: "`jigc config set docs-root`: a home the new value resolves a symbolic link out \
+            of the repository — asked of every home the knob would name, before the first \
+            move",
+    state: an_adr_committed![
+        Step::Dir(Place::Outside("new-decisions")),
+        Step::Dir(Place::Repo("notes")),
+        Step::Link(
+            Place::Repo("notes/decisions"),
+            Place::Outside("new-decisions")
+        ),
+    ],
+    refusing: &["config", "set", "docs-root", "notes"],
+    holds: &[Check::RegularFile(Place::Repo(
+        "notes/decisions/use-tabs.md",
+    ))],
+    ..L
+}];
+const A_ROOT_VALUE_THROUGH_A_LINK: [Case; 1] = [Case {
+    name: "link-on-the-way-a-root-value-through-a-link-inside-its-target-moved-in-and-re-run",
+    cause: "`jigc config set docs-root`: the value runs through a symbolic link to another \
+            directory of the repository — the state `config.unusable-root` answered until \
+            2026-10-28",
+    state: &[
+        SETUP,
+        Step::Dir(Place::Repo("handbook")),
+        Step::LinkTo(Place::Repo("linked"), "handbook"),
+    ],
+    refusing: &["config", "set", "docs-root", "linked/sub"],
+    acts: &[
+        Act::MoveDirectoryIn(LinkAndDirectory {
+            link: Operand::Span(0),
+            directory: Operand::Span(1),
+        }),
+        Act::Rerun,
+    ],
+    holds: &[
+        Check::Directory(Place::Repo("linked")),
+        Check::Absent(Place::Repo("handbook")),
+    ],
+    ..L
+}];
+
+/// `jigc setup` over a link on the way to its members — before any install, where the
+/// guard in front of it walks the workbench and `jigc setup` asks the rest of its members'
+/// way itself. The causes the setup sites counted until 2026-10-28.
+const SETUP_LINKED: Case = Case {
+    refusing: &["setup"],
+    ..L
+};
+const SETUP_OVER_A_LINKED_WORKBENCH: [Case; 2] = [
+    Case {
+        name: "link-on-the-way-setup-over-a-linked-workbench-replaced-with-a-copy-and-re-run",
+        cause: "`jigc setup`: `.jigc` a symbolic link out of the repository, holding a file of \
+                somebody's",
+        state: &[
+            Step::File(Place::Outside("store/theirs"), "theirs\n"),
+            Step::Link(Place::Repo(".jigc"), Place::Outside("store")),
+        ],
+        holds: &[
+            Check::RegularFile(Place::Repo(".jigc/AGENT.md")),
+            Check::RegularFile(Place::Repo(".jigc/theirs")),
+        ],
+        witnesses: &["store/theirs", "store/AGENT.md", "store/version"],
+        ..SETUP_LINKED
+    },
+    Case {
+        name: "link-on-the-way-setup-over-a-committed-linked-workbench-replaced-committed-and-re-run",
+        cause: "`jigc setup`: `.jigc` a symbolic link out of the repository, holding a file of \
+                somebody's",
+        state: &[
+            Step::File(Place::Outside("store/theirs"), "theirs\n"),
+            Step::Link(Place::Repo(".jigc"), Place::Outside("store")),
+            THAT_COMMITTED[0],
+            THAT_COMMITTED[1],
+        ],
+        acts: &[
+            Act::ReplaceWithACopy(Operand::Span(0)),
+            Act::Commit(Operand::Span(0)),
+            Act::Rerun,
+        ],
+        holds: &[Check::RegularFile(Place::Repo(".jigc/AGENT.md"))],
+        witnesses: &["store/theirs", "store/AGENT.md", "store/version"],
+        ..SETUP_LINKED
+    },
+];
+const SETUP_OVER_A_LINKED_ASSISTANT_DIRECTORY: [Case; 1] = [Case {
+    name: "link-on-the-way-setup-over-a-committed-linked-assistant-directory-replaced-committed-and-re-run",
+    cause: "`jigc setup`: `.claude`, on the way to the settings file and the guide, a \
+                symbolic link out of the repository holding a settings file and a guide of \
+                somebody's",
+    state: &[
+        Step::File(Place::Outside("dotclaude/settings.json"), "{}\n"),
+        Step::File(Place::Outside("dotclaude/skills/jigc/SKILL.md"), "theirs\n"),
+        Step::Link(Place::Repo(".claude"), Place::Outside("dotclaude")),
+        THAT_COMMITTED[0],
+        THAT_COMMITTED[1],
+    ],
+    acts: &[
+        Act::ReplaceWithACopy(Operand::Span(0)),
+        Act::Commit(Operand::Span(0)),
+        Act::Rerun,
+    ],
+    holds: &[Check::RegularFile(Place::Repo(".claude/settings.json"))],
+    witnesses: &["dotclaude/settings.json", "dotclaude/skills/jigc/SKILL.md"],
+    ..SETUP_LINKED
+}];
+const SETUP_OVER_A_LINK_INTO_GITS_DIRECTORY: [Case; 1] = [Case {
+    name: "link-on-the-way-setup-over-a-committed-link-into-gits-directory-replaced-committed-and-re-run",
+    cause: "`jigc setup`: `.claude` a symbolic link to a directory inside git's own \
+            directory — inside the repository's tree, and no directory of the repository's",
+    state: &[
+        Step::File(Place::Repo(".git/dotclaude/settings.json"), "{}\n"),
+        Step::Link(Place::Repo(".claude"), Place::Repo(".git/dotclaude")),
+        THAT_COMMITTED[0],
+        THAT_COMMITTED[1],
+    ],
+    acts: &[
+        Act::ReplaceWithACopy(Operand::Span(0)),
+        Act::Commit(Operand::Span(0)),
+        Act::Rerun,
+    ],
+    holds: &[
+        Check::RegularFile(Place::Repo(".claude/settings.json")),
+        Check::RegularFile(Place::Repo(".git/dotclaude/settings.json")),
+    ],
+    ..SETUP_LINKED
+}];
+
 /// The cases of the family, a group a cause — and, within a group, a case a way out of the
 /// cause's route.
 pub const CASES: &[&[Case]] = &[
+    &A_HOMES_DIRECTORY_A_LINK,
+    &A_HOMES_DIRECTORY_A_LINK_INSIDE,
+    &A_WORKBENCH_DIRECTORY_A_LINK,
+    &A_WORKBENCH_DIRECTORY_A_LINK_TO_NOTHING,
+    &THE_WORKBENCH_A_LINK,
+    &A_NEW_HOMES_DIRECTORY_A_LINK_AT_THE_RE_POINT,
+    &A_ROOT_VALUE_THROUGH_A_LINK,
+    &SETUP_OVER_A_LINKED_WORKBENCH,
+    &SETUP_OVER_A_LINKED_ASSISTANT_DIRECTORY,
+    &SETUP_OVER_A_LINK_INTO_GITS_DIRECTORY,
     &MINTED_OVER_A_LINK_TO_NOTHING,
     &MINTED_OVER_A_LINK_TO_A_FILE,
     &MINTED_OVER_A_DIRECTORY,
@@ -1055,20 +1355,23 @@ const THE_REFUSED_COMMAND_AGAIN: &str = "the re-run is the refused command, and 
 /// **What was read for the site, and how many causes it holds** — a hand count, with its
 /// derivation; the causes that have no case, each with why; and the ways out of its route
 /// that are not followed, each with why.
-pub const READINGS: &[Reading] = &[Reading {
-    site: HOME_SHAPE,
-    read: &[
-        "crates/engine/src/store.rs::home_shape_refusal, home_entry, ForeignEntry — the one constructor: the code, the key, the sentence; three shapes — a symbolic link wherever it leads, a directory, a special file",
-        "crates/engine/src/finalize.rs::shape_refusal, store_home_refusal, promote_sink_refusal — the committing doors' wording, by unit (a task, a migration, a milestone, the promote's sink, a door of the store) and by exit (rename or move out, move out, the regular file itself)",
-        "crates/cli/src/rename.rs::foreign_home, foreign_destination — `jigc rename`: the doc's own home, a referrer's, the destination",
-        "crates/cli/src/relocate.rs::refuse_foreign_source — the move primitive, behind `jigc relocate` and both root knobs",
-        "crates/cli/src/doc.rs::free_destination, already_exists_refusal with crates/engine/src/state.rs::create_only_home_refusal — the in-task rename's destination, and a create under an entry that only creates",
-        "crates/cli/src/milestone.rs::record_shape_block and crates/engine/src/milestone.rs — the five doors that rewrite the milestone's record, and `jigc milestone create`",
-        "crates/cli/src/migrate_corpus.rs::queue_or_refuse, destination_collision_finding — `jigc migrate-corpus`: a doc's own home, a relocation's destination",
-        "crates/cli/tests/home_shape_one_code.rs — the product's own registry of the constructor's callers and the commands that reach each, as a lead",
-    ],
-    causes: 32,
-    derivation: "a cause is a door and what it met. The task's finalize: a doc it minted \
+pub const READINGS: &[Reading] = &[
+    LINK_ON_THE_WAY_READING,
+    Reading {
+        site: HOME_SHAPE,
+        read: &[
+            "crates/engine/src/store.rs::home_shape_refusal, home_entry, ForeignEntry — the one constructor: the code, the key, the sentence; three shapes — a symbolic link wherever it leads, a directory, a special file",
+            "crates/engine/src/finalize.rs::shape_refusal, store_home_refusal, promote_sink_refusal — the committing doors' wording, by unit (a task, a migration, a milestone, the promote's sink, a door of the store) and by exit (rename or move out, move out, the regular file itself)",
+            "crates/cli/src/rename.rs::foreign_home, foreign_destination — `jigc rename`: the doc's own home, a referrer's, the destination",
+            "crates/cli/src/relocate.rs::refuse_foreign_source — the move primitive, behind `jigc relocate` and both root knobs",
+            "crates/cli/src/relocate.rs::displace_foreign_squatter, relocate_one, relocate_stranded — the relocation's destination, behind `jigc relocate` and `placement-root`: a link there refused where it stands and never parked (2026-10-28)",
+            "crates/cli/src/doc.rs::free_destination, already_exists_refusal with crates/engine/src/state.rs::create_only_home_refusal — the in-task rename's destination, and a create under an entry that only creates",
+            "crates/cli/src/milestone.rs::record_shape_block and crates/engine/src/milestone.rs — the five doors that rewrite the milestone's record, and `jigc milestone create`",
+            "crates/cli/src/migrate_corpus.rs::queue_or_refuse, destination_collision_finding — `jigc migrate-corpus`: a doc's own home, a relocation's destination",
+            "crates/cli/tests/home_shape_one_code.rs — the product's own registry of the constructor's callers and the commands that reach each, as a lead",
+        ],
+        causes: 34,
+        derivation: "a cause is a door and what it met. The task's finalize: a doc it minted \
                  over a link to nothing, a link to a file, a directory; a doc under a fixed \
                  identity over a link; a committed doc it edits over a link to a copy, a \
                  link to nothing, a directory; a migration's doc over a link — 8. The \
@@ -1080,79 +1383,193 @@ pub const READINGS: &[Reading] = &[Reading {
                  referrer's, the destination a link in no commit, a committed one, a \
                  directory — 5. `jigc doc rename`'s destination — 1. A create and an author \
                  under an entry that only creates — 2. The two root knobs and `jigc \
-                 relocate`, where the move primitive refuses — 2. `jigc migrate-corpus`, a \
+                 relocate`, where the move primitive refuses — 2. `placement-root` and `jigc \
+                 relocate` over a link at a doc's new home — 2. `jigc migrate-corpus`, a \
                  doc's own home and a relocation's destination — 2. And a special file at \
                  any of them, which the constructor words as a third shape — counted with \
                  the door, never constructed: a declared bound",
-    without_case: &[
-        (
-            "the task's finalize: a committed doc it edits, over a directory",
-            Why::NotConstructible(
-                "the route's one way is *put the regular file itself there — for a link, \
+        without_case: &[
+            (
+                "the task's finalize: a committed doc it edits, over a directory",
+                Why::NotConstructible(
+                    "the route's one way is *put the regular file itself there — for a link, \
                  a copy of the file it points at*, and over a directory it names no \
                  source for the file: it is the reader's to bring back, and the frame has \
                  no act that writes a file of a case's own",
+                ),
             ),
-        ),
-        (
-            "the promote's sink: an entry that appears at the home behind the plan",
-            Why::NotConstructible(
-                "the planner asks the home and the sink asks it again inside one command: \
+            (
+                "the promote's sink: an entry that appears at the home behind the plan",
+                Why::NotConstructible(
+                    "the planner asks the home and the sink asks it again inside one command: \
                  a state has no step that writes between them",
+                ),
             ),
-        ),
-        (
-            "the record's home a link at `jigc milestone add-from-spec`",
-            Why::NotConstructible(
-                "the door shares the preflight the four doors with a case go through and \
+            (
+                "the record's home a link at `jigc milestone add-from-spec`",
+                Why::NotConstructible(
+                    "the door shares the preflight the four doors with a case go through and \
                  needs a committed spec with a criterion to seed from: the state was not \
                  built — the product's own suite drives the door \
                  (`home_shape_one_code.rs`)",
+                ),
             ),
-        ),
-        (
-            "`jigc config set docs-root` · `placement-root`: the home of a doc the re-point moves",
-            Why::NotConstructible(
-                "the refusal reaches its reader inside the message of \
+            (
+                "`jigc config set docs-root` · `placement-root`: the home of a doc the re-point moves",
+                Why::NotConstructible(
+                    "the refusal reaches its reader inside the message of \
                  `config.repoint-failed`, and the frame reads a refusal by the finding \
                  that carries its code. Both are followed at that site, in `config.rs`",
+                ),
             ),
-        ),
-        (
-            "`jigc relocate`: the home of a doc it moves",
-            Why::NotConstructible(
-                "the door moves the instances of a doctype no manifest governs, and every \
-                 shipped doctype is governed by one: it takes a pack of the reader's own",
+            (
+                "`jigc config set placement-root`: a link at the new home of a doc the re-point moves",
+                Why::NotConstructible(
+                    "the refusal reaches its reader inside the message of \
+                 `config.repoint-failed`, and the frame reads a refusal by the finding \
+                 that carries its code. It is followed at that site, in `config.rs`",
+                ),
             ),
-        ),
-        (
-            "`jigc migrate-corpus`: the home of a doc it would rewrite",
-            Why::NotConstructible(
-                "the door prints the refusal as a row of its report — `blocked`, then the \
+            (
+                "`jigc relocate`: a link at the new home of a doc it moves",
+                Why::NotBuilt(
+                    "the door moves the instances of a doctype no manifest governs, so the \
+                 state takes a pack of the reader's own; the byte table builds it \
+                 (`relocate-a-link-to-a-file-outside-at-the-notes-new-home`, \
+                 `relocate-a-link-to-nothing-at-the-notes-new-home`)",
+                ),
+            ),
+            (
+                "`jigc relocate`: the home of a doc it moves",
+                Why::NotBuilt(
+                    "the door moves the instances of a doctype no manifest governs, so the \
+                 state takes a pack of the reader's own; the byte table builds it \
+                 (`relocate-a-link-to-a-file-outside-in-the-stranded-notes-place`)",
+                ),
+            ),
+            (
+                "`jigc migrate-corpus`: the home of a doc it would rewrite",
+                Why::NotConstructible(
+                    "the door prints the refusal as a row of its report — `blocked`, then the \
                  code and a colon — and not as a finding the frame reads a route from. \
                  Driven by hand over an unstamped ADR behind a committed link: exit 1, \
                  the row carries the code and the store's route",
+                ),
             ),
-        ),
-        (
-            "`jigc migrate-corpus`: a relocation's destination",
-            Why::NotConstructible(
-                "it takes a doctype whose home moved at a version bump, which no shipped \
+            (
+                "`jigc migrate-corpus`: a relocation's destination",
+                Why::NotConstructible(
+                    "it takes a doctype whose home moved at a version bump, which no shipped \
                  schema has pending: a pack of the reader's own",
+                ),
             ),
-        ),
-    ],
-    not_followed: &[
-        (
-            "*and re-run this rename* — `jigc doc rename`'s destination, behind the link moved out",
-            Why::NotConstructible(THE_REFUSED_COMMAND_AGAIN),
-        ),
-        (
-            "*create this milestone under a different title*",
-            Why::NotConstructible(
-                "the title is the reader's own and an argument of the refused command, \
+        ],
+        not_followed: &[
+            (
+                "*and re-run this rename* — `jigc doc rename`'s destination, behind the link moved out",
+                Why::NotConstructible(THE_REFUSED_COMMAND_AGAIN),
+            ),
+            (
+                "*create this milestone under a different title*",
+                Why::NotConstructible(
+                    "the title is the reader's own and an argument of the refused command, \
                  which the frame runs again only as it was typed",
+                ),
+            ),
+        ],
+    },
+];
+
+/// **What was read for the link on the way, and how many causes it holds.**
+const LINK_ON_THE_WAY_READING: Reading = Reading {
+    site: LINK_ON_THE_WAY,
+    read: &[
+        "crates/cli/src/link_way.rs::finding, refusal, advisory, way_out, store_links, in_the_workbench, on_the_way_to_homes, first_of — the one constructor, its route a clause a link by where the link leads, and the questions it answers",
+        "crates/cli/src/regular_file.rs::link_on_the_way — the walk of the directories on the way, without following a link",
+        "crates/cli/src/cli.rs::refuse_on_link_on_the_way, Command::link_guard, LINK_GUARD_EXCEPTIONS — the guard in front of every leaf: refuses a writing form, reports a read form",
+        "crates/cli/src/relocate.rs::move_doc, relocate_stranded — the move primitive and a sweep's preflight, behind `jigc relocate` and `jigc config set placement-root`",
+        "crates/cli/src/config.rs::run_set, links_under_the_new_root, route_docs_root_repoint_orphans, route_placement_root_repoint_strands — a root value's own way, every home the new value names, the re-points' preflights",
+        "crates/cli/src/migrate_corpus.rs::migrate_in_repo — the prior homes' preflight",
+        "crates/cli/src/setup.rs::install and uninstall — the members' way, before the first write and before the first removal",
+    ],
+    causes: 16,
+    derivation: "a cause is a place the question is asked and what it met there, by where \
+                 the link leads — out of the repository to a directory, inside it to a \
+                 directory, or to no directory — since the route's way is chosen by that. \
+                 The guard in front of every door: the workbench itself a link; a link in \
+                 it to a directory; a link to nothing where it keeps a directory; a home's \
+                 directory a link out (empty, or holding something, the same cause) and in \
+                 (to a directory inside); a directory on the way to a placement home — 6. \
+                 `config set`: a root value through a link; a home the new `docs-root` \
+                 names; one the new `placement-root` names — 3. `relocate`'s sweep — 1. \
+                 The move primitive behind a sweep that asked first — 1. `migrate-corpus`'s \
+                 prior homes — 1. `setup`, the workbench a link (asked in front of it) and \
+                 a member's directory a link (asked by it) — 2. `uninstall`'s members — 1. \
+                 The milestone's area, its staging area and a sub-task's worktree path, each a \
+                 link to nothing, are the cause of a link to nothing where the workbench keeps \
+                 a directory; and setup's member under a link into git's own directory is the \
+                 cause of a link out of the repository, its way a copy",
+    without_case: &[
+        (
+            "the guard in front of every door: a directory on the way to a placement home a link",
+            Why::NotBuilt(
+                "the shipped placement homes are a root file and `docs/roadmap.md`, whose \
+                 directory is the docs root itself: a link there is the case of a home's \
+                 directory one level up, and the byte table's \
+                 `config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-directory` \
+                 refuses over it",
+            ),
+        ),
+        (
+            "`jigc config set placement-root`: a home the new value names a link",
+            Why::NotConstructible(
+                "every shipped placement home re-roots to `<root>/<file>`, so the only \
+                 directory on its way is the root value itself, which is the cause of a \
+                 root value through a link",
+            ),
+        ),
+        (
+            "`jigc relocate`'s sweep: a prior or a new home's directory a link",
+            Why::NotBuilt(
+                "the door moves the instances of a doctype no manifest governs, so the \
+                 state takes a pack of the reader's own; the byte table builds it \
+                 (`relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory`) \
+                 and `relocate.rs`'s refusal axis drives the member",
+            ),
+        ),
+        (
+            "the move primitive: a move no sweep asked first",
+            Why::NotConstructible(
+                "every mover asks its whole batch before its first move, and `jigc \
+                 rename` moves within a home the guard in front of it asked: the \
+                 primitive's own question is the belt behind them, reached by no state",
+            ),
+        ),
+        (
+            "`jigc migrate-corpus`: a prior home's directory a link",
+            Why::NotBuilt(
+                "it takes a doc below its version at a home its doctype left at a version \
+                 bump; the byte table builds it \
+                 (`migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory`)",
+            ),
+        ),
+        (
+            "`jigc uninstall`'s members: a link on the way to one",
+            Why::NotBuilt(
+                "the state is an install whose `.claude` is a link; \
+                 `link_on_the_way_axis.rs` drives it, and the route is the one the cases \
+                 here follow",
             ),
         ),
     ],
-}];
+    not_followed: &[(
+        "*a copy of what it leads to*, where git does not track the link and what the link \
+         led to holds a file at an install member's path (`jigc setup`'s settings file)",
+        Why::NotBuilt(
+            "driven: the copy brings that file in as work in no commit, and the re-run meets \
+             the install's dirty gate, whose own route — commit it, or `--force` — then \
+             lands the install; the catalog follows one route a case, so the way is followed \
+             where the link is committed and the clause commits the copy with it",
+        ),
+    )],
+};

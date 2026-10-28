@@ -159,13 +159,15 @@ pub(crate) const PRE_DISPATCH_FAULTS: &[Fault] = &[
                 1,
                 Reading::Code,
             ),
-            // The 23 dispatch arms **and the posture guard**, each reaching that seam. The
-            // 24th is D2.4: a door that commits or moves on the user's behalf refuses the
-            // fault rather than standing its whole guard down on it.
+            // The 23 dispatch arms, **the posture guard and the link-on-the-way guard**,
+            // each reaching that seam. The 24th is D2.4: a door that commits or moves on
+            // the user's behalf refuses the fault rather than standing its whole guard down
+            // on it; the 25th is the same answer from the guard every writing door stands
+            // behind (2026-10-28).
             (
                 "crates/cli/src/cli.rs",
                 "cwd_or_refusal(format)",
-                24,
+                25,
                 Reading::Code,
             ),
             // … and none of which prints the refusal as prose any more. The needle is the

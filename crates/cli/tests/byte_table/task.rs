@@ -961,7 +961,7 @@ const FINALIZE_CELLS: [Cell; 27] = [
         FRESH,
         a_decision!([], [Lead::Plant(Plant::LinkToADir("docs/decisions"))]),
         FINALIZE_THE_DECISION,
-        refuses(3, "docs/decisions"),
+        refuses(1, "`docs/decisions` is a symbolic link"),
         at("T1", Kind::LinkOnTheWay),
     ),
     // The plain spelling's own cell at a link to nothing: the acceptance's runs a task of
@@ -1278,7 +1278,7 @@ const FINALIZE_AT_THE_STAMP: [Cell; 7] = [
         FRESH,
         a_decision!([], [Lead::Plant(Plant::LinkToADir(".jigc"))]),
         FINALIZE_THE_DECISION,
-        refuses(3, ".jigc"),
+        refuses(1, "`.jigc` is a symbolic link"),
         at("T2", Kind::LinkOnTheWay),
     ),
     finalize(
@@ -1588,7 +1588,7 @@ const DISCARD_AT_THE_RECORD: [Cell; 8] = [
             Lead::Plant(Plant::LinkToADir("docs/milestone-records")),
         ],
         DISCARD_THE_SUB_TASK,
-        refuses(1, "docs/milestone-records"),
+        refuses(1, "`docs/milestone-records` is a symbolic link"),
         at("A5", Kind::LinkOnTheWay),
     ),
     discard(

@@ -665,7 +665,7 @@ const SETUP_PLANTED: [Cell; 51] = [
     setup(
         "setup-a-link-to-a-directory-outside-at-the-workbench",
         &[Lead::Plant(Plant::LinkToADir(".jigc"))],
-        refuses(1, ".jigc"),
+        refuses(1, "store.link-on-the-way"),
         at("S1", Kind::LinkOnTheWay),
     ),
     setup(
@@ -812,7 +812,7 @@ const SETUP_PLANTED: [Cell; 51] = [
     setup(
         "setup-a-link-to-a-directory-outside-at-the-guides-directory",
         &[Lead::Plant(Plant::LinkToADir(".claude/skills/jigc"))],
-        refuses(1, ".claude/skills/jigc"),
+        refuses(1, "store.link-on-the-way"),
         at("S8", Kind::LinkOnTheWay),
     ),
     setup(
@@ -902,7 +902,7 @@ const SETUP_PLANTED: [Cell; 51] = [
     setup(
         "setup-a-link-to-a-directory-outside-at-the-assistants-directory",
         &[Lead::Plant(Plant::LinkToADir(".claude"))],
-        refuses(1, ".claude"),
+        refuses(1, "store.link-on-the-way"),
         at("S3", Kind::LinkOnTheWay),
     ),
     setup(

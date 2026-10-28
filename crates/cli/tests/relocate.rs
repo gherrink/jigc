@@ -1079,6 +1079,16 @@ fn every_relocate_refusal_carries_an_identity_and_a_route() {
             Surface::Row,
             &["relocate", "note", "--from", "linked"],
         ),
+        // The twelfth (2026-10-28): the prior home's directory is itself a **link** out of
+        // the repository. Every doc of the sweep is past it, so the sweep refuses whole
+        // before its first move — a fact about the run, at exit 1 — under the code every
+        // door raises for a link on the way. The nothing-moved half is the byte table's
+        // (`relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory`).
+        (
+            R::LinkOnTheWay,
+            Surface::Run,
+            &["relocate", "note", "--from", "outlinked"],
+        ),
     ];
 
     // The unaddressable cell's own subject — a stranded doc whose name is not a doc id.
@@ -1099,11 +1109,30 @@ fn every_relocate_refusal_carries_an_identity_and_a_route() {
     .expect("write the link's target");
     std::os::unix::fs::symlink("../targets/real.txt", repo.path().join("linked/pointer.md"))
         .expect("strand a link");
+    // The link-on-the-way cell's own subject — a note committed under a prior home whose
+    // directory is then moved out of the repository and linked back in.
+    fs::create_dir_all(repo.path().join("outlinked")).expect("mk the soon-linked prior home");
+    fs::write(
+        repo.path().join("outlinked/moved-out.md"),
+        "# Moved Out\n\n## Body\n\nprose\n",
+    )
+    .expect("write the note behind the link");
     git(repo.path(), &["add", "-A"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "strand an unaddressable note"],
     );
+    let outside = TempDir::new("outside");
+    fs::rename(
+        repo.path().join("outlinked"),
+        outside.path().join("outlinked"),
+    )
+    .expect("move the prior home out of the repository");
+    std::os::unix::fs::symlink(
+        outside.path().join("outlinked"),
+        repo.path().join("outlinked"),
+    )
+    .expect("link it back in");
 
     for (refusal, surface, argv) in cells {
         let out = jigc(repo.path(), home.path(), argv);

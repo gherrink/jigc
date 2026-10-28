@@ -262,6 +262,13 @@ pub struct FindingKey {
 ///   named here and at `design/command-output-contract.md` rather than one of them being left
 ///   to be discovered (the independent review of `3c71da87`, MEDIUM 2).
 ///
+/// - `store.link-on-the-way` — the link-on-the-way guard (the rc.24 fix pass). The guard
+///   asks the whole store once per invocation, before dispatch, and builds **one** finding
+///   from every link it found, named once each — refused at a door that writes, reported at
+///   advisory severity at a read form, which carries it in a JSON document's `findings`
+///   (`cli::link_way::hold_for_the_document`). So at most one instance reaches an output and
+///   its subject, like the posture family's, is the repository the command was typed in.
+///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.
 pub fn is_declared_singleton(code: &str) -> bool {
@@ -275,6 +282,7 @@ pub fn is_declared_singleton(code: &str) -> bool {
         || code == "task-discard.foreign-bytes"
         || code == "milestone.foreign-bytes"
         || code.starts_with("repo.")
+        || code == "store.link-on-the-way"
 }
 
 /// The **route-exempt parse diagnostics** — one row per code, each with its reason, in the

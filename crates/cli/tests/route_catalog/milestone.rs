@@ -515,39 +515,6 @@ const GITS_WORKTREES_DIRECTORY_IS_A_FILE: [Case; 1] = [Case {
     ],
     ..M
 }];
-const A_LINK_IN_THE_WAY_UNDER_THE_CONSENT: [Case; 1] = [Case {
-    name: "provision-failed-forced-over-a-link-to-nothing-link-removed-and-provisioned-as-printed",
-    site: PROVISION_FAILED,
-    cause: "the consent is given over a link that leads nowhere at the second sub-task's \
-            path: the clearing step sees nothing there, and `git worktree add` refuses a \
-            path that exists",
-    state: &[
-        SETUP,
-        A_MILESTONE,
-        FIRST,
-        SECOND,
-        Step::LinkTo(Place::Repo(WT2), "nowhere"),
-    ],
-    refusing: &["milestone", "provision", "fan-out", "--force"],
-    acts: &[Act::Remove(Operand::Unprinted(WT2)), Act::Run(0)],
-    holds: &[
-        Check::Directory(Place::Repo(WT)),
-        Check::Directory(Place::Repo(WT2)),
-    ],
-    ..M
-}];
-const A_STALE_REGISTRATION_GIT_WILL_NOT_DROP: [Case; 1] = [Case {
-    name: "provision-failed-forced-over-a-link-at-a-stale-registrations-path-link-removed-and-provisioned",
-    site: PROVISION_FAILED,
-    cause: "the consent is given where a sub-task's worktree directory is gone and a link \
-            that leads nowhere stands at its path: git will not drop the stale registration \
-            over what it cannot read as a worktree",
-    state: fan![THE_WORKTREE_GONE, Step::LinkTo(Place::Repo(WT), "nowhere")],
-    refusing: &["milestone", "provision", "fan-out", "--force"],
-    acts: &[Act::Remove(Operand::Unprinted(WT)), Act::Run(0)],
-    holds: &[Check::Directory(Place::Repo(WT))],
-    ..M
-}];
 const A_HOOK_OF_GITS_FAILS_BEHIND_THE_CHECKOUT: [Case; 2] = [
     Case {
         name: "provision-failed-post-checkout-hook-fails-hook-removed-and-provisioned-as-printed",
@@ -613,6 +580,9 @@ macro_rules! area_io {
         }]
     };
 }
+// A link that leads nowhere where jigc keeps a directory — the milestone's area, its staging
+// area, a sub-task's worktree path — is no cause of these sites since 2026-10-28: the guard
+// in front of every door refuses it first, under `store.link-on-the-way` (`doc_read.rs`).
 const ADD_A_TASK: &[&str] = &["milestone", "add-task", "fan-out", "second thing"];
 const JOIN: &[&str] = &["milestone", "join", "fan-out"];
 const THE_MILESTONES_DIRECTORY_A_FILE: [Case; 1] = area_io!(
@@ -620,12 +590,6 @@ const THE_MILESTONES_DIRECTORY_A_FILE: [Case; 1] = area_io!(
     "a regular file stands at `.jigc/milestones`, and a milestone is created: its area \
      cannot be opened",
     state: &[SETUP, Step::File(Place::Repo(".jigc/milestones"), "x\n")],
-    refusing: CREATE,
-);
-const A_LINK_TO_NOTHING_AT_THE_AREA: [Case; 1] = area_io!(
-    "a-link-to-nothing-at-the-area-at-the-create",
-    "a link that leads nowhere stands where the milestone's area is to be made",
-    state: &[SETUP, Step::LinkTo(Place::Repo(AREA), "nowhere")],
     refusing: CREATE,
 );
 const THE_BASE_PIN_NOT_JSON: [Case; 1] = area_io!(
@@ -691,16 +655,6 @@ const THE_TASK_LIST_A_DIRECTORY_AT_THE_RESEED: [Case; 1] = area_io!(
     refusing: ADD_A_TASK,
 );
 
-const A_LINK_TO_NOTHING_AT_THE_STAGING_AREA: [Case; 1] = area_io!(
-    "a-link-to-nothing-at-the-staging-area-at-the-finalize",
-    "a link that leads nowhere stands where the join's staging area is made, and the \
-     milestone's finalize is asked",
-    state: with_a_doc![Step::LinkTo(
-        Place::Repo(".jigc/milestones/fan-out/merged"),
-        "nowhere"
-    )],
-    refusing: FINALIZE,
-);
 const A_FILE_AT_THE_STAGING_AREA: [Case; 2] = [
     area_io!(
         "a-file-at-the-staging-area-at-the-finalize",
@@ -1095,17 +1049,6 @@ const PROVISION_OVER_A_FILE: [Case; 2] = [
         ..M
     },
 ];
-const PROVISION_OVER_A_LINK: [Case; 1] = [Case {
-    name: "leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed",
-    site: LEFTOVER,
-    cause: "a link that leads nowhere stands where a sub-task's worktree is to be \
-            provisioned",
-    state: bare![Step::LinkTo(Place::Repo(WT), "nowhere")],
-    refusing: PROVISION,
-    acts: &[Act::Run(0)],
-    holds: &[Check::Directory(Place::Repo(WT))],
-    ..M
-}];
 const A_DIRECTORY_WHERE_A_WORKTREE_IS_TO_BE_MADE: &str = "a directory that is no worktree \
     stands where a sub-task's worktree is to be provisioned, and holds a file";
 const PROVISION_OVER_A_DIRECTORY: [Case; 2] = [
@@ -1547,18 +1490,14 @@ pub const CASES: &[&[Case]] = &[
     &A_COLLISION_AT_THE_BOUNDARY,
     &A_COLLISION_AT_THE_UNSQUASHED_BOUNDARY,
     &GITS_WORKTREES_DIRECTORY_IS_A_FILE,
-    &A_LINK_IN_THE_WAY_UNDER_THE_CONSENT,
-    &A_STALE_REGISTRATION_GIT_WILL_NOT_DROP,
     &A_HOOK_OF_GITS_FAILS_BEHIND_THE_CHECKOUT,
     &THE_MILESTONES_DIRECTORY_A_FILE,
-    &A_LINK_TO_NOTHING_AT_THE_AREA,
     &THE_BASE_PIN_NOT_JSON,
     &THE_TASK_LIST_NOT_JSON,
     &THE_TASK_LIST_A_DIRECTORY,
     &NO_AREA_AND_THE_MILESTONES_DIRECTORY_A_FILE,
     &THE_BASE_PIN_A_DIRECTORY_AT_THE_RESEED,
     &THE_TASK_LIST_A_DIRECTORY_AT_THE_RESEED,
-    &A_LINK_TO_NOTHING_AT_THE_STAGING_AREA,
     &A_FILE_AT_THE_STAGING_AREA,
     &A_DIRECTORY_AT_A_MERGED_BODYS_PATH,
     &A_SUB_TASKS_MANIFEST_NOT_JSON,
@@ -1578,7 +1517,6 @@ pub const CASES: &[&[Case]] = &[
     &DISCARD_OVER_A_GIT_ENTRY_THAT_LEADS_NOWHERE,
     &DISCARD_IN_A_COPY,
     &PROVISION_OVER_A_FILE,
-    &PROVISION_OVER_A_LINK,
     &PROVISION_OVER_A_DIRECTORY,
     &PROVISION_OVER_A_REGISTRATION_WITH_STAGED_PATHS,
     &PROVISION_OVER_A_REGISTRATION_WITH_A_COMMIT,
@@ -1693,14 +1631,15 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/milestone.rs::provision_worktrees — phase 2, the four fallible steps behind the probe: clear a leftover, drop a stale registration, spell the path, `git worktree add`",
             "crates/cli/src/milestone.rs::remove_leftover — what the clearing step removes, and that a link which leads nowhere is not seen by it",
         ],
-        causes: 6,
+        causes: 4,
         derivation: "a cause is the step that stopped, by what stopped it. The leftover \
-                     cannot be cleared; the stale registration cannot be dropped — a link \
-                     stands at its path, and git will not remove what it cannot read as a \
-                     worktree; the path is no UTF-8; and `git worktree add` fails three \
-                     ways found: git's own `worktrees` directory is a file, the path \
-                     exists (a link the clearing step did not see, under the consent), a \
-                     `post-checkout` hook exits non-zero behind a worktree that was made",
+                     cannot be cleared; the path is no UTF-8; and `git worktree add` fails \
+                     two ways found: git's own `worktrees` directory is a file, a \
+                     `post-checkout` hook exits non-zero behind a worktree that was made. \
+                     Two more until 2026-10-28 — a stale registration git will not drop over \
+                     a link at its path, and a link the clearing step did not see under the \
+                     consent — each a link that leads nowhere where jigc keeps a directory, \
+                     refused since in front of the door under `store.link-on-the-way`",
         without_case: &[
             (
                 "the leftover at the path cannot be cleared",
@@ -1728,17 +1667,19 @@ pub const READINGS: &[Reading] = &[
             "crates/engine/src/milestone.rs — every call that hands it an error, by the words it is handed: the create (three), add-task (three), the cache's re-seed from the record (three), the record's read and its write at the join, at the discard and at a sub-task's discard (four), the join's staging area and its bodies (three), the gate's read of a sub-task's manifest and of a staged body (two) — eighteen in all",
             "crates/engine/src/milestone.rs::clear_staged_bodies, materialize, reseed_cache_from_record — what each of those calls opens, reads or writes",
         ],
-        causes: 26,
+        causes: 24,
         derivation: "a cause is what was being done when the I/O call failed, by the \
                      door that asked — the message says the first, the command the second. \
-                     Nineteen are followed, each a state that is no permission: a file \
+                     Seventeen are followed, each a state that is no permission: a file \
                      where a directory is opened, a directory where a file is read or \
-                     written, a link that leads nowhere, text that is no JSON, bytes that \
-                     are no text — the area opened at the create (2), the base pin read, \
-                     the task list read at three doors and as a directory (4), the cache \
-                     opened and re-seeded (3), the staging area opened, cleared and \
-                     written to (4), a sub-task's manifest read at two doors and as a \
-                     directory (3), a staged body read (2). Seven have a reason",
+                     written, text that is no JSON, bytes that are no text — the area \
+                     opened at the create (1), the base pin read, the task list read at \
+                     three doors and as a directory (4), the cache opened and re-seeded \
+                     (3), the staging area opened, cleared and written to (3), a \
+                     sub-task's manifest read at two doors and as a directory (3), a \
+                     staged body read (2). Seven have a reason. Two more until 2026-10-28 \
+                     — a link that leads nowhere at the area and at the staging area — are \
+                     refused since in front of the door under `store.link-on-the-way`",
         without_case: &[
             (
                 "write the base pin, at the create",
@@ -1840,11 +1781,13 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/milestone.rs::provision_worktrees — phase 1: a path registered as a live worktree is reused and not asked; every other one is probed",
             "crates/cli/src/milestone.rs::probe_leftover, because and hold_line — as at the discard",
         ],
-        causes: 10,
+        causes: 9,
         derivation: "the same probe, asked of the paths the provision will not reuse — so \
                      a worktree this repository registered is no cause here. A file; a \
-                     link; a directory that is no worktree; a checkout with no `.git` \
-                     link, beside its registration; an empty directory beside one — 5. The \
+                     directory that is no worktree; a checkout with no `.git` link, beside \
+                     its registration; an empty directory beside one — 4 (and a link that \
+                     leads nowhere until 2026-10-28, refused since in front of the door \
+                     under `store.link-on-the-way`). The \
                      directory gone: a registration that holds staged paths, one that \
                      holds a commit, one git cannot read — 3. And in a copy of the \
                      repository, a worktree it has not registered: with work in no commit, \

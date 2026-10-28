@@ -717,6 +717,170 @@ fn breach_against(
     })
 }
 
+/// **The link-on-the-way guard** — one gate, in front of every door, before it runs: no
+/// directory on the way to what the store writes is a symbolic link
+/// ([`crate::link_way`], the rule's one home in code; `design/storage.md` → *No write
+/// through a link on the way*; `DECISIONS.md` → 2026-10-28).
+///
+/// What it does at a command is the command's [`LinkGuard`] ([`Command::link_guard`]):
+/// it **refuses** every form that writes — a leaf added tomorrow included, because a leaf
+/// is a writing one unless `VERB_KINDS` says it reads — **reports** at a read form and lets
+/// it run, the way orientation reports a posture breach rather than refusing it, and
+/// **stands down** at `jigc uninstall`, which asks its own members' way. The question is
+/// the store's write surface ([`crate::link_way::store_links`]), asked before git is asked
+/// anything — which is what keeps the answer the same on every git (`git mv` past a link is
+/// refused from git 2.56 and followed before it).
+///
+/// **It never fires outside a git repository**, and a working directory it cannot read
+/// takes the one seam every reader of the cwd here takes ([`cwd_or_refusal`]).
+fn refuse_on_link_on_the_way(command: &Command, format: Format) -> Option<Outcome> {
+    let (homes, refuses) = match command.link_guard() {
+        LinkGuard::StandsDown(_) => return None,
+        LinkGuard::Reports => (crate::link_way::Homes::Current, false),
+        LinkGuard::Refuses(homes) => (homes, true),
+    };
+    let cwd = match cwd_or_refusal(format) {
+        Ok(cwd) => cwd,
+        Err(refusal) => return Some(refusal),
+    };
+    let links = crate::link_way::store_links(&cwd, homes);
+    if links.is_empty() {
+        return None;
+    }
+    if refuses {
+        return Some(crate::invocation_log::operational_failure(
+            format,
+            &crate::link_way::refusal(&links),
+        ));
+    }
+    // A read form runs, and says so. Under `--format json` each stream is one document,
+    // so the report is held for the document that has a `findings` array to carry it
+    // (`link_way::hold_for_the_document`) and never printed as a line beside it.
+    // Otherwise orientation, which a session reads on its stdout, carries it there ahead
+    // of its own text, and every other read form on stderr, where it leaves a pinned
+    // output contract untouched.
+    let advisory = crate::link_way::advisory(&links);
+    if format == Format::Json {
+        crate::link_way::hold_for_the_document(advisory);
+        return None;
+    }
+    let line = render::finding_line(&advisory, false);
+    if command.is_orientation() {
+        println!("{line}");
+    } else {
+        eprintln!("{line}");
+    }
+    None
+}
+
+/// **What the link-on-the-way guard does at a command** ([`Command::link_guard`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkGuard {
+    /// The command writes: refused over a link on the way to what the store writes, asking
+    /// these homes.
+    Refuses(crate::link_way::Homes),
+    /// A read form: the links are reported at advisory severity and the command runs.
+    Reports,
+    /// The guard stands down, for the reason given — the command asks its own way.
+    StandsDown(&'static str),
+}
+
+/// One leaf the link-on-the-way guard stands down at, and why.
+pub struct LinkGuardException {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// Why the guard does not stand in front of it.
+    pub reason: &'static str,
+}
+
+/// **The writing leaves the guard stands down at**, each with its reason — the reading
+/// leaves are not listed: they are `VERB_KINDS`' `Read` leaves, read from that table
+/// ([`Command::link_guard`]), so the two cannot disagree.
+pub const LINK_GUARD_EXCEPTIONS: &[LinkGuardException] = &[LinkGuardException {
+    door: &["uninstall"],
+    reason: "removes the workbench whole — a removal takes a link as the entry it is and \
+             follows none — and asks the way to every install member it edits or removes \
+             outside it, refusing before its first act; a store-wide refusal would keep a \
+             user from taking jigc out of a repository whose homes they linked",
+}];
+
+impl Command {
+    /// **Whether this is bare-`start` orientation** — the session hook's command.
+    pub fn is_orientation(&self) -> bool {
+        matches!(
+            self,
+            Command::Start {
+                intent: None,
+                workflow: None,
+                task: None,
+                explain: false,
+                ..
+            }
+        )
+    }
+
+    /// **Whether this parsed command only reads** — a `VERB_KINDS` `Read` leaf, or the read
+    /// forms of a writing leaf: `start` with no intent and no task (orientation, `--explain`,
+    /// or a composing workflow, which mints nothing), `start --explain`, `workflow
+    /// --preview`, and the two dry runs — `migrate-corpus --dry-run` and `task finalize
+    /// --dry-run`, which print what the act would do and change nothing.
+    pub fn reads_only(&self) -> bool {
+        verb_kind(self.leaf()) == Some(VerbKind::Read)
+            || matches!(
+                self,
+                Command::Start {
+                    intent: None,
+                    task: None,
+                    ..
+                } | Command::Start { explain: true, .. }
+                    | Command::Workflow { preview: true, .. }
+                    | Command::MigrateCorpus { dry_run: true, .. }
+                    | Command::Task {
+                        verb: TaskCommand::Finalize { dry_run: true, .. }
+                    }
+            )
+    }
+
+    /// **Whether this read form forecasts a writing act's outcome** — the two dry runs,
+    /// `migrate-corpus --dry-run` and `task finalize --dry-run`, which print what the act
+    /// would do and refuse where it would refuse. Such a forecast obeys the gate it
+    /// forecasts (M47 Inc 4 T3, `crate::task`'s dry-run arm; `crate::migrate_corpus::run`'s
+    /// *the identical report an applying run would print*): the act refuses over a link on
+    /// the way, so the forecast refuses too, under the same code, and still writes nothing.
+    /// `start --explain` and `workflow --preview` are read forms that forecast no act's
+    /// outcome — they show what a composition says — and report, as every other read form.
+    pub fn forecasts_a_write(&self) -> bool {
+        matches!(
+            self,
+            Command::MigrateCorpus { dry_run: true, .. }
+                | Command::Task {
+                    verb: TaskCommand::Finalize { dry_run: true, .. }
+                }
+        )
+    }
+
+    /// **What the link-on-the-way guard does here** — stands down at a
+    /// [`LINK_GUARD_EXCEPTIONS`] leaf, reports at a read form ([`Command::reads_only`])
+    /// that forecasts no writing act ([`Command::forecasts_a_write`]), and refuses
+    /// everywhere else: over the current homes, the pack's defaults too at `jigc setup`
+    /// (which lays a project out over them), and none at `jigc config set`, which asks the
+    /// homes its own act reaches.
+    pub fn link_guard(&self) -> LinkGuard {
+        let leaf = self.leaf();
+        if let Some(row) = LINK_GUARD_EXCEPTIONS.iter().find(|row| row.door == leaf) {
+            return LinkGuard::StandsDown(row.reason);
+        }
+        if self.reads_only() && !self.forecasts_a_write() {
+            return LinkGuard::Reports;
+        }
+        LinkGuard::Refuses(match leaf {
+            ["setup"] => crate::link_way::Homes::CurrentOrDefault,
+            ["config", "set"] => crate::link_way::Homes::None,
+            _ => crate::link_way::Homes::Current,
+        })
+    }
+}
+
 /// **The refusal `jigc task finalize` would make in `cwd`'s repository** — the posture
 /// `jigc task validate` previews (M52 Increment 3 / T6;
 /// `completions/artifacts/M52/settle-record.md` → D2.6 as amended by §4).
@@ -823,6 +987,11 @@ impl Cli {
         // Before any door runs: no repository posture reaches a door that commits or
         // moves on the user's behalf without that door having adjudicated it.
         if let Some(refusal) = refuse_on_posture(&self.command, self.format) {
+            return refusal;
+        }
+        // … and no door that writes the repository runs over a link on the way to what it
+        // writes ([`refuse_on_link_on_the_way`]).
+        if let Some(refusal) = refuse_on_link_on_the_way(&self.command, self.format) {
             return refusal;
         }
         match self.command {
@@ -3706,13 +3875,15 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 },
                 argv: &["config", "set", "docs-root", PATH_ARG_SLOT],
                 disposition: PathArgDisposition::Adjudicated {
-                    predicate: "crate::trackable::untrackable_reason · \
+                    predicate: "crate::link_way::at_or_on_the_way_to_dir (a component that \
+                                is a symbolic link — the link-on-the-way state, since \
+                                2026-10-28) · crate::trackable::untrackable_reason · \
                                 crate::config::is_workbench_root · \
                                 crate::config::unusable_root_reason (absolute · edge \
                                 whitespace · git pathspec magic · unnameable component · \
-                                symlinked or file-shaped component · jigc's own adapter \
-                                install root)",
+                                file-shaped component · jigc's own adapter install root)",
                     codes: &[
+                        "store.link-on-the-way",
                         "config.untrackable-root",
                         "config.workbench-root",
                         "config.unusable-root",

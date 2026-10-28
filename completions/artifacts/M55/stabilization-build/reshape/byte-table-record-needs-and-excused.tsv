@@ -58,7 +58,7 @@ jigc task finalize	T6	372	349
 jigc task finalize	T6, moved aside	7	7
 jigc task finalize	T9	5	3
 jigc task finalize	T10	11	9
-jigc task finalize	C1	34	42
+jigc task finalize	C1	34	39
 jigc task finalize	C2	0	0
 jigc task finalize	C3, the base pin	0	0
 jigc task finalize	C3, the task list	0	0
@@ -72,7 +72,7 @@ jigc task discard	C2	0	0
 jigc task discard	C3, the base pin	0	0
 jigc task discard	C3, the task list	0	0
 jigc task discard	C4	0	0
-jigc milestone finalize	M1	55	67
+jigc milestone finalize	M1	55	59
 jigc milestone finalize	M2	33	12
 jigc milestone finalize	M3	137	130
 jigc milestone finalize	M4	21	21
@@ -235,15 +235,15 @@ jigc rename	RN2	24	24
 jigc rename	RN3	9	9
 jigc rename	RN4	15	15
 jigc rename	RN5	10	10
-jigc rename	C1	85	85
+jigc rename	C1	85	79
 jigc rename	C2	1	1
 jigc rename	C3, the base pin	0	0
 jigc rename	C3, the task list	0	0
 jigc rename	C4	0	0
-jigc relocate	RL1	43	45
+jigc relocate	RL1	43	39
 jigc relocate	RL1, at its new home	40	40
 jigc relocate	RL2	0	0
-jigc relocate	RL4	44	42
+jigc relocate	RL4	44	32
 jigc relocate	C1	0	0
 jigc relocate	C2	0	0
 jigc relocate	C3, the base pin	0	0
@@ -260,10 +260,10 @@ jigc migrate-corpus	C2	0	0
 jigc migrate-corpus	C3, the base pin	0	0
 jigc migrate-corpus	C3, the task list	0	0
 jigc migrate-corpus	C4	0	0
-jigc config set	CS1	35	32
-jigc config set	CS2	43	45
+jigc config set	CS1	36	27
+jigc config set	CS2	43	39
 jigc config set	CS2, at its new home	43	43
-jigc config set	CS4	60	54
+jigc config set	CS4	62	42
 jigc config set	CS5	0	0
 jigc config set	C1	0	0
 jigc config set	C2	0	0
@@ -279,7 +279,7 @@ jigc start	C3, the base pin	0	0
 jigc start	C3, the task list	0	0
 jigc start	C4	0	0
 jigc workflow	WF1	22	22
-jigc workflow	WF2	30	30
+jigc workflow	WF2	30	27
 jigc workflow	C1	0	0
 jigc workflow	C2	0	0
 jigc workflow	C3, the base pin	0	0
@@ -939,7 +939,7 @@ jigc config set	CS2 × U	config-set-a-file-of-the-users-in-the-decisions-place �
 jigc config set	CS2 × L, to nothing	config-set-a-link-to-nothing-in-the-decisions-place · config-set-placement-root-a-link-to-nothing-in-the-roadmaps-place
 jigc config set	CS2 × L, to a file in the repository	config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place · config-set-placement-root-a-link-to-a-file-in-the-repository-in-the-roadmaps-place
 jigc config set	CS2 × L, to a file outside it	config-set-a-link-to-a-file-outside-in-the-decisions-place · config-set-placement-root-a-link-to-a-file-outside-in-the-roadmaps-place
-jigc config set	CS2 × L, at a directory on the way	config-set-a-link-to-a-directory-outside-at-the-decisions-directory
+jigc config set	CS2 × L, at a directory on the way	config-set-a-link-to-a-directory-outside-at-the-decisions-directory · config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-directory
 jigc config set	CS2 × K, a directory in a file's place	config-set-a-directory-in-the-decisions-place · config-set-placement-root-a-directory-in-the-roadmaps-place
 jigc config set	CS2 × K, a file in a directory's place	config-set-a-file-in-the-place-of-the-decisions-directory · config-set-placement-root-a-file-in-the-place-of-the-roadmaps-directory
 jigc config set	CS2 × E, after the first write	config-set-an-edit-to-the-decision · config-set-placement-root-an-edit-to-the-roadmap
@@ -949,7 +949,7 @@ jigc config set	CS2, at its new home × T	config-set-a-file-the-user-committed-a
 jigc config set	CS2, at its new home × L, to nothing	config-set-a-link-to-nothing-at-the-decisions-new-home · config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home
 jigc config set	CS2, at its new home × L, to a file in the repository	config-set-a-link-to-a-file-in-the-repository-at-the-decisions-new-home · config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home
 jigc config set	CS2, at its new home × L, to a file outside it	config-set-a-link-to-a-file-outside-at-the-decisions-new-home · config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home
-jigc config set	CS2, at its new home × L, at a directory on the way	config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory
+jigc config set	CS2, at its new home × L, at a directory on the way	config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory · config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-new-directory
 jigc config set	CS2, at its new home × K, a directory in a file's place	config-set-a-directory-at-the-decisions-new-home · config-set-placement-root-a-directory-at-the-roadmaps-new-home
 jigc config set	CS4 × U	config-set-a-file-of-the-users-beside-the-baseline
 jigc start	refusing	start-as-the-catalog-names-it

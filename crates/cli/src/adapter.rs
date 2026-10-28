@@ -1028,7 +1028,12 @@ pub fn unwire_reference(repo_root: &Path) -> std::io::Result<bool> {
         return Ok(false);
     };
 
-    if next.is_empty() {
+    // **Never the user's link** (the second re-review's N-5): where `CLAUDE.md` is a link
+    // the install followed, the file it leads to is the one jigc wrote into, so that file
+    // is written back — empty, as it was — and the link stays where its owner put it.
+    let a_link =
+        std::fs::symlink_metadata(&target).is_ok_and(|entry| entry.file_type().is_symlink());
+    if next.is_empty() && !a_link {
         // setup created the file; remove it so uninstall leaves no jigc trace.
         match std::fs::remove_file(&target) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),

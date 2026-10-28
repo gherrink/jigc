@@ -7,10 +7,10 @@ git's state moved outside its allowance; also written outside its allowance	git'
 git's state moved outside its allowance; also written outside its allowance	holds	2
 git's state moved outside its allowance; also written outside its allowance	written outside its allowance	1
 git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	git's state moved outside its allowance; also not the listed outcome	1
-git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	17
-git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	not the listed outcome	2
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	8
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	not the listed outcome	4
 git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refused, and changed what a refusal may not	2
-git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refuses, nothing changed	6
+git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	refuses, nothing changed	14
 holds	holds	276
 lost	holds	2
 lost	lost	8
@@ -27,18 +27,15 @@ lost; also written outside its allowance; also not the listed outcome	refuses, n
 not run: a deletion takes the file at `.jigc/settings-entries.json`, and no regular file stands there	holds	1
 not run: an edit goes into `.jigc/settings-entries.json`, and no regular file stands there	refuses, nothing changed	1
 not the listed outcome	git's state moved outside its allowance; also not the listed outcome	1
-not the listed outcome	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	1
 not the listed outcome	holds	3
 not the listed outcome	lost	2
-not the listed outcome	not the listed outcome	33
+not the listed outcome	not the listed outcome	34
 not the listed outcome	refused, and changed what a refusal may not	1
-not the listed outcome	refuses, nothing changed	49
-refused, and changed what a refusal may not	refused, and changed what a refusal may not	47
-refused, and changed what a refusal may not	refuses, nothing changed	5
+not the listed outcome	refuses, nothing changed	58
+refused, and changed what a refusal may not	refused, and changed what a refusal may not	42
+refused, and changed what a refusal may not	refuses, nothing changed	2
 refused, and changed what a refusal may not; also not the listed outcome	holds	4
-refused, and changed what a refusal may not; also not the listed outcome	refuses, nothing changed	4
-refuses, nothing changed	git's state moved outside its allowance; also written outside its allowance; also not the listed outcome	1
-refuses, nothing changed	refuses, nothing changed	205
+refused, and changed what a refusal may not; also not the listed outcome	refuses, nothing changed	12
+refuses, nothing changed	refuses, nothing changed	198
 written outside its allowance	written outside its allowance	61
-written outside its allowance; also not the listed outcome	refuses, nothing changed	1
-written outside its allowance; also not the listed outcome	written outside its allowance; also not the listed outcome	1
+written outside its allowance; also not the listed outcome	refuses, nothing changed	2

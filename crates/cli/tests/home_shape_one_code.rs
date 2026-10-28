@@ -109,6 +109,13 @@ const SITES: &[(&str, &str, &[&str])] = &[
         "foreign_destination",
         &["rename"],
     ),
+    (
+        // A relocation's destination that is a link — the user's entry, which no mover moves
+        // aside (2026-10-28, the review of the link-on-the-way guard, its S1).
+        "crates/cli/src/relocate.rs",
+        "displace_foreign_squatter",
+        &["relocate", "config set placement-root"],
+    ),
     ("crates/cli/src/doc.rs", "free_destination", &["doc rename"]),
     (
         "crates/engine/src/state.rs",
@@ -251,12 +258,9 @@ const OBSERVERS: &[(&str, &str, Observed)] = &[
     (
         "crates/cli/src/relocate.rs",
         "displace_foreign_squatter",
-        Observed::Out(
-            "a relocation's **destination**: whatever squats it — a link included — is \
-             parked in the gitignored workbench as the entry it is, and the doc lands. A \
-             displacement the ack names, not a refusal (`design/reconciliation.md` → \
-             Relocation collisions)",
-        ),
+        // A link at a relocation's destination is refused since 2026-10-28; every other
+        // squatter is parked as before (`design/reconciliation.md` → Relocation collisions).
+        Observed::Refuses("displace_foreign_squatter"),
     ),
     (
         "crates/cli/src/setup.rs",

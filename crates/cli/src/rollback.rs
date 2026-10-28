@@ -790,7 +790,10 @@ impl PreImageFamily {
 /// Only [`std::path::Component::Normal`] components of the identity are walked, so an
 /// identity that is absolute or climbs with `..` parks nowhere rather than writing outside
 /// the workbench — `None`, and the finding then says the copy is gone rather than naming a
-/// path that is not there. The same `None` covers a write that simply failed.
+/// path that is not there. The same `None` covers a write that simply failed. A link on the
+/// way inside the parking home is never written past: the copy is parked at a free name
+/// directly below `displaced/` instead, and is `None` only where `displaced` itself is a
+/// link.
 fn park(jigc_root: &Path, door: ConflictDoor, identity: &str, bytes: &[u8]) -> Option<PathBuf> {
     let relative = Path::new(identity);
     let name = relative.file_name()?;
@@ -801,12 +804,32 @@ fn park(jigc_root: &Path, door: ConflictDoor, identity: &str, bytes: &[u8]) -> O
             _ => return None,
         }
     }
-    std::fs::create_dir_all(&dir).ok()?;
     let parked = dir.join(format!(
         "{}.pre-image.{}",
         name.to_string_lossy(),
         engine::tempname::unique_nanos(),
     ));
+    // Never past a link in the parking home (the second re-review's NS-C): asked before the
+    // directories are made, without following a link. Where a link stands on that way, the
+    // copy is parked instead at a free name directly below `displaced/` — whose own entry
+    // the guard asks — rather than dropped (the third re-review's N-1): the pre-image is
+    // held only in memory, and this is its one chance to survive.
+    let parked = if engine::state::workbench_link_on_the_way(&parked).is_some() {
+        let flat = parked.strip_prefix(jigc_root.join("displaced")).ok()?;
+        let flat = flat
+            .components()
+            .map(|part| part.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("%");
+        let beside = crate::task::free_displacement_path(jigc_root.join("displaced").join(flat));
+        if engine::state::workbench_link_on_the_way(&beside).is_some() {
+            return None;
+        }
+        beside
+    } else {
+        std::fs::create_dir_all(&dir).ok()?;
+        parked
+    };
     std::fs::write(&parked, bytes).ok()?;
     Some(parked)
 }

@@ -402,6 +402,36 @@ fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport
     // Deterministic doctype order (the committed walk + the fold both consume it in order).
     doctypes.sort_by(|a, b| a.ty.cmp(&b.ty));
 
+    // **No migration past a link on the way** (2026-10-28; [`crate::link_way`]): the
+    // current homes are asked at dispatch, before any door runs; the **prior** homes the
+    // doctypes' versioned snapshots declare are known to this command alone, so it asks
+    // them here, before its first write — a doc there is read to be rewritten or moved.
+    let mut links = Vec::new();
+    for dt in &doctypes {
+        let prior = prior_homes(
+            pack,
+            &dt.ty,
+            dt.version,
+            &dt.docs_root,
+            dt.placement_root.as_deref(),
+        );
+        let stands = format!("on the way to a prior home of `{}`", dt.ty);
+        links.extend(
+            prior.locations.iter().filter_map(|dir| {
+                crate::link_way::at_or_on_the_way_to_dir(&jigc_home, dir, &stands)
+            }),
+        );
+        links.extend(prior.files.iter().filter_map(|file| {
+            crate::link_way::on_the_way_to(&jigc_home, file).map(|link| crate::link_way::Link {
+                stands: stands.clone(),
+                ..link
+            })
+        }));
+    }
+    if !links.is_empty() {
+        return Err(crate::link_way::refusal(&links));
+    }
+
     let jigc_root = jigc_home.join(".jigc");
     let mut report = migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes, options)?;
     // THE COMMIT BOUNDARY (`design/corpus-migration.md` → The commit boundary). The per-doc

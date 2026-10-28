@@ -122,6 +122,7 @@ const PATH_RULE_CODES: &[&str] = &[
     "config.workbench-root",
     "config.unusable-root",
     "finalize.retire-untrackable",
+    "store.link-on-the-way",
 ];
 
 /// The bytes planted **outside the repository** — the canary re-read after every cell, and
@@ -405,7 +406,11 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         // `jigc config set <key> <value>` — the root-knob arm is the one that resolves a
         // HOME, and it is the arm that refuses.
         ("config set", "value", _, PathArgSubject::Home) => match cell {
-            ParentEscape | Symlink | GitComponent => PathRuleBlocks("config.untrackable-root"),
+            ParentEscape | GitComponent => PathRuleBlocks("config.untrackable-root"),
+            // A root through a link is the link-on-the-way state since 2026-10-28, refused
+            // under its one code ahead of the root rules (`design/storage.md` → *No write
+            // through a link on the way*).
+            Symlink => PathRuleBlocks("store.link-on-the-way"),
             WorkbenchRoot => PathRuleBlocks("config.workbench-root"),
             // The absolute cell, and — as of T6 — the pathspec-magic cell, which landed at
             // exit 0 until this task. The glob cell joins them for the same reason one leg

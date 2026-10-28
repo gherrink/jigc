@@ -1310,6 +1310,51 @@ pub fn staged_in_another_task(
         .any(|area| instance_path(&area, type_name, slug).is_file())
 }
 
+/// **The first symbolic link on the way to `path` inside jigc's workbench** — the `.jigc`
+/// directory itself or any directory below it on the way to `path`'s parent, read without
+/// following a link — as its path from `.jigc` on (`.jigc/index`). `None` where none is a
+/// link, and where `path` lies in no `.jigc` at all (the directories above it are the
+/// caller's, and a checkout reached through a link is still that checkout).
+///
+/// **The rule at the write primitive** (2026-10-28, the re-review of the link-on-the-way
+/// guard, its NB1): jigc writes nothing past a link in its workbench, and the guarantee
+/// rests here, on every atomic write and every save lock the workbench's caches, records
+/// and areas go through, never on how a command is classified — a read form that reports
+/// a link and runs, rebuilding its edge index, writes the index nowhere rather than past
+/// the link (`design/storage.md` → *No write through a link on the way*).
+#[must_use]
+pub fn workbench_link_on_the_way(path: &Path) -> Option<String> {
+    let components: Vec<std::path::Component<'_>> = path.components().collect();
+    let start = components
+        .iter()
+        .position(|part| part.as_os_str() == ".jigc")?;
+    let mut walked: PathBuf = components[..start].iter().collect();
+    let mut spelled: Vec<String> = Vec::new();
+    for part in &components[start..components.len().saturating_sub(1)] {
+        walked.push(part);
+        spelled.push(part.as_os_str().to_string_lossy().into_owned());
+        if std::fs::symlink_metadata(&walked).is_ok_and(|entry| entry.file_type().is_symlink()) {
+            return Some(spelled.join("/"));
+        }
+    }
+    None
+}
+
+/// Refuse a write to `path` past a link in the workbench ([`workbench_link_on_the_way`]),
+/// with nothing created — the error every workbench write primitive returns for it.
+fn refuse_past_a_workbench_link(path: &Path) -> std::io::Result<()> {
+    match workbench_link_on_the_way(path) {
+        None => Ok(()),
+        Some(link) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "`{link}` is a symbolic link on the way to a file of jigc's workbench — jigc \
+                 writes nothing past a link, so nothing was written"
+            ),
+        )),
+    }
+}
+
 /// **Atomic persist** of an edited buffer to a working-area doc path
 /// (`implementation/parsing.md` → The write pipeline → "Atomic on disk — write temp +
 /// rename"). Writes `bytes` to a sibling temp file, then `rename`s it over `path`, so a
@@ -1326,6 +1371,7 @@ pub fn persist(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// it is removed on a write failure and consumed by the rename on success — never left
 /// behind. The parent dir is created on demand.
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    refuse_past_a_workbench_link(path)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -1547,6 +1593,7 @@ impl SaveLock {
     /// Each message names the lock file, says nothing was written, and carries the route.
     fn acquire(path: &Path) -> std::io::Result<Self> {
         let lock_path = lock_sibling(path);
+        refuse_past_a_workbench_link(&lock_path)?;
         let failed = |doing: &str, err: std::io::Error| {
             std::io::Error::new(
                 err.kind(),

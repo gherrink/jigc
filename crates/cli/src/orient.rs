@@ -224,10 +224,18 @@ fn prepend_posture(
     posture: Option<&crate::repo::PostureBreach>,
     swept: engine::finding::Findings,
 ) -> engine::finding::Findings {
-    let Some(breach) = posture else {
+    // The link-on-the-way report rides beside the posture under `--format json`, where it
+    // cannot be a line of its own (`crate::link_way::hold_for_the_document`): a fact about
+    // the repository, too, that no authoring clears. Held only under JSON, so a text
+    // orientation, which prints it ahead of its own text, never says it twice.
+    let held = crate::link_way::held_for_the_document().cloned();
+    if posture.is_none() && held.is_none() {
         return swept;
-    };
-    std::iter::once(breach.finding())
+    }
+    posture
+        .map(crate::repo::PostureBreach::finding)
+        .into_iter()
+        .chain(held)
         .chain(swept)
         .collect::<engine::finding::Findings>()
 }

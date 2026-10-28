@@ -555,6 +555,13 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
     if resolved.scalar(KNOB_KEY) != Some("true") {
         return None;
     }
+    // **Never past a link on the way** (2026-10-28; [`crate::link_way`]): the log is a
+    // workbench file, and a link in the workbench would carry every record wherever it
+    // leads. Best-effort instrumentation stands down rather than refuse — the verb itself
+    // refuses on the same link at dispatch, under its code and route.
+    if !crate::link_way::in_the_workbench(&ctx.jigc_home).is_empty() {
+        return None;
+    }
     Some(ctx.jigc_home.join(".jigc").join(LOGS_DIR))
 }
 

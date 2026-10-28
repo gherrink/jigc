@@ -9,7 +9,7 @@
 //! discard`'s, `jigc ingest`'s and `jigc unmanage`'s, the doc family's eight, the seven
 //! other leaves of the `milestone` family, the movers family's four (`rename`, `relocate`,
 //! `migrate-corpus`, `config set`) and the mint family's four (`start`, `workflow`,
-//! `migrate`, `task amend`) — and 782 cells: the acceptance's twelve, the task family's
+//! `migrate`, `task amend`) — and 784 cells: the acceptance's twelve, the task family's
 //! eighty-one** (`jigc task finalize`, `jigc task discard`; four of them `task finalize`'s
 //! spelling `doc-only` and seven its spelling `--approve`), **`milestone finalize`'s
 //! spelling `squash: false` four, the install family's hundred and thirty-four** (`setup`,
@@ -18,7 +18,7 @@
 //! doors' seventy-three** (`create`, `add-task`, `add-from-spec`), **its fan-out doors'
 //! thirty-six** (`provision`, `execute`, `join`) **and its terminals' seventy-two**
 //! (`discard`, and `milestone finalize`'s plain spelling, beside the carryover gate's cell
-//! under `squash: false`), **the movers family's eighty-three and ninety** (`rename`,
+//! under `squash: false`), **the movers family's eighty-three and ninety-two** (`rename`,
 //! `migrate-corpus`; `relocate`, `config set`) **and the mint family's fifty-eight**, of which
 //! a hundred and eighty run on demand. This file is the plan's tasks `B1` to `B9`: the arms
 //! that hold the comparison, the reader and the runner to their rules, the fences, and the
@@ -13541,11 +13541,10 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "milestone-create-a-hook-that-rejects",
             "milestone-add-task-a-file-in-the-place-of-the-records-directory",
             "milestone-add-task-the-record-deleted",
-            // The fifth of the fixes after the review of the task `B10` (its lead L1): the
-            // records' directory a link out of the repository, which `git add` refuses to
-            // stage past — the door refuses, and leaves the directory it made on its way.
-            "milestone-create-a-link-to-a-directory-outside-at-the-records-directory",
-            "milestone-add-task-a-link-to-a-directory-outside-at-the-records-directory",
+            // The two cells of a link out of the repository at the records' directory left
+            // this key on 2026-10-28: the door now refuses before its first write, naming
+            // the link (`r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-
+            // repository`, fixed), so no directory is made on its way.
         ],
     ),
     (
@@ -13650,6 +13649,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "relocate-a-directory-in-the-stranded-notes-place",
             "relocate-a-note-a-task-landed-at-the-notes-new-home",
             "relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note",
+            // A link at the new home, refused since 2026-10-28 as the user's entry (the
+            // review's S1) — a doc blocked, and the run's exit 0.
+            "relocate-a-link-to-nothing-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
         ],
     ),
     // The rows' record's §6, entry 23, ruled by the human on 2026-10-20: any file at a
@@ -13665,9 +13669,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::GitMoved,
         &[
             "relocate-a-file-of-the-users-at-the-notes-new-home",
-            "relocate-a-link-to-nothing-at-the-notes-new-home",
-            "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
-            "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
+            // The three links at the new home left this key on 2026-10-28: a link at a
+            // mover's destination is refused, never parked (the review's S1), so they are
+            // the refused doc of `r1-relocate-refuses-a-doc-and-exits-0`.
             "relocate-a-directory-at-the-notes-new-home",
             "relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note",
         ],
@@ -13735,9 +13739,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::GitMoved,
         &[
             "config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
+            // The three links at the roadmap's new home left this key on 2026-10-28: a link at
+            // a mover's destination is refused where it stands, nothing parked (the review's
+            // S1) — each now *refuses, nothing changed*.
             "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
         ],
     ),
@@ -13801,43 +13805,16 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "task-finalize-approve-a-source-staged-and-never-committed",
         ],
     ),
+    // `r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository` — nine
+    // cells here from the fifth of the fixes after the review of the task `B10` (its lead
+    // L1) — is fixed on 2026-10-28 and left the list: every door asks the directories on the
+    // way to what it writes, moves or reads in order to write, and refuses before its first
+    // write, naming the link (`crate::link_way`; the human's ruling B). Each of its cells is
+    // listed *refuses, nothing changed*, naming the link.
     // `migrate-corpus` walks the disk, not git, and so migrates and commits a doc below its
     // version the user never committed nor staged — at its doctype's home and at an earlier
     // home — where the walk *"enumerates a doctype's **committed** instances"* (the sixth of
     // the fixes after the review of the task `B9`, *migrated* narrowed to a doc git holds).
-    // A link out of the repository at a directory on the way to where a door writes (the
-    // fifth of the fixes after the review of the task `B10`, its lead L1): the door asks
-    // nothing of the directories on the way — `setup` alone does, refusing `setup.write-*`
-    // with *"a symbolic link on the way"* on this tree — and writes, moves or rebuilds
-    // through the link, outside the repository. The rows' record's §6, entries 23 and 25:
-    // jigc never writes over an entry of the user's, and the check follows no link. One key,
-    // not the entry-25 key: the fix of that key asks the commit doc's own place, which a link
-    // on the way passes, and the doors are five.
-    (
-        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
-        Classification::WrittenOutside,
-        &["workflow-a-link-to-a-directory-outside-at-the-sub-tasks-docs-directory"],
-    ),
-    (
-        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
-        Classification::GitMoved,
-        &[
-            "relocate-a-link-to-a-directory-outside-at-the-stranded-notes-directory",
-            "relocate-a-link-to-a-directory-outside-at-the-notes-new-directory",
-            "config-set-a-link-to-a-directory-outside-at-the-config-directory",
-            "config-set-a-link-to-a-directory-outside-at-the-decisions-directory",
-            "config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory",
-        ],
-    ),
-    (
-        "r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository",
-        Classification::RefusedAndChanged,
-        &[
-            "task-finalize-a-link-to-a-directory-outside-at-the-workbench",
-            "migrate-corpus-a-link-to-a-directory-outside-at-the-decisions-directory",
-            "migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory",
-        ],
-    ),
     (
         "r1-migrate-corpus-migrates-and-commits-a-doc-git-never-held",
         Classification::GitMoved,
@@ -14491,7 +14468,7 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
             in_the_gate(&cells).len(),
             on_demand(&cells).len()
         ),
-        (782, 602, 180),
+        (784, 604, 180),
         "the pilot's acceptance is twelve cells (the plan's §5), the task family's are \
          eighty-one — sixty-nine in the gate, four of them its spelling `doc-only` and seven \
          its spelling `--approve`, twelve on demand — `milestone finalize`'s spelling `squash: false` four, in the gate — the \
@@ -14504,8 +14481,8 @@ fn every_cell_has_its_row_its_arm_and_a_name_of_its_own() {
          finalize`'s plain spelling's forty-three: sixty in the gate, twelve on demand — and \
          the movers family's doors that commit eighty-three, `rename`'s thirty-nine and \
          `migrate-corpus`'s forty-four: seventy-one in the gate, twelve on demand — and its \
-         movers ninety, `relocate`'s thirty-two and `config set`'s fifty-eight: \
-         seventy-eight in the gate, twelve on demand — and the mint family's fifty-eight, `start`'s \
+         movers ninety-two, `relocate`'s thirty-two and `config set`'s sixty: \
+         eighty in the gate, twelve on demand — and the mint family's fifty-eight, `start`'s \
          fifteen, `workflow`'s eighteen, `migrate`'s fifteen and `task amend`'s ten: thirty-four \
          in the gate, twenty-four on demand"
     );

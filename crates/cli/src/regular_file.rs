@@ -103,13 +103,48 @@ impl Blocker {
 /// no-follow occupancy read the promote doors share).
 #[must_use]
 pub fn blocker(root: &Path, relative: &str) -> Option<Blocker> {
-    let mut walked = root.to_path_buf();
-    let mut spelled = String::new();
+    if let Some(on_the_way) = link_on_the_way(root, relative) {
+        return Some(on_the_way);
+    }
     let components: Vec<&str> = relative
         .split('/')
         .filter(|part| !part.is_empty())
         .collect();
-    let (leaf, way) = components.split_last()?;
+    components.last()?;
+    let walked = components
+        .iter()
+        .fold(root.to_path_buf(), |walked, part| walked.join(part));
+    match engine::store::home_entry(&walked) {
+        HomeEntry::Free | HomeEntry::RegularFile => None,
+        HomeEntry::Foreign(shape) => Some(Blocker {
+            at: relative.to_string(),
+            shape,
+            aimed_at: relative.to_string(),
+        }),
+    }
+}
+
+/// **The directories on the way to `relative` below `root`, asked without following a
+/// link: the first that is a symbolic link**, as a [`Blocker`] whose `at` is that
+/// directory — `None` when no directory on the way is one. The leaf is not asked: what
+/// stands at the path itself is [`blocker`]'s question, and a writer that creates a
+/// directory there asks it with the directory as the leaf's parent
+/// ([`crate::link_way`], the one home of *jigc writes through no link on the way*).
+///
+/// Every component below the root counts, and the root itself is never asked: a checkout
+/// reached through a link is still that checkout. A link counts **whatever it points at** —
+/// a directory outside the repository, one inside it, or nothing — because the check
+/// follows no link (the rows' record's §6, entry 25, ruled 2026-10-26): what a write past
+/// it would reach is the link's to say, never jigc's to guess.
+#[must_use]
+pub fn link_on_the_way(root: &Path, relative: &str) -> Option<Blocker> {
+    let components: Vec<&str> = relative
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    let (_, way) = components.split_last()?;
+    let mut walked = root.to_path_buf();
+    let mut spelled = String::new();
     for part in way {
         walked.push(part);
         if !spelled.is_empty() {
@@ -124,15 +159,7 @@ pub fn blocker(root: &Path, relative: &str) -> Option<Blocker> {
             });
         }
     }
-    walked.push(leaf);
-    match engine::store::home_entry(&walked) {
-        HomeEntry::Free | HomeEntry::RegularFile => None,
-        HomeEntry::Foreign(shape) => Some(Blocker {
-            at: relative.to_string(),
-            shape,
-            aimed_at: relative.to_string(),
-        }),
-    }
+    None
 }
 
 /// The error a blocked replacing write returns — the state, then why jigc will not act on

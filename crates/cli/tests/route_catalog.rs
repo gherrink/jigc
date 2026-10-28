@@ -286,7 +286,8 @@ use std::path::Path;
 use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
     self, Act, Bound, Case, Check, Chosen, Cited, Classification, ExpectedRed, Filled, Followed,
-    Named, Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing, Step, Var, Word,
+    LinkAndDirectory, Named, Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing,
+    Step, Var, Word,
 };
 use crate::support::rust_source;
 
@@ -400,36 +401,17 @@ fn cases() -> Vec<&'static Case> {
 /// §1 and §3); the others are no finding of the canary's and were minted with the cases, in
 /// `completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md`.
 const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
-    (
-        HOOK_END,
-        Classification::SameRefusalAgain,
-        &[
-            "setup-hook-link-out-to-a-directory-pointed-at-a-committed-script",
-            "setup-hook-link-out-to-a-directory-pointed-at-a-new-script",
-            "setup-hook-link-out-to-a-directory-removed",
-            "setup-hook-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hook-link-out-to-a-script-pointed-at-a-new-script",
-            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-new-script",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-committed-script",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-new-script",
-        ],
-    ),
-    (
-        HOOK_END,
-        Classification::WitnessChanged,
-        &[
-            "setup-hook-link-out-to-a-script-removed",
-            "setup-hooks-path-inside-link-out-to-a-script-removed",
-            "setup-hooks-path-outside-link-out-of-it-to-a-script-removed",
-        ],
-    ),
+    // `r1-setup-install-hook-route-other-causes-unexamined` and
+    // `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null` hold no case since
+    // 2026-10-28: the hook's link refusal names the link itself, and its route, followed,
+    // holds — removed, or pointed at a committed script — at every place the link leads
+    // (the third re-review of the link-on-the-way guard, its L-3). The way that points it
+    // at a script in no commit is `NEW_SCRIPT`'s, below, as it already was over a link to
+    // nothing.
     (
         HOOK_RELATIVE,
         Classification::SameRefusalAgain,
         &[
-            "setup-hook-relative-link-out-to-a-script-pointed-at-a-committed-script",
-            "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
             "setup-hook-write-hook-a-directory",
             "setup-hook-write-hook-unreadable",
         ],
@@ -440,23 +422,15 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["setup-hook-write-in-a-worktree-of-a-bare-repository"],
     ),
     (
-        HOOK_RELATIVE,
-        Classification::WitnessChanged,
-        &["setup-hook-relative-link-out-to-a-script-removed"],
-    ),
-    (
-        HOOK_DEVICE,
-        Classification::SameRefusalAgain,
-        &[
-            "setup-hook-link-to-dev-null-pointed-at-a-committed-script",
-            "setup-hook-link-to-dev-null-pointed-at-a-new-script",
-            "setup-hook-link-to-dev-null-removed",
-        ],
-    ),
-    (
         NEW_SCRIPT,
         Classification::AnotherFailure,
         &[
+            "setup-hook-link-out-to-a-directory-pointed-at-a-new-script",
+            "setup-hook-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hook-link-to-dev-null-pointed-at-a-new-script",
+            "setup-hook-relative-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-inside-link-out-to-a-script-pointed-at-a-new-script",
+            "setup-hooks-path-outside-link-out-of-it-to-a-script-pointed-at-a-new-script",
             "setup-hook-link-to-nothing-pointed-at-a-new-script",
             "setup-hooks-path-inside-link-to-nothing-pointed-at-a-new-script",
             "setup-hooks-path-outside-link-to-nothing-pointed-at-a-new-script",
@@ -682,7 +656,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "uninstall-guide-directory-read-only",
             "uninstall-hook-a-directory",
-            "uninstall-hook-a-link-to-a-read-only-script-outside",
+            "uninstall-hook-a-link-to-a-read-only-script-inside",
             "uninstall-hook-hooks-path-a-file",
             "uninstall-hook-hooks-path-dev-null",
             "uninstall-hook-hooks-path-empty",
@@ -690,7 +664,7 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "uninstall-hook-read-only",
             "uninstall-hook-unreadable",
             "uninstall-reference-host-a-directory",
-            "uninstall-reference-host-a-link-to-a-read-only-file-outside",
+            "uninstall-reference-host-a-link-to-a-read-only-file-inside",
             "uninstall-reference-host-not-utf-8",
             "uninstall-reference-host-unreadable",
             "uninstall-settings-a-directory",
@@ -817,8 +791,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "area-io-a-directory-at-a-merged-bodys-path-at-the-finalize-workbench-made-writable",
             "area-io-a-file-at-the-staging-area-at-the-finalize-workbench-made-writable",
             "area-io-a-file-at-the-staging-areas-docs-at-the-finalize-workbench-made-writable",
-            "area-io-a-link-to-nothing-at-the-area-at-the-create-workbench-made-writable",
-            "area-io-a-link-to-nothing-at-the-staging-area-at-the-finalize-workbench-made-writable",
             "area-io-base-pin-a-directory-and-no-task-list-at-add-task-workbench-made-writable",
             "area-io-base-pin-not-json-at-add-task-workbench-made-writable",
             "area-io-milestones-directory-a-file-at-the-create-workbench-made-writable",
@@ -834,11 +806,6 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "area-io-task-list-not-json-at-the-finalize-workbench-made-writable",
             "area-io-task-list-not-json-at-the-join-workbench-made-writable",
         ],
-    ),
-    (
-        CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED,
-        Classification::AnotherFailure,
-        &["leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed"],
     ),
     (
         KEPT_THE_ONLY_COMMIT,
@@ -863,15 +830,24 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &[
             "repoint-failed-a-stale-key-and-a-file-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
             "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-rename-run-as-printed",
+            // Since 2026-10-28 the unmanage arm too — by the outer code only. With the stale
+            // key gone, the link at the new home is the user's entry, which no mover moves
+            // aside any more (the review's S1), so the re-point is refused under
+            // `config.repoint-failed` again, wrapping **another** refusal:
+            // `store.home-not-regular-file` over the link, whose own route is right and is
+            // followed at its own case (`config.rs`, a link at the doc's new home). The
+            // defect this key names is the first refusal's — it called the link a managed
+            // doc — not the second's.
+            "repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-what-is-managed-listed-and-the-home-unmanaged",
         ],
     ),
 ];
 
-// The canary's keys — the route of the hook's link refusal names where the link leads, and
-// not the link.
-const HOOK_END: &str = "r1-setup-install-hook-route-other-causes-unexamined";
+// The canary's key whose cases at the hook's write are still red. Its cases of the hook's
+// link refusal, and those of `r1-setup-install-hook-route-other-causes-unexamined` and
+// `r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null`, hold since 2026-10-28, when
+// the refusal named the link itself rather than where it leads.
 const HOOK_RELATIVE: &str = "r1-p3-setup-install-hook-undriven-producers-and-causes";
-const HOOK_DEVICE: &str = "r1-p4-setup-hook-linked-to-dev-null-route-names-dev-null";
 
 /// The canary's key for an install from a worktree of a bare repository: the install home is
 /// the folder that holds the repository, the hook's write is refused there, and the
@@ -896,7 +872,8 @@ const NEW_FILE: &str = "r1-setup-link-pointed-at-uncommitted-file-draws-dirty-in
 /// The hook's link pointed at a script in no commit: the re-run writes and stages the
 /// install, splices its block into the script, and then refuses to commit. The route says
 /// *a script inside this repository*, and is held to any script in the checkout by the
-/// human's ruling of 2026-10-12.
+/// human's ruling of 2026-10-12 — over a link to nothing, and since 2026-10-28 over every
+/// link the refusal names (out of the repository, to a directory, to `/dev/null`).
 const NEW_SCRIPT: &str =
     "r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path";
 /// On an unborn `HEAD`, the root `.gitignore`'s route followed by its second way out: the
@@ -1045,10 +1022,6 @@ const ABANDON_LINE_REFUSED: &str =
 /// problem*.
 const MILESTONE_AREA_ROUTE_SAYS_PERMISSIONS: &str =
     "r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind";
-/// `jigc milestone provision --force`, the consent the leftover refusal prints, over a
-/// link that leads nowhere: refused under `milestone.provision-failed`.
-const CONSENT_OVER_A_LINK_DRAWS_PROVISION_FAILED: &str =
-    "r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed";
 /// The unlanded-work route keeps a sub-task's commit on a branch and re-runs the finalize:
 /// where that commit was the milestone's only work, the re-run is refused under
 /// `milestone.zero-contribution`.
@@ -1577,6 +1550,10 @@ pub enum Why {
     /// No state the runner can plant reaches the site. The text says what stands in the
     /// way.
     NotConstructible(&'static str),
+    /// A state the runner could plant reaches it, and none is planted: the text says what
+    /// the state takes and where else it is built (2026-10-28, the review's N3 — *not
+    /// constructible* is kept for what truly is).
+    NotBuilt(&'static str),
     /// The site is reached only on a platform the suite does not run on. The text names it.
     Platform(&'static str),
     /// The refusal prints no route, so there is nothing to follow — taken only where the
@@ -1588,6 +1565,7 @@ impl fmt::Display for Why {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Why::NotConstructible(text) => write!(f, "not-constructible: {text}"),
+            Why::NotBuilt(text) => write!(f, "not-built: {text}"),
             Why::Platform(text) => write!(f, "platform: {text}"),
             Why::NoRoutePrinted => f.write_str("no-route-printed"),
         }
@@ -1656,8 +1634,8 @@ const fn claim(code: &'static str, minted_at: &'static str) -> Claim {
 /// row claims it. The arm asks for one row a code; the second site of `locate_finding` was
 /// found by reading it.
 ///
-/// **The other ten are kept by reading, and no arm demands them.** Their codes are listed
-/// sites' codes as well, so the vocabulary arm has nothing to ask; what the two functions
+/// **The others are kept by reading, and no arm demands them.** Their codes are listed
+/// sites' codes as well, so the vocabulary arm has nothing to ask; what those functions
 /// add is a second refusal under each code, with a route of its own. A row here that
 /// outlives its site or its code is named
 /// ([`a_row_for_a_site_that_is_gone_is_named`]); a code one of these functions starts to
@@ -1701,6 +1679,10 @@ const CLAIMS: &[Claim] = &[
     claim("setup.inject-allowlist", MERGED_THROUGH),
     claim("setup.secrets-gitignore", MERGED_THROUGH),
     claim("setup.init-project-layer", MERGED_THROUGH),
+    // By reading — `edited_through_links`: the codes of the two teardown steps that edit a
+    // file in place, raised where that file is a link the teardown will not follow.
+    claim("uninstall.unwire-reference", EDITED_THROUGH),
+    claim("uninstall.remove-allowlist", EDITED_THROUGH),
     // By reading, and in part ([`IN_PART`]) — the codes of three dynamic sites whose path
     // the fix pass changed, each read where the door hands it to its `refuse`:
     // `RefusalKind::NoSuchDoc` and `OccupiedDestination` at `jigc rename`, whose two
@@ -1714,9 +1696,11 @@ const CLAIMS: &[Claim] = &[
     claim("migrate-corpus.destination-collision", CORPUS_BLOCKED),
 ];
 
-/// The two dynamic sites of `setup.rs` whose codes are listed sites' codes as well.
+/// The dynamic sites of `setup.rs` whose codes are listed sites' codes as well.
 const REPLACED_PATH: &str = "crates/cli/src/setup.rs::replaced_path_refusal::dynamic#1";
 const MERGED_THROUGH: &str = "crates/cli/src/setup.rs::merged_through_links::dynamic#1";
+/// The teardown's sibling of [`MERGED_THROUGH`], whose codes are listed sites' codes too.
+const EDITED_THROUGH: &str = "crates/cli/src/setup.rs::edited_through_links::dynamic#1";
 
 /// **The code-shaped literals of a catalogued prefix that are no finding's code**, each
 /// with why — a file name, say.
@@ -2580,7 +2564,7 @@ fn idle_rows(read: &Read, rows: &Rows) -> Vec<String> {
 
     for (at, reason) in rows.reasons.iter().enumerate() {
         let site = reason.site;
-        if let Why::NotConstructible("") | Why::Platform("") = reason.why {
+        if let Why::NotConstructible("") | Why::NotBuilt("") | Why::Platform("") = reason.why {
             out.push(format!(
                 "the reason `{}` for `{site}` states nothing",
                 reason.why
@@ -3654,11 +3638,12 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
                 || variant.ends_with("(Chosen)")
                 || variant.ends_with("(Named)")
                 || variant.ends_with("(Cited)")
+                || variant.ends_with("(LinkAndDirectory)")
                 || !variant.contains('('),
             "the act `{variant}` takes something that is neither an operand, a span's index, \
              a line with the indices of what fills it, a line with the reader's own values \
-             for its placeholders, a named command with its operands nor a cited line with \
-             its promise",
+             for its placeholders, a named command with its operands, a cited line with its \
+             promise nor a link and a directory, each an operand",
         );
     }
     assert_eq!(
@@ -4516,7 +4501,7 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 15] = [
+const MARKED: [&[Act]; 17] = [
     &[Act::MoveLinkOut(Operand::Unprinted("in/the-way"))],
     &[Act::PutTheFileItself(Operand::Unprinted("in/the-way"))],
     &[Act::Unstage(Operand::Unprinted("in/the-way"))],
@@ -4525,6 +4510,11 @@ const MARKED: [&[Act]; 15] = [
     &[Act::MoveAway(Operand::Unprinted("in/the-way"))],
     &[Act::MoveOut(Operand::Unprinted("in/the-way"))],
     &[Act::ReplaceWithDirectory(Operand::Unprinted("in/the-way"))],
+    &[Act::ReplaceWithACopy(Operand::Unprinted("in/the-way"))],
+    &[Act::MoveDirectoryIn(LinkAndDirectory {
+        link: Operand::Unprinted("in/the-way"),
+        directory: Operand::Unprinted("in/elsewhere"),
+    })],
     &[Act::PointAtCommitted(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtNew(Operand::Unprinted("in/the-way"))],
     &[Act::PointAtScript(Operand::Unprinted("in/the-way"))],
@@ -4613,6 +4603,11 @@ fn no_file_act_is_done_outside_the_sandbox() {
             Act::MoveLinkOut(Operand::Span(0)),
             Act::PutTheFileItself(Operand::Span(1)),
             Act::ReplaceWithDirectory(Operand::Span(1)),
+            Act::ReplaceWithACopy(Operand::Span(1)),
+            Act::MoveDirectoryIn(LinkAndDirectory {
+                link: Operand::Span(1),
+                directory: Operand::Span(0),
+            }),
             Act::PointAtCommitted(Operand::Span(1)),
             Act::PointAtNew(Operand::Span(1)),
             Act::PointAtScript(Operand::Span(1)),
@@ -4635,8 +4630,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 14),
-        "all fourteen acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 16),
+        "all sixteen acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 
@@ -5561,6 +5556,107 @@ fn a_link_is_moved_out_of_its_path_and_the_file_itself_is_put_in_a_links_place()
                 refusing: A_LINK_WHERE_A_FILE_BELONGS,
                 acts: &[Act::PutTheFileItself(Operand::Span(0))],
                 holds: &[Check::Absent(Place::Repo("in/nowhere"))],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
+}
+
+/// **A link replaced by what it led to — a copy, or the directory itself** (2026-10-28,
+/// the review's S6): the two acts the route of a link on the way names, red first.
+/// *A real directory holding a copy of what it leads to*: the link is gone, a directory
+/// stands there holding every file the link's target held, and the target is untouched;
+/// over a link to nothing there is nothing to copy, and the act is not done. *Remove the
+/// link at … and move the directory … into its place*: the link is gone and the directory
+/// it led to stands at its path, gone from where it stood; the second operand no directory,
+/// and the act is not done.
+#[test]
+fn a_link_is_replaced_by_a_copy_of_what_it_led_to_or_by_the_directory_itself() {
+    const COPY_IN: &[&str] = &[
+        "-c",
+        "test -L in/the-way || exit 0; \
+         printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: replace the link at `in/the-way` with a real directory holding a copy of \
+         what it leads to, then re-run \
+         `jigc -c \"test -d in/the-way && test ! -L in/the-way && test -f in/the-way/kept.md\"`'; \
+         exit 1",
+    ];
+    const MOVE_IN: &[&str] = &[
+        "-c",
+        "test -L in/the-way || exit 0; \
+         printf '%s\\n' 'blocking · setup.install-hook — refused' \
+         '  route: remove the link at `in/the-way` and move the directory `kept` into its \
+         place, then re-run \
+         `jigc -c \"test ! -L in/the-way && test -f in/the-way/kept.md && test ! -e kept\"`'; \
+         exit 1",
+    ];
+    come_out(&[
+        (
+            Case {
+                name: "planted-a-link-to-a-directory-replaced-by-a-copy",
+                state: &[
+                    Step::File(Place::Outside("out/kept.md"), "kept\n"),
+                    Step::Dir(Place::Repo("in")),
+                    Step::Link(Place::Repo("in/the-way"), Place::Outside("out")),
+                ],
+                refusing: COPY_IN,
+                acts: &[Act::ReplaceWithACopy(Operand::Span(0)), Act::Run(1)],
+                holds: &[Check::Contains(Place::Repo("in/the-way/kept.md"), "kept")],
+                witnesses: &["out/kept.md"],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-link-to-nothing-and-nothing-to-copy",
+                state: &[
+                    Step::Dir(Place::Repo("in")),
+                    Step::LinkTo(Place::Repo("in/the-way"), "nowhere"),
+                ],
+                refusing: COPY_IN,
+                acts: &[Act::ReplaceWithACopy(Operand::Span(0))],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+        (
+            Case {
+                name: "planted-a-link-to-a-directory-inside-moved-into-its-place",
+                state: &[
+                    Step::File(Place::Repo("kept/kept.md"), "kept\n"),
+                    Step::Dir(Place::Repo("in")),
+                    Step::LinkTo(Place::Repo("in/the-way"), "../kept"),
+                ],
+                refusing: MOVE_IN,
+                acts: &[
+                    Act::MoveDirectoryIn(LinkAndDirectory {
+                        link: Operand::Span(0),
+                        directory: Operand::Span(1),
+                    }),
+                    Act::Run(2),
+                ],
+                holds: &[
+                    Check::Contains(Place::Repo("in/the-way/kept.md"), "kept"),
+                    Check::Absent(Place::Repo("kept")),
+                ],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-link-and-no-directory-to-move-into-its-place",
+                state: &[
+                    Step::Dir(Place::Repo("in")),
+                    Step::LinkTo(Place::Repo("in/the-way"), "../kept"),
+                ],
+                refusing: MOVE_IN,
+                acts: &[Act::MoveDirectoryIn(LinkAndDirectory {
+                    link: Operand::Span(0),
+                    directory: Operand::Span(1),
+                })],
                 ..PLANTED
             },
             Classification::AnotherFailure,
@@ -7973,6 +8069,7 @@ fn pairs(rows: &[Beside]) -> String {
 fn word(why: &Why) -> &'static str {
     match why {
         Why::NotConstructible(_) => "not-constructible",
+        Why::NotBuilt(_) => "not-built",
         Why::Platform(_) => "platform",
         Why::NoRoutePrinted => "no-route-printed",
     }

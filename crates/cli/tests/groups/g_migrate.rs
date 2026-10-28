@@ -39,6 +39,8 @@ mod home_shape_one_code;
 mod home_vacated;
 #[path = "../install_line.rs"]
 mod install_line;
+#[path = "../link_on_the_way_axis.rs"]
+mod link_on_the_way_axis;
 #[path = "../managed_vs_foreign.rs"]
 mod managed_vs_foreign;
 #[path = "../migrate_adr.rs"]

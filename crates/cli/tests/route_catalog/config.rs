@@ -235,19 +235,9 @@ const A_ROOT_OVER_THE_NAME_CEILING: [Case; 1] = root!(
     A_COMPONENT_OF_300_BYTES,
     list: 5,
 );
-const A_ROOT_THROUGH_A_LINK: [Case; 1] = root!(
-    UNUSABLE_ROOT,
-    "unusable-root-through-a-link",
-    "a component of the root is a symbolic link",
-    state: &[
-        SETUP,
-        Step::Dir(Place::Repo("handbook")),
-        Step::LinkTo(Place::Repo("linked"), "handbook"),
-    ],
-    "docs-root",
-    "linked/sub",
-    list: 5,
-);
+// A component of the root that is a symbolic link is no cause of this site since
+// 2026-10-28: it is the link-on-the-way state, refused under `store.link-on-the-way` ahead
+// of this check, and its case stands with that site's (`doc_read.rs`).
 const A_ROOT_THAT_IS_A_FILE: [Case; 1] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-file",
@@ -533,6 +523,30 @@ const THE_LOGS_HOME_A_LINK: [Case; 1] = the_home_a_link!(
     holds: THE_LOG_AT_ITS_NEW_HOME,
 );
 
+/// **A link somebody made stands at the doc's new home** — to a directory outside the
+/// repository, and no key for it in the record. Until 2026-10-28 the sweep parked it in the
+/// workbench as the entry it is, and every door after refused over the link jigc had put
+/// there; it is now refused where it stands, under the store's one code for a home that is
+/// no regular file, and the route the frame lifts is that refusal's: *move the link at
+/// `<home>` out of the doc's home — it is yours, and jigc moves no link — …, then re-run
+/// this command* (the review's S1; the re-review's NS5).
+const A_LINK_AT_THE_DOCS_NEW_HOME: [Case; 1] = [Case {
+    name: "repoint-failed-a-link-at-the-docs-new-home-moved-out-and-re-run",
+    site: REPOINT_FAILED,
+    cause: "`placement-root`: a symbolic link to a directory outside the repository stands \
+            at the doc's new home, with no key for it in the record — jigc moves no link, \
+            so the relocation refuses over it",
+    state: a_committed_log![
+        Step::Dir(Place::Outside("elsewhere")),
+        Step::Dir(Place::Repo("handbook")),
+        Step::Link(Place::Repo(THE_LOG_MOVED), Place::Outside("elsewhere")),
+    ],
+    refusing: PLACEMENT_ROOT,
+    acts: &[Act::MoveLinkOut(Operand::Span(0)), Act::Rerun],
+    holds: THE_LOG_AT_ITS_NEW_HOME,
+    ..C
+}];
+
 /// **The record of what jigc manages holds a key at the new home, and something stands
 /// there.** Made by a re-point that went through, then undone by hand: the doc moved back
 /// with `git mv`, the knob's manifest removed, both committed — the record still holds the
@@ -652,7 +666,6 @@ pub const CASES: &[&[Case]] = &[
     &A_ROOT_GIT_READS_AS_PATHSPEC_MAGIC,
     &A_ROOT_GIT_READS_AS_A_PATTERN,
     &A_ROOT_OVER_THE_NAME_CEILING,
-    &A_ROOT_THROUGH_A_LINK,
     &A_ROOT_THAT_IS_A_FILE,
     &A_ROOT_UNDER_THE_INSTALLS_OWN_ARTIFACTS,
     &A_FILE_WHERE_THE_NEW_HOMES_DIRECTORY_MUST_BE,
@@ -666,6 +679,7 @@ pub const CASES: &[&[Case]] = &[
     &THE_LOGS_HOME_A_LINK,
     &A_FILE_AT_A_HOME_THE_RECORD_HOLDS,
     &A_LINK_AT_A_HOME_THE_RECORD_HOLDS,
+    &A_LINK_AT_THE_DOCS_NEW_HOME,
 ];
 
 /// The sites of the family that have no case, each with why.
@@ -736,12 +750,14 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/config.rs::run_set — step 2d, for the two root knobs, on the folded value",
             "crates/cli/src/config.rs::unusable_root_reason — eight reasons, in its order, with the helpers each calls: whitespace_padded_component, pathspec_magic_root, over_name_ceiling_component, offending_component, installed_artifact_root",
         ],
-        causes: 8,
+        causes: 7,
         derivation: "one code and one route, a reason a shape: an absolute path; a \
                      component padded with whitespace; a leading `:`; a wildmatch \
-                     character; a component over the name ceiling; a component that is a \
-                     symbolic link; a root that names a file; a root under a directory the \
-                     install writes the adapter's artifacts in",
+                     character; a component over the name ceiling; a root that names a \
+                     file; a root under a directory the install writes the adapter's \
+                     artifacts in. A component that is a symbolic link was the eighth until \
+                     2026-10-28: it is refused ahead of this check under \
+                     `store.link-on-the-way`, the one code for the state",
         without_case: &[],
         not_followed: &[(
             "*re-run with a repo-relative directory — an existing one, or one jigc should create*",
@@ -757,7 +773,7 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/config.rs::route_placement_root_repoint_strands, crates/cli/src/relocate.rs::relocate_stranded, relocate_one, displace_foreign_squatter, move_doc — the `placement-root` floor: the source's shape, the file in the way moved into the workbench, the read, the move",
             "crates/cli/src/config.rs::write_scalar — the knob's write: the manifest read, parsed, written",
         ],
-        causes: 14,
+        causes: 15,
         derivation: "the `docs-root` floor, a failure a doc: the destination cannot be \
                      captured — a file where a directory of the new home must be; the move \
                      fails — a file at the destination, git's index locked, the doc's own \
@@ -766,7 +782,8 @@ pub const READINGS: &[Reading] = &[
                      read — gone from the working tree, with no file in the way and with \
                      one that was parked first; the doc's own home no regular file; the \
                      new home one the record holds a key for, with a file or with a link \
-                     to nothing standing at it — 6. The knob's write: the manifest a \
+                     to nothing standing at it; the new home a link somebody made, with no \
+                     key for it, which jigc moves no more (2026-10-28) — 7. The knob's write: the manifest a \
                      directory, no YAML, not writable — 3. And any of them where the undo \
                      could not put a path back — 1",
         without_case: &[

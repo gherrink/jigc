@@ -404,6 +404,24 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
     // owns that tree, which is not git's inability to record it — and it was never the
     // gitignored exemplar this comment used to name, since `.jigc/.gitignore` lists only the
     // transient subdirs (`.jigc/roadmap.md` is not ignored at all; `.jigc/displaced/x.md` is).
+    // **A root whose value runs through a link is the link-on-the-way state** (2026-10-28,
+    // the review's S5): every home the knob would name lies past that link, whether it
+    // leads out of the repository or to another directory in it — so it is refused under
+    // the one code for the state, ahead of the two root codes, whose other causes (a `..`
+    // that leaves the repository, git's own directory, an absolute value, a file) are no
+    // link and keep them. A value that leaves the repository by `..` is not walked here.
+    if ROOT_KNOBS.contains(&key)
+        && let Some(repo_root) = project_config.parent().and_then(Path::parent)
+        && !value.split('/').any(|part| part == "..")
+        && let Some(link) = crate::link_way::at_or_on_the_way_to_dir(
+            repo_root,
+            value,
+            &format!("on the way to every home `{key}` `{value}` would name"),
+        )
+    {
+        return Err(crate::link_way::refusal(&[link]));
+    }
+
     if ROOT_KNOBS.contains(&key)
         && let Some(repo_root) = project_config.parent().and_then(Path::parent)
         && let Some(reason) = crate::trackable::untrackable_reason(repo_root, value)
@@ -509,6 +527,22 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
     // narrate on stderr as they land, and until the ack carried them a `--format json`
     // driver — which reads stdout alone — got bytes identical to a re-point that moved
     // nothing.
+    // **Every home the new value resolves, asked before anything is written** (2026-10-28,
+    // the review's S2): the knob lands every home of its doctypes under the new value,
+    // whether or not a doc moves there, so a link on the way to any of them refuses the
+    // whole re-point here — before a move, a directory or the knob. The homes the knob
+    // leaves where they are are not this door's: the guard in front of it asks no home
+    // ([`crate::cli::Command::link_guard`]), so a revert is never refused over a link at a
+    // home it is leaving.
+    if ROOT_KNOBS.contains(&key)
+        && let Some(repo_root) = project_config.parent().and_then(Path::parent)
+    {
+        let links = links_under_the_new_root(pack.as_ref(), &project_config, repo_root, key, value);
+        if !links.is_empty() {
+            return Err(crate::link_way::refusal(&links));
+        }
+    }
+
     let mut relocated: Vec<Relocated> = Vec::new();
     let mut undo = crate::relocate::MoveRollback::for_door(crate::rollback::CONFIG_DOOR);
     let mut failures: Vec<RepointBlocker> = Vec::new();
@@ -582,6 +616,72 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
 /// `<repo>/.jigc/config` → the repository root the committed docs live at — the derivation
 /// every root rule and both move floors already made privately, named once so the
 /// transaction's rollback and its findings resolve the same root they do.
+/// **The links on the way to every home a root knob would name under `value`** — each
+/// doctype's resolved `location:` directory re-rooted under the new `docs-root`, or each
+/// placement file re-rooted under the new `placement-root`. Empty where the cascade cannot
+/// be read: the re-point's own read of it reports that.
+fn links_under_the_new_root(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    repo_root: &Path,
+    key: &str,
+    value: &str,
+) -> Vec<crate::link_way::Link> {
+    let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
+        return Vec::new();
+    };
+    let defs = crate::start::CascadeDefs::new(&resolved, project_config);
+    let mut links = Vec::new();
+    if key == "docs-root" {
+        let old_root = crate::start::docs_root_prefix(&resolved).to_string();
+        let new_root = normalize_docs_root(value);
+        let Ok(schemas) = defs.all_schemas(pack) else {
+            return links;
+        };
+        for schema in schemas.values() {
+            let Some(Home::Location(dir)) = orphan::home_of(schema) else {
+                continue;
+            };
+            if let Some(dir) = reroot(&dir, &old_root, &new_root)
+                && let Some(link) = crate::link_way::at_or_on_the_way_to_dir(
+                    repo_root,
+                    &dir,
+                    &format!(
+                        "on the way to the home of `{}` under `docs-root` `{value}`",
+                        schema.ty
+                    ),
+                )
+            {
+                links.push(link);
+            }
+        }
+    } else {
+        let new_root = crate::start::normalize_placement_root(value);
+        let Ok(declared) = defs.declared_schemas(pack) else {
+            return links;
+        };
+        for schema in declared.values() {
+            let Some(placement) = &schema.placement else {
+                continue;
+            };
+            let file = crate::start::reroot_placement_file(&placement.file, new_root);
+            if let Some(link) = crate::regular_file::link_on_the_way(repo_root, &file).map(|b| {
+                crate::link_way::Link::at(
+                    repo_root,
+                    &b.at,
+                    &format!(
+                        "on the way to the home of `{}` under `placement-root` `{value}`",
+                        schema.ty
+                    ),
+                )
+            }) {
+                links.push(link);
+            }
+        }
+    }
+    links
+}
+
 fn repo_root_of(project_config: &Path) -> Option<&Path> {
     project_config.parent().and_then(Path::parent)
 }
@@ -1367,6 +1467,20 @@ fn route_docs_root_repoint_orphans(
         return relocated;
     }
     let new_root = normalize_docs_root(new_value);
+    // **A link on the way to a doc's prior home or its new one refuses the re-point before
+    // its first move** (2026-10-28; [`crate::link_way`]) — before the loop below creates a
+    // directory under the new root, so nothing is written past the link either.
+    let ends: Vec<String> = stranded
+        .iter()
+        .filter_map(|old_rel| {
+            reroot(old_rel, &old_docs_root, &new_root).map(|new_rel| [old_rel.clone(), new_rel])
+        })
+        .flatten()
+        .collect();
+    if let Some(link) = crate::link_way::first_of(repo_root, ends.iter().map(String::as_str)) {
+        failures.push(RepointBlocker::Raised(crate::link_way::finding(&[link])));
+        return relocated;
+    }
     let jigc_root = repo_root.join(".jigc");
     // The solicit/act honesty pair (round-2 D2+D3): name the sweep's basis and the git
     // state the moves land in (each is a staged `git mv`, committed by the operator's
@@ -1516,6 +1630,21 @@ fn route_placement_root_repoint_strands(
             .any(|rel| orphan::is_stranded(rel, prior, current))
     });
     if !strands {
+        return relocated;
+    }
+    // **A link on the way to a placement doctype's prior home or its new one refuses the
+    // re-point before its first move** (2026-10-28; [`crate::link_way`]) — asked of every
+    // pair at once, so a second pair's link cannot meet a first pair already moved.
+    let ends: Vec<&str> = pairs
+        .iter()
+        .flat_map(|(prior, current)| [prior, current])
+        .filter_map(|home| match home {
+            Home::Placement(file) => Some(file.as_str()),
+            Home::Location(_) => None,
+        })
+        .collect();
+    if let Some(link) = crate::link_way::first_of(repo_root, ends) {
+        failures.push(RepointBlocker::Raised(crate::link_way::finding(&[link])));
         return relocated;
     }
     // The solicit/act honesty pair the `docs-root` sibling prints: name the sweep's basis

@@ -238,7 +238,7 @@ The first way out — remove the link — holds at every end a link was driven a
 
 ## 2. Under the canary's keys — the hook's link refusal
 
-Not minted here; listed so that the count is in one place. The route of `setup.install-hook` names **where the link leads** as *the link* wherever the link leads anywhere: `display_hook_path` resolves the link before it words the path.
+Not minted here; listed so that the count is in one place. The route of `setup.install-hook` named **where the link leads** as *the link* wherever the link leads anywhere: `display_hook_path` resolved the link before it worded the path. **Fixed 2026-10-28** (the third re-review of the link-on-the-way guard, its L-3): the refusal names the link itself — its directory resolved, its own name kept — and every case below that removed what the route named, or pointed the link at a committed script, now holds; the ones that point it at a script in no commit come out *another failure* and are listed under `r1-setup-hook-link-pointed-at-uncommitted-script-draws-dirty-install-path`, as the link-to-nothing cases already were. The table is the record of what the keys held until then.
 
 | the canary's key | cases | classification |
 |---|---|---|
@@ -395,9 +395,9 @@ Not minted here. The canary's row is the hook's step: *ensure the repo's git hoo
 | step — `jigc uninstall`, exit 1 | printed route | the causes it was printed for, a case each |
 |---|---|---|
 | `uninstall.remove-jigc` | ``route: ensure `.jigc/` is writable, then re-run `jigc uninstall` `` | a directory under `.jigc` may not be written while `.jigc` may (`uninstall-workbench-directory-read-only`) · the repository root may not be written (`uninstall-workbench-under-a-read-only-root`) |
-| `uninstall.unwire-reference` | ``route: ensure `CLAUDE.md` is writable, then re-run `jigc uninstall` `` | a directory stands at `CLAUDE.md` (`uninstall-reference-host-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it may not be read (`-unreadable`) · it is a link to a file outside the repository that may not be written (`-a-link-to-a-read-only-file-outside`) |
+| `uninstall.unwire-reference` | ``route: ensure `CLAUDE.md` is writable, then re-run `jigc uninstall` `` | a directory stands at `CLAUDE.md` (`uninstall-reference-host-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it may not be read (`-unreadable`) · it is a link to a file inside the repository that may not be written (`-a-link-to-a-read-only-file-inside`; outside until 2026-10-28, when a link out was refused before the teardown under `edited_through_links`) |
 | `uninstall.remove-allowlist` | ``route: ensure `.claude/settings.json` is writable, then re-run `jigc uninstall` `` | a directory stands at the settings file's path (`uninstall-settings-a-directory`) · it is not UTF-8 (`-not-utf-8`) · it is no JSON (`-not-json`) · it may not be read (`-unreadable`) |
-| `uninstall.remove-precommit` | ``route: ensure the repo's git hooks directory is writable, then re-run `jigc uninstall` `` | the canary's five — `core.hooksPath` names a regular file (`uninstall-hook-hooks-path-a-file`), names `/dev/null` (`-hooks-path-dev-null`), the wrapped hook may not be written in a hooks directory that may (`uninstall-hook-read-only`), is not UTF-8 (`-not-utf-8`), is a link to a read-only script outside (`-a-link-to-a-read-only-script-outside`) — and three it did not drive: `core.hooksPath` is the empty string (`-hooks-path-empty`), a directory stands at the hook's path (`-a-directory`), the hook may not be read (`-unreadable`) |
+| `uninstall.remove-precommit` | ``route: ensure the repo's git hooks directory is writable, then re-run `jigc uninstall` `` | the canary's five — `core.hooksPath` names a regular file (`uninstall-hook-hooks-path-a-file`), names `/dev/null` (`-hooks-path-dev-null`), the wrapped hook may not be written in a hooks directory that may (`uninstall-hook-read-only`), is not UTF-8 (`-not-utf-8`), is a link to a read-only script inside the repository (`-a-link-to-a-read-only-script-inside`; outside until 2026-10-28, when a link out the teardown would write back was refused before it, under `hook_written_through_a_link`) — and three it did not drive: `core.hooksPath` is the empty string (`-hooks-path-empty`), a directory stands at the hook's path (`-a-directory`), the hook may not be read (`-unreadable`) |
 | `uninstall.remove-guide` | ``route: ensure `.claude/skills/jigc/SKILL.md` is writable, then re-run `jigc uninstall` `` | the directory that holds the guide may not be written (`uninstall-guide-directory-read-only`) — a file's removal is its directory's permission, so this route's words are true of no state |
 
 **And one *another failure*, under the same key:** `uninstall-forced-workbench-directory-unreadable-made-writable`. `jigc uninstall --force` over a `.jigc/worktrees` of mode 000 refuses under `uninstall.remove-jigc`, routed *ensure `.jigc/` is writable, then re-run `jigc uninstall`*: it is writable, and the re-run — which the route prints without the consent — refuses under `uninstall.dirty-worktree`.
@@ -618,6 +618,8 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 ### `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind`
 
+*2026-10-28: seventeen cases — the two of a link that leads nowhere, at the area and at the join's staging area, left the catalog's `io_finding` causes: a link where jigc keeps a directory is refused since in front of every door under `store.link-on-the-way`, whose route names the link and its way out ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-28 — the review of the link-on-the-way guard*). The finding stands for the other entries.*
+
 - **Classification:** followed, the same refusal again. **Nineteen cases:** `area-io-…-workbench-made-writable` — every case of `io_finding`.
 - **State:** an entry of the milestone's area, or of a sub-task's, that is of another kind than the command expects: a regular file at `.jigc/milestones`, or a link that leads nowhere at the area (the create); `base.json` or `tasks.json` holding text that is no JSON, or a directory in the place of either (add-task, the join, the finalize); a link, a file or a directory in the join's staging area; a sub-task's `provenance.json` no JSON or a directory; a staged doc body a directory or bytes that are no text (the finalize). None is a permission.
 - **Refusing command:** `jigc milestone create` · `add-task` · `join` · `finalize` — exit 1, `milestone.area-io`: *could not open the milestone area*, *could not read the task list*, *could not clear the parent staging area*, … — each with the I/O call's own error.
@@ -654,7 +656,9 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What went wrong:** exit 1 — under `milestone.dirty-worktree` over the unstaged work, under `milestone.staged-prose` over the commit doc. The abandon the route offers is refused by the discard door's own guards in three of the five states this refusal is raised in; each guard prints a route of its own, which ends in its consent.
 - **Beside it, and green:** the same line where the sub-task holds nothing — never provisioned, and provisioned with nothing staged.
 
-### `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed`
+### `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed` — retired 2026-10-28
+
+*Retired by the fix of 2026-10-28 (the review's S7): a link that leads nowhere where jigc keeps a directory — a sub-task's worktree path — is refused in front of every door under `store.link-on-the-way`, so neither the leftover refusal nor its consent meets it, and the case left the catalog with the cause. What follows is the finding as it stood.*
 
 - **Classification:** followed, another failure. **One case:** `leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed`.
 - **State:** a link that leads nowhere stands at `.jigc/worktrees/do-a-thing`, where the sub-task's worktree is to be provisioned.
@@ -716,7 +720,7 @@ Each was driven for this section, on this tree's binary.
 
 *Added with the commit after this section's: a cause that commit gave a reason — *a managed doc stands at the new home* — and that was then found constructible. Rewritten 2026-10-12, with the ruling on a product command printed without its id carried out.*
 
-- **Classification:** followed, the same refusal again. **Two cases, not marked:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`.
+- **Classification:** followed, the same refusal again. **Two cases, not marked:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`. **And a third since 2026-10-28**, the link's `…-what-is-managed-listed-and-the-home-unmanaged`: with the stale key unmanaged, the link at the new home is the user's entry, which no mover moves aside any more (the review's S1), so the re-point is refused again — **by the outer code only**: `config.repoint-failed` now wraps another refusal, `store.home-not-regular-file` over the link, whose own route is right and is followed at its own case, `repoint-failed-a-link-at-the-docs-new-home-moved-out-and-re-run` (green). The defect this row names is the first refusal's, which took the link for a managed doc (the re-review's N-d and NS5).
 - **State:** the committed decisions log; `jigc config set placement-root handbook`, committed; then the re-point undone by hand — `git mv handbook/decisions-log.md docs/decisions-log.md`, the project layer's manifest removed, both committed. The record of what jigc manages still holds the key `handbook/decisions-log.md`. A file somebody wrote, or a symbolic link that leads nowhere, stands at that path.
 - **Refusing command:** `jigc config set placement-root handbook` — exit 1, `config.repoint-failed`, whose message carries the relocation's refusal whole: *blocking · write.already-present — the destination `handbook/decisions-log.md` is occupied by a managed instance — a managed move-INTO the destination is deferred*.
 - **Printed route** (the first of the finding's two `route:` lines, the relocation's):
@@ -795,3 +799,23 @@ Each was driven for this section, on this tree's binary.
 | `finalize.promote-clobber`, the fixed arm — two cases | `git mv` | the file at the doc's home; a destination | the path: **yes**, printed one clause before the verb. The destination is the reader's own |
 | `milestone.zero-contribution` — one case | `git add` | the sub-task's work, inside its worktree | the worktree: **yes** — `.jigc/worktrees/<sub-task>`, which the provision the same route prints makes. The work is the sub-task's own |
 | `uninstall.dirty-worktree`, where the worktrees' directory cannot be listed — one case | `git worktree remove` | a worktree | no: it could not list them, which is what the refusal is about |
+
+## 12. Ledger keys left by the reviews of the link-on-the-way guard — no fix here
+
+*2026-10-28, recorded at the close of the guard's fourth fix cycle so that the run's opening ledger takes them in. Each is a key with its repro; none is fixed on this branch. Drive each on a debug build of the branch's tip with `dev/jigc-rig --binary "$BIN" <state>`, from the repository's root.*
+
+### `r1-link-refusals-print-an-outside-targets-absolute-path` — to reconcile
+
+`link_end` (`setup.inject-*`, `uninstall.unwire-reference`, `uninstall.remove-allowlist`) and `hook_link_end` (`setup.install-hook`, `uninstall.remove-precommit`) word a link that leads out of the repository as *leads out of this repository, to `<absolute path>`*. Law 1 of `design/surface-contract.md` sanctions the honest absolute for a path genuinely outside, and `setup.rs` is declared outside the printed-path fence; `design/storage.md` → *No write through a link on the way* says of `store.link-on-the-way`'s route that *an outside target is a host path, which a surface never prints*. Two statements, one question: which rule a link refusal's message follows. Repro: `fresh`; move `.claude/settings.json` out of the repository and link it back; `jigc uninstall` — the message prints the absolute path of the file outside.
+
+### `r1-catalog-link-acts-never-check-the-route-asks-for-them` — a tool gap
+
+The frame's link acts (`ReplaceWithACopy`, `MoveDirectoryIn`, `ReplaceWithDirectory`, `PutTheFileItself`, `crates/cli/tests/support/route_case.rs`) check only that their operand span exists, never that the printed route asks for that act. When a route's wording changes, a case can stay green following a route the surface no longer prints: the third re-review's S-2 was masked so (`link-on-the-way-setup-over-a-committed-link-into-gits-directory-replaced-committed-and-re-run` went on copying in while the route said *remove*). Repro: change `WayOut`'s choice for a case's state and run `route_catalog::` — the case stays green.
+
+### `r1-uninstall-half-tears-down-over-a-hook-link-it-cannot-read` — a lead
+
+A `pre-commit` hook that is a link to nothing, or a loop, passes `uninstall`'s hook check (`hook_written_through_a_link` asks only a link out with a readable end) and its read at step 6 (`remove_precommit_hook`) fails after `.jigc` is removed and `CLAUDE.md` unwired, under a writability route. Not driven. Repro: `bare`; `jigc setup`; replace `.git/hooks/pre-commit` by `ln -s pre-commit .git/hooks/pre-commit`; `jigc uninstall` — expect exit 1 at `uninstall.remove-precommit` with `.jigc` already gone.
+
+### `r1-validate-calls-a-doc-behind-an-in-repository-link-committed` — the first review's N5 lead
+
+`jigc validate` over a doctype home that is a link to a directory inside the repository calls a file past the link *committed*, routes at `jigc ingest` / `jigc migrate` — which then refuse under `store.link-on-the-way` — and prints a host path in that route's `jigc migrate` line. Nothing sweeps for the link itself (`store.link-on-the-way` is a refusal, never a sweep finding). Repro: `committed-singletons`; `mkdir notes && mv docs/decisions/* notes/ && rmdir docs/decisions && ln -s ../notes docs/decisions`; `jigc validate`.
