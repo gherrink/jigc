@@ -890,8 +890,7 @@ fn displace_foreign_squatter(
     // The destination's own entry, read without following a link (the rc.24 fix pass). This
     // asked `exists()`, which follows one — so a **dangling** link squatting the destination
     // read as free, was not displaced, and the move then met git's own `fatal: destination
-    // exists` as a code-less `blocked` row. A link is a squatter like any other entry: it is
-    // parked below as the entry it is (`fs::rename` moves a link, it does not follow it).
+    // exists` as a code-less `blocked` row.
     if engine::store::home_entry(&dest_abs) == engine::store::HomeEntry::Free {
         return Ok(None);
     }
@@ -919,6 +918,28 @@ fn displace_foreign_squatter(
                  `jigc rename` the other onto a free identity or `jigc unmanage` it; \
                  `jigc doc list` names what is managed there",
             )),
+        ));
+    }
+    // **A link at the destination is the user's entry, and jigc moves no link** (2026-10-28,
+    // the review's S1; the rows' record's §6, entries 23 and 25). Until then it was parked
+    // below as the entry it is — and a link to a directory parked in the workbench stood
+    // there for every door after to refuse over: jigc locking the user out with a link it
+    // put there. It is refused where it stands, under the one code for an entry at a doc's
+    // home that is not a regular file, and nothing is moved.
+    if engine::store::home_entry(&dest_abs)
+        == engine::store::HomeEntry::Foreign(engine::store::ForeignEntry::Symlink)
+    {
+        return Err(render::envelope_finding_error(
+            &engine::store::home_shape_refusal(
+                dest_rel,
+                engine::store::ForeignEntry::Symlink,
+                "no doc is moved there, and the link is not moved out of the way",
+                engine::finding::Route::human(format!(
+                    "move the link at `{dest_rel}` out of the doc's home — it is yours, and jigc \
+                 moves no link — committing that where git tracks the link, then re-run this \
+                 command"
+                )),
+            ),
         ));
     }
     let name = Path::new(dest_rel)
@@ -1232,13 +1253,16 @@ mod tests {
         );
     }
 
-    /// **A dangling link squatting the destination is a squatter** (the rc.24 fix pass). The
-    /// occupancy probe asked `exists()`, which follows links, so a dangling one read as a
-    /// free destination, was not displaced, and the move met git's own `fatal: destination
-    /// exists`. Read without following it, the link takes the arm every other foreign entry
-    /// takes: parked in the gitignored workbench as the entry it is, and the doc lands.
+    /// **A dangling link squatting the destination is refused where it stands, and nothing
+    /// moves** (2026-10-28, the review's S1). The rc.24 fix pass read the entry without
+    /// following it — an `exists()` probe had taken a dangling link for a free destination,
+    /// and the move met git's own `fatal: destination exists` — and parked it like any
+    /// foreign entry. Parked, a link to a directory then stood in the workbench for every
+    /// later command to refuse over; and jigc moves no link. So the link is the user's
+    /// entry: refused under the code for an entry at a doc's home that is not a regular
+    /// file, the doc left where it stood, nothing parked, the link still a link.
     #[test]
-    fn a_dangling_link_squatting_the_destination_is_displaced_like_any_squatter() {
+    fn a_dangling_link_squatting_the_destination_is_refused_and_nothing_moves() {
         let repo = TempRepo::new();
         let managed = "---\nx: y\n---\n\n# Vision\n\nThesis.\n";
         repo.commit_file("docs/vision/vision.md", managed);
@@ -1261,32 +1285,26 @@ mod tests {
             .expect("the relocation runs");
 
         assert!(
-            report.blocked.is_empty(),
-            "no blockers — and no `fatal: destination exists`: {:?}",
-            report.blocked
+            report.displaced.is_empty() && report.moved.is_empty(),
+            "nothing is parked and nothing moves: {report:?}"
+        );
+        assert_eq!(report.blocked.len(), 1, "{report:?}");
+        assert!(
+            report.blocked[0].1.contains("store.home-not-regular-file"),
+            "{report:?}"
         );
         assert_eq!(
-            report.displaced,
-            vec![(
-                "VISION.md".to_string(),
-                ".jigc/displaced/VISION.md".to_string()
-            )],
-            "the link is parked, and reported: {report:?}",
-        );
-        assert_eq!(
-            std::fs::read_to_string(repo.path().join("VISION.md")).expect("destination"),
-            managed,
-            "the managed doc lands at its home as the regular file it is",
-        );
-        assert_eq!(
-            std::fs::read_link(repo.path().join(".jigc/displaced/VISION.md"))
-                .expect("the parked entry is still a link"),
+            std::fs::read_link(repo.path().join("VISION.md")).expect("still a link"),
             Path::new("nowhere.md"),
-            "the squatter is preserved as the entry it was — moved, never followed",
         );
         assert!(
-            !repo.path().join("nowhere.md").exists(),
-            "and nothing was written through it",
+            !repo.path().join(".jigc/displaced").exists(),
+            "nothing parked"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("docs/vision/vision.md")).expect("source"),
+            managed,
+            "the doc stays at its prior home",
         );
     }
 

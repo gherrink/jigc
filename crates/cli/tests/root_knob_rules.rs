@@ -482,7 +482,15 @@ fn no_root_knob_accepts_a_root_the_store_cannot_describe() {
     corpus.plant_unusable_shapes();
     for key in cli::config::ROOT_KNOBS {
         for value in UNUSABLE_VALUES {
-            assert_refused_and_inert(&corpus, key, value, "config.unusable-root");
+            // A value through a link is the link-on-the-way state since 2026-10-28, refused
+            // under its one code ahead of this rule (`design/storage.md` → *No write through
+            // a link on the way*); the rule keeps the absolute and the file-shaped values.
+            let code = if value.starts_with("linked") {
+                "store.link-on-the-way"
+            } else {
+                "config.unusable-root"
+            };
+            assert_refused_and_inert(&corpus, key, value, code);
         }
     }
 }

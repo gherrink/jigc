@@ -2434,13 +2434,14 @@ const CONFIG_SET_CELLS: [Cell; 60] = [
         refuses(1, THE_ROADMAPS_NEW_HOME),
         at("CS2, at its new home", Kind::DirForAFile),
     ),
-    // And at the new root itself, `notes`, a link out of the repository: the value resolves
-    // outside the repository, which the knob refuses as a root before any re-point is
-    // planned (2026-10-28, the class's `placement-root` cell at its new home).
+    // And at the new root itself, `notes`, a link out of the repository: a root through a
+    // link is the link-on-the-way state, refused under its one code before any re-point is
+    // planned (2026-10-28, the class's `placement-root` cell at its new home; the review's
+    // S5 — `config.untrackable-root` answered it until then).
     sets_the_placement_root(
         "config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-new-directory",
         a_committed_roadmap!(Lead::Plant(Plant::LinkToADir("notes"))),
-        refuses(1, "config.untrackable-root"),
+        refuses(1, "`notes` is a symbolic link"),
         at("CS2, at its new home", Kind::LinkOnTheWay),
     ),
     // Its twin under the same ruling's (A): a doc of the user's elsewhere in the new root

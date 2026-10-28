@@ -618,6 +618,8 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 
 ### `r1-milestone-area-io-route-says-disk-or-permissions-over-an-entry-of-another-kind`
 
+*2026-10-28: seventeen cases — the two of a link that leads nowhere, at the area and at the join's staging area, left the catalog's `io_finding` causes: a link where jigc keeps a directory is refused since in front of every door under `store.link-on-the-way`, whose route names the link and its way out ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-28 — the review of the link-on-the-way guard*). The finding stands for the other entries.*
+
 - **Classification:** followed, the same refusal again. **Nineteen cases:** `area-io-…-workbench-made-writable` — every case of `io_finding`.
 - **State:** an entry of the milestone's area, or of a sub-task's, that is of another kind than the command expects: a regular file at `.jigc/milestones`, or a link that leads nowhere at the area (the create); `base.json` or `tasks.json` holding text that is no JSON, or a directory in the place of either (add-task, the join, the finalize); a link, a file or a directory in the join's staging area; a sub-task's `provenance.json` no JSON or a directory; a staged doc body a directory or bytes that are no text (the finalize). None is a permission.
 - **Refusing command:** `jigc milestone create` · `add-task` · `join` · `finalize` — exit 1, `milestone.area-io`: *could not open the milestone area*, *could not read the task list*, *could not clear the parent staging area*, … — each with the I/O call's own error.
@@ -654,7 +656,9 @@ Not minted here. The canary's row is the fourth guard over a listing of git's th
 - **What went wrong:** exit 1 — under `milestone.dirty-worktree` over the unstaged work, under `milestone.staged-prose` over the commit doc. The abandon the route offers is refused by the discard door's own guards in three of the five states this refusal is raised in; each guard prints a route of its own, which ends in its consent.
 - **Beside it, and green:** the same line where the sub-task holds nothing — never provisioned, and provisioned with nothing staged.
 
-### `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed`
+### `r1-leftover-consent-over-a-link-to-nothing-draws-provision-failed` — retired 2026-10-28
+
+*Retired by the fix of 2026-10-28 (the review's S7): a link that leads nowhere where jigc keeps a directory — a sub-task's worktree path — is refused in front of every door under `store.link-on-the-way`, so neither the leftover refusal nor its consent meets it, and the case left the catalog with the cause. What follows is the finding as it stood.*
 
 - **Classification:** followed, another failure. **One case:** `leftover-a-link-to-nothing-at-the-path-provisioned-by-the-consent-as-printed`.
 - **State:** a link that leads nowhere stands at `.jigc/worktrees/do-a-thing`, where the sub-task's worktree is to be provisioned.
@@ -716,7 +720,7 @@ Each was driven for this section, on this tree's binary.
 
 *Added with the commit after this section's: a cause that commit gave a reason — *a managed doc stands at the new home* — and that was then found constructible. Rewritten 2026-10-12, with the ruling on a product command printed without its id carried out.*
 
-- **Classification:** followed, the same refusal again. **Two cases, not marked:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`.
+- **Classification:** followed, the same refusal again. **Two cases, not marked:** `repoint-failed-a-stale-key-and-a-file-at-the-new-home-…`, `repoint-failed-a-stale-key-and-a-link-to-nothing-at-the-new-home-…`, each ending `-what-is-managed-listed-and-the-rename-run-as-printed`. **And a third since 2026-10-28**, the link's `…-what-is-managed-listed-and-the-home-unmanaged`: with the stale key unmanaged, the link at the new home is the user's entry, which no mover moves aside any more (the review's S1), so the re-point is refused again — over the link the route took for a managed doc.
 - **State:** the committed decisions log; `jigc config set placement-root handbook`, committed; then the re-point undone by hand — `git mv handbook/decisions-log.md docs/decisions-log.md`, the project layer's manifest removed, both committed. The record of what jigc manages still holds the key `handbook/decisions-log.md`. A file somebody wrote, or a symbolic link that leads nowhere, stands at that path.
 - **Refusing command:** `jigc config set placement-root handbook` — exit 1, `config.repoint-failed`, whose message carries the relocation's refusal whole: *blocking · write.already-present — the destination `handbook/decisions-log.md` is occupied by a managed instance — a managed move-INTO the destination is deferred*.
 - **Printed route** (the first of the finding's two `route:` lines, the relocation's):

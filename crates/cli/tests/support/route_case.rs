@@ -525,6 +525,18 @@ pub enum Act {
     /// Replace the link the operand names with a real directory: the link is removed —
     /// never what it leads to — and an empty directory is made at its path.
     ReplaceWithDirectory(Operand),
+    /// Replace the link the operand names with a real directory **holding a copy of what it
+    /// leads to** — what the route of a link on the way asks for where it leads out of the
+    /// repository: the link is removed — never what it leads to — a directory is made at
+    /// its path, and every file, directory and link below what it led to is copied in. A
+    /// link that leads to no directory has nothing to copy, and the act is not done.
+    ReplaceWithACopy(Operand),
+    /// **Move the directory the second operand names into the place of the link the first
+    /// names** — what *remove the link at … and move the directory … into its place* asks
+    /// for, where a link leads to a directory inside the repository: the link is removed
+    /// and the directory renamed to its path. A first operand that is no link, or a second
+    /// that is no directory inside the sandbox, and the act is not done.
+    MoveDirectoryIn(LinkAndDirectory),
     /// Point the link the operand names at a regular file inside the repository that the
     /// repository holds committed — [`COMMITTED`].
     PointAtCommitted(Operand),
@@ -592,6 +604,17 @@ pub enum Act {
     Unstage(Operand),
 }
 
+/// **The two operands of [`Act::MoveDirectoryIn`]** — the link the route names first, and
+/// the directory it names to move into the link's place. Each is an operand like any other
+/// act's: a span's index, or the one marked form.
+#[derive(Clone, Copy, Debug)]
+pub struct LinkAndDirectory {
+    /// The link, whose place the directory takes.
+    pub link: Operand,
+    /// The directory moved into it.
+    pub directory: Operand,
+}
+
 impl Act {
     /// What the act acts on, where it takes an operand.
     fn operand(self) -> Option<Operand> {
@@ -602,6 +625,8 @@ impl Act {
             | Act::MoveLinkOut(operand)
             | Act::PutTheFileItself(operand)
             | Act::ReplaceWithDirectory(operand)
+            | Act::ReplaceWithACopy(operand)
+            | Act::MoveDirectoryIn(LinkAndDirectory { link: operand, .. })
             | Act::PointAtCommitted(operand)
             | Act::PointAtNew(operand)
             | Act::PointAtScript(operand)
@@ -1726,6 +1751,19 @@ impl Sandbox {
                 Act::ReplaceWithDirectory(_) => {
                     format!("replace the link `{named}` with a real directory ({how})")
                 }
+                Act::ReplaceWithACopy(_) => format!(
+                    "replace the link `{named}` with a real directory holding a copy of what it \
+                     leads to ({how})"
+                ),
+                Act::MoveDirectoryIn(LinkAndDirectory {
+                    directory: into, ..
+                }) => format!(
+                    "move the directory {} into the place of the link `{named}` ({how})",
+                    match into {
+                        Operand::Span(at) => format!("of span {at}"),
+                        Operand::Unprinted(path) => format!("`{path}`, named by the case"),
+                    }
+                ),
                 Act::PointAtCommitted(_) => {
                     format!("point the link `{named}` at `{COMMITTED}` ({how})")
                 }
@@ -1771,6 +1809,16 @@ impl Sandbox {
                     .and_then(|()| fs::remove_file(&path).map_err(|e| e.to_string()))
                     .and_then(|()| fs::create_dir(&path).map_err(|e| e.to_string()))
                     .map(|()| "the link is gone and a directory stands there".to_string()),
+                Act::ReplaceWithACopy(_) => self.replace_with_a_copy(&path),
+                Act::MoveDirectoryIn(LinkAndDirectory {
+                    directory: into, ..
+                }) => {
+                    let named = match into {
+                        Operand::Span(at) => span(at)?,
+                        Operand::Unprinted(path) => path,
+                    };
+                    self.move_directory_in(&path, &stand.join(named))
+                }
                 Act::PointAtCommitted(_) => self.point(&path, COMMITTED),
                 Act::PointAtNew(_) => self
                     .a_link(&path)
@@ -2508,6 +2556,40 @@ impl Sandbox {
         }
     }
 
+    /// [`Act::ReplaceWithACopy`]: the link at `path` gone, and a directory in its place
+    /// holding a copy of what it led to.
+    fn replace_with_a_copy(&self, path: &Path) -> Result<String, String> {
+        self.a_link(path)?;
+        let Ok(target) = fs::canonicalize(path) else {
+            return Err("not done — the link leads to no directory to copy".to_string());
+        };
+        if !target.is_dir() {
+            return Err("not done — the link leads to no directory to copy".to_string());
+        }
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+        copy_tree(&target, path).map_err(|e| e.to_string())?;
+        Ok(
+            "the link is gone and a directory holding a copy of what it led to stands there"
+                .to_string(),
+        )
+    }
+
+    /// [`Act::MoveDirectoryIn`]: the link at `path` gone, and the directory at `target`
+    /// renamed into its place.
+    fn move_directory_in(&self, path: &Path, target: &Path) -> Result<String, String> {
+        self.a_link(path)?;
+        if !self.contains(target)
+            || !fs::symlink_metadata(target).is_ok_and(|entry| entry.file_type().is_dir())
+        {
+            return Err(
+                "not done — no directory inside the sandbox stands there to move".to_string(),
+            );
+        }
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+        fs::rename(target, path).map_err(|e| e.to_string())?;
+        Ok("the link is gone and the directory it led to stands in its place".to_string())
+    }
+
     /// Move the directory at `path` to `moved/`, under the path it had from the repository
     /// root — or under its own name, where it stood elsewhere in the sandbox.
     fn move_away(&self, path: &Path) -> Result<String, String> {
@@ -3040,4 +3122,23 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
         route,
         sandbox: sandbox.root.clone(),
     })
+}
+
+/// Copy the directory `from` to `to` — every file, directory and link below it, a link as
+/// the link it is — for [`Act::ReplaceWithACopy`].
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let (source, dest) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            std::os::unix::fs::symlink(fs::read_link(&source)?, &dest)?;
+        } else if kind.is_dir() {
+            copy_tree(&source, &dest)?;
+        } else {
+            fs::copy(&source, &dest)?;
+        }
+    }
+    Ok(())
 }

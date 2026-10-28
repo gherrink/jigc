@@ -13649,6 +13649,11 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
             "relocate-a-directory-in-the-stranded-notes-place",
             "relocate-a-note-a-task-landed-at-the-notes-new-home",
             "relocate-a-link-to-nothing-in-one-stranded-notes-place-and-a-second-note",
+            // A link at the new home, refused since 2026-10-28 as the user's entry (the
+            // review's S1) — a doc blocked, and the run's exit 0.
+            "relocate-a-link-to-nothing-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
+            "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
         ],
     ),
     // The rows' record's §6, entry 23, ruled by the human on 2026-10-20: any file at a
@@ -13664,9 +13669,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::GitMoved,
         &[
             "relocate-a-file-of-the-users-at-the-notes-new-home",
-            "relocate-a-link-to-nothing-at-the-notes-new-home",
-            "relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home",
-            "relocate-a-link-to-a-file-outside-at-the-notes-new-home",
+            // The three links at the new home left this key on 2026-10-28: a link at a
+            // mover's destination is refused, never parked (the review's S1), so they are
+            // the refused doc of `r1-relocate-refuses-a-doc-and-exits-0`.
             "relocate-a-directory-at-the-notes-new-home",
             "relocate-a-file-of-the-users-at-the-notes-new-home-and-a-second-note",
         ],
@@ -13734,9 +13739,9 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         Classification::GitMoved,
         &[
             "config-set-placement-root-a-file-of-the-users-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home",
-            "config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home",
+            // The three links at the roadmap's new home left this key on 2026-10-28: a link at
+            // a mover's destination is refused where it stands, nothing parked (the review's
+            // S1) — each now *refuses, nothing changed*.
             "config-set-placement-root-a-directory-at-the-roadmaps-new-home",
         ],
     ),

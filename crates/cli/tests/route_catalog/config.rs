@@ -235,19 +235,9 @@ const A_ROOT_OVER_THE_NAME_CEILING: [Case; 1] = root!(
     A_COMPONENT_OF_300_BYTES,
     list: 5,
 );
-const A_ROOT_THROUGH_A_LINK: [Case; 1] = root!(
-    UNUSABLE_ROOT,
-    "unusable-root-through-a-link",
-    "a component of the root is a symbolic link",
-    state: &[
-        SETUP,
-        Step::Dir(Place::Repo("handbook")),
-        Step::LinkTo(Place::Repo("linked"), "handbook"),
-    ],
-    "docs-root",
-    "linked/sub",
-    list: 5,
-);
+// A component of the root that is a symbolic link is no cause of this site since
+// 2026-10-28: it is the link-on-the-way state, refused under `store.link-on-the-way` ahead
+// of this check, and its case stands with that site's (`doc_read.rs`).
 const A_ROOT_THAT_IS_A_FILE: [Case; 1] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-file",
@@ -652,7 +642,6 @@ pub const CASES: &[&[Case]] = &[
     &A_ROOT_GIT_READS_AS_PATHSPEC_MAGIC,
     &A_ROOT_GIT_READS_AS_A_PATTERN,
     &A_ROOT_OVER_THE_NAME_CEILING,
-    &A_ROOT_THROUGH_A_LINK,
     &A_ROOT_THAT_IS_A_FILE,
     &A_ROOT_UNDER_THE_INSTALLS_OWN_ARTIFACTS,
     &A_FILE_WHERE_THE_NEW_HOMES_DIRECTORY_MUST_BE,
@@ -736,12 +725,14 @@ pub const READINGS: &[Reading] = &[
             "crates/cli/src/config.rs::run_set — step 2d, for the two root knobs, on the folded value",
             "crates/cli/src/config.rs::unusable_root_reason — eight reasons, in its order, with the helpers each calls: whitespace_padded_component, pathspec_magic_root, over_name_ceiling_component, offending_component, installed_artifact_root",
         ],
-        causes: 8,
+        causes: 7,
         derivation: "one code and one route, a reason a shape: an absolute path; a \
                      component padded with whitespace; a leading `:`; a wildmatch \
-                     character; a component over the name ceiling; a component that is a \
-                     symbolic link; a root that names a file; a root under a directory the \
-                     install writes the adapter's artifacts in",
+                     character; a component over the name ceiling; a root that names a \
+                     file; a root under a directory the install writes the adapter's \
+                     artifacts in. A component that is a symbolic link was the eighth until \
+                     2026-10-28: it is refused ahead of this check under \
+                     `store.link-on-the-way`, the one code for the state",
         without_case: &[],
         not_followed: &[(
             "*re-run with a repo-relative directory — an existing one, or one jigc should create*",

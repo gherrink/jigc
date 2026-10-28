@@ -240,10 +240,10 @@ jigc rename	C2	1	1
 jigc rename	C3, the base pin	0	0
 jigc rename	C3, the task list	0	0
 jigc rename	C4	0	0
-jigc relocate	RL1	43	45
+jigc relocate	RL1	43	39
 jigc relocate	RL1, at its new home	40	40
 jigc relocate	RL2	0	0
-jigc relocate	RL4	44	38
+jigc relocate	RL4	44	32
 jigc relocate	C1	0	0
 jigc relocate	C2	0	0
 jigc relocate	C3, the base pin	0	0
@@ -260,10 +260,10 @@ jigc migrate-corpus	C2	0	0
 jigc migrate-corpus	C3, the base pin	0	0
 jigc migrate-corpus	C3, the task list	0	0
 jigc migrate-corpus	C4	0	0
-jigc config set	CS1	36	30
-jigc config set	CS2	43	45
+jigc config set	CS1	36	27
+jigc config set	CS2	43	39
 jigc config set	CS2, at its new home	43	43
-jigc config set	CS4	62	48
+jigc config set	CS4	62	42
 jigc config set	CS5	0	0
 jigc config set	C1	0	0
 jigc config set	C2	0	0

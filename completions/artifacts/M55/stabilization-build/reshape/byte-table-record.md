@@ -2,6 +2,8 @@
 
 *Written 2026-10-26 with the second commit of the plan's task `B10` ([byte-table-plan.md](byte-table-plan.md) → §8), on the branch `fix/rc24-route-catalog`, after the human's three rulings of that day — the last open entries of [the rows' record](byte-table-acceptance-rows.md)'s §6 — which the task's first commit recorded ([DECISIONS.md](../../../../../DECISIONS.md), the entry of 2026-10-26). A record: it counts the whole table as the plan's §6 asks *the record at the stop* to count, and **decides nothing**. **It supersedes none of the five family records** — [install](byte-table-install-family.md), [doc](byte-table-doc-family.md), [milestone](byte-table-milestone-family.md), [movers](byte-table-movers-family.md), [mint](byte-table-mint-family.md) — and the pilot's ([byte-table-pilot.md](byte-table-pilot.md)): each stays the record of what its family built and when; this one counts the table as it stands now, every number re-derived and none copied. The findings are [byte-table-findings.md](byte-table-findings.md), the questions of reading [byte-table-readings.md](byte-table-readings.md), the rows [byte-table-acceptance-rows.md](byte-table-acceptance-rows.md).*
 
+*Changed 2026-10-28, by the fixes after the review of that fix ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-28 — The review of the link-on-the-way guard*): **every count below is read again off a fresh whole-table print on both binaries, taken on the fixes' tree and committed beside this file in place of the last**, the previous release the same rebuild. **Cell by cell, ten moved, and only the class's**: `setup`'s three cells of a link on the way are listed under the one code, `store.link-on-the-way`, and so is the new-root cell of `config set placement-root` (which the previous release does not say: *not the listed outcome* there); a link at a mover's destination is refused, never parked — `placement-root`'s three at the roadmap's new home are *refuses, nothing changed* here, off `r1-config-set-parks-an-untracked-occupant-of-a-new-home`, and `relocate`'s three at the notes' new home are its refused doc at exit 0, moved to `r1-relocate-refuses-a-doc-and-exits-0`. So: red here 190 to **187** (in the gate 174 to **171**, still under **45** keys, in **47** entries); red on the previous release 307 to **308**; red on both 189 to **187**, red here and clean there 1 to **0**, red there and clean here 118 to **121**; **regressions 8 cells under 7 keys to 6 under 5** — the parked link to nothing at each mover's new home is no longer parked.*
+
 *Changed 2026-10-28, by the fix of `r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository` under the human's ruling B of that day ([DECISIONS.md](../../../../../DECISIONS.md) → *2026-10-28 — No door writes through a link on the way*): **every count below is read again off a fresh whole-table print on both binaries, taken on the fix's tree and committed beside this file in place of the last** — the previous release the same rebuild (`accf3996…ab5d`, checked). **Cell by cell, only the class's cells moved**: the nine of the fixed key and §17's two (whose key keeps four) are *refuses, nothing changed* here, the link named; the six that refused at `git add` having written through the link, and `rename`'s two, are listed to name the link, which this tree's binary does and the previous release's does not — so they hold here and are *not the listed outcome* there; and two cells are new, at `config set placement-root` — the roadmap's directory a link (*git moved* there, refusing here) and the new root itself a link (refusing on both, `config.untrackable-root`). So: cells 782 to **784** (in the gate 602 to **604**, all in `fresh`); red here 201 to **190** (in the gate 185 to **174**, under 46 keys to **45**); red on the previous release 298 to **307**, the 2 not run as before; red on both 200 to **189**, red there and clean here 98 to **118**; the regressions unchanged. The fixed key keeps its heading and its line in §2, with no cell red under it.*
 
 *Changed 2026-10-27, with the record of the human's ruling of that day on the rows' record's §6, entry 1 (iii), option A — **a refusal leaves no work area it minted**: entry 1 is ruled whole and **no question of the rows' record is open** (§1, §3.3); the docs' missing sentence is a doc-only key of its own, so the live keys are 69 — 46 with cells, 23 no cell can see (§1, §2, §3.9); and `C3`'s open id, which reaches a milestone at which nothing stood, is carried for the frame (§5). The table held the ruling's reading already, so no line, need or cell moved, and the print below stands ([DECISIONS.md](../../../../../DECISIONS.md), the entry of that ruling).*
@@ -34,7 +36,7 @@
 
 - **30 rows, 298 lines, 8 spellings; 706 needs, 691 answered by a cell and 15 scheduled** (print, `needs` and `excused`; suite).
 - **784 cells: 604 in the gate — 30 refusing, 67 base, 507 planted — in four arms, and 180 on demand** (suite; print).
-- **Red on this tree: 190 — 174 in the gate under 45 keys, 16 on demand. On the previous release: 307 red and 2 not run.** 189 red on both; one red here and clean there; 118 red there and clean here, and the 2 not run there clean here. **Regressions — a harm class here the previous release did not show for the same cell: 8 cells under 7 keys** (print; §3.3).
+- **Red on this tree: 187 — 171 in the gate under 45 keys, 16 on demand. On the previous release: 308 red and 2 not run.** 187 red on both; none red here and clean there; 121 red there and clean here, and the 2 not run there clean here. **Regressions — a harm class here the previous release did not show for the same cell: 6 cells under 5 keys** (print; §3.3).
 - **69 keys headed live: 45 with cells red, 23 that no cell can see, and one fixed (2026-10-28), its cells all refusing here** — a design doc's sentence, words, a printed line or route; 4 retired. **One marked cell** (bound 1). **No question of the rows' record is open** — entry 1 (iii), a minted work unit a refusal leaves, the last, was ruled on 2026-10-27, and no cell hung on it (findings; readings; suite).
 - **Of the 298 lines, 118 excused a difference in some cell and 180 none** — 35 of a row's own and 145 of the caches'; `C4` none (print, `excused`).
 
@@ -148,17 +150,17 @@ Four keys are retired and are not listed: `r1-setup-makes-a-cache-directory-no-s
 - `r1-migrate-corpus-refuses-at-its-commit-and-leaves-the-migration-written-and-staged` — migrate-corpus · 1/1 · refusal changed · no · doc (the declared bound) and code · entry 22 (2026-10-19) · —
 - `r1-migrate-corpus-no-commit-leaves-the-migration-unstaged` — migrate-corpus `--no-commit` · 1/1 · outside · no · code and doc (`design/corpus-migration.md`) · entry 21 (2026-10-19) · fix pass's item 4, cited
 
-### `jigc relocate` — four keys, thirteen cells red here and thirteen on rc.24 (and two under the link on the way, below — fixed 2026-10-28); one regression
+### `jigc relocate` — four keys, thirteen cells red here and thirteen on rc.24 (and two under the link on the way, below — fixed 2026-10-28); no regression since 2026-10-28 (one until then)
 
-- `r1-relocate-refuses-a-doc-and-exits-0` — relocate · 6/6 · not listed · no · code and two docs (`design/command-output-contract.md`, `design/validation.md`) · R1 (2026-10-20) · beside `5f5b273a`-4, not that row
+- `r1-relocate-refuses-a-doc-and-exits-0` — relocate · 9/9 (6/6 until 2026-10-28, when the three links at the notes' new home came here from the parking key) · not listed · no · code and two docs (`design/command-output-contract.md`, `design/validation.md`) · R1 (2026-10-20) · beside `5f5b273a`-4, not that row
 - `r1-relocate-parks-a-file-the-user-committed-at-a-new-home` — relocate · 1/1 · git moved · no · code and doc (`design/reconciliation.md` → *Relocation collisions*) · entry 23 (2026-10-20) · —
-- `r1-relocate-parks-an-untracked-occupant-of-a-new-home` — relocate · 6/6 · git moved · **yes, 1**: `relocate-a-link-to-nothing-at-the-notes-new-home` — the previous release acted at exit 0 and left the link, *not listed* only; this tree parks it under `.jigc/displaced/`, *git moved* and *outside*. *Cause*: the parking of an occupant at a new home, `5f5b273a` — the mechanism of `config set`'s regression below (the review of `B9`, its H5) · code and doc (the same) · entry 23 (2026-10-20) · —
+- `r1-relocate-parks-an-untracked-occupant-of-a-new-home` — relocate · 3/3 (6/6 until 2026-10-28: a link at the new home is refused since, never parked) · git moved · **no** (until 2026-10-28, **yes, 1**: `relocate-a-link-to-nothing-at-the-notes-new-home` — the previous release acted at exit 0 and left the link, *not listed* only; this tree parked it under `.jigc/displaced/`, *git moved* and *outside*; it refuses the doc now). *Cause*: the parking of an occupant at a new home, `5f5b273a` — the mechanism of `config set`'s regression below (the review of `B9`, its H5) · code and doc (the same) · entry 23 (2026-10-20) · —
 - `r1-relocate-names-no-unmanaged-doc-beside-a-new-home` — relocate · no cell (words) · — · no · code · entry 23, its (A) (2026-10-20) · —
 
-### `jigc config set` — eleven keys, twenty-nine cells red here (+2 on demand) and twenty-eight on rc.24 (and three under the link on the way, below — fixed 2026-10-28); three regressions, two of them traded
+### `jigc config set` — eleven keys, twenty-six cells red here (+2 on demand) and twenty-five on rc.24 since 2026-10-28, when a link at the new home was refused rather than parked (twenty-nine and twenty-eight until then; and three under the link on the way, below — fixed 2026-10-28); two regressions, both traded (three until then)
 
 *Parks or replaces what stands at a new home*
-- `r1-config-set-parks-an-untracked-occupant-of-a-new-home` — config set `placement-root` · 5/4 · git moved · **yes, 1**: `config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home` — the previous release refused, `config.repoint-failed`, and changed nothing; this tree parks the link at exit 0, *git moved* and *outside* (the words of both on the committed print, *what the frame saw*). *Cause*: `5f5b273a` (the findings' §25) — the one cell red here and clean there · code and doc (`design/storage.md` → *Placement*, `design/reconciliation.md`) · entry 23 (2026-10-20) · `5f5b273a` (the cause)
+- `r1-config-set-parks-an-untracked-occupant-of-a-new-home` — config set `placement-root` · 2/2 (5/4 until 2026-10-28: a link at the new home is refused since, never parked) · git moved · **no** (until 2026-10-28, **yes, 1**: `config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home` — the previous release refused, `config.repoint-failed`, and changed nothing; this tree parked the link at exit 0, now refused again), *git moved* and *outside* (the words of both on the committed print, *what the frame saw*). *Cause*: `5f5b273a` (the findings' §25) — the one cell red here and clean there · code and doc (`design/storage.md` → *Placement*, `design/reconciliation.md`) · entry 23 (2026-10-20) · `5f5b273a` (the cause)
 - `r1-config-set-parks-a-file-the-user-committed-at-a-new-home` — config set `placement-root` · 1/1 · git moved · no · code and docs (the same) · entry 23 (2026-10-20) · —
 - `r1-config-set-refuses-an-occupant-of-a-new-home-in-gits-words` — config set `docs-root` · no cell (words) · — · no · code · entry 23 (2026-10-20) · —
 - `r1-config-set-names-no-unmanaged-doc-beside-a-new-home` — config set · no cell (words) · — · no · code · entry 23, its (A) (2026-10-20) · —
@@ -222,10 +224,10 @@ The layer is the frame's (`byte_cell::Cell::layer`): a cell that plants is plant
 
 ### 3.3 Red, on both binaries, and the regressions
 
-- **This tree: 190 red** — **174 in the gate**, exactly the 174 cells of `EXPECTED_RED`, under **45 keys in 47 entries** (suite; print), and **16 on demand**: four `uninstall`s that act, under its teardown's key; ten base cells of `milestone create` and `add-task`, under the record doors' message-file key; and two `config set docs-root notes`, in `refs-post-hoc` and `vendored`, under the root knob's staged half (print; on demand).
-- **The previous release: 307 red, and 2 not run** — `setup-an-edit-to-the-settings-record` and `setup-the-settings-record-deleted`, whose plant no file stands for on that binary — **309 not clean**; in the gate 291 red and the 2 not run, on demand the same 16 (print).
-- **Pairs** (print, `pairs`): **red on both, 189**; **red here and clean there, 1** — `config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home`; **red there and clean here, 118**, and the 2 not run there, clean here — what the fix pass fixed, and since 2026-10-28 the eight cells of a link on the way whose listing names the link, which the previous release does not; **clean on both, 474**.
-- **Regressions — a harm class on this tree that the previous release did not show for the same cell** (the review's note 1; the harm classes are *lost*, *git's state moved outside its allowance*, *written outside its allowance* and *refused, and changed what a refusal may not* — *not the listed outcome* says where the listing and the product part and harms nothing of itself; *the command did not end* shows on no cell). Read off the print's columns 7 and 10 by the command in §9: **8 cells under 7 keys**, each named in §2 with the previous release's outcome and this tree's.
+- **This tree: 187 red** — **171 in the gate**, exactly the 171 cells of `EXPECTED_RED`, under **45 keys in 47 entries** (suite; print), and **16 on demand**: four `uninstall`s that act, under its teardown's key; ten base cells of `milestone create` and `add-task`, under the record doors' message-file key; and two `config set docs-root notes`, in `refs-post-hoc` and `vendored`, under the root knob's staged half (print; on demand).
+- **The previous release: 308 red, and 2 not run** — `setup-an-edit-to-the-settings-record` and `setup-the-settings-record-deleted`, whose plant no file stands for on that binary — **310 not clean**; in the gate 292 red and the 2 not run, on demand the same 16 (print).
+- **Pairs** (print, `pairs`): **red on both, 187**; **red here and clean there, 0** — `config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home` was the one until 2026-10-28; **red there and clean here, 121**, and the 2 not run there, clean here — what the fix pass fixed, and since 2026-10-28 the cells of a link on the way whose listing names the link or the one code, which the previous release does not; **clean on both, 474**.
+- **Regressions — a harm class on this tree that the previous release did not show for the same cell** (the review's note 1; the harm classes are *lost*, *git's state moved outside its allowance*, *written outside its allowance* and *refused, and changed what a refusal may not* — *not the listed outcome* says where the listing and the product part and harms nothing of itself; *the command did not end* shows on no cell). Read off the print's columns 7 and 10 by the command in §9: **6 cells under 5 keys** since 2026-10-28 (8 under 7 until the parked link to nothing at each mover's new home was refused rather than parked — the first and the fourth of the six below, which stand as they were found), each named in §2 with the previous release's outcome and this tree's.
   - **Six where the previous release showed no harm class at all**: the one red here and clean there (`config set placement-root`, a link to nothing at the new home — refused there, parked here at exit 0); the two lost here and not there (`task finalize` and the boundary, a hand edit before the first write to the same part — refused there at exit 3, `reconciliation.conflict-block`, the line kept; lost here at exit 0); `relocate`, a link to nothing at the notes' new home (left there, parked here, the mechanism of the first, `5f5b273a`); and two of `setup` at its settings record, which the previous release did not keep — a committed file of the user's there, replaced here, and a change staged there, a refusal here that leaves the install.
   - **Two traded**: `config set docs-root` with a link at the decisions' place, *git moved* and *outside* at exit 0 there, a refusal that leaves the re-point's directories here.
   - **How it differs from what the record said and the review counted.** The record's definition, *red here and clean there*, found one; the review, by this definition, counted eight and marked five — it named `setup`'s staged change at the settings record as a change of kind, where the class it shows here (*refused, and changed what a refusal may not*) is one the previous release did not show for that cell. Two of the eight the record never named — `setup-at-the-settings-record-a-committed-file` and `relocate-a-link-to-nothing-at-the-notes-new-home` — and their causes are in §2.
@@ -260,12 +262,12 @@ The layer is the frame's (`byte_cell::Cell::layer`): a cell that plants is plant
 | movers | `rename` | 11 (3) | 38 (1) | 39 | 33 | 6 | 0 | 10 |
 | movers | `relocate` | 9 (6) | 25 (0) | 32 | 26 | 6 | 13 | 15 |
 | movers | `migrate-corpus` | 11 (7) | 39 (0) | 44 | 38 | 6 | 20 | 22 |
-| movers | `config set` | 10 (6) | 35 (0) | 60 | 54 | 6 | 31 | 38 |
+| movers | `config set` | 10 (6) | 35 (0) | 60 | 54 | 6 | 28 | 39 |
 | mint | `start` | 8 (5) | 13 (0) | 15 | 9 | 6 | 0 | 0 |
 | mint | `workflow` | 7 (5) | 17 (0) | 18 | 12 | 6 | 5 | 6 |
 | mint | `migrate` | 7 (6) | 16 (1) | 15 | 9 | 6 | 0 | 0 |
 | mint | `task amend` | 6 (5) | 9 (0) | 10 | 4 | 6 | 0 | 0 |
-| **all** | **30** | **298 (180)** | **706 (15)** | **784** | **604** | **180** | **190** | **307 + 2 not run** |
+| **all** | **30** | **298 (180)** | **706 (15)** | **784** | **604** | **180** | **187** | **308 + 2 not run** |
 
 *By the suite's families* the acceptance's twelve cells and `milestone finalize`'s spelling `squash: false` stand apart (suite: the module documentation of `byte_table.rs`, brought to these counts by this commit): the acceptance 12, the task family 81, `squash: false` 4, install 134, doc 139, milestone 181, movers 175, mint 58. The table above and the one below count a cell with its leaf. By family, by leaf:
 
@@ -275,7 +277,7 @@ The layer is the frame's (`byte_cell::Cell::layer`): a cell that plants is plant
 | task | 2 | 84 | 72 | 12 | 12 | 35 |
 | doc | 8 | 139 | 91 | 48 | 25 | 25 |
 | milestone | 8 | 188 | 140 | 48 | 43 | 80 |
-| movers | 4 | 175 | 151 | 24 | 64 | 85 |
+| movers | 4 | 175 | 151 | 24 | 61 | 86 |
 | mint | 4 | 58 | 34 | 24 | 5 | 6 |
 
 ### 3.5 Per prepared state
@@ -283,7 +285,7 @@ The layer is the frame's (`byte_cell::Cell::layer`): a cell that plants is plant
 | prepared state | cells | in the gate | on demand | red here | red on rc.24 |
 |---|---:|---:|---:|---:|---:|
 | `bare` | 115 | 86 | 29 | 20 | 52 + 2 not run |
-| `fresh` | 415 | 404 | 11 | 117 | 194 |
+| `fresh` | 415 | 404 | 11 | 114 | 195 |
 | `committed-singletons` | 117 | 96 | 21 | 31 | 34 |
 | `vendored` | 47 | 18 | 29 | 13 | 18 |
 | `migrated` | 30 | 0 | 30 | 3 | 3 |
@@ -298,10 +300,10 @@ Each kind of plant is a letter of the plan's §3 at a position (`byte_cell::Kind
 |---|---:|---:|---:|---:|---:|
 | **U** | 94 | 4 | 99 | 24 | 28 |
 | **T** | 14 | 0 | 18 | 7 | 9 |
-| **L, to nothing** | 39 | 0 | 43 | 10 | 30 |
-| **L, to a file in the repository** | 39 | 0 | 41 | 19 | 35 |
-| **L, to a file outside it** | 39 | 0 | 41 | 17 | 37 |
-| **L, at a directory on the way** | 26 | 4 | 24 | 0 | 23 |
+| **L, to nothing** | 39 | 0 | 43 | 9 | 30 |
+| **L, to a file in the repository** | 39 | 0 | 41 | 18 | 35 |
+| **L, to a file outside it** | 39 | 0 | 41 | 16 | 37 |
+| **L, at a directory on the way** | 26 | 4 | 24 | 0 | 24 |
 | **K, a directory in a file's place** | 39 | 0 | 41 | 12 | 26 |
 | **K, a file in a directory's place** | 26 | 6 | 21 | 5 | 5 |
 | **E, before the first write** | 13 | 1 | 16 | 4 | 6 |
@@ -314,7 +316,7 @@ Each kind of plant is a letter of the plan's §3 at a position (`byte_cell::Kind
 | **H** | 13 | 0 | 13 | 8 | 8 |
 | **W, its directory there** | 3 | 0 | 3 | 1 | 1 |
 | **W, its directory moved away** | 3 | 0 | 3 | 1 | 3 |
-| **all** | 458 | 15 | 506 | 157 | 273 |
+| **all** | 458 | 15 | 506 | 154 | 274 |
 
 The conditions a doc names for a command's guard — a hook that rejects (**H**), a name git quotes (**N**), a staged change elsewhere (**S**, where it does not) — are needs of a commit line, and count as plants here. Since the task's first commit **U**, **E, after the first write** and **S, where the command writes** count three, two and three more red on each binary — the fourth fix's cells; the rest of the change is the fifth fix's kind.
 
@@ -325,12 +327,12 @@ A red cell shows every class it is red in; the first is the one its listing is h
 | classification | first class here | any class here | first class on rc.24 | any class on rc.24 |
 |---|---:|---:|---:|---:|
 | lost | 23 | 23 | 38 | 38 |
-| git's state moved outside its allowance | 24 | 30 | 48 | 59 |
-| written outside its allowance | 63 | 84 | 63 | 107 |
+| git's state moved outside its allowance | 18 | 24 | 48 | 59 |
+| written outside its allowance | 63 | 78 | 63 | 107 |
 | refused, and changed what a refusal may not | 45 | 45 | 60 | 60 |
-| not the listed outcome | 35 | 66 | 98 | 174 |
+| not the listed outcome | 38 | 63 | 99 | 178 |
 | holds | 293 | 293 | 276 | 276 |
-| refuses, nothing changed | 301 | 301 | 199 | 199 |
+| refuses, nothing changed | 304 | 304 | 198 | 198 |
 | not run | 0 | 0 | 2 | 2 |
 
 ### 3.8 What each line excused
@@ -339,7 +341,7 @@ The block `excused` of the print, committed beside this file, gives each of the 
 
 ### 3.9 Keys — new and kept
 
-- **69 keys headed live** in [the findings](byte-table-findings.md) (one, `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`, headed in two sections), **4 retired**: **45 with cells**, under which the 174 gate cells are listed, **one fixed on 2026-10-28** (`r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository`, its cells all refusing here), and **23 no cell can see** — 14 a design doc's or a guide's alone (the findings' §1), and 9 of words, a printed line or a route (findings; suite). **None is now a write the product should make that no cell can see**: the two the record counted so — `--no-commit`'s staging and a root knob's staged half — are held by cells since the fourth fix, which built the demand *what stands staged* beside `U9`'s demanded commit.
+- **69 keys headed live** in [the findings](byte-table-findings.md) (one, `r1-doc-write-acts-over-a-home-that-is-no-doc-of-its-type`, headed in two sections), **4 retired**: **45 with cells**, under which the 171 gate cells are listed, **one fixed on 2026-10-28** (`r1-a-write-follows-a-link-at-a-directory-on-the-way-out-of-the-repository`, its cells all refusing here), and **23 no cell can see** — 14 a design doc's or a guide's alone (the findings' §1), and 9 of words, a printed line or a route (findings; suite). **None is now a write the product should make that no cell can see**: the two the record counted so — `--no-commit`'s staging and a root knob's staged half — are held by cells since the fourth fix, which built the demand *what stands staged* beside `U9`'s demanded commit.
 - **By the findings' section they stand in** — the family that met them: the doc-only §1, **14**; the task family's §4, **5**; the install family's §6, **7**; the plant in a file's place, §7, **1**; the stamp's words, §9, **1**; the doc family's §10 to §13, **6**; the milestone family's §17 and §19 to §22, **8**; the movers' §23 to §25, **21**; the mint family's §26, **3**; §27, the spawn key, **1**; §28, the link on the way, **1**; and §29, the unreadable record's route, **1** (findings: the headings, counted). **New since the task's first commit: four** — the second fix's doc-only key (§1), the fifth fix's (§28), the sixth fix's (§29), and the doc-only key of the ruling of 2026-10-27 on entry 1 (iii) (§1). *Kept*: every key a ruling decided keeps its name and its cells; none was renamed or merged.
 - **No key is the acceptance's**: the six blocking rows of rc.24 the pilot was built to catch are red on the previous release and clean on this tree, as the acceptance's twelve cells show (print; the findings' §3).
 
@@ -347,7 +349,7 @@ The block `excused` of the print, committed beside this file, gives each of the 
 
 The family records count what each family built when it was built, and stand as that record; the table's counts are this one's. Three spot-checks, each re-derived here from the print: the doc family **139 cells, 91 in the gate, 25 red here and 25 there** ([its record](byte-table-doc-family.md), the note of 2026-10-20) — the same, no fix after it touched a `doc` cell; the mint family's four leaves **58 cells, 34 in the gate, 6 red on each** — one more than [its record](byte-table-mint-family.md) (§1, 57 and five), the fifth fix's cell at `workflow`'s re-entry; the movers family **173 cells, 82 red on rc.24 and 71 here** — where the mint family's record gives 164, 60 and 49: nine cells of the fifth fix, seven of them red on each binary, and fifteen moved by the fourth from *holds* to red on each (twelve of `config set` in the gate, two on demand, and `migrate-corpus`'s one).
 
-**The mint family's record counts the previous release by another rule.** It says *"271 of the 760 cells are red there"* (§1): that counts the two cells not run as red. 269 were red there and 2 not run — 271 not clean; a cell not run has no classification. Today: 307 red, 2 not run, 309 not clean (298, 2 and 300 until the fix of 2026-10-28 listed eight cells to name the link).
+**The mint family's record counts the previous release by another rule.** It says *"271 of the 760 cells are red there"* (§1): that counts the two cells not run as red. 269 were red there and 2 not run — 271 not clean; a cell not run has no classification. Today: 308 red, 2 not run, 310 not clean (298, 2 and 300 until the fixes of 2026-10-28 listed nine cells to name the link or its one code).
 
 ## 4. The leads still open — what is seen and no cell can see, each with the exact reason
 

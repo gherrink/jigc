@@ -1868,6 +1868,20 @@ fn install(
         guide_file.as_deref(),
         &[],
     );
+    // 0d″. **A directory on the way to a member that is a link is the link-on-the-way
+    //       state, under its one code** (2026-10-28, the review's S5): the same state every
+    //       other door refuses as `store.link-on-the-way`, so it is refused under that code
+    //       here too, ahead of the members' own codes, which keep the member's own entry —
+    //       a link, a directory, a special file at the file's place. Git's own directory
+    //       is not walked: the hook's place is git's to resolve.
+    let links: Vec<crate::link_way::Link> = members
+        .iter()
+        .filter(|member| !member.path.starts_with(".git/"))
+        .filter_map(|member| crate::link_way::on_the_way_to(jigc_home, &member.path))
+        .collect();
+    if !links.is_empty() {
+        return Err(crate::link_way::finding(&links));
+    }
     if let Some(refusal) = replaced_path_refusal(jigc_home, &members) {
         return Err(refusal);
     }
@@ -4882,6 +4896,31 @@ fn uninstall(
     profile: &AdapterProfile,
     force: bool,
 ) -> Result<UninstallSummary, Finding> {
+    // 0′. **No member is edited or removed past a link on the way** (2026-10-28, the
+    //     review's B1): the settings file, the bootstrap line's file and the guide sit
+    //     below directories the install wrote into, and a link there carries the teardown
+    //     wherever it leads. Asked before anything is removed, `--force` or not — the flag
+    //     consents to deleting bytes, never to following a link. `.jigc` is not asked:
+    //     its removal takes a link as the entry it is. Git's hook directory is git's.
+    let members: Vec<String> = [
+        Some(profile.allowlist.file.clone()),
+        profile.reference().map(|r| r.file.clone()),
+        profile
+            .guide()
+            .filter(|guide| adapter::validate_guide_target(guide).is_ok())
+            .map(|guide| guide.file.clone()),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let links: Vec<crate::link_way::Link> = members
+        .iter()
+        .filter_map(|member| crate::link_way::on_the_way_to(jigc_home, member))
+        .collect();
+    if !links.is_empty() {
+        return Err(crate::link_way::finding(&links));
+    }
+
     // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
     //    on a tree that holds the sole copy of four kinds of work.
     if !force {

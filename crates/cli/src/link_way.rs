@@ -13,39 +13,45 @@
 //! macOS and another on CI. The rule is now jigc's, asked before git is asked: **every
 //! command asks the directories on the way to what it writes, moves, or reads in order to
 //! write whether one is a link, and refuses before its first write**, naming the link and
-//! routing at replacing it with a real directory — what `jigc setup` already did for its
-//! install ([`crate::setup`], `setup.write-bootstrap` / `setup.write-guide`), now for every
-//! door.
+//! routing at a way out that leaves what the link led to in the repository, as a real
+//! directory — what `jigc setup` already did for its install, now for every door and under
+//! one code.
 //!
-//! **Where it is asked — two places every door inherits, and one per door that cannot.**
+//! **Where it is asked — two places every door inherits, and the doors that cannot.**
 //!
 //! - **At dispatch, before any door runs** ([`crate::cli`]'s `refuse_on_link_on_the_way`),
-//!   over the store's **write surface**: the workbench — `.jigc` and every directory below
-//!   it, but the inside of a fan-out worktree's checkout ([`in_the_workbench`]) — and every
-//!   directory on the way to every doctype's resolved home ([`on_the_way_to_homes`]). Every
-//!   command that writes the repository writes the workbench, and reads or writes a home: a
-//!   finalize rebuilds the edge index from every home, a `doc` write copies a committed doc
-//!   in from its home, a milestone record door writes the record's. So a door added
-//!   tomorrow is guarded the moment it is a leaf of the clap tree, unless it is named an
-//!   exception with its reason (`LINK_GUARD_EXCEPTIONS`).
+//!   over the store's **write surface** ([`store_links`]): the workbench — `.jigc`, every
+//!   directory jigc keeps in it, and every link in it that leads to a directory
+//!   ([`in_the_workbench`]) — and every directory on the way to every doctype's resolved
+//!   home ([`on_the_way_to_homes`]). Every command that writes the repository writes the
+//!   workbench, and reads or writes a home. A **read form** — a `VerbKind::Read` leaf, and
+//!   the read forms of `start` and `workflow` — reports the links at exit 0 instead
+//!   ([`advisory`]); `jigc uninstall` asks its own members' way; every other leaf is
+//!   refused, a leaf added tomorrow included.
 //! - **At the move primitive** ([`crate::relocate::move_doc`]) — every move of a doc, source
 //!   and destination, for the homes the store does not have *yet*: a `config set` re-point's
 //!   new homes and a `--from` prior home. The movers ask the same question of their whole
 //!   batch before their first move ([`first_of`]), so nothing is moved before the refusal.
-//! - **At `migrate-corpus`**, over the prior homes its versioned snapshots declare — homes
-//!   only that command knows of.
+//! - **At the doors whose subject is not the store's homes**: `jigc config set`'s root knobs
+//!   over the homes the new value resolves, `jigc migrate-corpus` over the prior homes its
+//!   versioned snapshots declare, `jigc setup` and `jigc uninstall` over their own install
+//!   members.
 //!
-//! **On the way to a path, a link counts whatever it points at** — a directory outside the
-//! repository, another inside it, or nothing: the check follows no link (the rows' record's
-//! §6, entry 25, ruled 2026-10-26), so what a write past it would reach is never jigc's to
-//! guess. The workbench walk, which meets files' places and directories' alike, counts a
-//! link where it leads to a directory ([`in_the_workbench`]). A link at a doc's **own**
+//! **A link counts whatever it points at** — a directory outside the repository, another
+//! inside it, or nothing: the check follows no link (the rows' record's §6, entry 25, ruled
+//! 2026-10-26). In the workbench, which holds files' places and directories' alike, a link
+//! counts where jigc keeps a directory ([`WORKBENCH_DIRECTORIES`]) and wherever it leads to
+//! one; a link in a file's place is that file's own question. A link at a doc's **own**
 //! home — the leaf — is not this rule's: it is `store.home-not-regular-file`
-//! ([`engine::store::home_shape_refusal`]), a door's question about one path.
+//! ([`engine::store::home_shape_refusal`]).
+//!
+//! **Why the reason holds inside the repository too.** Git records a link as the entry it
+//! is, never a path past it — so what jigc wrote past a link is in no commit of the
+//! repository whether the link leads out of it or to another directory inside it.
 
 use std::path::{Path, PathBuf};
 
-use engine::finding::{Finding, Route};
+use engine::finding::{Finding, Location, Route, Severity};
 use engine::schema::Schema;
 
 /// The code of the refusal: a directory on the way to where jigc writes is a symbolic link.
@@ -53,53 +59,179 @@ use engine::schema::Schema;
 /// Increment 11 / T1 rule), as `store.home-not-regular-file` is for the leaf.
 pub const LINK_ON_THE_WAY: &str = "store.link-on-the-way";
 
-/// **One link on the way** — the repo-relative path of the link, and where it stands, as
-/// the clause the message names it by.
+/// **The way out of one link**, read from the link's own text (`read_link`, which follows
+/// nothing) — chosen so following it leaves one copy of what the link led to, in the
+/// repository, where git records it.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WayOut {
+    /// The link leads to a real directory **inside** the repository, at this repo-relative
+    /// path: move that directory into the link's place. A copy would leave two.
+    MoveIn(String),
+    /// The link leads to a directory outside the repository (or to one inside it only
+    /// through another link): put a copy of what it leads to in the link's place, as a
+    /// real directory. What stands outside is the user's and stays.
+    CopyIn,
+    /// The link leads to no directory — to nothing, or to a file: remove it; jigc makes the
+    /// directory itself where it needs one.
+    Remove,
+}
+
+/// **One link on the way** — the repo-relative path of the link, where it stands, and the
+/// way out of it.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Link {
-    /// The link's repo-relative path.
+    /// The link's path, relative to the checkout it stands in.
     pub at: String,
     /// Where it stands, as the clause that follows *is a symbolic link* —
     /// `` inside the workbench `.jigc` ``, `` on the way to the home of `adr` ``, or
     /// `` on the way to `<path>` ``.
     pub stands: String,
+    /// What the route asks of it.
+    pub way_out: WayOut,
 }
 
-/// **The refusal** — every link found, named once each, sorted, in one blocking finding.
-///
-/// No locus: the state is the repository's, not one doc's, and the posture family's
-/// refusals — the other state a door refuses on before its first write — carry none
-/// either. The route is [`Route::human`], because no `jigc` argv replaces a link, and it
-/// names the act and the command to re-run, never the link's target: that is a host path,
-/// and a printed path is repo-real (law 1).
-#[must_use]
-pub fn finding(links: &[Link]) -> Finding {
+impl Link {
+    /// The link at `at` below `root`, standing as `stands` — its way out read from its text.
+    #[must_use]
+    pub fn at(root: &Path, at: &str, stands: &str) -> Self {
+        Link {
+            at: at.to_string(),
+            stands: stands.to_string(),
+            way_out: way_out(root, at),
+        }
+    }
+
+    /// The route's clause for this link.
+    fn clause(&self) -> String {
+        match &self.way_out {
+            WayOut::MoveIn(target) => format!(
+                "remove the link at `{}` and move the directory `{target}` into its place",
+                self.at
+            ),
+            WayOut::CopyIn => format!(
+                "replace the link at `{}` with a real directory holding a copy of what it \
+                 leads to",
+                self.at
+            ),
+            WayOut::Remove => format!(
+                "remove the link at `{}`, which leads to no directory — jigc makes one where \
+                 it needs it",
+                self.at
+            ),
+        }
+    }
+}
+
+/// Read the link at `<root>/<at>` without following it and say what its way out is.
+fn way_out(root: &Path, at: &str) -> WayOut {
+    let link = root.join(at);
+    let Ok(text) = std::fs::read_link(&link) else {
+        return WayOut::Remove;
+    };
+    let target = if text.is_absolute() {
+        text
+    } else {
+        link.parent().unwrap_or(root).join(text)
+    };
+    let target = engine::store::lexical_normalize(&target);
+    let roots = [
+        engine::store::lexical_normalize(root),
+        root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+    ];
+    let inside = roots
+        .iter()
+        .find_map(|root| target.strip_prefix(root).ok().map(Path::to_path_buf));
+    let real_directory =
+        std::fs::symlink_metadata(&target).is_ok_and(|entry| entry.file_type().is_dir());
+    // A directory inside git's own directory is no directory of the repository's: git
+    // records nothing there, so what it holds is copied in, never moved out of git's.
+    let inside = inside.filter(|rel| {
+        rel.components()
+            .next()
+            .is_some_and(|first| first.as_os_str() != ".git")
+    });
+    match inside {
+        Some(rel) if real_directory && !rel.as_os_str().is_empty() => WayOut::MoveIn(
+            rel.components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/"),
+        ),
+        _ if target.is_dir() => WayOut::CopyIn,
+        _ => WayOut::Remove,
+    }
+}
+
+/// The links, named once each by path, in order.
+fn distinct(links: &[Link]) -> Vec<&Link> {
     let mut links: Vec<&Link> = links.iter().collect();
     links.sort();
     links.dedup_by(|a, b| a.at == b.at);
-    let states: Vec<String> = links
+    links
+}
+
+/// The states, one sentence fragment a link.
+fn states(links: &[&Link]) -> String {
+    links
         .iter()
         .map(|link| format!("`{}` is a symbolic link {}", link.at, link.stands))
-        .collect();
-    let named: Vec<String> = links.iter().map(|link| format!("`{}`", link.at)).collect();
-    let (noun, real, it) = if links.len() == 1 {
-        ("link", "a real directory", "it")
-    } else {
-        ("links", "real directories", "they")
-    };
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The route: a clause a link, then the commit and the re-run.
+fn route(links: &[&Link]) -> Route {
+    let noun = if links.len() == 1 { "link" } else { "links" };
+    Route::human(format!(
+        "{} — committing the change where git tracks the {noun} — then re-run this command",
+        links
+            .iter()
+            .map(|link| link.clause())
+            .collect::<Vec<_>>()
+            .join("; "),
+    ))
+}
+
+/// **The reason**, true of a link inside the repository as of one outside it.
+const REASON: &str = "git records a link as the entry it is and never a path past it, so \
+                      whatever jigc wrote, moved or rebuilt past one would be in no commit of \
+                      this repository";
+
+/// **The refusal** — every link found, named once each, sorted, in one blocking finding.
+///
+/// No locus: the state is the repository's, not one doc's, as the posture family's
+/// refusals carry none. The route is [`Route::human`], because no `jigc` argv replaces a
+/// link, and it names a link's in-repository target by its repo-relative path and an
+/// outside one never: that is a host path, and a printed path is repo-real (law 1).
+#[must_use]
+pub fn finding(links: &[Link]) -> Finding {
+    let links = distinct(links);
     Finding::block(
         LINK_ON_THE_WAY,
         format!(
-            "{} — jigc writes, moves and rebuilds only inside this repository and never past \
-             a link, because past one a write lands wherever the link leads, where no commit \
-             of this repository holds it. Nothing was written",
-            states.join("; "),
+            "{} — {REASON}: jigc writes nothing past a link. Nothing was written",
+            states(&links)
         ),
-        Route::human(format!(
-            "replace the {noun} at {} with {real} holding what {it} led to — committing the \
-             change where git tracks the {noun} — then re-run this command",
-            named.join(", "),
-        )),
+        route(&links),
+    )
+}
+
+/// **The report a read form makes** — the same state, code and route as [`finding`], at
+/// advisory severity: the command only reads, wrote nothing, and runs; the commands that
+/// write refuse here until the links are real directories.
+#[must_use]
+pub fn advisory(links: &[Link]) -> Finding {
+    let links = distinct(links);
+    Finding::graded(
+        Severity::Advisory,
+        LINK_ON_THE_WAY,
+        format!(
+            "{} — {REASON}: every command that writes refuses here until it is a real \
+             directory. This one only reads, and wrote nothing",
+            states(&links)
+        ),
+        None::<Location>,
+        Some(route(&links)),
     )
 }
 
@@ -115,10 +247,8 @@ pub fn refusal(links: &[Link]) -> anyhow::Error {
 #[must_use]
 pub fn on_the_way_to(root: &Path, relative: &str) -> Option<Link> {
     let blocker = crate::regular_file::link_on_the_way(root, relative)?;
-    Some(Link {
-        at: blocker.at,
-        stands: format!("on the way to `{}`", blocker.aimed_at),
-    })
+    let stands = format!("on the way to `{}`", blocker.aimed_at);
+    Some(Link::at(root, &blocker.at, &stands))
 }
 
 /// The link at the directory `dir` below `root` **or on the way to it** — a directory jigc
@@ -130,10 +260,7 @@ pub(crate) fn at_or_on_the_way_to_dir(root: &Path, dir: &str, stands: &str) -> O
     }
     // The directory is asked as the way to a name inside it, so the walk asks it too.
     let blocker = crate::regular_file::link_on_the_way(root, &format!("{dir}/-"))?;
-    Some(Link {
-        at: blocker.at,
-        stands: stands.to_string(),
-    })
+    Some(Link::at(root, &blocker.at, stands))
 }
 
 /// The first link on the way to any of `paths` below `root` — the batch a mover asks
@@ -146,23 +273,60 @@ pub fn first_of<'a>(root: &Path, paths: impl IntoIterator<Item = &'a str>) -> Op
         .min()
 }
 
+/// **Every place below `.jigc` where jigc keeps a directory** — the places a link counts at
+/// whatever it leads to (`*` one name). A link elsewhere in the workbench stands in a
+/// file's place, or in a place jigc does not write, and counts only where it leads to a
+/// directory.
+pub const WORKBENCH_DIRECTORIES: &[&str] = &[
+    "config",
+    "config/steps",
+    "config/fills",
+    "config/schemas",
+    "config/workflows",
+    "index",
+    "state",
+    "tasks",
+    "tasks/*",
+    "tasks/*/docs",
+    "milestones",
+    "milestones/*",
+    "milestones/*/merged",
+    "milestones/*/merged/docs",
+    "displaced",
+    "worktrees",
+    "worktrees/*",
+    "logs",
+];
+
+/// The parking home: jigc writes into it only at a name that is free, so what it holds —
+/// what a door parked there — is on the way to nothing jigc writes.
+const DISPLACED: &str = "displaced";
+
 /// The fan-out worktrees' directory below the workbench — each entry there is a git
 /// checkout jigc provisioned, whose own tree is the code's and not the workbench's.
 const WORKTREES: &str = "worktrees";
 
-/// **Every link in the workbench** — `.jigc` itself, or any directory below it, read
-/// without following a link. jigc makes no link anywhere in it, so every one is a third
-/// party's, and every one is on the way to something jigc writes: the task and milestone
-/// areas, the caches, the config layer, the parking home.
+/// Whether `rel` (below `.jigc`) is one of [`WORKBENCH_DIRECTORIES`].
+fn keeps_a_directory(rel: &str) -> bool {
+    let parts: Vec<&str> = rel.split('/').collect();
+    WORKBENCH_DIRECTORIES.iter().any(|place| {
+        let pattern: Vec<&str> = place.split('/').collect();
+        pattern.len() == parts.len()
+            && pattern
+                .iter()
+                .zip(&parts)
+                .all(|(want, got)| *want == "*" || want == got)
+    })
+}
+
+/// **Every link in the workbench** — `.jigc` itself; a link where jigc keeps a directory,
+/// whatever it leads to; and a link anywhere else that leads to a directory — read without
+/// following a link.
 ///
 /// It does not descend into a fan-out worktree (`.jigc/worktrees/<id>/`): that is a
-/// checkout of the code, where a link is the code's own business. The worktree's own entry
-/// is asked — a link standing where jigc provisioned a checkout carries the sub-task's
-/// writes elsewhere. A link that does not lead to a directory — to a **file**, or to
-/// nothing — is not this walk's: it stands where jigc keeps a file, where what stands is
-/// the door's own question about that path (the stamp, the manifest, a provisioned doc —
-/// each refused or replaced under its own code), and a write that meets one in a
-/// directory's place makes no directory through it but fails on it.
+/// checkout of the code, where a link is the code's own business. Nor into the parking
+/// home (`.jigc/displaced/`): what is parked there is on the way to nothing jigc writes —
+/// the entry `displaced` itself is asked.
 #[must_use]
 pub fn in_the_workbench(jigc_home: &Path) -> Vec<Link> {
     let workbench = jigc_home.join(".jigc");
@@ -170,34 +334,38 @@ pub fn in_the_workbench(jigc_home: &Path) -> Vec<Link> {
         return Vec::new();
     };
     if entry.file_type().is_symlink() {
-        return vec![Link {
-            at: ".jigc".to_string(),
-            stands: "where jigc keeps its workbench".to_string(),
-        }];
+        return vec![Link::at(
+            jigc_home,
+            ".jigc",
+            "where jigc keeps its workbench",
+        )];
     }
-    let past = "inside the workbench `.jigc`";
+    let stands = "inside the workbench `.jigc`";
     let mut found = Vec::new();
-    let mut pending: Vec<(PathBuf, String)> = vec![(workbench, ".jigc".to_string())];
-    while let Some((dir, spelled)) = pending.pop() {
+    let mut pending: Vec<(PathBuf, String)> = vec![(workbench, String::new())];
+    while let Some((dir, below)) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
-        let in_worktrees = spelled == format!(".jigc/{WORKTREES}");
         for entry in entries.flatten() {
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
             let name = entry.file_name().to_string_lossy().into_owned();
-            let child = format!("{spelled}/{name}");
+            let rel = if below.is_empty() {
+                name
+            } else {
+                format!("{below}/{name}")
+            };
             if kind.is_symlink() {
-                if entry.path().is_dir() {
-                    found.push(Link {
-                        at: child,
-                        stands: past.to_string(),
-                    });
+                if keeps_a_directory(&rel) || entry.path().is_dir() {
+                    found.push(Link::at(jigc_home, &format!(".jigc/{rel}"), stands));
                 }
-            } else if kind.is_dir() && !in_worktrees {
-                pending.push((entry.path(), child));
+            } else if kind.is_dir()
+                && rel != DISPLACED
+                && !rel.starts_with(&format!("{WORKTREES}/"))
+            {
+                pending.push((entry.path(), rel));
             }
         }
     }
@@ -215,14 +383,14 @@ pub fn on_the_way_to_homes<'a>(
 ) -> Vec<Link> {
     let mut found: Vec<Link> = Vec::new();
     for schema in schemas {
-        let past = format!("on the way to the home of `{}`", schema.ty);
+        let stands = format!("on the way to the home of `{}`", schema.ty);
         let link = match crate::orphan::home_of(schema) {
-            Some(crate::orphan::Home::Location(dir)) => at_or_on_the_way_to_dir(root, &dir, &past),
+            Some(crate::orphan::Home::Location(dir)) => {
+                at_or_on_the_way_to_dir(root, &dir, &stands)
+            }
             Some(crate::orphan::Home::Placement(file)) => {
-                crate::regular_file::link_on_the_way(root, &file).map(|blocker| Link {
-                    at: blocker.at,
-                    stands: past.clone(),
-                })
+                crate::regular_file::link_on_the_way(root, &file)
+                    .map(|blocker| Link::at(root, &blocker.at, &stands))
             }
             None => None,
         };
@@ -236,49 +404,67 @@ pub fn on_the_way_to_homes<'a>(
     found
 }
 
-/// **The store's write surface, asked from `cwd`** — the links in the workbench of the
-/// repository `cwd` is in and, where `homes`, on the way to every doctype's resolved home
-/// in that checkout and in the main one. Empty outside a git repository, and — for the
-/// homes — wherever the project layer or the cascade cannot be read: the door that is
-/// about to run reports that state itself, under its own code, and this guard does not
-/// pre-empt it with a different one.
+/// Which homes [`store_links`] asks about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Homes {
+    /// The homes the project layer resolves; none where it cannot be read — the door then
+    /// answers that state itself, under its own code.
+    Current,
+    /// The same, and the pack's defaults where no project layer stands yet — `jigc setup`,
+    /// which is about to lay one out over those homes.
+    CurrentOrDefault,
+    /// None: the door asks the homes its own act reaches (`jigc config set`).
+    None,
+}
+
+/// The doctypes' resolved schemas at `jigc_home`, or `None` where they cannot be read.
+fn schemas_at(jigc_home: &Path, homes: Homes) -> Option<Vec<Schema>> {
+    let project_config = jigc_home.join(".jigc").join("config");
+    let laid_out = project_config.is_dir();
+    if homes == Homes::None || (!laid_out && homes == Homes::Current) {
+        return None;
+    }
+    // The ungated assembly: the door that runs next asserts the pack-set itself.
+    let pack = crate::pack::make_pack_ungated().ok()?;
+    crate::start::resolved_schemas(pack.as_ref(), &project_config)
+        .ok()
+        .map(|schemas| schemas.into_values().collect())
+}
+
+/// **The store's write surface, asked from `cwd`** — every link in the workbench of the
+/// repository `cwd` is in, and on the way to every doctype's resolved home ([`Homes`]) in
+/// the checkout `cwd` stands in and in the main one, **all of them in one answer**. A link
+/// is spelled relative to the checkout it stands in, and a main-checkout link is said to be
+/// one where the reader stands in another. Empty outside a git repository.
 #[must_use]
-pub fn store_links(cwd: &Path, homes: bool) -> Vec<Link> {
+pub fn store_links(cwd: &Path, homes: Homes) -> Vec<Link> {
     let Some(jigc_home) = crate::repo::jigc_home(cwd) else {
         return Vec::new();
     };
-    let mut found = in_the_workbench(&jigc_home);
-    if !found.is_empty() || !homes {
-        return found;
-    }
-    let project_config = jigc_home.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        return found;
-    }
-    let Ok(pack) = crate::pack::make_pack() else {
-        return found;
+    let standing = crate::repo::discover_repo_root(cwd).unwrap_or_else(|| jigc_home.clone());
+    let elsewhere = standing != jigc_home;
+    let in_main = |mut link: Link| {
+        if elsewhere {
+            link.stands.push_str(", in the main checkout");
+        }
+        link
     };
-    let Ok(schemas) = crate::start::resolved_schemas(pack.as_ref(), &project_config) else {
-        return found;
-    };
-    let mut roots = vec![jigc_home.clone()];
-    if let Some(standing) = crate::repo::discover_repo_root(cwd)
-        && standing != jigc_home
-    {
-        roots.push(standing);
-    }
-    for root in roots {
-        for link in on_the_way_to_homes(&root, schemas.values()) {
-            let link = Link {
-                at: engine::path::repo_relative(&jigc_home, &root.join(&link.at)),
-                ..link
-            };
-            if !found.iter().any(|seen| seen.at == link.at) {
-                found.push(link);
-            }
+    let mut found: Vec<Link> = in_the_workbench(&jigc_home)
+        .into_iter()
+        .map(in_main)
+        .collect();
+    if let Some(schemas) = schemas_at(&jigc_home, homes) {
+        found.extend(
+            on_the_way_to_homes(&jigc_home, &schemas)
+                .into_iter()
+                .map(in_main),
+        );
+        if elsewhere {
+            found.extend(on_the_way_to_homes(&standing, &schemas));
         }
     }
     found.sort();
+    found.dedup_by(|a, b| a.at == b.at && a.stands == b.stands);
     found
 }
 
@@ -309,15 +495,22 @@ mod tests {
         }
     }
 
-    /// A linked workbench is named once, as itself; a link anywhere below it is named at
-    /// its own path; a fan-out worktree's own entry is asked and its checkout is not.
+    fn named(links: Vec<Link>) -> Vec<String> {
+        links.into_iter().map(|l| l.at).collect()
+    }
+
+    /// A linked workbench is named once, as itself; a link that leads to a directory is
+    /// named anywhere below it; a link to nothing or to a file is named where jigc keeps a
+    /// directory and nowhere else; a fan-out worktree's own entry is asked and its checkout
+    /// is not; the parking home's entry is asked and what is parked in it is not.
     #[test]
-    fn the_workbench_walk_names_every_link_and_skips_a_worktrees_checkout() {
+    fn the_workbench_walk_names_every_link_on_the_way_and_nothing_parked() {
         let repo = TempDir::new();
         let outside = TempDir::new();
         let root = &repo.0;
         std::fs::create_dir_all(root.join(".jigc/tasks/t1")).expect("mkdir");
         std::fs::create_dir_all(root.join(".jigc/worktrees/w1/src")).expect("mkdir");
+        std::fs::create_dir_all(root.join(".jigc/displaced")).expect("mkdir");
         assert_eq!(
             in_the_workbench(root),
             Vec::new(),
@@ -327,61 +520,75 @@ mod tests {
         symlink(&outside.0, root.join(".jigc/tasks/t1/docs")).expect("link");
         symlink(&outside.0, root.join(".jigc/worktrees/w1/src/vendored")).expect("link");
         symlink(&outside.0, root.join(".jigc/worktrees/w2")).expect("link");
+        symlink(&outside.0, root.join(".jigc/displaced/parked")).expect("link");
+        symlink("nowhere", root.join(".jigc/index")).expect("link");
+        symlink("nowhere", root.join(".jigc/tasks/t1/task.json")).expect("link");
         std::fs::write(outside.0.join("f"), "x").expect("write");
         symlink(outside.0.join("f"), root.join(".jigc/tasks/t1/a-file-link")).expect("link");
-        let named: Vec<String> = in_the_workbench(root).into_iter().map(|l| l.at).collect();
         assert_eq!(
-            named,
-            [".jigc/tasks/t1/docs", ".jigc/worktrees/w2"],
-            "a link to a directory is named; a worktree's checkout is the code's; a link to a \
-             file is no directory on the way"
+            named(in_the_workbench(root)),
+            [".jigc/index", ".jigc/tasks/t1/docs", ".jigc/worktrees/w2"],
         );
 
         let linked = TempDir::new();
-        symlink(&outside.0, linked.0.join(".jigc")).expect("link");
-        assert_eq!(
-            in_the_workbench(&linked.0),
-            [Link {
-                at: ".jigc".to_string(),
-                stands: "where jigc keeps its workbench".to_string()
-            }]
-        );
+        symlink("nowhere", linked.0.join(".jigc")).expect("link");
+        assert_eq!(named(in_the_workbench(&linked.0)), [".jigc"]);
     }
 
-    /// The finding names every link once, its code is the rule's, and its route replaces
-    /// the link with a real directory and re-runs.
+    /// The way out is read from the link's text: a real directory inside the repository is
+    /// moved into the link's place; a directory outside is copied in; a link to nothing is
+    /// removed.
     #[test]
-    fn the_finding_names_each_link_and_routes_at_a_real_directory() {
-        let one = finding(&[Link {
-            at: "docs/decisions".to_string(),
-            stands: "on the way to the home of `adr`".to_string(),
-        }]);
+    fn the_way_out_follows_what_the_link_leads_to() {
+        let repo = TempDir::new();
+        let outside = TempDir::new();
+        let root = &repo.0;
+        std::fs::create_dir_all(root.join("kept")).expect("mkdir");
+        std::fs::create_dir_all(root.join("docs")).expect("mkdir");
+        symlink("../kept", root.join("docs/inside")).expect("link");
+        symlink(&outside.0, root.join("docs/outside")).expect("link");
+        symlink("../nowhere", root.join("docs/nothing")).expect("link");
+        assert_eq!(
+            way_out(root, "docs/inside"),
+            WayOut::MoveIn("kept".to_string())
+        );
+        assert_eq!(way_out(root, "docs/outside"), WayOut::CopyIn);
+        assert_eq!(way_out(root, "docs/nothing"), WayOut::Remove);
+    }
+
+    /// The finding names every link once under the rule's code, says what is true of a
+    /// link inside the repository too, and routes each link its own way; the advisory is
+    /// the same state at advisory severity.
+    #[test]
+    fn the_finding_names_each_link_and_routes_each_its_way() {
+        let link = |at: &str, way_out: WayOut| Link {
+            at: at.to_string(),
+            stands: format!("on the way to `{at}/x`"),
+            way_out,
+        };
+        let one = finding(&[link("docs/decisions", WayOut::MoveIn("kept".to_string()))]);
         assert_eq!(one.code, LINK_ON_THE_WAY);
         assert!(
-            one.message.starts_with(
-                "`docs/decisions` is a symbolic link on the way to the home of `adr` —"
-            ),
+            one.message
+                .starts_with("`docs/decisions` is a symbolic link on the way")
+        );
+        assert!(
+            one.message.contains("never a path past it"),
             "{}",
             one.message
         );
+        assert!(!one.message.contains("where no commit"), "{}", one.message);
         let route = one.route.as_ref().expect("routed").to_string();
         assert!(
-            route.contains("replace the link at `docs/decisions` with a real directory"),
+            route.contains(
+                "remove the link at `docs/decisions` and move the directory `kept` into its place"
+            ),
             "{route}"
         );
         let two = finding(&[
-            Link {
-                at: "b".to_string(),
-                stands: "on the way to `b/x`".to_string(),
-            },
-            Link {
-                at: "a".to_string(),
-                stands: "on the way to `a/x`".to_string(),
-            },
-            Link {
-                at: "a".to_string(),
-                stands: "on the way to `a/y`".to_string(),
-            },
+            link("b", WayOut::Remove),
+            link("a", WayOut::CopyIn),
+            link("a", WayOut::CopyIn),
         ]);
         assert!(
             two.message
@@ -389,8 +596,18 @@ mod tests {
         );
         let route = two.route.as_ref().expect("routed").to_string();
         assert!(
-            route.contains("the links at `a`, `b` with real directories"),
+            route.contains("replace the link at `a` with a real directory holding a copy"),
             "{route}"
+        );
+        assert!(
+            route.contains("; remove the link at `b`, which leads to no directory"),
+            "{route}"
+        );
+        assert!(route.contains("where git tracks the links"), "{route}");
+        let report = advisory(&[link("a", WayOut::CopyIn)]);
+        assert_eq!(
+            (report.code.as_str(), report.severity),
+            (LINK_ON_THE_WAY, Severity::Advisory)
         );
     }
 }

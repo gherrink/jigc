@@ -12,7 +12,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 069cbfe   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → f9568d7   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the planted `repo/.jigc/AGENT.md` is gone, and its bytes stand at no path of the sandbox and in no object within reach
 also *not the listed outcome*:
@@ -160,7 +160,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 7f6e820   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 0fab238   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
@@ -182,7 +182,7 @@ jigc is now wired into this project; setup installed:
   - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
   - pre-commit hook → the-hooks/byte-table-plant-1-only-of-its-cell.md   (warn-only doc↔code drift backstop)
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → dd83b64   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 28a2c05   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds at `the-hooks/byte-table-plant-1-only-of-its-cell.md` what the row does not let it hold
 also *not the listed outcome*:
@@ -205,7 +205,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → <sandbox>/outside/byte-table-plant-1-only-of-its-cell.md   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → da06707   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → dca429c   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 `outside/byte-table-plant-1-only-of-its-cell.md` is not what it was, and no line covers it
 also *not the listed outcome*:
@@ -285,7 +285,7 @@ blocking · setup.write-bootstrap — `.jigc/AGENT.md` is a symbolic link — `j
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `setup-a-link-to-a-directory-outside-at-the-workbench`
--- the named binary: refused, and changed what a refusal may not
+-- the named binary: refused, and changed what a refusal may not; also not the listed outcome
 `jigc setup`: exit 1
 blocking · setup.install-commit — the jigc install files were written, but `git add` was rejected — nothing was added to the index and no install commit was made:
 fatal: pathspec '.jigc/AGENT.md' is beyond a symbolic link
@@ -306,11 +306,12 @@ fatal: pathspec '.jigc/AGENT.md' is beyond a symbolic link
 `repo/.claude/skills/jigc` was made, and no line covers it
 `repo/.claude/skills/jigc/SKILL.md` was made, and no line covers it
 `repo/CLAUDE.md` was made, and no line covers it
+also *not the listed outcome*:
+the cell is listed as refusing with exit 1 and `store.link-on-the-way`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc setup`: exit 1
-blocking · setup.write-bootstrap — `.jigc` is a symbolic link on the way to `.jigc/AGENT.md` — `jigc setup` replaces the file at that path whole, and writing there would go through or over an entry jigc did not put there, replacing whatever it leads to. Nothing was installed and no install commit was made
-  route: replace the link at `.jigc` with a real directory — committing the removal where git tracks the entry — then re-run `jigc setup`: it writes its own regular file there and never touches what a link pointed at. `--force` does not change this: it consents to replacing a file, not to following one
-— jigc · run `jigc start` for orientation; all writes through `jigc`.
+blocking · store.link-on-the-way — `.jigc` is a symbolic link where jigc keeps its workbench — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.jigc` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `setup-at-the-stamp-a-link-to-nothing`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
@@ -324,7 +325,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 7d2fd11   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 369be57   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `.jigc/version`, which no line declares
 also *written outside its allowance*:
@@ -404,7 +405,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 92b9e1e   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → c9259ce   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: git's state moved outside its allowance; also not the listed outcome
@@ -418,7 +419,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 2e1bb1d   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 1c84be2   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the planted `repo/.jigc/settings-entries.json` is gone from every path of the sandbox, and an object within reach still has its bytes: the command put something else in its place
 also *not the listed outcome*:
@@ -436,7 +437,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 7964f78   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 3615aae   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
@@ -457,7 +458,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 20cf550   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 3615aae   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
@@ -478,7 +479,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 20cf550   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 5db6de9   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
@@ -499,7 +500,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 20cf550   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 5db6de9   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
@@ -520,7 +521,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 20cf550   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 5db6de9   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refused, and changed what a refusal may not
@@ -567,7 +568,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 7368b65   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 996e503   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `.claude/skills/jigc/SKILL.md`, which no line declares
 also *written outside its allowance*:
@@ -582,14 +583,14 @@ jigc is now wired into this project; setup installed:
   - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
-  - install commit → e04db8a   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → beec24f   (setup's install files are committed on their own, off your first feature commit)
 
 advisory · adapter-guide.user-modified — `.claude/skills/jigc/SKILL.md` no longer carries the bytes jigc wrote, so jigc left it untouched rather than clobber your edits — it is no longer version-matched to jigc 1.0.0-rc.24
   route: keep your copy and jigc will keep leaving it alone, or delete `.claude/skills/jigc/SKILL.md` and re-run `jigc setup` to reinstall jigc's own copy stamped at 1.0.0-rc.24
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `setup-a-link-to-a-directory-outside-at-the-guides-directory`
--- the named binary: refused, and changed what a refusal may not
+-- the named binary: refused, and changed what a refusal may not; also not the listed outcome
 `jigc setup`: exit 1
 blocking · setup.install-commit — the jigc install files were written, but `git add` was rejected — nothing was added to the index and no install commit was made:
 fatal: pathspec '.claude/skills/jigc/SKILL.md' is beyond a symbolic link
@@ -608,10 +609,12 @@ fatal: pathspec '.claude/skills/jigc/SKILL.md' is beyond a symbolic link
 `repo/.jigc/state/setup-install-footprint` was made, and no line covers it
 `repo/.jigc/version` was made, and no line covers it
 `repo/CLAUDE.md` was made, and no line covers it
+also *not the listed outcome*:
+the cell is listed as refusing with exit 1 and `store.link-on-the-way`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc setup`: exit 1
-blocking · setup.write-guide — `.claude/skills/jigc` is a symbolic link on the way to `.claude/skills/jigc/SKILL.md` — `jigc setup` replaces the file at that path whole, and writing there would go through or over an entry jigc did not put there, replacing whatever it leads to. Nothing was installed and no install commit was made
-  route: replace the link at `.claude/skills/jigc` with a real directory — committing the removal where git tracks the entry — then re-run `jigc setup`: it writes its own regular file there and never touches what a link pointed at. `--force` does not change this: it consents to replacing a file, not to following one
+blocking · store.link-on-the-way — `.claude/skills/jigc` is a symbolic link on the way to `.claude/skills/jigc/SKILL.md` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.claude/skills/jigc` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `setup-at-the-host-file-a-link-to-nothing`
@@ -722,7 +725,7 @@ blocking · setup.inject-allowlist — `.claude/settings.json` is a symbolic lin
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `setup-a-link-to-a-directory-outside-at-the-assistants-directory`
--- the named binary: refused, and changed what a refusal may not
+-- the named binary: refused, and changed what a refusal may not; also not the listed outcome
 `jigc setup`: exit 1
 blocking · setup.install-commit — the jigc install files were written, but `git add` was rejected — nothing was added to the index and no install commit was made:
 fatal: pathspec '.claude/settings.json' is beyond a symbolic link
@@ -743,10 +746,12 @@ fatal: pathspec '.claude/settings.json' is beyond a symbolic link
 `repo/.jigc/state/setup-install-footprint` was made, and no line covers it
 `repo/.jigc/version` was made, and no line covers it
 `repo/CLAUDE.md` was made, and no line covers it
+also *not the listed outcome*:
+the cell is listed as refusing with exit 1 and `store.link-on-the-way`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc setup`: exit 1
-blocking · setup.write-guide — `.claude` is a symbolic link on the way to `.claude/skills/jigc/SKILL.md` — `jigc setup` replaces the file at that path whole, and writing there would go through or over an entry jigc did not put there, replacing whatever it leads to. Nothing was installed and no install commit was made
-  route: replace the link at `.claude` with a real directory — committing the removal where git tracks the entry — then re-run `jigc setup`: it writes its own regular file there and never touches what a link pointed at. `--force` does not change this: it consents to replacing a file, not to following one
+blocking · store.link-on-the-way — `.claude` is a symbolic link on the way to `.claude/settings.json` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.claude` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `setup-at-the-workbench-ignore-a-link-to-nothing`
@@ -812,7 +817,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → 78aeef6   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 6b65880   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `.gitignore`, which no line declares
 also *written outside its allowance*:
@@ -837,7 +842,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → d00961c   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → e75c5b9   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `.gitignore`, which no line declares
 also *written outside its allowance*:
@@ -855,7 +860,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → e238bbf   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → 18ed9c6   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 note: `.gitignore` is a link, so `jigc setup` merged into the file it leads to, `byte-table-plant-1-only-of-its-cell.md` — that is the file the install commit carries.
 a commit the command made holds a link at `.gitignore`, which no line declares
@@ -875,7 +880,7 @@ jigc is now wired into this project; setup installed:
   - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
     local to this checkout — git cannot track this path, so the hook is not in the install commit; a clone gets no drift backstop until `jigc setup` runs there
   - jigc guides → .claude/skills/jigc/SKILL.md   (jigc's own quickstart + migration notes, stamped with this build)
-  - install commit → bc55740   (setup's install files are committed on their own, off your first feature commit)
+  - install commit → c78faca   (setup's install files are committed on their own, off your first feature commit)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `.gitignore`, which no line declares
 also *written outside its allowance*:
@@ -1173,7 +1178,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized be1c747 — docs: sharpen the open questions
+finalized c0c86c6 — docs: sharpen the open questions
   promoted VISION.md
   1 file committed
 the planted `repo/VISION.md` is gone, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1194,7 +1199,7 @@ advisory · file-state.staged-copy — staged copy of `docs/inconsistencies/two-
   route: no action needed — the staged copy is validated in-task and baselined when its finalize lands
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 2412e20 — docs: file a finding
+finalized 3db7c7c — docs: file a finding
   promoted docs/inconsistencies/two-docs.md
   1 file committed
   left-out (this commit takes only this task's docs and the artifacts they record — a staged path stays staged for the task it belongs to):
@@ -1253,8 +1258,8 @@ blocking · finalize.stage-failed — jigc could not stage its own changes — n
 the cell is listed as refusing with exit 1 and ``docs/decisions` is a symbolic link`, and the command ended with exit 3 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc task finalize record-a-decision`: exit 1
-blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/decisions` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/decisions` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `task-finalize-a-link-to-nothing-at-the-created-decisions-home`
 -- the named binary: git's state moved outside its allowance; also not the listed outcome
@@ -1267,7 +1272,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized fb22311 — docs: record a decision
+finalized 459deed — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1311,7 +1316,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 9b55a6a — docs: record a decision
+finalized 4e38f52 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
 what was staged at `repo/docs/decisions/one-way.md` is in the index no longer, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1345,7 +1350,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 287d8fe — docs: sharpen the open questions
+finalized d48c79a — docs: sharpen the open questions
   promoted VISION.md
   1 file committed
 
@@ -1370,7 +1375,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 5e1828e — docs: sharpen the open questions
+finalized ec1eded — docs: sharpen the open questions
   promoted VISION.md
   1 file committed
 the planted `repo/VISION.md` is gone, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1386,7 +1391,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 9b55a6a — docs: record a decision
+finalized 4e38f52 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
 the planted `repo/.jigc/version` is gone, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1405,7 +1410,7 @@ advisory · setup.version-stamp — `.jigc/version` does not hold jigc's stamp �
   route: move the file at `.jigc/version` out of the way, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized ec9079a — docs: record a decision
+finalized c87fa6c — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1422,7 +1427,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized f8f4829 — docs: record a decision
+finalized a73417d — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
 the planted `repo/.jigc/version` is gone, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1441,7 +1446,7 @@ advisory · setup.version-stamp — `.jigc/version` does not hold jigc's stamp �
   route: move the file at `.jigc/version` out of the way, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized c9474a6 — docs: record a decision
+finalized 4614eb0 — docs: record a decision
   deleted .jigc/version
   promoted docs/decisions/one-way.md
   2 files committed
@@ -1459,7 +1464,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 582b27d — docs: record a decision
+finalized 0f54d37 — docs: record a decision
   modified .jigc/version
   promoted docs/decisions/one-way.md
   2 files committed
@@ -1476,7 +1481,7 @@ advisory · setup.version-stamp — `.jigc/version` does not hold jigc's stamp �
   route: move the file at `.jigc/version` out of the way, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 5165924 — docs: record a decision
+finalized f571f8e — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
 
@@ -1491,7 +1496,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized d040b93 — docs: record a decision
+finalized de63f23 — docs: record a decision
   modified .jigc/version
   promoted docs/decisions/one-way.md
   2 files committed
@@ -1515,7 +1520,7 @@ advisory · setup.version-stamp — `.jigc/version` is a symbolic link; jigc lef
   route: remove the link at `.jigc/version`, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 489452f — docs: record a decision
+finalized c7c1ad2 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1535,7 +1540,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized c21d85e — docs: record a decision
+finalized 76d8930 — docs: record a decision
   modified .jigc/version
   promoted docs/decisions/one-way.md
   2 files committed
@@ -1560,7 +1565,7 @@ advisory · setup.version-stamp — `.jigc/version` is a symbolic link; jigc lef
   route: remove the link at `.jigc/version`, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 489452f — docs: record a decision
+finalized c7c1ad2 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1578,7 +1583,7 @@ advisory · changelog-recording.gate-granted-unused — workflow `single-task` g
   route: if the change is user-facing, record it — `jigc start --workflow record-change "<what changed>"`; if it is not user-facing, no action is needed
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 3b4541c — docs: record a decision
+finalized 3084581 — docs: record a decision
   modified .jigc/version
   promoted docs/decisions/one-way.md
   2 files committed
@@ -1600,7 +1605,7 @@ advisory · setup.version-stamp — `.jigc/version` is a symbolic link; jigc lef
   route: remove the link at `.jigc/version`, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 489452f — docs: record a decision
+finalized c7c1ad2 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1624,8 +1629,8 @@ also *not the listed outcome*:
 the cell is listed as refusing with exit 1 and ``.jigc` is a symbolic link`, and the command ended with exit 3 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc task finalize record-a-decision`: exit 1
-blocking · store.link-on-the-way — `.jigc` is a symbolic link on the way to the workbench `.jigc` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `.jigc` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `.jigc` is a symbolic link where jigc keeps its workbench — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.jigc` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `task-finalize-a-directory-in-the-stamps-place`
 -- the named binary: not the listed outcome
@@ -1650,7 +1655,7 @@ advisory · setup.version-stamp — `.jigc/version` is a directory; jigc left it
   route: move the directory at `.jigc/version` out of the way, then run `jigc setup` — it writes jigc's stamp there again; or leave it, and jigc keeps leaving it alone and saying so
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 1dcbd82 — docs: record a decision
+finalized 5f532c3 — docs: record a decision
   promoted docs/decisions/one-way.md
   1 file committed
   left-out (unstaged/untracked — git add to include):
@@ -1665,7 +1670,7 @@ advisory · file-state.staged-copy — staged copy of `CHANGELOG.md` — this ta
   route: no action needed — the staged copy is validated in-task and baselined when its finalize lands
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 232619d — docs(changelog): adopt HISTORY.md as a managed changelog
+finalized 01b2965 — docs(changelog): adopt HISTORY.md as a managed changelog
   promoted CHANGELOG.md
   deleted HISTORY.md
   2 files committed
@@ -1728,8 +1733,8 @@ nothing was committed — the milestone record still names task:do-the-thing as 
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc task discard do-the-thing`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `task-discard-a-directory-in-the-records-place`
 -- the named binary: not the listed outcome
@@ -1746,7 +1751,7 @@ blocking · store.home-not-regular-file — `docs/milestone-records/ship-it.md` 
 `milestone-finalize-an-untracked-file-at-the-id-the-join-numbered-onto`
 -- the named binary: lost; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized 5a11fb1 — Finalize milestone stage-reports (2 sub-tasks)
+finalized 0dd2f06 — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -1765,7 +1770,7 @@ blocking · finalize.promote-clobber — promoting sub-task `bravo-reporter`'s d
 `milestone-finalize-a-committed-file-at-that-id-from-before-the-milestone`
 -- the named binary: git's state moved outside its allowance; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized f456bed — Finalize milestone stage-reports (2 sub-tasks)
+finalized 6cb14af — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -1784,7 +1789,7 @@ blocking · finalize.promote-clobber — promoting sub-task `bravo-reporter`'s d
 `milestone-finalize-the-users-own-worktree-moved-away`
 -- the named binary: git's state moved outside its allowance
 `jigc milestone finalize foreign-worktree-probe`: exit 0
-finalized 4cdc11b — Finalize milestone foreign-worktree-probe (2 sub-tasks)
+finalized 32fde2d — Finalize milestone foreign-worktree-probe (2 sub-tasks)
   added alpha.txt
   added beta.txt
   modified docs/milestone-records/foreign-worktree-probe.md
@@ -1797,7 +1802,7 @@ finalized 4cdc11b — Finalize milestone foreign-worktree-probe (2 sub-tasks)
 the registration `own`, of the worktree at `outside/own`, is gone
 -- this tree's binary: holds
 `jigc milestone finalize foreign-worktree-probe`: exit 0
-finalized e23b68a — Finalize milestone foreign-worktree-probe (2 sub-tasks)
+finalized 1f04b6e — Finalize milestone foreign-worktree-probe (2 sub-tasks)
   added alpha.txt
   added beta.txt
   modified docs/milestone-records/foreign-worktree-probe.md
@@ -1808,9 +1813,9 @@ finalized e23b68a — Finalize milestone foreign-worktree-probe (2 sub-tasks)
 `milestone-create-a-link-to-nothing-at-the-records-home`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
 `jigc milestone create ship-it`: exit 0
-minted milestone:ship-it (shared base 3de9c02)
+minted milestone:ship-it (shared base 49bc5d0)
 record: docs/milestone-records/ship-it.md   — the committed record this milestone's state lives in
-record commit: 1298111   — the record on its own; anything else you had staged stayed staged
+record commit: b55a355   — the record on its own; anything else you had staged stayed staged
 next: `jigc milestone add-task ship-it "<intent>"`   — add the milestone's first sub-task
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 a commit the command made holds a link at `docs/milestone-records/ship-it.md`, which no line declares
@@ -1870,8 +1875,8 @@ also *not the listed outcome*:
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone create ship-it`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-create-a-directory-at-the-records-home`
 -- the named binary: not the listed outcome
@@ -1890,9 +1895,9 @@ blocking · store.home-not-regular-file — `docs/milestone-records/ship-it.md` 
 `milestone-create-a-change-staged-at-the-records-home`
 -- the named binary: lost; also git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
 `jigc milestone create ship-it`: exit 0
-minted milestone:ship-it (shared base 3de9c02)
+minted milestone:ship-it (shared base 49bc5d0)
 record: docs/milestone-records/ship-it.md   — the committed record this milestone's state lives in
-record commit: d3b39dd   — the record on its own; anything else you had staged stayed staged
+record commit: c653a3e   — the record on its own; anything else you had staged stayed staged
 next: `jigc milestone add-task ship-it "<intent>"`   — add the milestone's first sub-task
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 what was staged at `repo/docs/milestone-records/ship-it.md` is in the index no longer, and its bytes stand at no path of the sandbox and in no object within reach
@@ -1966,8 +1971,8 @@ also *not the listed outcome*:
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone add-task ship-it do the thing`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-add-task-a-directory-in-the-records-place`
 -- the named binary: not the listed outcome
@@ -2034,8 +2039,8 @@ nothing was committed for the sub-task being recorded — its record append and 
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone add-from-spec ship-it spec:padding`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-add-from-spec-a-directory-in-the-records-place`
 -- the named binary: not the listed outcome
@@ -2100,8 +2105,8 @@ nothing was committed — milestone:ship-it's record is still at its pre-discard
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone discard ship-it`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-discard-a-directory-in-the-records-place`
 -- the named binary: not the listed outcome
@@ -2132,7 +2137,7 @@ discarded milestone:ship-it (2 sub-task(s); workbench removed)
 `milestone-finalize-a-link-to-nothing-at-the-id-the-join-numbered-onto`
 -- the named binary: git's state moved outside its allowance; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized dc5c34d — Finalize milestone stage-reports (2 sub-tasks)
+finalized 8b35121 — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -2151,7 +2156,7 @@ blocking · store.home-not-regular-file — `docs/inconsistencies/stage-2.md` is
 `milestone-finalize-a-link-to-a-file-in-the-repository-at-the-id-the-join-numbered-onto`
 -- the named binary: lost; also git's state moved outside its allowance; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized 11943f5 — Finalize milestone stage-reports (2 sub-tasks)
+finalized add4490 — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -2172,7 +2177,7 @@ blocking · store.home-not-regular-file — `docs/inconsistencies/stage-2.md` is
 `milestone-finalize-a-link-to-a-file-outside-at-the-id-the-join-numbered-onto`
 -- the named binary: lost; also git's state moved outside its allowance; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized 9e4e067 — Finalize milestone stage-reports (2 sub-tasks)
+finalized e117365 — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -2199,8 +2204,8 @@ milestone:stage-reports is intact — nothing was committed, the merged docs wer
 the cell is listed as refusing with exit 1 and ``docs/inconsistencies` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone finalize stage-reports`: exit 1
-blocking · store.link-on-the-way — `docs/inconsistencies` is a symbolic link on the way to the home of `inconsistency` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/inconsistencies` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/inconsistencies` is a symbolic link on the way to the home of `inconsistency` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/inconsistencies` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-finalize-a-directory-at-the-id-the-join-numbered-onto`
 -- the named binary: not the listed outcome
@@ -2218,7 +2223,7 @@ blocking · store.home-not-regular-file — `docs/inconsistencies/stage-2.md` is
 `milestone-finalize-a-change-staged-at-the-id-the-join-numbered-onto`
 -- the named binary: lost; also not the listed outcome
 `jigc milestone finalize stage-reports`: exit 0
-finalized 95ffb1a — Finalize milestone stage-reports (2 sub-tasks)
+finalized 9206a1d — Finalize milestone stage-reports (2 sub-tasks)
   promoted docs/inconsistencies/stage-2.md
   promoted docs/inconsistencies/stage.md
   modified docs/milestone-records/stage-reports.md
@@ -2283,8 +2288,8 @@ milestone:land-it is intact — nothing was committed, the merged docs were roll
 the cell is listed as refusing with exit 1 and ``docs/milestone-records` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc milestone finalize land-it`: exit 1
-blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/milestone-records` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/milestone-records` is a symbolic link on the way to the home of `milestone-record` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/milestone-records` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `milestone-finalize-a-directory-in-the-records-place`
 -- the named binary: not the listed outcome
@@ -2310,7 +2315,7 @@ blocking · reconciliation.conflict-block — conflict on `VISION.md`: an extern
 the cell is listed as acting, and the command refused
 -- this tree's binary: holds
 `jigc milestone finalize land-it`: exit 0
-finalized 1e8203b — Finalize milestone land-it (1 sub-task)
+finalized 56312f5 — Finalize milestone land-it (1 sub-task)
   promoted VISION.md
   modified docs/milestone-records/land-it.md
   2 files committed
@@ -2329,7 +2334,7 @@ blocking · reconciliation.conflict-block — conflict on `VISION.md`: an extern
 the cell is listed as acting, and the command refused
 -- this tree's binary: lost
 `jigc milestone finalize land-it`: exit 0
-finalized 91ee33a — Finalize milestone land-it (1 sub-task)
+finalized 81dca93 — Finalize milestone land-it (1 sub-task)
   promoted VISION.md
   modified docs/milestone-records/land-it.md
   2 files committed
@@ -2389,8 +2394,8 @@ blocking · rename.dirty-tree — cannot rename with a dirty working tree — co
 the cell is listed as refusing with exit 1 and ``docs/decisions` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc rename adr:one-way --to Single way`: exit 1
-blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/decisions` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/decisions` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `rename-a-directory-in-the-decisions-place`
 -- the named binary: not the listed outcome
@@ -2470,8 +2475,8 @@ blocking · rename.dirty-tree — cannot rename with a dirty working tree — co
 the cell is listed as refusing with exit 1 and ``docs/architecture` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc rename adr:one-way --to Single way`: exit 1
-blocking · store.link-on-the-way — `docs/architecture` is a symbolic link on the way to the home of `arch-doc` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/architecture` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/architecture` is a symbolic link on the way to the home of `arch-doc` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/architecture` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `migrate-corpus-a-link-to-a-directory-outside-at-the-decisions-directory`
 -- the named binary: refused, and changed what a refusal may not; also not the listed outcome
@@ -2485,8 +2490,8 @@ also *not the listed outcome*:
 the cell is listed as refusing with exit 1 and ``docs/decisions` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc migrate-corpus`: exit 1
-blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/decisions` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/decisions` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `migrate-corpus-a-link-to-a-directory-outside-at-the-old-changelogs-directory`
 -- the named binary: refused, and changed what a refusal may not; also not the listed outcome
@@ -2501,8 +2506,8 @@ also *not the listed outcome*:
 the cell is listed as refusing with exit 1 and ``docs/changelog` is a symbolic link`, and the command ended with exit 1 and did not say so
 -- this tree's binary: refuses, nothing changed
 `jigc migrate-corpus`: exit 1
-blocking · store.link-on-the-way — `docs/changelog` is a symbolic link on the way to a prior home of `changelog` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/changelog` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/changelog` is a symbolic link on the way to a prior home of `changelog` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/changelog` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `relocate-a-link-to-a-file-in-the-repository-in-the-stranded-notes-place`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
@@ -2568,18 +2573,11 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc relocate note --from docs/legacy-notes/`: exit 1
-blocking · store.link-on-the-way — `docs/legacy-notes` is a symbolic link on the way to `docs/legacy-notes/cache-benchmarks.md` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/legacy-notes` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/legacy-notes` is a symbolic link on the way to `docs/legacy-notes/cache-benchmarks.md` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/legacy-notes` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
-`relocate-a-link-to-nothing-at-the-notes-new-home`
--- the named binary: not the listed outcome
-`jigc relocate note --from docs/legacy-notes/`: exit 0
-freeze-exempt relocation: 0 moved, 0 displaced, 1 blocked
-  blocked   docs/legacy-notes/cache-benchmarks.md
-    `git mv docs/legacy-notes/cache-benchmarks.md docs/notes/cache-benchmarks.md` failed: fatal: destination exists, source=docs/legacy-notes/cache-benchmarks.md, destination=docs/notes/cache-benchmarks.md
-— jigc · run `jigc start` for orientation; all writes through `jigc`.
-the cell is listed as refusing, and the command exited 0
--- this tree's binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
+`relocate-a-link-to-a-file-in-the-repository-at-the-notes-new-home`
+-- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
 `jigc relocate note --from docs/legacy-notes/`: exit 0
 freeze-exempt relocation: 1 moved, 1 displaced, 0 blocked
   moved     docs/legacy-notes/cache-benchmarks.md -> docs/notes/cache-benchmarks.md
@@ -2591,6 +2589,39 @@ the planted `repo/docs/notes/cache-benchmarks.md` is gone from its place, and it
 `repo/.jigc/displaced` was made, and no line covers it
 `repo/.jigc/displaced/cache-benchmarks.md` was made, and no line covers it
 also *not the listed outcome*:
+the cell is listed as refusing, and the command exited 0
+-- this tree's binary: not the listed outcome
+`jigc relocate note --from docs/legacy-notes/`: exit 0
+freeze-exempt relocation: 0 moved, 0 displaced, 1 blocked
+  blocked   docs/legacy-notes/cache-benchmarks.md
+    blocking · store.home-not-regular-file — `docs/notes/cache-benchmarks.md` is a symbolic link, not a regular file — jigc keeps a managed doc as a regular file at exactly its home, and neither writes through a link nor moves one, so no doc is moved there, and the link is not moved out of the way
+      at: docs/notes/cache-benchmarks.md
+      route: move the link at `docs/notes/cache-benchmarks.md` out of the doc's home — it is yours, and jigc moves no link — committing that where git tracks the link, then re-run this command
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+the cell is listed as refusing, and the command exited 0
+
+`relocate-a-link-to-a-file-outside-at-the-notes-new-home`
+-- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
+`jigc relocate note --from docs/legacy-notes/`: exit 0
+freeze-exempt relocation: 1 moved, 1 displaced, 0 blocked
+  moved     docs/legacy-notes/cache-benchmarks.md -> docs/notes/cache-benchmarks.md
+  displaced docs/notes/cache-benchmarks.md -> .jigc/displaced/cache-benchmarks.md (foreign squatter → workbench)
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+the index entry at `docs/notes/cache-benchmarks.md`, in the checkout at `repo`, is not what it was, and no line stages that path
+also *written outside its allowance*:
+the planted `repo/docs/notes/cache-benchmarks.md` is gone from its place, and its bytes stand at {"repo/.jigc/displaced/cache-benchmarks.md"}
+`repo/.jigc/displaced` was made, and no line covers it
+`repo/.jigc/displaced/cache-benchmarks.md` was made, and no line covers it
+also *not the listed outcome*:
+the cell is listed as refusing, and the command exited 0
+-- this tree's binary: not the listed outcome
+`jigc relocate note --from docs/legacy-notes/`: exit 0
+freeze-exempt relocation: 0 moved, 0 displaced, 1 blocked
+  blocked   docs/legacy-notes/cache-benchmarks.md
+    blocking · store.home-not-regular-file — `docs/notes/cache-benchmarks.md` is a symbolic link, not a regular file — jigc keeps a managed doc as a regular file at exactly its home, and neither writes through a link nor moves one, so no doc is moved there, and the link is not moved out of the way
+      at: docs/notes/cache-benchmarks.md
+      route: move the link at `docs/notes/cache-benchmarks.md` out of the doc's home — it is yours, and jigc moves no link — committing that where git tracks the link, then re-run this command
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
 the cell is listed as refusing, and the command exited 0
 
 `relocate-a-link-to-a-directory-outside-at-the-notes-new-directory`
@@ -2608,8 +2639,8 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc relocate note --from docs/legacy-notes/`: exit 1
-blocking · store.link-on-the-way — `docs/notes` is a symbolic link on the way to the home of `note` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/notes` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/notes` is a symbolic link on the way to the home of `note` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/notes` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `config-set-a-link-to-a-directory-outside-at-the-config-directory`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
@@ -2629,8 +2660,8 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc config set docs-root notes`: exit 1
-blocking · store.link-on-the-way — `.jigc/config` is a symbolic link on the way to the workbench `.jigc` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `.jigc/config` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `.jigc/config` is a symbolic link inside the workbench `.jigc` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.jigc/config` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `config-set-a-link-to-a-file-in-the-repository-in-the-decisions-place`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
@@ -2706,8 +2737,9 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc config set docs-root notes`: exit 1
-blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to the home of `adr` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs/decisions` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `docs/decisions` is a symbolic link on the way to `docs/decisions/one-way.md` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs/decisions` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
 
 `config-set-a-link-to-a-directory-outside-at-the-decisions-new-directory`
 -- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
@@ -2725,9 +2757,8 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc config set docs-root notes`: exit 1
-blocking · store.link-on-the-way — `notes/decisions` is a symbolic link on the way to `notes/decisions/one-way.md` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `notes/decisions` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
-— jigc · run `jigc start` for orientation; all writes through `jigc`.
+blocking · store.link-on-the-way — `notes/decisions` is a symbolic link on the way to the home of `adr` under `docs-root` `notes` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `notes/decisions` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `config-set-placement-root-a-link-to-nothing-in-the-roadmaps-place`
 -- the named binary: not the listed outcome
@@ -2834,18 +2865,12 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc config set placement-root notes`: exit 1
-blocking · store.link-on-the-way — `docs` is a symbolic link on the way to the home of `adr` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `docs` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
-
-`config-set-placement-root-a-link-to-nothing-at-the-roadmaps-new-home`
--- the named binary: refuses, nothing changed
-`jigc config set placement-root notes`: exit 1
-relocating the committed doc(s) stranded by the `placement-root` re-point to `notes` (every committed doc at a placement doctype's prior home, managed or not; each move is a staged `git mv` — commit it with your next commit):
-blocking · config.repoint-failed — `placement-root` was not set to `notes`: `git mv docs/roadmap.md notes/roadmap.md` failed: fatal: destination exists, source=docs/roadmap.md, destination=notes/roadmap.md — the re-point was undone
-  at: docs/roadmap.md
-  route: `placement-root` is unchanged and every doc this re-point moved is back at its prior home. Fix what this message names, then re-run `jigc config set placement-root notes`
+blocking · store.link-on-the-way — `docs` is a symbolic link on the way to `docs/decisions-log.md` — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `docs` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
--- this tree's binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
+
+`config-set-placement-root-a-link-to-a-file-in-the-repository-at-the-roadmaps-new-home`
+-- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
 `jigc config set placement-root notes`: exit 0
 config: set `placement-root` = `notes` — written to `.jigc/config/`, uncommitted — commit it with your next commit
 relocating the committed doc(s) stranded by the `placement-root` re-point to `notes` (every committed doc at a placement doctype's prior home, managed or not; each move is a staged `git mv` — commit it with your next commit):
@@ -2859,6 +2884,51 @@ the planted `repo/notes/roadmap.md` is gone from its place, and its bytes stand 
 `repo/.jigc/config/manifest.yaml` is not what it was under a line of `CS1`, `CS2`, `CS2, at its new home`, and stands unstaged beside 2 change(s) of theirs that stand staged: its row's line `CS5` stages their changes together, or none of them
 also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
+-- this tree's binary: refuses, nothing changed
+`jigc config set placement-root notes`: exit 1
+relocating the committed doc(s) stranded by the `placement-root` re-point to `notes` (every committed doc at a placement doctype's prior home, managed or not; each move is a staged `git mv` — commit it with your next commit):
+blocking · config.repoint-failed — `placement-root` was not set to `notes`: blocking · store.home-not-regular-file — `notes/roadmap.md` is a symbolic link, not a regular file — jigc keeps a managed doc as a regular file at exactly its home, and neither writes through a link nor moves one, so no doc is moved there, and the link is not moved out of the way
+  at: notes/roadmap.md
+  route: move the link at `notes/roadmap.md` out of the doc's home — it is yours, and jigc moves no link — committing that where git tracks the link, then re-run this command — the re-point was undone
+  at: docs/roadmap.md
+  route: `placement-root` is unchanged and every doc this re-point moved is back at its prior home. Fix what this message names, then re-run `jigc config set placement-root notes`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+`config-set-placement-root-a-link-to-a-file-outside-at-the-roadmaps-new-home`
+-- the named binary: git's state moved outside its allowance; also written outside its allowance; also not the listed outcome
+`jigc config set placement-root notes`: exit 0
+config: set `placement-root` = `notes` — written to `.jigc/config/`, uncommitted — commit it with your next commit
+relocating the committed doc(s) stranded by the `placement-root` re-point to `notes` (every committed doc at a placement doctype's prior home, managed or not; each move is a staged `git mv` — commit it with your next commit):
+  - docs/roadmap.md → notes/roadmap.md
+  - notes/roadmap.md → .jigc/displaced/roadmap.md (a foreign file at the new home, parked out of the way)
+the index entry at `notes/roadmap.md`, in the checkout at `repo`, is not what it was, and no line stages that path
+also *written outside its allowance*:
+the planted `repo/notes/roadmap.md` is gone from its place, and its bytes stand at {"repo/.jigc/displaced/roadmap.md"}
+`repo/.jigc/displaced` was made, and no line covers it
+`repo/.jigc/displaced/roadmap.md` was made, and no line covers it
+`repo/.jigc/config/manifest.yaml` is not what it was under a line of `CS1`, `CS2`, `CS2, at its new home`, and stands unstaged beside 2 change(s) of theirs that stand staged: its row's line `CS5` stages their changes together, or none of them
+also *not the listed outcome*:
+the cell is listed as refusing, and the command exited 0
+-- this tree's binary: refuses, nothing changed
+`jigc config set placement-root notes`: exit 1
+relocating the committed doc(s) stranded by the `placement-root` re-point to `notes` (every committed doc at a placement doctype's prior home, managed or not; each move is a staged `git mv` — commit it with your next commit):
+blocking · config.repoint-failed — `placement-root` was not set to `notes`: blocking · store.home-not-regular-file — `notes/roadmap.md` is a symbolic link, not a regular file — jigc keeps a managed doc as a regular file at exactly its home, and neither writes through a link nor moves one, so no doc is moved there, and the link is not moved out of the way
+  at: notes/roadmap.md
+  route: move the link at `notes/roadmap.md` out of the doc's home — it is yours, and jigc moves no link — committing that where git tracks the link, then re-run this command — the re-point was undone
+  at: docs/roadmap.md
+  route: `placement-root` is unchanged and every doc this re-point moved is back at its prior home. Fix what this message names, then re-run `jigc config set placement-root notes`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+`config-set-placement-root-a-link-to-a-directory-outside-at-the-roadmaps-new-directory`
+-- the named binary: not the listed outcome
+`jigc config set placement-root notes`: exit 1
+blocking · config.untrackable-root — `notes` cannot be the `placement-root`: `notes` resolves outside the repository root
+  route: re-run with a root git can record — a path under the repository root and outside `.git/`; `jigc config list` shows the value in force and the layer it wins from
+the cell is listed as refusing with exit 1 and ``notes` is a symbolic link`, and the command ended with exit 1 and did not say so
+-- this tree's binary: refuses, nothing changed
+`jigc config set placement-root notes`: exit 1
+blocking · store.link-on-the-way — `notes` is a symbolic link on the way to every home `placement-root` `notes` would name — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `notes` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
 
 `workflow-a-link-to-a-directory-outside-at-the-sub-tasks-docs-directory`
 -- the named binary: written outside its allowance; also not the listed outcome
@@ -2941,5 +3011,5 @@ also *not the listed outcome*:
 the cell is listed as refusing, and the command exited 0
 -- this tree's binary: refuses, nothing changed
 `jigc workflow sub-task --task add-alpha`: exit 1
-blocking · store.link-on-the-way — `.jigc/tasks/add-alpha/docs` is a symbolic link on the way to the workbench `.jigc` — jigc writes, moves and rebuilds only inside this repository and never past a link, because past one a write lands wherever the link leads, where no commit of this repository holds it. Nothing was written
-  route: replace the link at `.jigc/tasks/add-alpha/docs` with a real directory holding what it led to — committing the change where git tracks the link — then re-run this command
+blocking · store.link-on-the-way — `.jigc/tasks/add-alpha/docs` is a symbolic link inside the workbench `.jigc`, in the main checkout — git records a link as the entry it is and never a path past it, so whatever jigc wrote, moved or rebuilt past one would be in no commit of this repository: jigc writes nothing past a link. Nothing was written
+  route: replace the link at `.jigc/tasks/add-alpha/docs` with a real directory holding a copy of what it leads to — committing the change where git tracks the link — then re-run this command
