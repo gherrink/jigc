@@ -1,0 +1,27 @@
+---
+kind: feedback
+found-in: doctype-misfits:pre-opening-plan/M8
+about: roadmap doctype
+jigc-version: 1.0.0-rc.24
+status: open
+date: 2026-10-29
+schema-version: 1
+---
+
+# Definitions have no place in a roadmap entry
+
+## Description
+
+A `roadmap` entry is a title, a `proves` slot and a `decomposition` slot. An entry written for a human reader who has not followed the work needs its terms defined once — what a route, a refusal site, a family, an act and its operand are — but the entry has no place for definitions. In the pre-opening plan's roadmap entry the glossary sits at the top of the `decomposition` slot, as prose that is neither a step nor a decomposition, and nothing tells a reader or a tool that it is the entry's vocabulary. Row M8 of the doctype-misfits register (`completions/artifacts/M55/doctype-misfits.md`); a finding for the port's triage, never a requirement.
+
+Re-driven on this build (`jigc 1.0.0-rc.24`, the debug binary built from `7c34a222`): **open**. `jigc doc schema roadmap` lists the entry's leaves as `title`, `proves` and `decomposition` and nothing else; the entry, glossary first in its `decomposition` slot, authored through `doc add-item` and two `doc set-slot` calls, finalizes clean.
+
+## Repro
+
+```sh
+src=$PWD                                              # the jigc checkout
+rig=$("$src"/dev/jigc-rig fresh) || exit; eval "$rig"
+$JIGC doc schema roadmap      # milestones: title · proves · decomposition — no leaf for definitions
+```
+
+## Resolution

@@ -3047,6 +3047,175 @@ Planned 2026-08-13 ([DECISIONS.md](../DECISIONS.md) → 2026-08-13 M48 planning:
 
 **The diff of the two homes (2026-10-02, before the cut was called done).** Gate-record rows against the Grouped-scope lines above: row 6 → Inc 1 · 7 → Inc 2 · 11 → Inc 3 · 9 → Inc 4 · 10 → Inc 5 · 8 → Inc 6 · 1–3 → Inc 7 · 4–5 → Inc 8 · 12 → Inc 9 · 13–14 → Inc 10 · 15 → Inc 11. **Every row is in exactly one increment; no Grouped-scope line names a row the gate-record lacks.** Settle decisions by increment: S1 · S2 · S6 · S9 → 7 · S3 → 7 (the namespaced id) and 8 (the hidden and the visible workflow) · S4 → 1 · S5 → 7 (the stated convention) and 8 (the triage step that keeps it) · S7 → 2 · S10 → 6 · S11 · S12 → 9 · S13 → 3 (S2), 4 (L1), 5 (L2) and 9 (L3 and two code tasks seeded open) · S14 · S15 → 10 · S17 → 8; S8 shipped before the build as PR #8, and S16 names the re-review after it. The revisions: R1 → 1 · R2 → 2 · R3 → 3 · R4's B4 → 4, B5 · I5 → 6, I2 → 2 (the `create.*` family's instance-scoped sibling) and 8 (the four triage fields), I3 → 9, M1 · M3 → 8, M2 · M5 → 7, B2 → each increment's §13 rows, M4 at planning · R5's O1 → 5, O2 → 3, O3 → 2, O5 → 4, O4 an attribution with nothing to build, the 19-red census → 7, the 28 goldens and the triage intent form → 8. Open question 1 → 1 · Open question 2 → 3. The gate-record's residuals: R1 → 3 (as Open question 2) · R2 → 8 · R4 → 9; R3 and R5 discharged at planning. **One row crosses a boundary and is stated where it lands:** row 3, the registration census, is Increment 7's — it counts all 19 reds and completes the checklist — but eleven of them (eight workflow-registration fences, three step-text fences) fire only when the four workflows register, so Increment 8 meets them as the census's workflow half, by name in its scope.
 
+## Before the first stabilization run opens  {#before-the-first-stabilization-run}
+
+### Proves
+
+When this work is done, the first stabilization run can open on instruments that are finished, reviewed and honest about what they check.
+- The route catalog answers every refusal the product can print: with a test, or with a recorded reason a ruling allows.
+- Each test checks that the printed route names every act, and every operand, that following it needs.
+- The test stage's own tools are built: the route hunter, the regression base and a faster trial image. Only the record script's half of the regression base is built here, and it does nothing until the planned repair of the workflow's fix stage.
+- Everything the test stage consists of has been reviewed since its last review.
+- Whether the agent runtime rewrites an agent's returned text has an answer on record.
+- Every pending decision due before the opening is closed, or annotated with when it is due.
+
+It has to be true before the opening because a run is only as good as its instruments. A wrong tool records findings falsely, and nothing inside the run would catch it.
+
+The known findings themselves are not fixed here. They go to the run's opening ledger, because fixing them outside the run is the ad-hoc loop the workflow replaced.
+
+### Decomposition
+
+**Words used here.**
+- A *refusal* is jigc declining a command. Its *route* is the printed line that says what to do next. A *refusal site* is the place in the source that prints one.
+- A *family* is the refusal sites of one command area, and a *part* is the slice of a family one hunt covers. A *fixed site* prints one known code; a *dynamic site* can print several codes, chosen at run time.
+- A route's *act* is what it asks you to do, and its *operand* is what to do it to: in "remove the link at X", the act is *remove* and the operand is *X*.
+- The *route catalog* is the test suite with one test per refusal site and cause. Each test follows the printed route and checks that it works.
+- The *byte table* is the test suite that checks no writing command loses bytes or writes what its design does not allow.
+- The *route hunter* is an agent of the test stage that looks for causes the catalog has no test for. The *write guard* is the session hook that refuses the commits, pushes and writes an agent may not make.
+- The *regression base* decides whether a finding is a regression, judged against the previous release and every earlier candidate of the run. The *regression set* is a separate instrument, not touched here.
+- The *loop branch* is `fix/rc24-tier1`, where the run opens.
+
+**How the work runs.** Sixteen steps, in four lanes side by side, each on a branch of its own:
+- the *catalog lane* — the route catalog;
+- the *hunter lane* — the test stage's tooling;
+- the *tools lane* — small tools and CI;
+- the *image lane* — the trial image.
+
+Beside them run the reviews of everything no review has read yet. Putting two lanes' tasks in one step sets a pace, not a dependency. A lane that runs ahead or behind goes on in its own order, and the only waits are the ones a step names. Every task is followed by a read-only review and at most three rounds of fixes; a fourth round is the human's call, whenever it comes up.
+
+**Breaks.**
+- *A planned break.* The human says they want to stop.
+  - The main session starts nothing new and lets the tasks in flight finish. Each ends pushed, after at most its review and fix rounds.
+  - Then the main session tells the human that nothing is running.
+  - In the worst case this drain takes one task plus its review cycles: possibly hours. The end of a step is a natural point to ask for it.
+- *An unplanned stop* (a crash, a restart).
+  - Every worktree and every brief lives in a persistent place, never in a scratch folder: the worktrees sit beside the main checkout, and the briefs are in the repository.
+  - So an unplanned stop costs only the uncommitted work of the tasks in flight. They are redone from their last pushed commit, and the progress record says where to resume.
+- *The probe.* No break while the probe of step 4 runs, which takes minutes.
+  - If it is cut, its marker stays.
+  - The write guard then refuses every command except the probe's own — so no gate and no commit — until the main session removes the marker.
+
+**Hours.** The hours are machine time, estimated from the plan's pricing, not measured. A step's figure is its longest lane. The whole is 102 to 218 hours, about one to three weeks with breaks. That total is not the sum of the steps, because the lanes overlap and the review's fixes run past step 14. The time estimate is redone after step 1 and after the catalog's second family.
+
+**Step 1 — The records, and four branches.** About 4–6 hours.
+- What it gives: the human's rulings of the last three days written down; the pending decisions due before the opening brought up to date; the four lanes' branches cut from one commit.
+- Tasks:
+  - record the rulings and the pending decisions;
+  - record the list of tools agents asked for, each built or set aside with a reason;
+  - the main session edits the opening's fact-sheet agent, and the sentences repeated across the agent definitions;
+  - a read-only agent counts the codes each dynamic site can print;
+  - the four branches are cut.
+- Asked: nothing. The human was told on 2026-10-29 how "one agent" is built for the probe in step 4.
+
+**Step 2 — Foundations, first half.** About 8–13 hours.
+- What it gives:
+  - a generated overview of the catalog: every family, part and site, and what answers each;
+  - a site scan that no longer counts the shared code that builds every refusal, from which no route can be followed;
+  - every standing reason for a site without a test tied to the ruling that allows it;
+  - a channel for agents to report the tools they wrote;
+  - the record script's half of the regression base;
+  - CI's slowest jobs given room, so none runs above 80 % of its time limit;
+  - a tool that lists which commits no review has read, with a registry of past reviews;
+  - a cached base layer for the trial image.
+- Tasks:
+  - catalog lane: the overview, then the scan, then a merge into the loop branch;
+  - hunter lane: the tool channel, then the regression base;
+  - tools lane: CI's time limits, a merge into the loop branch, then the review-coverage tool;
+  - image lane: the base layer.
+- Asked: the secret scanner flags one line of an old commit of the decisions log. Recommended: one exact entry in the scanner's allow list, written in step 15. The other options are worse: a fingerprint drifts, and a history rewrite is not viable.
+- If the overview already counts far too many routes that print no operand, the question of step 4 comes here.
+
+**Step 3 — Foundations, second half.** About 8–16 hours.
+- What it gives: the reason texts sorted, the shared test pieces, the probe built and reviewed, the rest of the small tools, and the first reviews.
+- Tasks:
+  - catalog lane: sort every reason text by whether a test can plant its cause, cannot construct it at all, or simply has not been built; build the shared test pieces; write the tests not yet built.
+  - hunter lane: build the probe, with one subject agent and three counted helper agents, each started once. While it runs, the write guard allows only the probe's own commands. It refuses every commit, push and write outside the probe's folder.
+  - hunter lane, then: the probe's review, and a merge into the loop branch and back.
+  - tools lane: the local stand-in for CI's runner declares its git setup in one place; a CI step checks the runner's git setup; a reader of CI runs; a lister of the pending decisions due before the opening.
+  - tools lane, then: a merge into the loop branch, and on into the hunter lane.
+  - reviews: the first list of what no review covers; the reviews of the shared test code of the route catalog and the byte table start.
+- Asked: nothing.
+
+**Step 4 — The probe, and the act check counted.** About 6–12 hours.
+- What it gives:
+  - on record, whether the agent runtime rewrites, passes on or obeys an instruction-shaped text in an agent's returned text;
+  - a table of every act a route can ask for, and a count of the tests whose route leaves an act or an operand to be guessed;
+  - the first hunter-specific task.
+- Tasks:
+  - the probe is run once, from the loop branch's checkout, while no other agent runs. Its verdict is recorded either as a known limit in the workflow doc or as a change to the harness;
+  - catalog lane: the act check's first half — the table of all 27 kinds of act, and the count. Nothing turns red yet;
+  - hunter lane: a hunt names its family and part, and the test stage will not go on while a family has a part nobody hunts;
+  - the fixes from the reviews of the shared test code land in the lanes that own the files.
+- Asked, first, only if the count is more than twice the pilot's rate: whether to carry on.
+  - In the pilot, 32 of the 183 tests whose route worked needed an operand the route did not print, about one in six.
+  - It will likely fire, because the "run it again" acts leave their operand to be guessed by design.
+  - Recommended: carry on, each such route recorded as a finding for the run to fix.
+- Asked, second, after the table's review: the nine standing reasons why a site has no test, and the act table. Accept as worded, or name the entries you challenge? Recommended: accept, except any the reviewer flags. Told with it:
+  - the act check is an engineering reading of the ruling;
+  - two earlier rulings do nothing until the planned repair of the workflow's fix stage: that a cause the hunter finds becomes a catalog test, and the regression base's other half;
+  - a challenged entry re-runs tests already built, since nothing waits for the answer;
+  - the new CI step turns CI red when GitHub changes the runners' git config (the git version is printed, not held).
+- Breaks: see *Breaks* above — none while the probe runs.
+
+**Step 5 — The act check applied.** About 6–10 hours. Waits for the fixes from the reviews of the shared test code.
+- What it gives:
+  - a route that leaves an act or an operand to be guessed now fails its test, and each one is recorded as a finding for the run to fix;
+  - a link test checks that its act is the one the product's own link code chooses;
+  - the record script stores what a hunt found for each site, and counts it itself, so no agent reports its own total.
+- Tasks:
+  - catalog lane: the act check's second half; every test re-run and every moved result listed; then the loop branch is merged in;
+  - hunter lane: the hunt records;
+  - reviews: the second wave starts. It reads the catalog's existing tests, the byte table's first families and two CI fixes. It also reads the write guard with the probe's change in it, the regression set, the hygiene scan and the session settings.
+- Each fix goes to the lane that owns the file, in steps 6 and 7. A fix to the session settings is the main session's, and the human is told.
+- Asked: nothing.
+
+**Steps 6 to 13 — The catalog's remaining families.** Nineteen tasks: fifteen families of fixed sites, then four of dynamic sites, where every code a site can print gets a test. Each family task ends with:
+- its sites answered;
+- the overview regenerated;
+- one Linux run of the catalog.
+
+Beside the families, step by step:
+- **Step 6** — families 1–3, about 7–11 hours. The main session edits five agent definitions for the hunter: what a finding carries, one hunt per family part, and a test for every cause a hunt can plant.
+- **Step 7** — families 4–6, about 8–14 hours. The route hunter itself: its role, its prompt and its checks. The tools lane's review fixes are merged into the loop branch, and on into the hunter lane.
+- **Step 8** — families 7–8, about 5–8 hours.
+  - The image lane is merged into the hunter lane.
+  - Building the trial image is then run by the step tool, which starts it, waits for it and reads its verdict itself, with no agent in between.
+  - Asked: any new reason why a site has no test — accept or challenge, as one question.
+- **Step 9** — families 9–11, about 8–13 hours. The scripted trial arm is run by the step tool the same way, and the canary's setup is brought up to the new test stage.
+- **Step 10** — families 12–13, about 6–12 hours. The test simulation of the harness moves its last scenarios to the new way of running a stage.
+- **Step 11** — families 14–15, about 7–11 hours. The old way is deleted, the main session makes its last definition edits, and the hunter lane is merged into the loop branch. Asked: new reasons, as in step 8.
+- **Step 12** — the first two dynamic families, about 12–23 hours. On the loop branch:
+  - the workflow doc is brought up to what the test stage does as built, the probe's verdict included;
+  - the review range is split into what is covered and what is not;
+  - nine reviewers read the areas that moved, then one reads across all of them.
+- **Step 13** — the last two dynamic families, about 12–23 hours. The review's fixes start, 9–35 hours, and run on past step 14. Asked: new reasons, as in step 8.
+
+**Step 14 — The catalog closed.** About 7–11 hours.
+- What it gives: a catalog with nothing left scheduled. Every site has a test or a ruled reason, every code its test, and no test is missing.
+- Tasks: the reason texts the families wrote are checked against the rule step 3 set for them; the catalog is closed and merged into the loop branch. On the loop branch, the review's fixes and their re-review go on.
+- Asked: nothing.
+
+**Step 15 — The join, and the end of the build.** About 5–8 hours, after the review's last fix. At the high end of the estimate the review's fixes run some days past step 14, and this step waits for them.
+- What it gives: the catalog and the hunter checked against each other, the pending decisions closed, the build's record written, the scanner's allow entry, and a clean machine.
+- Tasks:
+  - a test that each failure the catalog expects is held open by a finding, and that every file the hunter's prompt names exists;
+  - the pending decisions closed, and the build's record written;
+  - the scanner's allow entry;
+  - the build directories cleaned, every branch pushed, and CI read.
+- Asked: whether to run the whole canary after the four partial test-stage runs already done.
+  - Recommended: run what they did not show, including one measured hunt (190–330 minutes, about $60–105).
+  - The floor is the measured hunt alone; with none, the opening could not price its hunts.
+
+**Step 16 — The canary and the opening, in the human's own session.** About 4–20 hours.
+- What it gives: the first stabilization run, opened.
+- Tasks:
+  - the build session prepares the canary's clone and hands it over;
+  - the human runs it in their own session, and anything it changes comes back to the build session for a review of its own;
+  - then the opening: the fact sheet, its questions, the version sentence in `CLAUDE.md`, the opening commit and its push.
+- Asked: which release is being prepared. Recommended: `1.0.0`, with the call to publish staying the human's at the close.
+
+The builders' spec, with the tasks behind every step, is [the plan's detail](../completions/artifacts/M55/stabilization-build/pre-opening-plan/detail.md). Where the work stands is [the progress record](../completions/artifacts/M55/stabilization-build/pre-opening-plan/progress.md), and the plan's gate answers are [its planning record](../completions/artifacts/M55/stabilization-build/pre-opening-plan/planning-record.md).
+
 ## M56 · the port — this repository migrates onto the product, and the product finds out what it is missing
 
 **Direction, not a charter, set 2026-09-27** — the post-1.0 direction of 2026-07-10 kept and re-ordered by the four decisions above; it is recorded here at the altitude the other charters use so the sequence is legible, and it is **deliberately not chartered**: a charter written before `1.0.0` exists would be guessing at the binary it runs on. **The direction:** the running docs go first, in dependency order — the deferral ledger, then the roadmap, then the project-history record, then `CLAUDE.md` shrunk to the invariants, how we work, and *run `jigc start`*; `completions/artifacts/` stays as plain committed records; `design/` stays plain too, because the doctype it would want does not exist yet and inventing one to fit our own corpus is the exact inversion the governing rule forbids. Every agent doing the port reports what it hits through the channel M55 ships. **Proves:** the thesis on the hardest available corpus — our own — and, through the ledger rather than through argument, what a real adoption costs. **Prereqs:** `1.0.0`, called and published. **Honest bounds:** *we do not bend the CLI to fit the project; we migrate the project to fit the product* — the port is a discovery mechanism and never a requirements source, so what it surfaces is triaged by the razor at M57 and not built because the port wanted it. Three forks are already recorded: the `DECISIONS.md` cutover and the one-source→many-doctypes split (both at [decisions-pending.md](decisions-pending.md) → *The doctype-completeness milestone (post-1.0)*, whose grounds are not restated), and the project-history record's own home, which postdates the coverage map and is in neither of its two sets. Session count is an **estimate** from the RC adoption trial, not a measurement.

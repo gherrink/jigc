@@ -33,6 +33,12 @@
 //! **The seeded sources point at the seed** (T8): each register row's disposition links its
 //! seed doc, and each seeded `decisions-pending.md` row is one pointer line — its label,
 //! the link, and its trigger.
+//!
+//! **A second register joins as a source after M55** (2026-10-29): the standing register of
+//! doctype misfits, `completions/artifacts/M55/doctype-misfits.md`, whose `M<n>` rows are
+//! what did not fit when this repository's own documents were shaped into jigc's doctypes.
+//! It is read and held exactly as the planning register is — each row in exactly one ledger
+//! row, keyed `doctype-misfit-m<n>`, its disposition linking its seed doc.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -47,6 +53,17 @@ const LEDGER_HEADING: &str = "## The ledger";
 const REGISTER: &str = "completions/artifacts/M55/planning-findings.md";
 const PENDING: &str = "implementation/decisions-pending.md";
 const CHANNEL: &str = "design/findings-channel.md";
+
+/// The standing register of doctype misfits — what did not fit when this repository's own
+/// documents were shaped into jigc's doctypes. Its rows are `M<n>`, each a `jigc-feedback`.
+const MISFITS: &str = "completions/artifacts/M55/doctype-misfits.md";
+
+/// The tags whose rows are a register's table rows, `| <id> | …`: a row's key is the tag's
+/// prefix and the id, lowercased, and its last cell links the row's seed doc.
+const REGISTERS: &[(&str, &str, &[char])] = &[
+    ("register", REGISTER, &['F', 'T', 'D']),
+    ("misfits", MISFITS, &['M']),
+];
 
 /// Each source tag: the file its link must name, and the key prefix a row whose **first**
 /// source carries the tag takes. The register's prefix is completed by the row's own id
@@ -82,6 +99,7 @@ const TAGS: &[(&str, &str, &str)] = &[
     ("owed", PENDING, "owed-"),
     ("CI", PENDING, "ci-"),
     ("bound", CHANNEL, "m55-bound-"),
+    ("misfits", MISFITS, "doctype-misfit-"),
     // Not a seed source (S12): read only to prove the ledger's exclusion of its row (a)
     // names a real row. Its rows (b) and (c) stay milestone-keyed deferrals there.
     ("M52 Settle", PENDING, ""),
@@ -153,20 +171,21 @@ fn settle_rows(pending: &str, heading: &str) -> BTreeSet<String> {
 fn source_rows() -> BTreeMap<&'static str, BTreeSet<String>> {
     let mut rows = BTreeMap::new();
 
-    let register = read(REGISTER);
-    rows.insert(
-        "register",
-        register
-            .lines()
-            .filter_map(|l| l.strip_prefix("| ")?.split(" |").next())
-            .filter(|id| {
-                id.len() > 1
-                    && id.starts_with(['F', 'T', 'D'])
-                    && id[1..].bytes().all(|b| b.is_ascii_digit())
-            })
-            .map(str::to_owned)
-            .collect(),
-    );
+    for (tag, rel, letters) in REGISTERS {
+        rows.insert(
+            *tag,
+            read(rel)
+                .lines()
+                .filter_map(|l| l.strip_prefix("| ")?.split(" |").next())
+                .filter(|id| {
+                    id.len() > 1
+                        && id.starts_with(*letters)
+                        && id[1..].bytes().all(|b| b.is_ascii_digit())
+                })
+                .map(str::to_owned)
+                .collect(),
+        );
+    }
 
     // M52 sets its row heads in bold, M53's re-reviews as `####` headings.
     for (tag, rel, _) in TAGS {
@@ -398,11 +417,13 @@ fn every_key_is_unique_filesystem_safe_and_prefixed_by_its_first_source() {
         );
         let (tag, id) = &row.sources[0];
         let (_, _, prefix) = TAGS.iter().find(|(t, ..)| t == tag).unwrap();
-        let expected = match tag.as_str() {
-            "register" => format!("{prefix}{}", id.to_lowercase()),
-            _ => (*prefix).to_owned(),
+        let register = REGISTERS.iter().any(|(t, ..)| t == tag);
+        let expected = if register {
+            format!("{prefix}{}", id.to_lowercase())
+        } else {
+            (*prefix).to_owned()
         };
-        let fits = if tag == "register" {
+        let fits = if register {
             *key == expected
         } else {
             key.starts_with(&expected) && key.len() > expected.len()
@@ -718,7 +739,7 @@ fn each_seed_doc_status_equals_its_verdict() {
 /// The sources a seeded row points back from (§7, T8): a `decisions-pending.md` row and a
 /// register row each link the seed doc that now carries them. A review README is dated and
 /// never edited, and a declared bound stays stated in its design home, so neither points.
-const POINTING: &[&str] = &["M53 Settle", "owed", "CI", "register"];
+const POINTING: &[&str] = &["M53 Settle", "owed", "CI", "register", "misfits"];
 
 /// The relative link targets on `line`, each resolved against `base` (repo-relative).
 fn link_targets(base: &str, line: &str) -> Vec<String> {
@@ -730,10 +751,19 @@ fn link_targets(base: &str, line: &str) -> Vec<String> {
 }
 
 /// The one line carrying a source row, read where [`source_rows`] reads it.
-fn source_line<'a>(pending: &'a str, register: &'a str, tag: &str, id: &str) -> Option<&'a str> {
+fn source_line<'a>(
+    pending: &'a str,
+    registers: &'a BTreeMap<&str, String>,
+    tag: &str,
+    id: &str,
+) -> Option<&'a str> {
     let rows = |heading: &str, stop: fn(&str) -> bool| section(pending, heading, stop);
+    if let Some(register) = registers.get(tag) {
+        return register
+            .lines()
+            .find(|l| l.starts_with(&format!("| {id} |")));
+    }
     let lines = match tag {
-        "register" => register.lines().collect(),
         "M53 Settle" => rows("### Deferred at the M53 Settle", |l| l.starts_with("### ")),
         "owed" => rows("### Owed after M53's post-review arcs", |l| {
             l.starts_with("### ")
@@ -744,7 +774,6 @@ fn source_line<'a>(pending: &'a str, register: &'a str, tag: &str, id: &str) -> 
         _ => return None,
     };
     let label = |l: &&str| match tag {
-        "register" => l.starts_with(&format!("| {id} |")),
         "M53 Settle" => row_label(l).is_some_and(|label| label.starts_with(id)),
         _ => row_label(l) == Some(id),
     };
@@ -761,7 +790,10 @@ fn source_line<'a>(pending: &'a str, register: &'a str, tag: &str, id: &str) -> 
 fn every_seeded_pending_and_register_row_points_at_its_seed_doc() {
     let (rows, _) = ledger();
     let pending = read(PENDING);
-    let register = read(REGISTER);
+    let registers: BTreeMap<&str, String> = REGISTERS
+        .iter()
+        .map(|(tag, rel, _)| (*tag, read(rel)))
+        .collect();
     let mut problems = Vec::new();
     for row in &rows {
         let Ok(doc) = seed_doc(row) else { continue };
@@ -770,15 +802,15 @@ fn every_seeded_pending_and_register_row_points_at_its_seed_doc() {
             .iter()
             .filter(|(t, _)| POINTING.contains(&t.as_str()))
         {
-            let Some(line) = source_line(&pending, &register, tag, id) else {
+            let Some(line) = source_line(&pending, &registers, tag, id) else {
                 problems.push(format!("`{tag}` row `{id}` is not found"));
                 continue;
             };
-            if tag == "register" {
+            if let Some((_, rel, _)) = REGISTERS.iter().find(|(t, ..)| t == tag) {
                 let disposition = line.trim_end_matches('|').rsplit(" | ").next().unwrap();
-                if !link_targets(REGISTER, disposition).contains(&doc) {
+                if !link_targets(rel, disposition).contains(&doc) {
                     problems.push(format!(
-                        "register row `{id}`'s disposition cell does not link `{doc}`"
+                        "`{tag}` row `{id}`'s disposition cell does not link `{doc}`"
                     ));
                 }
                 continue;
