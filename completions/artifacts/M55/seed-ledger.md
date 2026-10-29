@@ -2,7 +2,7 @@
 
 The count of record for the M55 seed ([roadmap.md](../../../implementation/roadmap.md) → Milestone 55 → Increment 9; [findings-channel.md](../../../design/findings-channel.md) → 7; [DECISIONS.md](../../../DECISIONS.md) → *2026-10-03 — M55 Increment 9 planning*, P1 and P2). **One row per distinct finding, recorded with every source row before anything is filed.** Each row becomes one seed doc, filed through the real binary by one fan-out. `crates/cli/tests/seed_ledger.rs` reads the sources themselves and holds this table to them: each source row sits in exactly one row's sources, and the keys are unique.
 
-**The count: 92 rows** (80 `jigc-feedback`, 12 `inconsistency`) from 93 source entries. The one dedupe is the declared bound **L3**, which is register row F6 and joins `m55-f6`'s sources. Register row F21 was recorded at the M55 completion audit, after the seed was first filed, and joined it by the same procedure: its row re-driven and its input written, then the driver run again over every input as one fan-out, which re-filed the other 91 docs byte for byte.
+**The count: 100 rows** (88 `jigc-feedback`, 12 `inconsistency`) from 101 source entries. The one dedupe is the declared bound **L3**, which is register row F6 and joins `m55-f6`'s sources. Register row F21 was recorded at the M55 completion audit, after the seed was first filed, and joined it by the same procedure: its row re-driven and its input written, then the driver run again over every input as one fan-out, which re-filed the other 91 docs byte for byte. Eight rows joined after M55's close from a second source, the standing [doctype-misfits register](doctype-misfits.md): its rows M1–M8 were re-driven, written as inputs and filed on 2026-10-29 in fan-outs of their own (M1–M7, then M8), so the docs filed before stay byte for byte; those fan-outs' output, in order, is [`seed-filing/filing-log-doctype-misfits.txt`](seed-filing/filing-log-doctype-misfits.txt).
 
 | Source | Rows | Tag |
 |---|---|---|
@@ -14,6 +14,7 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | the [planning register](planning-findings.md)'s F1–F21 and T1–T5 | 26 | `m55-f` · `m55-t` |
 | the declared bound *two code tasks in one checkout* ([findings-channel.md](../../../design/findings-channel.md) → 6, *Declared bounds*) | 1 | `m55-bound-` |
 | the register's D1–D12, as `inconsistency` | 12 | `m55-d` |
+| the [doctype-misfits register](doctype-misfits.md)'s M1–M8, after M55's close | 8 | `doctype-misfit-m` |
 
 **Excluded, each with its reason** (in the sources grammar below, so the test can tell an exclusion from a row it lost):
 
@@ -124,3 +125,11 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | `m55-d10` | `inconsistency` | [register](planning-findings.md) D10 | open | [inconsistencies/reconciliation-calls-start-a-pure.md](seed/inconsistencies/reconciliation-calls-start-a-pure.md) |
 | `m55-d11` | `inconsistency` | [register](planning-findings.md) D11 | open | [inconsistencies/worked-examples-index-lists.md](seed/inconsistencies/worked-examples-index-lists.md) |
 | `m55-d12` | `inconsistency` | [register](planning-findings.md) D12 | resolved | [inconsistencies/release-docs-cite-a-stale.md](seed/inconsistencies/release-docs-cite-a-stale.md) |
+| `doctype-misfit-m1` | `jigc-feedback` | [misfits](doctype-misfits.md) M1 | open | [jigc-feedback/roadmap-entry-has-no.md](seed/jigc-feedback/roadmap-entry-has-no.md) |
+| `doctype-misfit-m2` | `jigc-feedback` | [misfits](doctype-misfits.md) M2 | open | [jigc-feedback/no-doctype-holds-a-builder.md](seed/jigc-feedback/no-doctype-holds-a-builder.md) |
+| `doctype-misfit-m3` | `jigc-feedback` | [misfits](doctype-misfits.md) M3 | open | [jigc-feedback/roadmap-decomposition-is-one.md](seed/jigc-feedback/roadmap-decomposition-is-one.md) |
+| `doctype-misfit-m4` | `jigc-feedback` | [misfits](doctype-misfits.md) M4 | open | [jigc-feedback/milestone-record-cannot-say.md](seed/jigc-feedback/milestone-record-cannot-say.md) |
+| `doctype-misfit-m5` | `jigc-feedback` | [misfits](doctype-misfits.md) M5 | open | [jigc-feedback/milestone-records-workflow-can.md](seed/jigc-feedback/milestone-records-workflow-can.md) |
+| `doctype-misfit-m6` | `jigc-feedback` | [misfits](doctype-misfits.md) M6 | open | [jigc-feedback/sub-tasks-id-is.md](seed/jigc-feedback/sub-tasks-id-is.md) |
+| `doctype-misfit-m7` | `jigc-feedback` | [misfits](doctype-misfits.md) M7 | open | [jigc-feedback/each-added-task-is-its.md](seed/jigc-feedback/each-added-task-is-its.md) |
+| `doctype-misfit-m8` | `jigc-feedback` | [misfits](doctype-misfits.md) M8 | open | [jigc-feedback/definitions-have-no-place.md](seed/jigc-feedback/definitions-have-no-place.md) |

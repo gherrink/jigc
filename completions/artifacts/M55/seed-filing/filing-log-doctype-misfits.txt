@@ -1,0 +1,18 @@
+staged jigc-feedback/doctype-misfit-m1 as jigc-feedback:roadmap-entry-has-no in sub-task doctype-misfit-m1
+staged jigc-feedback/doctype-misfit-m2 as jigc-feedback:no-doctype-holds-a-builder in sub-task doctype-misfit-m2
+staged jigc-feedback/doctype-misfit-m3 as jigc-feedback:roadmap-decomposition-is-one in sub-task doctype-misfit-m3
+staged jigc-feedback/doctype-misfit-m4 as jigc-feedback:milestone-record-cannot-say in sub-task doctype-misfit-m4
+staged jigc-feedback/doctype-misfit-m5 as jigc-feedback:milestone-records-workflow-can in sub-task doctype-misfit-m5
+staged jigc-feedback/doctype-misfit-m6 as jigc-feedback:sub-tasks-id-is in sub-task doctype-misfit-m6
+staged jigc-feedback/doctype-misfit-m7 as jigc-feedback:each-added-task-is-its in sub-task doctype-misfit-m7
+filed jigc-feedback/doctype-misfit-m1 as docs/jigc-feedback/roadmap-entry-has-no.md -> jigc-feedback/roadmap-entry-has-no.md
+filed jigc-feedback/doctype-misfit-m2 as docs/jigc-feedback/no-doctype-holds-a-builder.md -> jigc-feedback/no-doctype-holds-a-builder.md
+filed jigc-feedback/doctype-misfit-m3 as docs/jigc-feedback/roadmap-decomposition-is-one.md -> jigc-feedback/roadmap-decomposition-is-one.md
+filed jigc-feedback/doctype-misfit-m4 as docs/jigc-feedback/milestone-record-cannot-say.md -> jigc-feedback/milestone-record-cannot-say.md
+filed jigc-feedback/doctype-misfit-m5 as docs/jigc-feedback/milestone-records-workflow-can.md -> jigc-feedback/milestone-records-workflow-can.md
+filed jigc-feedback/doctype-misfit-m6 as docs/jigc-feedback/sub-tasks-id-is.md -> jigc-feedback/sub-tasks-id-is.md
+filed jigc-feedback/doctype-misfit-m7 as docs/jigc-feedback/each-added-task-is-its.md -> jigc-feedback/each-added-task-is-its.md
+filed 7 docs (7 jigc-feedback, 0 inconsistency) in one commit
+staged jigc-feedback/doctype-misfit-m8 as jigc-feedback:definitions-have-no-place in sub-task doctype-misfit-m8
+filed jigc-feedback/doctype-misfit-m8 as docs/jigc-feedback/definitions-have-no-place.md -> jigc-feedback/definitions-have-no-place.md
+filed 1 docs (1 jigc-feedback, 0 inconsistency) in one commit
