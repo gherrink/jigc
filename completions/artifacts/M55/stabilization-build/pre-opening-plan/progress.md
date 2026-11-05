@@ -27,6 +27,7 @@ schema-version: 3
 <!-- fields -->
 - intent: M-defs — fix the sentences repeated across the agent definitions
 - workflow: main-session edit
+- status: joined
 
 ### pc-count-the-codes-each  {#pc-count-the-codes-each}
 
