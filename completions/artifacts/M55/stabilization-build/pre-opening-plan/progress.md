@@ -13,6 +13,7 @@ schema-version: 3
 <!-- fields -->
 - intent: D0 — write down the rulings, the owed rows and the tool candidates
 - workflow: builder
+- status: joined
 
 ### d0-def-add-what-is  {#d0-def-add-what-is}
 
@@ -31,6 +32,7 @@ schema-version: 3
 <!-- fields -->
 - intent: PC — count the codes each dynamic refusal site can produce
 - workflow: read-only agent
+- status: joined
 
 ### fork-cut-the-four-lane  {#fork-cut-the-four-lane}
 
