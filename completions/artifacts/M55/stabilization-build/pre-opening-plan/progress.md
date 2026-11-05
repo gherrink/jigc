@@ -20,6 +20,7 @@ schema-version: 3
 <!-- fields -->
 - intent: D0-def — add what is owed before the opening to the opening's fact-sheet agent
 - workflow: main-session edit
+- status: joined
 
 ### m-defs-fix-the-sentences  {#m-defs-fix-the-sentences}
 
