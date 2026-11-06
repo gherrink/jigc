@@ -638,7 +638,7 @@ const VALIDATION_SCHEMA = {
 const FIX_SCHEMA = {
   type: 'object',
   required: ['status', 'notes'],
-  properties: { status: { type: 'string', enum: ['fixed', 'could-not-fix'] }, commit: { type: 'string', description: 'the fix commit subject (empty if could-not-fix)' }, notes: { type: 'string', description: '1-2 lines; on could-not-fix, the trace showing the finding is not real' } },
+  properties: { status: { type: 'string', enum: ['fixed', 'could-not-fix'] }, commit: { type: 'string', description: 'the fix commit subject (empty if could-not-fix)' }, notes: { type: 'string', description: '1-2 lines; on could-not-fix, either the trace showing the finding is not real, or, where the fix needs a decision that is not yours, the options — each with what it would change — so the still-blocking halt hands the human a fork (as many lines as the options need)' } },
 }
 const REVIEW_SCHEMA = {
   type: 'object',
@@ -1059,10 +1059,11 @@ for (const inc of increments) {
     const blocking = v && v.blocking ? v.blocking : []
     // gate_green must be BACKED by pasted evidence, not a bare boolean — and the evidence
     // is `dev/gate`'s OWN VERDICT, never raw cargo output. dev/gate is unscopeable (its arg
-    // loop takes only --quick/--private-target/--report/--help and exits 2 on anything else),
-    // it prints `GATE: PASS` only after every step exited 0, and it prints the
-    // `tests   passed=… failed=…  (over N test binaries)` totals line ONLY in full mode
-    // (--quick omits it entirely). So demanding BOTH lines rejects a red gate, a bare
+    // loop takes only --quick/--fast/--keep-going/--private-target/--report/--help and exits
+    // 2 on anything else), it prints `GATE: PASS` only after every step exited 0, and it
+    // prints the `tests   passed=… failed=…  (over N test binaries)` totals line ONLY in
+    // full mode (--quick and --fast omit it, and --fast says `PRE-CHECK:` where a gate says
+    // `GATE:`). So demanding BOTH lines rejects a red gate, a bare
     // --quick run, and the ACCIDENTAL scoped paste this check exists to catch (M23: inc-1
     // landed a red gate because the validator claimed green off a scoped/lacon-trimmed run).
     // HONEST BOUND — this is NOT proof of provenance, and must not be read as one: the
@@ -1130,7 +1131,7 @@ for (const inc of increments) {
       const reason = blocking.length > 0
         ? blocking.length + ' blocking finding(s) remain after 3 fix rounds'
           + (fixerNulls ? ' — but ' + fixerNulls + ' fixer call(s) returned NO RESULT, so the findings may never have been worked at all: that is the transient/rate-limit shape, not a verdict that they are unfixable. Re-run the fixers before triaging, and note anything a dead fixer left is UNCOMMITTED in the tree.' : '')
-          + (fixerUnfixed ? ' — ' + fixerUnfixed + ' fixer call(s) reported could-not-fix; read their notes (they carry the trace showing the finding is not real) before assuming the findings stand.' : '')
+          + (fixerUnfixed ? ' — ' + fixerUnfixed + ' fixer call(s) reported could-not-fix; read their notes before assuming the findings stand — each carries either the trace showing its finding is not real, or the options of a fix that needs a decision, each with what it would change: a fork for the human.' : '')
         : !v
         ? 'the validator returned NO RESULT on the last of 4 rounds (' + nullRounds + ' of 4 returned none) — the increment was never actually validated, so this is not a verdict about the code: it is the transient/rate-limit shape (see the failures channel and the breaker log above). Re-run the validator before triaging anything.'
         : !v.gate_green

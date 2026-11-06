@@ -718,8 +718,9 @@
 #
 # A HELD COMMAND (the second repair plan of the `test` half, P3 and its task K10;
 # DECISIONS.md -> 2026-10-07, "A long command is started, waited for and judged by the
-# tool"). The gate takes ten minutes and the regression set thirty-five, and an agent's
-# shell gives a call two. Until this, a prompt told an agent to start such a command "in
+# tool"). The gate runs far past the tool's ten-minute ceiling (27 to 29 minutes of
+# steps on 2026-11-05/06) and the regression set thirty-five, and an agent's shell gives
+# a call two. Until this, a prompt told an agent to start such a command "in
 # the background" and wait "in slices" — and the agent composed the waiting shell itself:
 # a command no permission rule can name, at which a stage stopped on a prompt nobody was
 # watching (the human's ruling of 2026-10-07: "there should be tooling for this"). So:

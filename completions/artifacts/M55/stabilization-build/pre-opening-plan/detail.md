@@ -482,7 +482,7 @@ The lane writes no product source. A red case is listed with a key and is never 
 1. `O4`: the tester and the reviewer — what a finding carries, the kit sentence, the hunt contract bound to a `HUNT:` line.
 2. `finding-triage.md`: a finding that names a site carries `site`.
 3. `stabilize-opening.md`: one `route-hunt` item per family part, from the projection.
-4. `build-fixer.md`: a plantable cause a hunt found gets its catalog case in the fix, red first; a new blocking site comes with its case.
+4. `build-fixer.md`: a plantable cause a hunt found gets its catalog case in the fix, red first; a new blocking site comes with its case; a fix that adds or changes a refusal keeps or adds its route-catalog cases in the same commit, and an expected-red entry is removed by the commit that fixes it ([pinning.md](../../../../../implementation/pinning.md) → §6). The last two halves are the row `wf-fixer-route-cases` ([decisions-pending.md](../../../../../implementation/decisions-pending.md)), re-triggered to this item on 2026-11-06, which this item discharges.
 5. `finding-verifier.md` step 4: *"the door, or a step of the block, the previous release does not have"*.
 - **Gates:** 5 + 0–1.
 
@@ -615,13 +615,19 @@ When U2 lands, its tell goes with the next stop: it turns CI red when GitHub cha
 
 ## 4. Price, with the arithmetic
 
-**[Re-priced 2026-11-06 after PC]** — PC's record ([dynamic-site-codes.md](dynamic-site-codes.md) → Total) counts 139 dynamic units owed, against the 93–133 priced below, so P's units are 125 + 139 = **264**, against 218–258. The figures after this note are the plan's as reviewed; where they depend on the units, these replace them:
-- **The C-tasks:** 264 × 14 = 3,696 min = **62 h**, up to 264 × 19 = 5,016 min = **84 h**; with their fixes, unchanged at 9–17 h (8.7–17.4), **70–101 h**.
-- **P** = 70 + 29 + 0 = **99 h**, up to 101 + 51 + 8 = **160 h** (was 89–158).
-- **The critical path:** low 4 + max(99, 85) + 9 = **112 h** (P; was 102); high 6 + max(160, 184) + 28 = **218 h**, unchanged — the T chain.
-- **The calendar:** 112 h at 20 hours a day = 5.6 days; 218 h at 12 = 18.2 days; with the human stops **7–21 days, still 1–3 weeks**.
-- **The gate time, measured:** the six full gates of 2026-11-05/06 in this machine's gate logs took 27–29 minutes each (1,640–1,714 s of steps), on a loaded machine, against the 20–30 the gate-time line assumes. At 27–29 minutes the 127–206 gates are **57–100 h** of gate time, not 42–103. The count of 127–206 gates is not re-derived here.
-- **Not re-measured:** the 14–19 minutes a unit, which include the gates of the days they were measured on.
+**[Re-priced 2026-11-06 after PC, and again the same day for the gate's length (the re-review of `5b6288ff` and `f6026ca3`, its S3 and N3)]** — PC's record ([dynamic-site-codes.md](dynamic-site-codes.md) → Total) counts 139 dynamic units owed, against the 93–133 priced below, so P's units are 125 + 139 = **264**, against 218–258. The figures after this note are the plan's as reviewed; where they depend on the units or on a unit's minutes, these replace them:
+- **The gate time, measured:** the seven full gates of 2026-11-05/06 in this machine's gate logs took 27–29 minutes each (1,633–1,714 s of steps, the second test tier alone 1,540–1,624 s), over 5394 tests, on a loaded machine, against the 20–30 the gate-time line assumes. At 27–29 minutes the 127–206 gates are 127 × 27 = 3,429 min = **57 h**, up to 206 × 29 = 5,974 min = **100 h** of gate time, not 42–103. The count of 127–206 gates is not re-derived here.
+- **A unit's minutes, for the gate's length.** The 14–19 minutes a unit (below) were measured on 2026-10-11/12 with the gates of those days inside them, taken here as about ten minutes each — the nearest measurement, 598–601 s on 2026-10-05 ([machine-setup.md](../../../../../implementation/machine-setup.md) → Sanity check); the records read here give those days' gates no length but the one in the third reading below. A C-task commits about 10 units a gate (§2, C16a–C18 → *Commits*), so a 27–29-minute gate costs a unit 2.7–2.9 minutes of gate. What it cost a unit in the measurements depends on how many units each of their gates carried:
+  - *if each measured gate carried ten units, as the plan's commits will* (N3's reading): 10 / 10 = 1.0 minute a unit, so the gate's length adds 2.7 − 1.0 = **1.7**, up to 2.9 − 1.0 = **1.9** minutes a unit;
+  - *as the commits show:* the 2026-10-12 families committed 34 sites in 7 commits after `ee4db8f1`, 4.9 a commit, and the pilot's `P3` parts three and four and `P4` 43 sites in 8, 5.4 a commit, so about five units a gate: 10 / 5 = 2.0 minutes a unit, and the gate's length adds 2.7 − 2.0 = **0.7**, up to 2.9 − 2.0 = **0.9**;
+  - and the pilot's own record says some of its gates ran over thirty minutes beside another lane's ([route-catalog-pilot.md](../reshape/route-catalog-pilot.md) → §2), which would make the measured share larger still and the addition smaller.
+  - **Used: +0.7 at the low end, +1.9 at the high end, so 14.7–20.9 minutes a unit.** The two readings bound the addition; neither is measured.
+- **The C-tasks:** 264 × 14.7 = 3,880.8 min = **64.7 h**, up to 264 × 20.9 = 5,517.6 min = **92.0 h**; with their fixes, unchanged at 8.7–17.4 h, 64.7 + 8.7 = 73.4, up to 92.0 + 17.4 = 109.4: **73–109 h** (was 70–101 after PC, 60–99 before it).
+- **P** = 73 + 29 + 0 = **102 h**, up to 109 + 51 + 8 = **168 h** (was 99–160 after PC, 89–158 before it).
+- **The critical path:** low 4 + max(102, 85) + 9 = **115 h** (P; was 112 after PC, 102 before it); high 6 + max(168, 184) + 28 = **218 h**, unchanged — the T chain.
+- **A dynamic family** (S3): 139 units over the four tasks C16a–C18 is 139 / 4 = 34.75, so about 35 codes a task. 35 × 14.7 = 514.5 min = 8.6 h, up to 35 × 20.9 = 731.5 min = 12.2 h; with its share of the fixes, 0.5–1 × 55 min = 0.5–0.9 h: **about 9–13 h a dynamic family** (was 6–11). A static family of 6–11 sites: 6 × 14.7 = 88 min = 1.5 h + 0.5 = 2.0 h, up to 11 × 20.9 = 230 min = 3.8 h + 0.9 = 4.7 h: **about 2–5 h** (was 2–4). *The cut does not fit "no task over about 35":* with `compose`'s 28 a task of its own, the other three hold 139 − 28 = 111, 37 each, and a 37-code task is 37 × 20.9 = 773 min = 12.9 h + 0.9 = **13.8 h** at the high end — so either the cut holds tasks of 37, or a fifth task is cut. That is C16a's planning call; the figure above prices four tasks.
+- **The calendar:** 115 h at 20 hours a day = 5.8 days; 218 h at 12 = 18.2 days; with the human stops **7–21 days, still 1–3 weeks**.
+- **Not re-derived for the gate's length:** the T lane's and the tail's hours, which are estimates and not units; and the 55 minutes a fix commit and the 55–85 minutes a J2b fix, which carry a gate each — at 27–29 minutes against ten, about 17–19 minutes more a fix, which is 19 × 0.5–1 × 17–19 min = 2.7–6.0 h more in P's fixes, and is not in the figures above.
 - **Still owed:** the re-price after C2.
 
 **Units of work in P** (derived): 125 static sites, plus 73 `MINTED_AT` codes, plus an estimated 20–60 codes of uncatalogued prefixes. Total **218–258, about 220–260**. PC fixes the number.
@@ -716,7 +722,7 @@ At 20–30 minutes a gate: **42–103 hours** of gate time. The queue is busy ab
 
 **Calendar:** 102 h at 20 hours a day = **5.1 days**; 218 h at 12 hours a day = **18.2 days** (the measured paces: 2026-10-11/12 about 20 h a day, 2026-10-28 about 12 h). Plus 1–3 days for the human stops: **6–21 days, so 1–3 weeks.** The tail risks are beyond-bound review cycles (most likely in J2a and J2b), J2 findings that need the human, and PC at its high end. **Re-priced** after PC and after C2.
 
-**The roadmap entry's step hours** apportion these estimates over its sixteen steps: each step's figure is the longest lane inside it, from the per-task hours above (a C-task's hours from its units at 14–19 minutes plus its share of the fix hours, so a dynamic family runs about 6–11 h against a static family's 2–4 h). They are estimates, like the totals they come from, and the critical path of 102–218 h is not their sum: the lanes overlap, and J2b's fixes run past step 14.
+**The roadmap entry's step hours** apportion these estimates over its sixteen steps: each step's figure is the longest lane inside it, from the per-task hours above (a C-task's hours from its units at 14.7–20.9 minutes plus its share of the fix hours, so a dynamic family runs about 9–13 h against a static family's 2–5 h — the re-price at the head of this section; it was 6–11 h and 2–4 h at 14–19 minutes). They are estimates, like the totals they come from, and the critical path of 115–218 h (the re-price; 102–218 h as reviewed) is not their sum: the lanes overlap, and J2b's fixes run past step 14.
 
 ## 5. Forks
 

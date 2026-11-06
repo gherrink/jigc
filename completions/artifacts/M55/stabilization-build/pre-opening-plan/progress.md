@@ -41,6 +41,7 @@ schema-version: 3
 <!-- fields -->
 - intent: Fork — cut the four lane branches from one commit
 - workflow: git step
+- status: joined
 
 ### p0-generate-the-catalogs-overview  {#p0-generate-the-catalogs-overview}
 
