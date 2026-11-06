@@ -20,17 +20,26 @@
 //! under `--locked` a tree's resolve is its lockfile, so keying the manifests would rebuild
 //! the base on every added test target; a changed lockfile, a changed toolchain file and a
 //! removed one each move it; so does an edit to the Dockerfile above its `build` stage, a
-//! parser directive at its head and another platform; an edit below the build stage, a
-//! comment, a blank line and a directive-shaped comment past the head do not. A key with no
-//! platform, and a Dockerfile with no build-stage line, give no key at all.
+//! parser directive either of BuildKit's two readers takes at its head, and another
+//! platform; an edit below the build stage, a comment, a blank line and a directive-shaped
+//! comment past the head do not. A key with no platform, with a platform in any spelling but
+//! the one the key takes, through a Dockerfile with no build-stage line or with a heredoc
+//! above it, is refused, and each refusal is read for what it says. `docker_platform` reads
+//! `DOCKER_DEFAULT_PLATFORM` and refuses it in another spelling, without docker.
+//!
+//! **The check after the build** (`base_check`) is pure once its five strings are read off
+//! docker, so it is driven here too: a matching image passes silently, and a wrong key, an
+//! empty layer, a layer the base tag does not hold, a platform recorded in another spelling
+//! and an image docker reports with a variant each fail, saying which.
 //!
 //! **The repository** is `JIGC_REPO` when it is set and not empty, else the one the script
 //! sits in. The arm drives a copy of the script placed in a repository of its own at another
 //! path, so a regression to a path of one machine is red even where that path is this
 //! checkout.
 //!
-//! **What it does not hold:** that a layer built under a key holds what the key says — that
-//! is `check-base-layer.sh`'s docker cases, and `build-image.sh`'s own check after each build.
+//! **What it does not hold:** that a layer built under a key holds what the key says, and
+//! that `build-image.sh` reads `base_check`'s inputs off the right images — that is
+//! `check-base-layer.sh`'s docker cases and the builds themselves.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,6 +59,40 @@ const BUILD_STAGE_LINE: &str = "FROM ${JIGC_BASE} AS build";
 
 /// The platform every arm keys for, but the one that changes it.
 const PLATFORM: &str = "linux/arm64";
+
+/// `build-image.sh` sourced, then `body` run with `args` as `$2…`, under `env`: its exit
+/// status, stdout and stderr. Run with this machine's git configuration masked.
+fn sourced(body: &str, args: &[&str], env: &[(&str, &str)]) -> (bool, String, String) {
+    // A home of the call's own, minted through the shared seam (`temp_mint_fence`).
+    let home = ScratchDir::new("trial-image-sourced");
+    let mut c = hermetic("bash", home.path());
+    c.env_remove("DOCKER_DEFAULT_PLATFORM")
+        .arg("-c")
+        .arg(format!(r#". "$1" && {body}"#))
+        .arg("sourced")
+        .arg(repo_root().join(BUILD_IMAGE))
+        .args(args);
+    for (k, v) in env {
+        c.env(k, v);
+    }
+    let out = c.output().expect("run bash");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        String::from_utf8_lossy(&out.stderr).trim().to_string(),
+    )
+}
+
+/// That `got` is a refusal whose message says `needle`.
+fn assert_refused(got: &Result<String, String>, needle: &str, what: &str) {
+    match got {
+        Ok(key) => panic!("{what} gave a key: {key}"),
+        Err(e) => assert!(
+            e.contains(needle),
+            "{what} was refused, but not for its reason — the message does not say {needle:?}: {e}"
+        ),
+    }
+}
 
 /// A command with this machine's git configuration masked.
 fn hermetic(program: &str, home: &Path) -> Command {
@@ -319,6 +362,12 @@ fn a_parser_directive_builds_a_new_layer() {
     let spaced = f.key_through(&f.dockerfile("Dockerfile.spaced", |t| {
         format!("#Syntax = docker/dockerfile:1.7\n{t}")
     }));
+    let check =
+        f.key_through(&f.dockerfile("Dockerfile.check", |t| format!("# check=skip=all\n{t}")));
+    assert_ne!(
+        check, plain,
+        "a `# check=` directive kept the key: it is dropped as a comment"
+    );
     assert_ne!(
         syntax, plain,
         "a `# syntax=` directive kept the key: it is dropped as a comment, \
@@ -335,6 +384,40 @@ fn a_parser_directive_builds_a_new_layer() {
     );
 }
 
+/// BuildKit has two readers of the directives, and they disagree (driven with
+/// `docker build --check`): the parser reads `escape` indented and stops at a shebang; the
+/// frontend's selection reads `syntax` and `check` past a first-line shebang. The key keeps
+/// what either reads.
+#[test]
+fn a_directive_either_buildkit_reader_takes_builds_a_new_layer() {
+    let f = Fixture::new();
+    let plain = f.key_of(&f.base);
+    let cases = [
+        (
+            "Dockerfile.indented",
+            "  # escape=`\n",
+            "an indented `# escape=`",
+        ),
+        (
+            "Dockerfile.shebang-syntax",
+            "#!/usr/bin/env docker-build\n# syntax=docker/dockerfile:1.7\n",
+            "a `# syntax=` after a first-line shebang",
+        ),
+        (
+            "Dockerfile.shebang-check",
+            "#!/usr/bin/env docker-build\n# check=skip=all\n",
+            "a `# check=` after a first-line shebang",
+        ),
+    ];
+    for (name, head, what) in cases {
+        let key = f.key_through(&f.dockerfile(name, |t| format!("{head}{t}")));
+        assert_ne!(
+            key, plain,
+            "{what} kept the key: BuildKit reads it as a directive, and the key dropped it"
+        );
+    }
+}
+
 #[test]
 fn a_directive_shaped_comment_past_the_head_keeps_the_layer() {
     let f = Fixture::new();
@@ -342,6 +425,14 @@ fn a_directive_shaped_comment_past_the_head_keeps_the_layer() {
         format!("# a comment first\n# syntax=docker/dockerfile:1.7\n{t}")
     });
     let unknown = f.dockerfile("Dockerfile.unknown", |t| format!("# owner=someone\n{t}"));
+    let below_a_blank = f.dockerfile("Dockerfile.blank", |t| {
+        format!("\n# syntax=docker/dockerfile:1.7\n{t}")
+    });
+    assert_eq!(
+        f.key_through(&below_a_blank),
+        f.key_of(&f.base),
+        "a `# syntax=` line after a blank line moved the key; BuildKit reads it as a comment"
+    );
     assert_eq!(
         f.key_through(&below_a_comment),
         f.key_of(&f.base),
@@ -371,9 +462,69 @@ fn another_platform_builds_a_new_layer() {
 fn a_key_with_no_platform_is_refused() {
     let f = Fixture::new();
     let got = f.key(&f.base, &f.harness_dockerfile(), "");
+    assert_refused(&got, "no platform", "a key with no platform");
+}
+
+/// docker builds one platform under many spellings; the key takes one, so one platform never
+/// has two bases, and the check after the build never compares two spellings of one.
+#[test]
+fn a_platform_in_another_spelling_is_refused() {
+    let f = Fixture::new();
+    for spelling in [
+        "linux/aarch64",
+        "linux/x86_64",
+        "LINUX/ARM64",
+        "linux/ARM64",
+        "linux/arm64/v8",
+        "linux",
+    ] {
+        let got = f.key(&f.base, &f.harness_dockerfile(), spelling);
+        assert_refused(
+            &got,
+            "is not in the one spelling the base key takes",
+            &format!("the platform {spelling:?}"),
+        );
+        assert_refused(&got, "linux/arm64", &format!("the platform {spelling:?}"));
+    }
+}
+
+#[test]
+fn docker_platform_reads_docker_default_platform_in_the_one_spelling() {
+    let (ok, out, err) = sourced(
+        "docker_platform",
+        &[],
+        &[("DOCKER_DEFAULT_PLATFORM", "linux/amd64")],
+    );
     assert!(
-        got.is_err(),
-        "base_key_of gave a key with no platform: {got:?}"
+        ok,
+        "docker_platform failed with DOCKER_DEFAULT_PLATFORM=linux/amd64: {err}"
+    );
+    assert_eq!(
+        out, "linux/amd64",
+        "docker_platform did not read DOCKER_DEFAULT_PLATFORM"
+    );
+    let (ok, out, err) = sourced(
+        "docker_platform",
+        &[],
+        &[("DOCKER_DEFAULT_PLATFORM", "linux/aarch64")],
+    );
+    assert!(
+        !ok && out.is_empty() && err.contains("is not in the one spelling"),
+        "docker_platform took DOCKER_DEFAULT_PLATFORM=linux/aarch64 ({out:?}, {err:?})"
+    );
+}
+
+#[test]
+fn a_heredoc_above_the_build_stage_is_refused() {
+    let f = Fixture::new();
+    let heredoc = f.dockerfile("Dockerfile.heredoc", |t| {
+        above_the_build_stage(t, "RUN <<EOF\n# content, not a comment\n\nEOF")
+    });
+    let got = f.key(&f.base, &heredoc, PLATFORM);
+    assert_refused(
+        &got,
+        "a heredoc above the build stage",
+        "a heredoc above the build stage",
     );
 }
 
@@ -387,10 +538,90 @@ fn a_dockerfile_with_no_build_stage_line_gives_no_key() {
             .collect()
     });
     let got = f.key(&f.base, &unmarked, PLATFORM);
-    assert!(
-        got.is_err(),
-        "a Dockerfile with no build-stage line still gave a key: {got:?}"
+    assert_refused(
+        &got,
+        "no 'FROM ${JIGC_BASE} AS build' line",
+        "a Dockerfile with no build-stage line",
     );
+}
+
+/// The key and platform `base_check` is asked about, and the records of an image built
+/// right on them.
+const CHECK_KEY: &str = "02cf45c1d84001766c8e87105cce52f24fb99a7320de6e9f58a896088c47efa4";
+const CHECK_LAYER: &str = "72ad44a63ad83a241d50bb244e5563e0";
+
+fn record(key: &str, layer: &str, platform: &str) -> String {
+    format!("key {key}\nlayer {layer}\nplatform {platform}\n")
+}
+
+/// `base_check` over one image record, one tag record and docker's report of the image.
+fn base_check(image: &str, tag: &str, image_platform: &str) -> (bool, String) {
+    let (ok, _, err) = sourced(
+        r#"base_check "$2" "$3" "$4" "$5" "$6""#,
+        &[CHECK_KEY, PLATFORM, image, tag, image_platform],
+        &[],
+    );
+    (ok, err)
+}
+
+#[test]
+fn the_check_after_the_build_passes_an_image_built_on_the_base_keyed() {
+    let right = record(CHECK_KEY, CHECK_LAYER, PLATFORM);
+    let (ok, err) = base_check(&right, &right, PLATFORM);
+    assert!(
+        ok && err.is_empty(),
+        "a right image failed the check: {err}"
+    );
+}
+
+#[test]
+fn the_check_after_the_build_fails_each_way_an_image_can_be_off_its_base() {
+    let right = record(CHECK_KEY, CHECK_LAYER, PLATFORM);
+    let cases = [
+        (
+            "a wrong key",
+            record(&"0".repeat(64), CHECK_LAYER, PLATFORM),
+            right.clone(),
+            PLATFORM,
+            "records base key",
+        ),
+        (
+            "an empty layer",
+            record(CHECK_KEY, "", PLATFORM),
+            right.clone(),
+            PLATFORM,
+            "records no base layer",
+        ),
+        (
+            "a layer that is not the tag's",
+            right.clone(),
+            record(CHECK_KEY, "ffffffffffffffffffffffffffffffff", PLATFORM),
+            PLATFORM,
+            "the base tag holds layer",
+        ),
+        (
+            "a base platform recorded in another spelling",
+            record(CHECK_KEY, CHECK_LAYER, "linux/aarch64"),
+            record(CHECK_KEY, CHECK_LAYER, "linux/aarch64"),
+            PLATFORM,
+            "the base records platform",
+        ),
+        (
+            "an image docker reports with a variant",
+            right.clone(),
+            right.clone(),
+            "linux/arm64/v8",
+            "docker reports the image as",
+        ),
+    ];
+    for (what, image, tag, image_platform, says) in cases {
+        let (ok, err) = base_check(&image, &tag, image_platform);
+        assert!(!ok, "{what} passed the check after the build");
+        assert!(
+            err.contains(says),
+            "{what} failed the check, but its message does not say {says:?}: {err}"
+        );
+    }
 }
 
 /// `default_repo` from `script`, with `JIGC_REPO` set to `jigc_repo`, run by `bash` — a

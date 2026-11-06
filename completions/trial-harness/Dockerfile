@@ -35,10 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ---- stage 0b: the kept base layer — the toolchain file's toolchain, the lockfile's crates
 # Built by `build-image.sh` with `--target base` only when no `jigc-gate-base:<key>` exists,
-# and kept under that tag: the key (base_key_of) is the toolchain file, the lockfile and this
-# file down to the `build` stage. On the canary's candidate, 1,256 of the image build's
-# 1,285 seconds were these two steps, and they are the same for every candidate with the
-# same two files (reshape plan §5, candidate 7).
+# and kept under that tag: the key (base_key_of) is the toolchain file, the lockfile, this
+# file down to the `build` stage and the platform the layer is built for. On the canary's
+# candidate, 1,256 of the image build's 1,285 seconds were these two steps, and they are the
+# same for every candidate with the same key (reshape plan §5, candidate 7).
 #
 # `cargo fetch` in the tree it is handed, bind-mounted and never copied: rustup installs the
 # toolchain the toolchain file names, with its components, and cargo downloads every crate
@@ -46,18 +46,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # need, whatever its manifests say, because `--locked` holds that tree's resolve to the same
 # lockfile. Nothing of the tree stays in the layer, and nothing is compiled in it, so no
 # build output of the tree that laid the base can stand in for a later candidate's: every
-# candidate compiles its own crates from its own tree. The record carries the key and a
-# mark of this one layer, which the build stage copies into the image, so two images say
-# whether they were built on the same layer (check-base-layer.sh).
+# candidate compiles its own crates from its own tree. The record carries the key, a mark
+# of this one layer and the platform BuildKit built it for (its own TARGETPLATFORM, not one
+# build-image.sh passes), which the build stage copies into the image, so two images say
+# whether they were built on the same layer (check-base-layer.sh), and build-image.sh's check
+# after the build reads the base's platform off the layer itself: the session image starts
+# from its own base, so docker's report of it does not say what the binary was built on.
 FROM toolchain AS base
 ARG JIGC_BASE_HASH
+ARG TARGETPLATFORM
 RUN --mount=type=bind,source=src,target=/fetch,rw \
     set -e; \
     [ -n "$JIGC_BASE_HASH" ] || { echo "the base is built by build-image.sh, which passes its key" >&2; exit 1; }; \
+    [ -n "$TARGETPLATFORM" ] || { echo "no TARGETPLATFORM — the base is built by BuildKit" >&2; exit 1; }; \
     cd /fetch && cargo fetch --locked; \
     test ! -e /src; \
     mkdir -p /usr/local/share/jigc-base; \
-    printf 'key %s\nlayer %s\n' "$JIGC_BASE_HASH" "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+    printf 'key %s\nlayer %s\nplatform %s\n' "$JIGC_BASE_HASH" \
+      "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" "$TARGETPLATFORM" \
       > /usr/local/share/jigc-base/record; \
     cat /usr/local/share/jigc-base/record
 

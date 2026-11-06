@@ -17,8 +17,8 @@
 #       Two images build-image.sh built, in that order, from two commits with one lockfile
 #       and one toolchain file: both record the same base — its key and the layer's own
 #       mark — that base is still the image tagged by the key, and the key is the one
-#       base_key_of computes for each commit with this harness's Dockerfile and the images'
-#       platform.
+#       base_key_of computes for each commit with this harness's Dockerfile and the platform
+#       the base records, which is also docker's whole report of each image.
 #   the_binary_in_the_image_is_the_commits <first> <second>
 #       Each image records the commit it was built from, the same in its source record and
 #       in its JIGC_SHA (what verify-pair.sh reads), and the two binaries differ by sha256
@@ -74,7 +74,14 @@ case "$CASE" in
           || bad "jigc-gate-base:$K1 is not that layer ('$KEPT')"
         if [ -n "$S1" ] && [ -n "$S2" ] && [ "$S1" != "$S2" ]; then
           ok "two candidates: $S1, $S2"
-          P="$(docker image inspect "$FIRST" --format '{{.Os}}/{{.Architecture}}' 2>/dev/null)"
+          # The platform the base records, and docker's report of each image, variant and
+          # all, compared whole — never a part of either.
+          P="$(field_of "$B1" platform)"
+          for T in "$FIRST" "$SECOND"; do
+            IP="$(docker image inspect "$T" --format '{{.Os}}/{{.Architecture}}{{if .Variant}}/{{.Variant}}{{end}}' 2>/dev/null)"
+            [ -n "$P" ] && [ "$IP" = "$P" ] && ok "$T is $IP, the platform its base records" \
+              || bad "$T is '$IP', and its base records platform '$P'"
+          done
           have_key_fn && for S in "$S1" "$S2"; do
             K="$(base_key_of "$REPO" "$S" "$HERE/Dockerfile" "$P" 2>/dev/null)"
             [ "$K" = "$K1" ] && ok "base_key_of $S for $P is the recorded key" \

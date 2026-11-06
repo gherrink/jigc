@@ -187,6 +187,69 @@ schema-version: 3
 - workflow: fixer
 - status: joined
 
+### k7-review2-s1-one-platform-spelling  {#k7-review2-s1-one-platform-spelling}
+
+<!-- fields -->
+- intent: K7 review 2 S1 — the key takes a platform in one spelling, os/arch in lower case with Go's architecture name and no variant, and refuses an alias, upper case or a variant with a message naming that spelling, rather than copying part of docker's alias table; the check after the build and check-base-layer.sh's first case compare the whole platform, variant included; arms for the aliases, upper case and a variant
+- workflow: fixer
+- status: joined
+
+### k7-review2-s2-the-check-as-a-function  {#k7-review2-s2-the-check-as-a-function}
+
+<!-- fields -->
+- intent: K7 review 2 S2 — the comparison after the build is the sourced function base_check, and the suite drives it: a right image, a wrong key, an empty layer, a layer the tag does not hold, a platform in another spelling, an image reported with a variant
+- workflow: fixer
+- status: joined
+
+### k7-review2-n1-a-check-directive  {#k7-review2-n1-a-check-directive}
+
+<!-- fields -->
+- intent: K7 review 2 N1 — a check-directive arm
+- workflow: fixer
+- status: joined
+
+### k7-review2-n2-buildkits-two-readers  {#k7-review2-n2-buildkits-two-readers}
+
+<!-- fields -->
+- intent: K7 review 2 N2 — BuildKit's two readers of the directives driven with docker build --check: escape is read indented and stops at a shebang, syntax and check are read past a first-line shebang; the key keeps what either reads; arms for an indented escape and for syntax and check after a shebang
+- workflow: fixer
+- status: joined
+
+### k7-review2-n3-the-tag-moves-last  {#k7-review2-n3-the-tag-moves-last}
+
+<!-- fields -->
+- intent: K7 review 2 N3 — both modes build under a temporary tag and move the asked-for tag only after the base check and the stamp check pass; a failure exits 1 and names the temporary tag; the stale comments in the Dockerfile and the script's header, and the README's sentence, say so; driven once on a base tag forged onto the earlier base: MISMATCH, exit 1, no tag made
+- workflow: fixer
+- status: joined
+
+### k7-review2-n4-refusals-read  {#k7-review2-n4-refusals-read}
+
+<!-- fields -->
+- intent: K7 review 2 N4 — each refusal arm reads its message, not only that it failed
+- workflow: fixer
+- status: joined
+
+### k7-review2-n5-the-platform-variable  {#k7-review2-n5-the-platform-variable}
+
+<!-- fields -->
+- intent: K7 review 2 N5 — an arm for docker_platform reading DOCKER_DEFAULT_PLATFORM, and refusing it in another spelling, with no docker
+- workflow: fixer
+- status: joined
+
+### k7-review2-l1-a-heredoc-refused  {#k7-review2-l1-a-heredoc-refused}
+
+<!-- fields -->
+- intent: K7 review 2 L1 — a heredoc above the build stage is refused by the key, since its comment and blank lines are content; an arm
+- workflow: fixer
+- status: joined
+
+### k7-review2-l2-the-base-records-its-platform  {#k7-review2-l2-the-base-records-its-platform}
+
+<!-- fields -->
+- intent: K7 review 2 L2 — the base's record carries the platform BuildKit built it for, its own TARGETPLATFORM, and the check after the build compares it
+- workflow: fixer
+- status: joined
+
 ### h2-ask-how-to-clear  {#h2-ask-how-to-clear}
 
 <!-- fields -->
