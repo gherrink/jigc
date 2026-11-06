@@ -841,3 +841,38 @@ Under `--format json` a read form that succeeds over a link on the way carries t
 **[Widened 2026-11-06 to its class (the review of `08c396f6`, S1 — [DECISIONS.md](../../../../../DECISIONS.md) → *The review of the route catalog's projection, worked*).]** The key is one member of a class: **an object a case supplies through a payload the runner does not read the way it reads `Act::operand`.** An act can take an object through three payloads (the shape arm of `route_catalog.rs` lists every payload an act may carry): its own `Operand`; the directory of `LinkAndDirectory`, above; and a named command's `Word`s, where `Word::Named` is a word of the case's own for an operand the route speaks of and prints nowhere. `Chosen`'s values, and `Word::Own`, are a value of the reader's own by the human's ruling of 2026-10-12, and out. So the class has **two members the runner did not see**: the directory, and `Word::Named`.
 - **The counting half is closed for both**, by the review's fix: `Act::marked` reads the directory, and `Act::implies` reads a `Word::Named` among a named command's operands or as where it is started. Seven cases now come out *followed, holds, operand implied* where they came out *followed, holds*; `route_catalog::an_operand_the_case_supplies_leaves_it_implied_and_a_value_of_the_readers_own_does_not` holds both.
 - **The refusal half stays open for both.** The runner refuses the marked form where the printed route holds a path span by reading `Act::operand` only, so the repro above is still followed. And nothing asks whether a `Word::Named` stands for a path the route prints, which by the frame's one rule the route would have to give (`Word::Span`). Whether a `Word::Named` is refused where the route prints a path span, as the marked form is, is a question for the frame, not answered here: the named command's operand may be another object than the span the route prints, as the worktree's work is in `milestone.zero-contribution`.
+
+## 14. Keys left by the classification of the reason texts — no fix here
+
+*2026-11-06, found by the plan before the opening's task `P-F0` while it classified the 201 lines of the catalog's reasons (the table: [route-catalog-reason-classes.md](route-catalog-reason-classes.md)). Read, not driven. A row is named by its text's number in that table, `T<n>`. Not fixed in this commit, which writes the table; for the run's opening ledger, and for the cases the table names an owner for.*
+
+### `r1-catalog-reasons-call-a-plantable-state-not-constructible` — a tool gap
+
+`Why::NotConstructible` says *no state the runner can plant reaches the site* (`route_catalog.rs`). Eighteen lines give that word to a state the frame plants today:
+- **a permission bit, a declared bound** — T4 (`config.repoint-failed`, the manifest's directory), T35 (`milestone.provision-failed`), T38, T40 and T41 twice (`milestone.area-io`), T100 (`finalize.stage-failed`), T113 (`finalize.provenance-io`), T135 (`uninstall.dirty-worktree`). A `git` alias's `chmod` plants one, as the `shut!` macros of `setup.rs` and `uninstall.rs` do, and the human's ruling of 2026-10-11 pins such cases: listed red if red, and not blocking.
+- **a pack of the reader's own** — T25 twice, T28, T119, T120, T121, T127. A `Step::File` plants one, as the byte table does (`byte_table/movers.rs`, the note pack), and the same ruling counts foreign content as no bound. The catalog words the same ground `NotBuilt` in T12, T13 and T20. T127's own text says *the state is constructible*.
+- **a committed spec** — T9, whose text says *the state was not built*.
+- **a state step inside a sub-task's worktree** — T141, `Step::JigcAt`, which landed with the milestone family after the text was written.
+
+The repro to drive is each row's case: the table names who writes it (`P-F0` for `jigc uninstall`, a C-task for the rest). Where the planted bit is refused first by an earlier step, the row goes back to *not constructible* with that evidence.
+
+### `r1-catalog-reasons-stale-against-the-frame-they-stand-in` — a tool gap
+
+Three lines rest on a frame that has moved past them:
+- **T26** (`write.title-ignored`, *then re-run this write unchanged*) says the frame runs the refusing command again only where the route prints no product line. Since the human's ruling of 2026-10-12, `followed` refuses a re-run only beside a product line that no act runs as printed. The staged arm's cases run the printed rename.
+- **T99** (`finalize.nothing-staged`) says the reader's re-run with the task's id is not followed. The three `nothing_staged!` cases end in `Act::Rerun`, which is that re-run.
+- **T131** (`uninstall.dirty-worktree`) says the frame runs no line of the message. `Act::RunListed` has run a command of the refusal's listing since the milestone family, and the route sends its reader there (`ANCHOR_CLAUSE`, `OPERATION_CLAUSE` in `crates/cli/src/milestone.rs`).
+
+### `r1-catalog-migrate-corpus-reasons-miss-the-shipped-changelogs-relocation` — a tool gap
+
+T15 (`store.home-not-regular-file`, *a relocation's destination*) and T128 (`migrate-corpus.destination-collision`, one of the nine reasons the stop `H1` puts to the human) say the state needs a doctype whose home moved at a version bump, *which no shipped schema has pending*. The shipped changelog moved its home from `docs/changelog/` to `CHANGELOG.md` at its schema-version 2 (M38). The byte table plants a version-1 changelog at the prior home (`a_stale_changelog!`, `byte_table/movers.rs`), and that is the state both rows ask for. What still stands in their way is that `jigc migrate-corpus` prints the refusal as a row of its report, so the frame needs the piece `route-from-a-report-row`.
+
+### `r1-catalog-reasons-hold-routes-that-leave-an-act-or-operand-to-infer` — to reconcile with `P-F1`
+
+The human's ruling F-C → A of 2026-10-28 makes a route that leaves an act or an operand to infer a finding of its own class, which the run fixes in the product's text. Fourteen lines are filed as reasons on exactly that ground:
+- **an act left to infer:** T46 (`milestone.unlanded-work`, *mend what git's message names*), T67 and T95 (a git refusal whose resolving act is in git's words), T68 (*resolve the refusal*, a setting), T96 (*re-seed the sub-task*), T109 (*resolve the git failure quoted above*), T122 and T130 (*retitle* and *rename that one instead*, whose command is not printed);
+- **an operand left to infer:** T108 (*revert the commit*, *discard the sub-task*, *undo the edit*);
+- **in doubt between an operand the listing prints and one left to infer:** T3, T7, T42, T145;
+- **beside them:** T114, a way no act can follow, whose route names no act either.
+
+Each such row gets a case once `P-F1`'s commit 2 has the class, and is then listed red under a key per route, as `P-F1` says. Until then these rows stay reasons, and this key is what holds them.

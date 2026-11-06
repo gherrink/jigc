@@ -2,6 +2,29 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-11-06 — The route catalog's reason texts, classified: 164 written, 153 distinct, on 201 lines of the projection — 125 lines not constructible, 48 plantable with a piece, 28 not built — and four keys (the plan before the opening's task `P-F0`, commit 1)
+
+**What landed.** One table, [route-catalog-reason-classes.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes.tsv), with a row for every `not-constructible` and `not-built` line of the catalog's projection and with the evidence each row rests on. Beside it are its page, [route-catalog-reason-classes.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes.md), and the three scripts that print it from the tree and the classification. No case and no line of the suite changes in this commit. The scripts are a tool `P-NC2` runs again, so they have their row in [tooling.md](implementation/tooling.md) → *The deterministic instruments*, as *the reason-text classifier*.
+
+**The count, re-derived.** The plan's *about 164* is the number of `Why::NotConstructible(…)` and `Why::NotBuilt(…)` the nine command files write at `c69a2f94`: 157 and 7. They hold 153 distinct texts, because consts and one macro repeat a text, and those texts stand on 201 projection lines (9 `reason`, 114 `without-case`, 78 `not-followed`).
+- The table is **per line, not per text**. A line is what the projection carries and what `P-NC2` and a hunter read, and a text that a const spreads over sites could take a different class at one of them. None does.
+
+**The builder's elaborations, none of them a fork:**
+- **The three classes fit, with two columns beside them.** **F-C** says whether the route leaves an act or an operand to infer, by the ruling F-C → A. Such a row's case belongs to `P-F1`'s left-to-infer classes, so its piece is named `P-F1's left-to-infer class` and its owner is `P-F1`. **Second class or doubt** says where a text could fall in two classes, and what was not driven. Where a way rests on a rule and not on a missing act, its piece says *(a rule)*, and its owner is a ruling, not `P-F0`. The re-run beside another way's printed line rests on the human's rule of 2026-10-12. A shell recipe rests on the catalog's own rule for `Act::RunListed`.
+- **`not built` rows are named to the C-task that takes their site's file**, in the plan's table, wherever the family has one; `jigc uninstall`'s three stay `P-F0`'s. The C-tasks' scope was the scheduled list; these rows add to it.
+- **No reason's word is changed here.** The table records the class, and a case written for a row removes its reason in the commit that writes it. Flipping 28 words before their cases exist would assert rows that are, for most, not yet driven.
+
+**The four keys** (each a heading of [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md) → §14):
+- `r1-catalog-reasons-call-a-plantable-state-not-constructible` — 18 lines;
+- `r1-catalog-reasons-stale-against-the-frame-they-stand-in` — 3;
+- `r1-catalog-migrate-corpus-reasons-miss-the-shipped-changelogs-relocation` — 2, one of them H1's `migrate-corpus.destination-collision`;
+- `r1-catalog-reasons-hold-routes-that-leave-an-act-or-operand-to-infer` — 14, to be reconciled with `P-F1`.
+
+**For `H1`.** Of the nine owed reasons that `H1` puts to the human, the table reads three as other than *not constructible*:
+- `config.value-rejected` is *plantable with a piece*: a re-run with a value of the reader's own.
+- `write.already-present` at `relocate::refuse` is *not built*: a pack of the reader's own.
+- `migrate-corpus.destination-collision` is *plantable with a piece*: the shipped changelog's relocation, read off a report row.
+
 ## 2026-11-06 — gitleaks' one hit in the history is allowlisted by one entry: `DECISIONS.md`, a `dev/regression-set` report line, the rule `generic-api-key` alone (the plan before the opening's task `G1`, moved up from Phase 3)
 
 **Why now.** The plan put `G1` in Phase 3, any time after H2. It moved up because the first push of any new branch is red in CI's `hygiene` job: there `before` is all zeros, so gitleaks scans the whole history (`--log-opts=HEAD`) and hits the known false positive. The tools lane's first push, CI run 42135119191, went red that way.

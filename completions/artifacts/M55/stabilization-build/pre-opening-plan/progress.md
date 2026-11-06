@@ -355,6 +355,13 @@ schema-version: 3
 - intent: P-F0 — classify the reason texts, build the shared test pieces, write the not-built cases
 - workflow: builder
 
+### p-f0-1-the-reason-texts  {#p-f0-1-the-reason-texts}
+
+<!-- fields -->
+- intent: P-F0 commit 1 — the reason texts classified: 164 written, 153 distinct, on 201 projection lines; 125 lines not constructible, 48 plantable with a piece, 28 not built, each with its evidence, a second class or a doubt, and an owner; four keys in route-catalog-findings.md section 14; no case changes
+- workflow: builder
+- status: joined
+
 ### t-nr-build-build  {#t-nr-build-build}
 
 <!-- fields -->
