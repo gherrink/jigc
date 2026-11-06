@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Join the classification (classes.py, keyed by the order in which each distinct text is
-first written) to the projection's reason lines, and print the table. Usage, from the
-repository's root at the commit the table was read at:
-  python3 -I <this dir>/table.py . > <this dir>/../route-catalog-reason-classes.tsv"""
+first written) to the projection's reason lines, and print the table. The argument is a
+tree that holds `crates/cli/tests/route_catalog/` as it was at the commit the table was
+read at, `c69a2f94` — a later commit's catalog has written cases for some of its rows:
+  mkdir <dir> && git archive c69a2f94 crates/cli/tests/route_catalog | tar -x -C <dir>
+  python3 -I <this dir>/table.py <dir> > <this dir>/../route-catalog-reason-classes.tsv"""
 import sys, collections, importlib.util, os
 
 def load(name):
@@ -45,9 +47,21 @@ for (kind, site, cause), e in lines.items():
     if cls == cl.NB:
         owner = cl.NAMED_TO.get(short(site).split('::')[0], 'P-F0')
     elif cls == cl.PP:
-        owner = 'P-F1' if piece == cl.LEFT else ('a ruling (the piece changes a rule)' if '(a rule)' in piece else 'P-F0')
+        if piece == cl.LEFT:
+            owner = 'P-F1'
+        elif '(a rule)' in piece:
+            owner = 'a ruling (the piece changes a rule)'
+        elif fc == 'doubt':
+            owner = 'in doubt — P-F1 decides'
+        elif piece in cl.ONE_FAMILY:
+            owner = cl.NAMED_TO.get(short(site).split('::')[0], 'P-F0')
+        else:
+            owner = 'P-F0'
     else:
         owner = '-'
+    if e['d'] in cl.BUILT:
+        owner = f"{owner} — {cl.BUILT[e['d']]}"
+
     out.append((fam, short(site), kind, cause, e['why'], ', '.join(sorted(set(e['at']))),
                 f"T{e['d']}", cls, piece or '-', fc, ev, alt or '-', key or '-', owner))
 

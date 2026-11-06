@@ -95,6 +95,7 @@ acts	config	Cd	0
 acts	config	RerunWith	0
 acts	config	RunListed	0
 acts	config	Unstage	0
+acts	config	PutOnPath	0
 family	doc read	11	6
 door	doc read	doc add-item
 door	doc read	doc list
@@ -152,6 +153,7 @@ acts	doc read	Cd	0
 acts	doc read	RerunWith	0
 acts	doc read	RunListed	0
 acts	doc read	Unstage	0
+acts	doc read	PutOnPath	0
 family	doc write	29	8
 door	doc write	doc add-item
 door	doc write	doc author
@@ -225,6 +227,7 @@ acts	doc write	Cd	0
 acts	doc write	RerunWith	0
 acts	doc write	RunListed	0
 acts	doc write	Unstage	0
+acts	doc write	PutOnPath	0
 family	ingest	3	1
 door	ingest	ingest
 part	ingest	crates/cli/src/ingest.rs	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	3
@@ -258,6 +261,7 @@ acts	ingest	Cd	0
 acts	ingest	RerunWith	0
 acts	ingest	RunListed	0
 acts	ingest	Unstage	0
+acts	ingest	PutOnPath	0
 family	migrate	2	1
 door	migrate	migrate
 part	migrate	crates/cli/src/migrate.rs	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	2
@@ -290,6 +294,7 @@ acts	migrate	Cd	0
 acts	migrate	RerunWith	0
 acts	migrate	RunListed	0
 acts	migrate	Unstage	0
+acts	migrate	PutOnPath	0
 family	migrate-corpus	3	2
 door	migrate-corpus	migrate-corpus
 part	migrate-corpus	crates/cli/src/migrate_corpus.rs	crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1	2
@@ -324,6 +329,7 @@ acts	migrate-corpus	Cd	0
 acts	migrate-corpus	RerunWith	0
 acts	migrate-corpus	RunListed	0
 acts	migrate-corpus	Unstage	0
+acts	migrate-corpus	PutOnPath	0
 family	milestone	32	5
 door	milestone	milestone add-from-spec
 door	milestone	milestone add-task
@@ -398,6 +404,7 @@ acts	milestone	Cd	0
 acts	milestone	RerunWith	0
 acts	milestone	RunListed	13
 acts	milestone	Unstage	3
+acts	milestone	PutOnPath	0
 family	setup	36	5
 door	setup	setup
 part	setup	crates/cli/src/locate.rs	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1	2
@@ -442,7 +449,7 @@ site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crat
 site	setup	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	human	not read	case
 site	setup	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	human	backticked span	case
 acts	setup	Remove	62
-acts	setup	Run	249
+acts	setup	Run	250
 acts	setup	RunFilled	2
 acts	setup	RunChosen	0
 acts	setup	RunNamed	0
@@ -468,6 +475,7 @@ acts	setup	Cd	0
 acts	setup	RerunWith	0
 acts	setup	RunListed	0
 acts	setup	Unstage	0
+acts	setup	PutOnPath	1
 family	start	11	3
 door	start	start
 door	start	workflow
@@ -512,6 +520,7 @@ acts	start	Cd	0
 acts	start	RerunWith	0
 acts	start	RunListed	0
 acts	start	Unstage	0
+acts	start	PutOnPath	0
 family	task bind	2	1
 door	task bind	task bind
 part	task bind	crates/cli/src/task.rs	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	2
@@ -544,6 +553,7 @@ acts	task bind	Cd	0
 acts	task bind	RerunWith	0
 acts	task bind	RunListed	0
 acts	task bind	Unstage	0
+acts	task bind	PutOnPath	0
 family	task discard	4	1
 door	task discard	task discard
 part	task discard	crates/cli/src/task.rs	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	4
@@ -578,6 +588,7 @@ acts	task discard	Cd	0
 acts	task discard	RerunWith	0
 acts	task discard	RunListed	0
 acts	task discard	Unstage	0
+acts	task discard	PutOnPath	0
 family	task finalize	61	16
 door	task finalize	milestone finalize
 door	task finalize	task finalize
@@ -686,6 +697,7 @@ acts	task finalize	Cd	16
 acts	task finalize	RerunWith	6
 acts	task finalize	RunListed	0
 acts	task finalize	Unstage	0
+acts	task finalize	PutOnPath	0
 family	uninstall	21	4
 door	uninstall	uninstall
 part	uninstall	crates/cli/src/locate.rs	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1	2
@@ -714,7 +726,7 @@ site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	
 site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	prose	backticked span	case
 site	uninstall	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	prose	backticked span	case
 acts	uninstall	Remove	1
-acts	uninstall	Run	87
+acts	uninstall	Run	88
 acts	uninstall	RunFilled	5
 acts	uninstall	RunChosen	0
 acts	uninstall	RunNamed	0
@@ -740,6 +752,7 @@ acts	uninstall	Cd	0
 acts	uninstall	RerunWith	0
 acts	uninstall	RunListed	0
 acts	uninstall	Unstage	0
+acts	uninstall	PutOnPath	1
 family	validate	2	2
 door	validate	validate
 part	validate	crates/cli/src/render.rs	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	1
@@ -773,6 +786,7 @@ acts	validate	Cd	0
 acts	validate	RerunWith	0
 acts	validate	RunListed	0
 acts	validate	Unstage	0
+acts	validate	PutOnPath	0
 residue	crates/cli/src/doc_code_probe/mod.rs::dangling::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/repo.rs::finding_at::dynamic#1	human	not read	scheduled
@@ -1232,6 +1246,7 @@ case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-
 case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-git-index-unreadable-made-readable	followed, the same refusal again	-	`git ls-files` fails — here over an index that is not one
 case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-git-listing-undecodable-forced	followed, holds	-	git lists a path under `.jigc/` whose name is not UTF-8
 case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-git-listing-undecodable-made-readable	followed, the same refusal again	-	git lists a path under `.jigc/` whose name is not UTF-8
+case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-git-not-on-path-put-on-path	followed, holds	-	`git` cannot be run: no `git` on `PATH`
 case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-workbench-unlistable-forced	followed, another failure	-	`.jigc` may be searched and not listed
 case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	uninstall-workbench-unlistable-made-readable	followed, holds	-	`.jigc` may be searched and not listed
 case	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	uninstall-worktrees-root-unreadable-forced	followed, another failure	-	`.jigc/worktrees/` is there and cannot be listed
@@ -1428,6 +1443,7 @@ case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-ins
 case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	setup-untracked-file-at-an-install-path-committed	followed, holds, operand implied	marked	a file git does not track stands at an install path
 case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	setup-untracked-file-at-an-install-path-forced	followed, holds	-	a file git does not track stands at an install path
 case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	setup-untracked-file-at-an-install-path-stashed	followed, holds	-	a file git does not track stands at an install path
+case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	setup-git-not-on-path-put-on-path	followed, holds	-	git cannot be run: no `git` on `PATH`
 case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	setup-git-refuses-the-repository-asked-as-printed-and-resolved	followed, holds, operand implied	marked	git refuses to say whether the install home is a work tree, where a `.git` stands — here over a configuration file it cannot read
 case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	setup-git-refuses-the-repository-resolved	followed, holds, operand implied	marked	git refuses to say whether the install home is a work tree, where a `.git` stands — here over a configuration file it cannot read
 case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	setup-git-status-fails-asked-as-printed-and-resolved	followed, holds, operand implied	marked	`git status` fails in a work tree — here over an index that is not one
@@ -1685,7 +1701,6 @@ without-case	crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1	no
 without-case	crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1	not-constructible	the host held the reference and nothing else, and the root it is to be removed from may not be written	the step before needs the same permission to take `.jigc/` out of the root, and refuses first under `uninstall.remove-jigc` — the case `uninstall-workbench-under-a-read-only-root`
 without-case	crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1	not-constructible	git could not say which of the listed paths it ignores	`git check-ignore` is asked a moment after `git ls-files` and `git status` answered in the same repository: no state was found that fails the third question and neither of the two before it
 without-case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	not-constructible	`git status` fails where `git ls-files` answered	both read the same index: no state was found that fails the second and not the first
-without-case	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	not-constructible	`git` cannot be run	reached with no `git` on `PATH`; the route's way out is to put it there, and a case's environment is one for all its commands — the frame has no act that changes a variable between the refusing command and the route's, and its own `git` children would not start
 without-case	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	not-constructible	the listing of `.jigc/worktrees/` begins and one of its entries cannot be read	a directory that can be opened for listing yields its entries: an entry that fails in the middle of a listing is a filesystem's fault and no state of a sandbox
 without-case	crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1	not-constructible	`.jigc/config/` cannot be made	the step before this one writes `.jigc/config/.gitkeep`, so the directory stands or that step has refused under `setup.init-project-layer`
 without-case	crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1	not-constructible	an entry is in the way of `packs.yaml`	`replaced_path_refusal` asks the same question before the first write and answers under this code at its own site — the cases `setup-compose-marker-a-…`
@@ -1739,7 +1754,6 @@ without-case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.d
 without-case	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	not-constructible	there is no commit yet, and a file git reports and a file git ignores both refuse	the refusal is reached — driven by hand — and its route says *those path(s)* of the refused file while it prints the path of another: the file beside it that rides the first commit, or the ignored one. The frame refuses the marked form wherever the printed route holds a path, so a case may not name the refused file there, and no act on it can be written
 without-case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	not-constructible	`git ls-files -v` gives no answer where `git status` gave one	both read the same index; no state was found that fails the second and not the first
 without-case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	not-constructible	`git status` cannot be run, where the question before it could	the two are one program started twice within an instruction of each other: no state stands still between them
-without-case	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	not-constructible	git cannot be run	reached with no `git` on `PATH` — driven by hand. The route's way out is to put it there, and a case's environment is one for all its commands: the frame has no act that changes a variable between the refusing command and the route's, and its own `git` children would not start
 without-case	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	not-constructible	append to the task list, at add-task	the list is read a moment earlier by the same call, which answers whatever stands at its path that is no list; what is left is a permission, a declared bound
 without-case	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	not-constructible	read the milestone record — at the join, at the discard and at a sub-task's discard	each door reads the record earlier and answers a fault of it first: an edit in no commit draws `reconciliation.conflict-block` from the record's preflight, and a record committed with bytes that are no text, with no hash of jigc's held for it, draws a plain error and no code — driven at the three doors, both ways
 without-case	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	not-constructible	write the base pin, at the create	the area's directory was made by the same process a moment earlier: only a permission bit changed by hand — a declared bound — or a full disk fails the write

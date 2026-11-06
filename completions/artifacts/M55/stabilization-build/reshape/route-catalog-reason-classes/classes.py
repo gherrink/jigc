@@ -33,6 +33,18 @@ NAMED_TO = {
     "engine/finalize.rs": "C13",
 }
 
+# The pieces only one family's sites need: each is named to that family's C-task, by the
+# file of its site (NAMED_TO), and described in the row well enough to build — the main
+# session's rule after commit 1. `remove-a-directory` is `jigc uninstall`'s, whose family
+# has no C-task, so it stays P-F0's.
+ONE_FAMILY = {"drop-a-line", "merge", "move-head", "move-the-repository", "move-to-a-printed-path"}
+
+# The rows a later commit of P-F0 wrote the case for, and which commit.
+BUILT = {
+    91: "case written in commit 2 (`setup-git-not-on-path-put-on-path`)",
+    147: "case written in commit 2 (`uninstall-git-not-on-path-put-on-path`)",
+}
+
 PACK = "a pack of the reader's own is files a `Step::File` plants — the byte table plants one (`byte_table/movers.rs`, the note pack: `note-pack/` and `.jigc/config/packs.yaml`); the ruling of 2026-10-11 calls foreign content no bound"
 
 C = {

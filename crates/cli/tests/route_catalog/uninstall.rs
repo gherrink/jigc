@@ -1044,6 +1044,21 @@ const GITS_LISTING_UNDECODABLE: [Case; 2] = unasked_ways!(
     ])],
 );
 
+/// **`git` cannot be run: there is no `git` on `PATH`** — followed as the route's first
+/// clause asks, *make sure `git` is on PATH*: `git` is put on `PATH` and the printed
+/// `jigc uninstall` is run (P-F0's first piece, [`Act::PutOnPath`]). The consent, the
+/// route's other way, is followed at the three causes above.
+const GIT_NOT_ON_PATH: [Case; 1] = [Case {
+    name: "uninstall-git-not-on-path-put-on-path",
+    site: UNVERIFIED_WORKBENCH,
+    cause: "`git` cannot be run: no `git` on `PATH`",
+    state: installed![],
+    env: &[Var::Path("PATH", Place::Outside("no-programs"))],
+    acts: &[Act::PutOnPath(0), Act::Run(2)],
+    holds: torn_down![],
+    ..UNINSTALL
+}];
+
 // ---------------------------------------------------------------------------
 // `uninstall` — the seven steps that remove, each a site
 // ---------------------------------------------------------------------------
@@ -1532,6 +1547,7 @@ pub const CASES: &[&[Case]] = &[
     &THE_WORKBENCH_UNLISTABLE,
     &GITS_INDEX_UNREADABLE,
     &GITS_LISTING_UNDECODABLE,
+    &GIT_NOT_ON_PATH,
     &WORKBENCH_READ_ONLY,
     &A_WORKBENCH_DIRECTORY_READ_ONLY,
     &ROOT_READ_ONLY,
@@ -1921,24 +1937,13 @@ pub const READINGS: &[Reading] = &[
                      `git` cannot be run; where `git ls-files` fails; where `git status` \
                      fails; and where what git printed is not UTF-8. The first is one arm \
                      whichever directory it was, followed at `.jigc` itself",
-        without_case: &[
-            (
-                "`git` cannot be run",
-                Why::NotConstructible(
-                    "reached with no `git` on `PATH`; the route's way out is to put it \
-                     there, and a case's environment is one for all its commands — the \
-                     frame has no act that changes a variable between the refusing command \
-                     and the route's, and its own `git` children would not start",
-                ),
-            ),
-            (
-                "`git status` fails where `git ls-files` answered",
-                Why::NotConstructible(
-                    "both read the same index: no state was found that fails the second \
+        without_case: &[(
+            "`git status` fails where `git ls-files` answered",
+            Why::NotConstructible(
+                "both read the same index: no state was found that fails the second \
                      and not the first",
-                ),
             ),
-        ],
+        )],
         not_followed: &[],
     },
     Reading {

@@ -2,7 +2,7 @@
 
 *The plan before the stabilization run's opening, task `P-F0`, its first commit ([detail.md](../pre-opening-plan/detail.md) → *Lane P*, P-F0). Read at `c69a2f94` (branch `fix/rc24-route-catalog-rest`) by the task's builder. A reading of the catalog and of the product's code, row by row with the evidence it rests on — no case was run to make it, so every row whose class differs from the word the catalog gives it carries what was not driven.*
 
-The table is [route-catalog-reason-classes.tsv](route-catalog-reason-classes.tsv), one row a line of the projection. Its three scripts are in [route-catalog-reason-classes/](route-catalog-reason-classes/): `extract.py` lists the texts as the source writes them, `classes.py` holds the classification, and `table.py` joins the two to the projection and prints the table. Run from the repository's root at `c69a2f94`, `python3 -I completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes/table.py .` prints the committed file byte for byte.
+The table is [route-catalog-reason-classes.tsv](route-catalog-reason-classes.tsv), one row a line of the projection. Its three scripts are in [route-catalog-reason-classes/](route-catalog-reason-classes/): `extract.py` lists the texts as the source writes them, `classes.py` holds the classification, and `table.py` joins the two to the projection and prints the table. Handed a directory that holds the catalog as of `c69a2f94` (`git archive c69a2f94 crates/cli/tests/route_catalog | tar -x -C <dir>`), `python3 -I completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes/table.py <dir>` prints the committed file byte for byte; a later tree has written cases for some of its rows, which then have no line to stand on.
 
 ## What was counted
 
@@ -45,8 +45,11 @@ This is the rule `P-NC2` applies to the texts the C-tasks write.
 | `stash-and-commit-in-a-worktree` — a stash, and a commit inside a linked worktree | 3 | P-F0 |
 | `rerun-beside-another-ways-line` — a re-run where the route prints a `jigc` line for another way | 3 | a ruling: it changes the human's rule of 2026-10-12 |
 | `shell-line` — a printed recipe joined by a shell's operators | 3 | a ruling: it changes the catalog's own rule (`Act::RunListed`) |
-| `env-for-the-refusing-command` — an environment the refusing command has and the route's commands do not | 2 | P-F0, **the first piece** |
-| `move-to-a-printed-path`, `move-the-repository`, `merge`, `drop-a-line`, `move-head`, `remove-a-directory` | 1 each | P-F0 |
+| `env-for-the-refusing-command` — an environment the refusing command has and the route's commands do not | 2 | P-F0, **the first piece** — built in commit 2 |
+| `remove-a-directory` | 1 | P-F0: `jigc uninstall`'s, a family with no C-task |
+| `move-to-a-printed-path` (C4), `move-the-repository` (C8), `merge` (C14), `drop-a-line` (C14), `move-head` (C13) | 1 each | the C-task of the one family that needs it |
+
+**Who builds a piece** (the main session's rule after commit 1): a piece that sites of more than one family need is P-F0's, built once before the C-tasks split; a piece only one family needs is named to that family's C-task, its row saying what it must do. **A row in doubt under F-C** — T3, T7, T42 and T145 — is P-F1's to decide, and no case is written for it before then.
 
 **The first piece is the spec's own.** `setup.unverified-install-path`'s *git cannot be run* (T91) and `uninstall.untracked-workbench-file`'s *`git` cannot be run* (T147) are reached with no `git` on `PATH`. A case's `Var`s are the environment of the refusing command and of every command its route runs (`Case::env`), so no act can put `git` back before the route's re-run. One clause of both texts does not hold: *its own `git` children would not start*. The runner's own children run under the mask as it stands, never under `Case::env` (`route_case.rs`, `Sandbox::tested` beside `Sandbox::git`).
 
@@ -83,6 +86,10 @@ Each is a heading of [route-catalog-findings.md](route-catalog-findings.md) → 
   - T131 rests on the frame running no line of the message, which `Act::RunListed` has done since the milestone family.
 - **`r1-catalog-migrate-corpus-reasons-miss-the-shipped-changelogs-relocation`** — T15 and T128 say no shipped schema has a home move pending. The changelog moved its home at its schema-version 2 (M38), and the byte table plants a version-1 changelog at the prior home (`a_stale_changelog!`).
 - **`r1-catalog-reasons-hold-routes-that-leave-an-act-or-operand-to-infer`** — 14 lines whose reason is, by F-C → A, a route that leaves an act or an operand to infer, filed as a reason and not as a finding (T46, T67, T68, T95, T96, T108, T109, T122, T130; T3, T7, T42, T145 in doubt; T114 beside it).
+
+## Since the table was read
+
+- **Commit 2** built the first piece as `Act::PutOnPath` — the case's environment sets `PATH` to a place no program stands in, and the act gives every command after it the runner's `PATH` — and wrote T91's and T147's cases, `setup-git-not-on-path-put-on-path` and `uninstall-git-not-on-path-put-on-path`, both *followed, holds*; their two reasons are gone. It also made a printed line whose program cannot be started a failure of the line instead of a panic of the runner. The owner column names it.
 
 ## What this does not establish
 

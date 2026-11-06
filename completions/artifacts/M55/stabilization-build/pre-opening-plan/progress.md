@@ -362,6 +362,13 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### p-f0-2-a-program-put  {#p-f0-2-a-program-put}
+
+<!-- fields -->
+- intent: P-F0 commit 2 — the first piece, Act::PutOnPath (a PATH without git is the case's state; the act gives the commands after it the runner's PATH), a printed line whose program cannot start is a failure and no panic, and the two git-not-on-PATH cases; the owner column by the main session's rule; P-F0 re-priced at about 2 h for commits 1 and 2 each and 16 to 20 h for commits 3 to 8 (six pieces and their cases, three uninstall cases), plus a gate of about 35 minutes each
+- workflow: builder
+- status: joined
+
 ### t-nr-build-build  {#t-nr-build-build}
 
 <!-- fields -->

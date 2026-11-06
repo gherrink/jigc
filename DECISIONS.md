@@ -2,6 +2,28 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-11-06 — A program a route puts on `PATH`: `Act::PutOnPath` gives the commands after it the runner's `PATH`, a printed line whose program cannot start is a failure of the line, and *git cannot be run* has its two cases (the plan before the opening's task `P-F0`, commit 2)
+
+**What landed.** P-F0's first piece, the one its spec names: *the per-command environment for "no git on `PATH`"*.
+- **The state** is the case's environment: `Var::Path("PATH", <a place of the sandbox no program stands in>)`.
+- **The act** is new, `Act::PutOnPath(usize)`, the frame's 28th. *Put `git` on `PATH`* and *make sure `git` is on PATH* name it, and its argument is the index of the printed `` `git` `` span. From the act on, every command under test has the `PATH` the runner's own children have. The refusing command, and every command before the act, keep the case's.
+- **The faults:** the program must be found there, or the act is not done. A span that is no program's name (a path, or a command line), and a case whose environment leaves `PATH` alone, are faults of the case.
+- **The two cases** are `setup-git-not-on-path-put-on-path` at `setup.unverified-install-path` (*put `git` on `PATH`*, then the printed `jigc setup`) and `uninstall-git-not-on-path-put-on-path` at `uninstall.untracked-workbench-file`'s could-not-look site (*make sure `git` is on PATH*, then the printed `jigc uninstall`). Both are *followed, holds*. Each was driven by hand first, with an empty `PATH`, and reached its own site, not the sibling site of the same code. Their two reasons (T91, T147) are gone, and the projection is regenerated.
+
+**And the runner no longer panics over a line it cannot start**, as the main session asked for this commit. With `PATH` a case's state, a printed line can name a program no directory of it holds, and `Sandbox::run` used to `expect` the spawn. That stopped the whole arm and every later case in it. Now the spawn's error is a `Ran` with `unstarted` set, recorded as *could not be started*, and the case comes out *followed, another failure* with why in its record.
+
+**Red first:**
+- `route_catalog::a_program_the_route_puts_on_path_is_there_for_every_command_after_the_act` ran against a runner that declared the act and did nothing. The planted `git` case came out *another failure*, and the planted program no `PATH` holds came out *holds*.
+- `route_catalog::a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm` panicked in `Sandbox::run`.
+- **Mutants:** the arm's fault half was red against each guard removed. With the environment guard off, the case that leaves `PATH` alone came out *holds*; with the program-name guard off, both the path span and the command-line span came out *another failure*.
+
+**The builder's elaborations, none of them a fork:**
+- **An act, not a per-command `Var`.** The route names a reader's act (*put `git` on `PATH`*), and the classified texts named the gap as *no act that changes a variable between the refusing command and the route's*. A `Var` scoped to the refusing command alone would have put `git` back unseen, with no act a reader does and no span it is read from. That is the act check's business (`P-F1`), and this act gives it a verb and an operand.
+- **The operand is a span's index, not an `Operand`.** A program's name is no path from where the case stands, so the marked form has no meaning here, and `Act::operand` answers `None`, as it does for `Cd` and `RunListed`.
+- **The runner's own children never had the case's `PATH`** (`Sandbox::child` beside `Sandbox::tested`), so one clause of the old reasons, *its own `git` children would not start*, did not hold. Their state steps and checks are unchanged.
+
+**And the reason table's owner column follows the main session's rule after commit 1.** A piece that more than one family's sites need is P-F0's. A piece that only one family needs is named to that family's C-task: `move-to-a-printed-path` → C4, `move-the-repository` → C8, `merge` and `drop-a-line` → C14, `move-head` → C13. `remove-a-directory` stays P-F0's, because `jigc uninstall` has no C-task. The four rows in doubt under F-C (T3, T7, T42, T145) are P-F1's to decide. The table is re-printed from the catalog as of `c69a2f94`, which is what its scripts now take.
+
 ## 2026-11-06 — The route catalog's reason texts, classified: 164 written, 153 distinct, on 201 lines of the projection — 125 lines not constructible, 48 plantable with a piece, 28 not built — and four keys (the plan before the opening's task `P-F0`, commit 1)
 
 **What landed.** One table, [route-catalog-reason-classes.tsv](completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes.tsv), with a row for every `not-constructible` and `not-built` line of the catalog's projection and with the evidence each row rests on. Beside it are its page, [route-catalog-reason-classes.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-reason-classes.md), and the three scripts that print it from the tree and the classification. No case and no line of the suite changes in this commit. The scripts are a tool `P-NC2` runs again, so they have their row in [tooling.md](implementation/tooling.md) → *The deterministic instruments*, as *the reason-text classifier*.

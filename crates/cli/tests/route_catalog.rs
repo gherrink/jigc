@@ -220,6 +220,13 @@
 //! with the dirty gate, whose route says to move a file out of its path: the runner moves
 //! it, as it moves a directory out of the way ([`a_file_is_moved_out_of_its_path`]).
 //!
+//! **And a program put on `PATH`** (the pre-opening plan's task `P-F0`, its first piece):
+//! a case's state may be a `PATH` without `git`, and *put `git` on `PATH`* gives the
+//! commands after the act the runner's own
+//! ([`a_program_the_route_puts_on_path_is_there_for_every_command_after_the_act`]); a
+//! printed line whose program cannot be started is a failure of the line, which ends no arm
+//! ([`a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm`]).
+//!
 //! **And every case on another binary** — one ignored arm, run by hand
 //! ([`the_cases_are_followed_on_the_binary_a_variable_names`]; the plan's step `P5`): it
 //! follows the whole catalog on the binary a variable names, each case from the state that
@@ -5087,6 +5094,146 @@ fn a_case_stands_where_it_says_in_the_environment_it_says() {
             Classification::Holds,
         ),
     ]);
+}
+
+/// A `PATH` that holds no program: a place of the sandbox nothing is planted at.
+const NO_PROGRAMS: Var = Var::Path("PATH", Place::Outside("no-programs"));
+
+/// A refusal over a `PATH` without `git`, whose route puts it there and runs a line that
+/// holds only where `git` is found: `git` is span 0, `PATH` span 1, the line span 2.
+const WITHOUT_GIT: &str = "command -v git >/dev/null && exit 0; \
+     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+     '  route: put `git` on `PATH`, then re-run `jigc -c \"command -v git\"`'; exit 1";
+
+/// **A program the route puts on `PATH` is there for every command after the act, and for
+/// none before it** ([`Act::PutOnPath`]). *Put `git` on `PATH`* is a reader's act on their
+/// environment: the case's state is a `PATH` without the program, the refusing command is
+/// started under it, and from the act on every command under test has the `PATH` the
+/// runner's own children have. The program the span names must be found there, or the act
+/// is not done; a span that is no program's name, and a case whose environment leaves
+/// `PATH` alone, are faults of the case.
+#[test]
+fn a_program_the_route_puts_on_path_is_there_for_every_command_after_the_act() {
+    come_out(&[
+        (
+            Case {
+                name: "planted-git-put-on-path-and-the-line-run",
+                refusing: &["-c", WITHOUT_GIT],
+                env: &[NO_PROGRAMS],
+                acts: &[Act::PutOnPath(0), Act::Run(2)],
+                ..PLANTED
+            },
+            Classification::Holds,
+        ),
+        (
+            Case {
+                name: "planted-a-program-no-path-holds-put-on-path",
+                refusing: &[
+                    "-c",
+                    "command -v git >/dev/null && exit 0; \
+                     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: put `no-such-program-of-a-route-case` on `PATH`, then re-run \
+                     `jigc -c \"exit 0\"`'; exit 1",
+                ],
+                env: &[NO_PROGRAMS],
+                acts: &[Act::PutOnPath(0), Act::Run(2)],
+                ..PLANTED
+            },
+            Classification::AnotherFailure,
+        ),
+    ]);
+
+    let mut wrong = Vec::new();
+    for (case, why) in [
+        (
+            Case {
+                name: "planted-git-put-on-a-path-the-case-left-alone",
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: put `git` on `PATH`, then re-run `jigc -c \"exit 0\"`'; exit 1",
+                ],
+                acts: &[Act::PutOnPath(0), Act::Run(2)],
+                ..PLANTED
+            },
+            "a case whose environment leaves `PATH` alone",
+        ),
+        (
+            Case {
+                name: "planted-a-path-put-on-path",
+                refusing: &[
+                    "-c",
+                    "printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                     '  route: put `bin/git` on `PATH`, then re-run `jigc -c \"exit 0\"`'; exit 1",
+                ],
+                env: &[NO_PROGRAMS],
+                acts: &[Act::PutOnPath(0), Act::Run(2)],
+                ..PLANTED
+            },
+            "a span that is a path and no program's name",
+        ),
+        (
+            Case {
+                name: "planted-a-command-line-put-on-path",
+                refusing: &["-c", WITHOUT_GIT],
+                env: &[NO_PROGRAMS],
+                acts: &[Act::PutOnPath(2), Act::Run(2)],
+                ..PLANTED
+            },
+            "a span that is a command line and no program's name",
+        ),
+    ] {
+        match route_case::follow(Path::new("/bin/sh"), &case) {
+            Err(_) => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {why} — came out {} where it is a fault of the case\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
+}
+
+/// **A printed line whose program cannot be started is a failure of the line, and ends no
+/// arm.** Once a case's state is a `PATH`, a line the route prints may name a program no
+/// directory of it holds: the reader would see *command not found*, and so does the case —
+/// *followed, another failure*, with why in its record — where the runner used to panic and
+/// take every later case of its arm with it.
+#[test]
+fn a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm() {
+    let case = Case {
+        name: "planted-a-printed-git-line-under-a-path-without-git",
+        refusing: &[
+            "-c",
+            "command -v git >/dev/null && exit 0; \
+             printf '%s\\n' 'blocking · setup.install-hook — refused' \
+             '  route: run `git status`'; exit 1",
+        ],
+        env: &[NO_PROGRAMS],
+        acts: &[Act::Run(0)],
+        ..PLANTED
+    };
+    let followed = std::panic::catch_unwind(|| route_case::follow(Path::new("/bin/sh"), &case));
+    let Ok(followed) = followed else {
+        panic!(
+            "`{}`: the runner panicked over a line it could not start",
+            case.name
+        );
+    };
+    let followed = followed.unwrap_or_else(|fault| panic!("`{}`: {fault}", case.name));
+    assert_eq!(
+        followed.classification,
+        Classification::AnotherFailure,
+        "`{}`\n{}",
+        case.name,
+        followed.detail
+    );
+    assert!(
+        followed.detail.contains("could not be started"),
+        "`{}`: the record says why the line failed\n{}",
+        case.name,
+        followed.detail
+    );
 }
 
 /// The three acts that run the refusing command again.

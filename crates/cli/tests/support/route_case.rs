@@ -223,6 +223,16 @@
 //! holds it counts through, since nothing else tells a job the gate refused from one that
 //! has not asked.
 //!
+//! **And where a route says to put a program on `PATH`, the case's state is a `PATH` that
+//! holds none, and the act gives the runner's back** ([`Act::PutOnPath`]). *Put `git` on
+//! `PATH`* is a reader's act on their environment, so the case says it in two places: its
+//! environment sets `PATH` to a place of the sandbox no program stands in ([`Var`]), and
+//! from the act on every command under test has the `PATH` the runner's own children have
+//! — the refusing command, and every command before the act, keep the case's. The program
+//! is the printed span's, and must be found there. **A printed line whose program cannot
+//! be started is a failure of that line**, with why in the record ([`Ran::unstarted`]),
+//! and never a panic that ends the arm.
+//!
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
 //! on the binary handed in: the state is that release's own, and no case copies the
@@ -284,6 +294,9 @@ pub enum Place {
     /// `Moved(p)`. A check's place, never a state's.
     Moved(&'static str),
 }
+
+/// The variable [`Act::PutOnPath`] gives back to the commands after it.
+const PATH: &str = "PATH";
 
 /// The one file the sandbox's repository holds committed before a case's state is planted,
 /// from the repository root — what [`Act::PointAtCommitted`] points a link at. Its body is
@@ -614,6 +627,15 @@ pub enum Act {
     /// holds the path, and the file stays where it is. A path git holds no entry for is not
     /// unstaged, and the case is red for it.
     Unstage(Operand),
+    /// **Put the program the span of this index names on `PATH`** — what *put `git` on
+    /// `PATH`* and *make sure `git` is on PATH* ask for, where the case's state is a `PATH`
+    /// that holds no such program ([`Var`]): from this act on, every command under test has
+    /// the `PATH` the runner's own children have, and the program must be found there. The
+    /// span is the program's name, one word with no `/`, as printed; the case's environment
+    /// must change `PATH`, or there is nothing to put the program on — either is a fault of
+    /// the case. The commands before the act, the refusing command among them, keep the
+    /// case's `PATH`.
+    PutOnPath(usize),
 }
 
 /// **The two operands of [`Act::MoveDirectoryIn`]** — the link the route names first, and
@@ -655,6 +677,7 @@ impl Act {
             | Act::RunCited(_)
             | Act::RunListed(_)
             | Act::Cd(_)
+            | Act::PutOnPath(_)
             | Act::Rerun
             | Act::RerunInTheRepository
             | Act::RerunWith(_) => None,
@@ -1422,6 +1445,10 @@ pub(super) struct Ran {
     pub(super) said: String,
     /// Its stdout, as the bytes it wrote.
     pub(super) out: Vec<u8>,
+    /// **It could not be started** — no program of its name on the `PATH` it was given,
+    /// which a case's state can make ([`Act::PutOnPath`]): a failure of the line, which
+    /// [`Ran::said`] says, and never a panic of the runner.
+    pub(super) unstarted: bool,
 }
 
 impl Ran {
@@ -1431,6 +1458,9 @@ impl Ran {
 
     /// How it ended, in words.
     pub(super) fn exit(&self) -> String {
+        if self.unstarted {
+            return "could not be started".to_string();
+        }
         match (self.held, self.code) {
             (Some(limit), _) => format!("did not end within {limit:?} and was ended"),
             (None, Some(code)) => format!("exit {code}"),
@@ -1461,6 +1491,10 @@ pub(super) struct Sandbox {
     /// Where the route has sent its reader ([`Act::Cd`]), once it has: the directory the
     /// route's later commands are started in. Until then the case stands where it says.
     went: Mutex<Option<PathBuf>>,
+    /// Whether the route has put a program on `PATH` ([`Act::PutOnPath`]): from then on a
+    /// command under test has the `PATH` the runner's own children have, and not the
+    /// case's.
+    on_path: Mutex<bool>,
     /// Whether the sandbox has a `tmp/` of its own, which every child of it then has as
     /// `TMPDIR` — one made over a prepared state has ([`Sandbox::over`]).
     own_tmp: bool,
@@ -1477,6 +1511,7 @@ impl Sandbox {
             under_test,
             children: AtomicUsize::new(0),
             went: Mutex::new(None),
+            on_path: Mutex::new(false),
             own_tmp: false,
             _scratch: scratch,
         };
@@ -1514,6 +1549,7 @@ impl Sandbox {
             under_test,
             children: AtomicUsize::new(0),
             went: Mutex::new(None),
+            on_path: Mutex::new(false),
             own_tmp: true,
             _scratch: scratch,
         };
@@ -1608,11 +1644,17 @@ impl Sandbox {
     fn tested(&self, case: &Case, program: &Path, at: &Path) -> Command {
         let mut command = self.child(program);
         command.current_dir(at);
+        let on_path = *self.on_path.lock().unwrap_or_else(PoisonError::into_inner);
         for var in case.env {
             match *var {
-                Var::Unset(name) => command.env_remove(name),
-                Var::Path(name, place) => command.env(name, self.at(place)),
-            };
+                Var::Unset(PATH) | Var::Path(PATH, _) if on_path => {}
+                Var::Unset(name) => {
+                    command.env_remove(name);
+                }
+                Var::Path(name, place) => {
+                    command.env(name, self.at(place));
+                }
+            }
         }
         command
     }
@@ -1629,11 +1671,21 @@ impl Sandbox {
             self.staging().join(format!("child-{at}.err")),
         );
         let file = |path: &Path| fs::File::create(path).expect("create a child's output file");
-        let mut child = command
-            .stdout(file(&out))
-            .stderr(file(&err))
-            .spawn()
-            .expect("start a child of the case");
+        let mut child = match command.stdout(file(&out)).stderr(file(&err)).spawn() {
+            Ok(child) => child,
+            Err(error) => {
+                return Ran {
+                    code: None,
+                    held: None,
+                    said: format!(
+                        "`{}` could not be started: {error}\n",
+                        command.get_program().to_string_lossy()
+                    ),
+                    out: Vec::new(),
+                    unstarted: true,
+                };
+            }
+        };
         let started = Instant::now();
         let (status, held) = loop {
             if let Some(status) = child.try_wait().expect("ask after a child") {
@@ -1657,6 +1709,7 @@ impl Sandbox {
                 String::from_utf8_lossy(&err)
             ),
             out,
+            unstarted: false,
         }
     }
 
@@ -1854,6 +1907,7 @@ impl Sandbox {
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
+                | Act::PutOnPath(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
                 | Act::RerunWith(_) => {
@@ -1938,6 +1992,7 @@ impl Sandbox {
                 | Act::RunCited(_)
                 | Act::RunListed(_)
                 | Act::Cd(_)
+                | Act::PutOnPath(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
                 | Act::RerunWith(_) => {
@@ -2336,6 +2391,45 @@ impl Sandbox {
                         self.under_test,
                     ),
                 )
+            }
+            Act::PutOnPath(at) => {
+                let program = span(at)?;
+                if program.is_empty()
+                    || program.contains('/')
+                    || program.split_whitespace().count() != 1
+                {
+                    return Err(format!(
+                        "an act puts span {at}, `{program}`, on `PATH`, and it is no program's \
+                         name: one word with no `/`"
+                    ));
+                }
+                if !case
+                    .env
+                    .iter()
+                    .any(|var| matches!(var, Var::Unset(PATH) | Var::Path(PATH, _)))
+                {
+                    return Err(format!(
+                        "an act puts `{program}` on `PATH` (span {at}), and the case's \
+                         environment leaves `PATH` as it is: there is nothing to put it on"
+                    ));
+                }
+                *self.on_path.lock().unwrap_or_else(PoisonError::into_inner) = true;
+                let what = format!("put `{program}` on `PATH` (span {at})");
+                let found = self.run(
+                    self.child(Path::new("/bin/sh")).args([
+                        "-c",
+                        "command -v \"$1\" >/dev/null",
+                        "sh",
+                        program,
+                    ]),
+                    LIMIT,
+                );
+                return Ok(if found.success() {
+                    format!("{what}: found there, for every command after")
+                } else {
+                    seen.failed = true;
+                    format!("{what}: not done — no `{program}` on the runner's `PATH`")
+                });
             }
             _ => unreachable!("every other act takes an operand"),
         };

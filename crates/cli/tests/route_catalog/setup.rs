@@ -2650,6 +2650,19 @@ const GIT_REFUSES_TO_SPEAK_FOR_THE_REPOSITORY: [Case; 2] = unverified_ways!(
     "[core\n",
     reports: "fatal: bad config line 1 in file .git/config",
 );
+/// **git cannot be run: there is no `git` on `PATH`** — the cause the route's own clause
+/// is for, *(or put `git` on `PATH`)*, followed as printed: `git` is put on `PATH` and the
+/// printed `jigc setup` is run (P-F0's first piece, [`Act::PutOnPath`]). The route's first
+/// way, *run `{asked}`*, is a line of git's, followed at the two causes above.
+const GIT_NOT_ON_PATH: [Case; 1] = [Case {
+    name: "setup-git-not-on-path-put-on-path",
+    site: UNVERIFIED,
+    cause: "git cannot be run: no `git` on `PATH`",
+    env: &[Var::Path("PATH", Place::Outside("no-programs"))],
+    acts: &[Act::PutOnPath(1), Act::Run(3)],
+    holds: &[Check::RegularFile(Place::Repo(AGENT_MD))],
+    ..SETUP
+}];
 const GIT_STATUS_FAILS: [Case; 2] = unverified_ways!(
     "setup-git-status-fails",
     "`git status` fails in a work tree — here over an index that is not one",
@@ -2800,6 +2813,7 @@ pub const CASES: &[&[Case]] = &[
     &STAGED_AND_GONE_ON_AN_UNBORN_HEAD,
     &GIT_REFUSES_TO_SPEAK_FOR_THE_REPOSITORY,
     &GIT_STATUS_FAILS,
+    &GIT_NOT_ON_PATH,
 ];
 
 /// Why the two settings steps behind the allowlist merge have no state of their own.
@@ -3905,16 +3919,6 @@ pub const READINGS: &[Reading] = &[
                      fails; `git ls-files -v` gives no answer. The route is one, and prints \
                      the question that failed",
         without_case: &[
-            (
-                "git cannot be run",
-                Why::NotConstructible(
-                    "reached with no `git` on `PATH` — driven by hand. The route's way out \
-                     is to put it there, and a case's environment is one for all its \
-                     commands: the frame has no act that changes a variable between the \
-                     refusing command and the route's, and its own `git` children would \
-                     not start",
-                ),
-            ),
             (
                 "`git status` cannot be run, where the question before it could",
                 Why::NotConstructible(
