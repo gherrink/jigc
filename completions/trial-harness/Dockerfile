@@ -18,8 +18,13 @@
 # tree that already contains M48 (protocol.md §5 arm 2). The trap becomes unreachable
 # rather than merely documented.
 
-# ---- stage 1: build jigc for linux from the pinned tree, or install a published one --
-FROM rust:1.95-slim-trixie AS build
+# The stage `build` starts from. Source mode passes the kept base, `jigc-gate-base:<key>`
+# (build-image.sh); registry mode leaves it at the plain toolchain, since it builds no tree
+# of ours and so has no lockfile of ours to fetch.
+ARG JIGC_BASE=toolchain
+
+# ---- stage 0a: the toolchain image ---------------------------------------------------
+FROM rust:1.95-slim-trixie AS toolchain
 
 # build-essential because the doc-code probe links tree-sitter grammars (C) — beside jigc
 # on an old tree, inside it on a new one; either way a C compiler is needed.
@@ -27,6 +32,38 @@ FROM rust:1.95-slim-trixie AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# ---- stage 0b: the kept base layer — the toolchain file's toolchain, the lockfile's crates
+# Built by `build-image.sh` with `--target base` only when no `jigc-gate-base:<key>` exists,
+# and kept under that tag: the key (base_key_of) is the toolchain file, the lockfile and this
+# file down to the `build` stage. On the canary's candidate, 1,256 of the image build's
+# 1,285 seconds were these two steps, and they are the same for every candidate with the
+# same two files (reshape plan §5, candidate 7).
+#
+# `cargo fetch` in the tree it is handed, bind-mounted and never copied: rustup installs the
+# toolchain the toolchain file names, with its components, and cargo downloads every crate
+# the lockfile locks, for every platform — the set a later tree with the same lockfile can
+# need, whatever its manifests say, because `--locked` holds that tree's resolve to the same
+# lockfile. Nothing of the tree stays in the layer, and nothing is compiled in it, so no
+# build output of the tree that laid the base can stand in for a later candidate's: every
+# candidate compiles its own crates from its own tree. The record carries the key and a
+# mark of this one layer, which the build stage copies into the image, so two images say
+# whether they were built on the same layer (check-base-layer.sh).
+FROM toolchain AS base
+ARG JIGC_BASE_HASH
+RUN --mount=type=bind,source=src,target=/fetch,rw \
+    set -e; \
+    [ -n "$JIGC_BASE_HASH" ] || { echo "the base is built by build-image.sh, which passes its key" >&2; exit 1; }; \
+    cd /fetch && cargo fetch --locked; \
+    test ! -e /src; \
+    mkdir -p /usr/local/share/jigc-base; \
+    printf 'key %s\nlayer %s\n' "$JIGC_BASE_HASH" "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+      > /usr/local/share/jigc-base/record; \
+    cat /usr/local/share/jigc-base/record
+
+# ---- stage 1: build jigc for linux from the pinned tree, or install a published one --
+# This line is the end of what the base key reads (build-image.sh → base_stage_text).
+FROM ${JIGC_BASE} AS build
 
 WORKDIR /src
 COPY src/ /src/
@@ -53,12 +90,16 @@ ARG JIGC_SHA=unknown
 #   absent                              -> single-binary: jigc alone carries the probe.
 #
 # --locked: the lockfile is committed, and a build that silently resolves a different
-# dependency set is not the binary the trial claims to be testing.
+# dependency set is not the binary the trial claims to be testing. Source mode's jigc build
+# is --frozen, --locked and offline: it builds on the kept base, which fetched everything
+# that lockfile locks, so a crate the base lacks fails the build loudly rather than being
+# downloaded quietly into a slower build that still reads as a kept one. A separate probe has
+# its own lockfile, which the base does not fetch, so its build stays --locked.
 #
 # Every executable built is staged to /stage/bin, the ONE directory the session image
 # copies, and /stage/share records what was built: `layout` (read by verify-image.sh
-# check 2), `executables` (the list the ldd gate below runs over) and `source` (`sha <sha>`
-# or `registry jigc <version>`).
+# check 2), `executables` (the list the ldd gate below runs over), `source` (`sha <sha>`
+# or `registry jigc <version>`) and, in source mode, `base` (the kept base's record).
 RUN set -e; \
     mkdir -p /stage/bin /stage/share; \
     if [ -n "$JIGC_REGISTRY" ]; then \
@@ -66,7 +107,10 @@ RUN set -e; \
       echo single-binary > /stage/share/layout; \
       echo "registry jigc $JIGC_REGISTRY" > /stage/share/source; \
     else \
-      cargo build --release --locked; \
+      [ -f /usr/local/share/jigc-base/record ] \
+        || { echo "source mode builds on a kept base, and this build has none (run build-image.sh)" >&2; exit 1; }; \
+      cp /usr/local/share/jigc-base/record /stage/share/base; \
+      cargo build --release --frozen; \
       cp target/release/jigc /stage/bin/jigc; \
       if [ -d crates/cli/probes/doc-code ]; then \
         (cd crates/cli/probes/doc-code && cargo build --release --locked); \
@@ -116,6 +160,7 @@ RUN set -e; \
     done; \
     echo "layout: $(cat /usr/local/share/jigc-image/layout)"; \
     echo "source: $(cat /usr/local/share/jigc-image/source)"; \
+    if [ -f /usr/local/share/jigc-image/base ]; then echo "base: $(tr '\n' ' ' < /usr/local/share/jigc-image/base)"; fi; \
     /usr/local/bin/jigc --version
 
 # Interactive mode needs onboarding state that `-p` does not: without it the session

@@ -44,13 +44,14 @@ serves host mounts read-only, silently producing sessions that appear to change 
 the CLI version, and the binary under test, are **pinned**; and permissions are explicit
 rather than inherited from the operator's `settings.json`.
 
-## The four scripts
+## The five scripts
 
 | Script | What it does |
 |---|---|
-| `build-image.sh <sha> [tag]` · `build-image.sh --registry <version> [tag]` | **Source mode** builds jigc for Linux from a `git archive` of that exact commit; **registry mode** runs `cargo install jigc --version <version> --locked` from crates.io instead, with no tree of ours in the build context, and refuses anything but one exact version. Either then installs the pinned Claude CLI, prints what it is building (sha, version stamp and commit subject, or the registry version) **before** building, and **asserts** `jigc --version` equals the stamp afterwards, exiting 1 on a mismatch. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other tree and every registry install builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and where the binary came from at `…/source` (`sha <sha>` or `registry jigc <version>`), and the build-time `ldd` gate runs over every executable staged. |
+| `build-image.sh <sha> [tag]` · `build-image.sh --registry <version> [tag]` | **Source mode** builds jigc for Linux from a `git archive` of that exact commit; **registry mode** runs `cargo install jigc --version <version> --locked` from crates.io instead, with no tree of ours in the build context, and refuses anything but one exact version. Either then installs the pinned Claude CLI, prints what it is building (sha, version stamp and commit subject, or the registry version) **before** building, and **asserts** `jigc --version` equals the stamp afterwards, exiting 1 on a mismatch. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other tree and every registry install builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and where the binary came from at `…/source` (`sha <sha>` or `registry jigc <version>`), and the build-time `ldd` gate runs over every executable staged. **Source mode builds on a kept base layer** (below): it reads the commits from `JIGC_REPO`, else from the repository it sits in, and prints `base kept:` or `base not kept:` with the base's tag, and the wall seconds of each build. |
 | `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. Check 2 runs the arm for the layout the image **records**, and fails an image that records none. The list below enumerates five; the script is the authority. |
 | `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. The probe set is **selected per trial** with `PAIR_PROBES` (`m48` rc.10→rc.11 · `m46` rc.11→rc.12 · `m49` rc.12→rc.13, the default), each probe stating what it expects on **both** sides — because the original three-verb set was vacuous on any pair where both sides carried those verbs, which an rc.11/rc.12 pair did. The default tracks the current trial on purpose: a default that is wrong for the trial in front of you is a trap wearing a convenience. |
+| `check-base-layer.sh <case> [tags]` | The harness's own checks of the kept base layer, one case per call: `a_changed_lockfile_or_toolchain_file_builds_a_new_layer` and `the_image_is_built_from_the_repository_the_harness_sits_in` need no docker; `a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first> <second>` and `the_binary_in_the_image_is_the_commits <first> <second>` read two built images. |
 | `run-session.sh [opts] <corpus> <out> [tag]` | Drives one session: corpus in, session, everything back out, container destroyed. Options precede the positionals: `--shell` (a plain `bash -l`) · `--exec <script>` · `--headless` with `--prompt-file <f>` · `--home <dir>` and `--arg <v>` (repeatable — how `seed`/`fork` pass `--session-id`/`--resume`/`--fork-session`) · `--cid-file <path>` (written **before** `docker start`, so a plant poller can attach) · `--strict-permissions`. There is **no `--bypass-permissions`**: `bypassPermissions` is the default and an unknown `-*` exits 2. |
 
 ### Two ways to build an image (M54 — settled 2026-09-28, built in Increment 7)
@@ -62,6 +63,37 @@ M54 changed what a commit's tree looks like — the `doc-code` probe moved insid
 - **`verify-image.sh` checks whichever layout it built** — check 2 below proves the separate `doc-code` loads on an old-layout image, and that `jigc`'s own probe child runs on a new one.
 
 Both modes are built as described (M54 Increment 7). Source mode was driven on the tip and on `ce3d86bf`. Registry mode was driven **before the first publish**, when crates.io held only the `0.0.0` placeholder: `--registry 1.0.0-rc.22` exits non-zero before any image is tagged, surfacing cargo's *could not find `jigc` in registry `crates-io` with version `=1.0.0-rc.22`*, and `--registry 0.0.0` builds, then fails the stamp assertion, because the placeholder prints its reservation notice; that image fails `verify-image.sh` at checks 1, 2 and 5. **The positive registry run was made after the publish** (M54 Increment 11, 2026-10-01): `./build-image.sh --registry 1.0.0-rc.22` installs `jigc 1.0.0-rc.22` and `jigc-engine 0.1.0-rc.1` from crates.io and exits 0. It records the layout `single-binary` and the source `registry jigc 1.0.0-rc.22`, and the binary prints `jigc 1.0.0-rc.22`. `./verify-image.sh jigc-gate:registry-1.0.0-rc.22 1.0.0-rc.22` then reports **7 passed, 0 failed**, with check 2 on the `single-binary` arm. The image is `linux/arm64`, the host's ([publish-proof.md](../artifacts/M54/publish-proof.md) → The trial harness's registry image).
+
+### The kept base layer (K7 — built 2026-11-06)
+
+On the canary's candidate, 1,256 of the image build's 1,285 seconds were the toolchain sync
+and the crate downloads, and both are the same for every candidate with the same
+`rust-toolchain.toml` and `Cargo.lock` ([reshape plan](../artifacts/M55/stabilization-build/reshape/plan.md)
+§5, candidate 7). So source mode builds them once, as the image `jigc-gate-base:<key>` (the
+Dockerfile's `toolchain` and `base` stages, `docker build --target base`), and keeps it:
+
+- **The key** (`base_key_of`) is a sha256 over the toolchain file, the lockfile and the
+  Dockerfile above its `build` stage, with comments and blank lines dropped. A candidate with the same key builds on
+  the kept layer; a changed lockfile, toolchain file or base recipe builds a new one. The
+  manifests are not in it: under `--locked` a tree's resolve is its lockfile, so one lockfile
+  needs one set of crates.
+- **The layer holds no tree and compiles nothing.** `cargo fetch --locked` runs over the tree
+  bind-mounted, so every candidate compiles its own crates from its own tree, and its jigc
+  build is `--frozen` — a crate the base lacks fails the build rather than downloading
+  quietly. A separate probe (an old tree) keeps its own lockfile and stays `--locked`.
+- **The image records its base** at `/usr/local/share/jigc-image/base`: the key and a random
+  mark of the one layer it was built on, so two images say whether they share a layer.
+  Registry mode has no lockfile of ours and builds on the plain `toolchain` stage, as before.
+
+**Driven 2026-11-06**, on two commits with one lockfile and different manifests — `91834b5e`
+(rc.24's release commit) then `f6026ca3`: the first printed `base not kept`, built the base in
+16 s (its sync-and-fetch step 8.3 s) and the image in 43 s; the second printed `base kept`,
+built on the same layer, its compile step 27.6 s with no download and no sync, the image in
+32 s. That day's network was fast, so the saving measured is small — the canary's 1,256 s
+were a slow day's, and they are what a kept layer removes whatever the day. Both images pass
+`verify-image.sh` 7/7 and all four cases of `check-base-layer.sh`; their binaries differ by
+sha256, as their sources do. `verify-pair.sh` over the two passes its liveness and identity
+half 5/5; no probe set exists for an rc.24 → candidate pair, so its probe lines do not apply.
 
 ## What each check buys, and why it is there
 

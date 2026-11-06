@@ -95,6 +95,7 @@ schema-version: 3
 <!-- fields -->
 - intent: K7 — give the trial image a cached base layer
 - workflow: builder
+- status: joined
 
 ### h2-ask-how-to-clear  {#h2-ask-how-to-clear}
 
