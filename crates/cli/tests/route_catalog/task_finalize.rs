@@ -2945,6 +2945,7 @@ pub const REASONS: &[Reason] = &[
              the finding as *blocking (gates at finalize)* and exits 0. The frame reads a \
              refusal off a non-zero exit, so no state provokes one here",
         ),
+        ruled: None,
     },
     Reason {
         site: SOURCE_PATH_IO,
@@ -2955,6 +2956,7 @@ pub const REASONS: &[Reason] = &[
              finalize` exits 1 with *could not read the source path for task*. Only a file \
              that changes between two reads of one process reaches this site",
         ),
+        ruled: None,
     },
 ];
 

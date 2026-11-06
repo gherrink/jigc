@@ -64,7 +64,11 @@
 //! list until they had them, a list that is gone with its last row: **the fence has no
 //! answer of that kind any more**, so a site cannot be parked as owed. Every other blocking
 //! site is a row of the scheduled list ([`SCHEDULED`], `route_catalog/scheduled.tsv`),
-//! owed a case before the port begins.
+//! owed a case before the port begins — a site the count classes `unchanged`, and no other.
+//! **A reason names who allowed it** ([`Reason::ruled`]): the heading of the
+//! `DECISIONS.md` entry that holds the human's ruling on it, held to the log
+//! ([`a_reasons_ruling_is_a_heading_of_the_decisions_log`]), or none while nobody has
+//! ruled it — owed, as its projection line says, and refused once the catalog closes.
 //! The first of those families has its file, `task_finalize.rs` — the gate — with its
 //! sixteen sites, two of them by a reason. With them the frame grew, each
 //! piece red first: an edit in no commit is reverted by the runner's git
@@ -233,7 +237,8 @@
 //! its parts — its sites by file, at most twelve a part — and every site in it, the codes a
 //! claim makes sites and the dynamic sites answered in part or said to mint a family's code
 //! included; per site what answers it — each case with its cause and its classification as
-//! the expected-red list holds it, the reason, or the scheduled row — with whether its
+//! the expected-red list holds it, the reason with who ruled it or `owed`, or the
+//! scheduled row — with whether its
 //! route prints a span; per family the uses of each of [`Act`]'s variants; the codes each
 //! dynamic site is given; and the residue, the dynamic sites no row names a code of. It is
 //! what a route hunter is handed, read at a commit without running a case, and it is held
@@ -1595,6 +1600,11 @@ pub struct Reason {
     /// The site's id, as a case names it.
     pub site: &'static str,
     pub why: Why,
+    /// **Who allowed it**: the heading of the `DECISIONS.md` entry that holds the human's
+    /// ruling on this reason, without its `## ` — a heading the log does not hold is named
+    /// ([`misruled`]). `None` while nobody has ruled it: the reason is **owed** a ruling,
+    /// and says so in the projection; the catalog's close refuses it.
+    pub ruled: Option<&'static str>,
 }
 
 /// **What was read to count one site's causes, and the count.** A command's file states
@@ -2227,9 +2237,6 @@ const THE_RULING_ON_FAMILIES: &str = "2026-10-12 — Which families the route ca
 /// previous release's — the one class the ruling leaves for the port.
 const UNCHANGED: &str = "unchanged";
 
-/// The class of a scheduled site the count holds no row for; its note says why.
-const NOT_COUNTED: &str = "not-counted";
-
 /// The rows of a scheduled list: every line that is no comment and not empty, as
 /// `site`, `class` and `note`, tab-separated. A line of another shape is a row with what it
 /// has, so that [`idle_rows`] names it.
@@ -2270,12 +2277,13 @@ fn counted(count: &str) -> BTreeMap<&str, &str> {
 /// **Every row of a scheduled list that the count does not bear out.** The ruling leaves
 /// for the port the sites whose function did not change; so a scheduled site the count
 /// holds is one it classes [`UNCHANGED`], under that word, and a site it holds under
-/// another class is the ruling's to take in now. A site the count has no row for is
-/// scheduled as [`NOT_COUNTED`], with why in its note.
+/// another class is the ruling's to take in now. A site the count has no row for is no
+/// site of the ruling, so the list takes it under no class: it has a case, or a reason the
+/// human ruled (the plan before the opening's task `P1` — the class `not-counted` is gone).
 fn misscheduled(scheduled: &[Scheduled], counted: &BTreeMap<&str, &str>) -> Vec<String> {
     let mut out = Vec::new();
     for row in scheduled {
-        let Scheduled { site, class, note } = *row;
+        let Scheduled { site, class, .. } = *row;
         match counted.get(site) {
             Some(&counted) if counted != UNCHANGED => out.push(format!(
                 "`{site}` is on the scheduled list, and the count classes it `{counted}`: a \
@@ -2285,18 +2293,50 @@ fn misscheduled(scheduled: &[Scheduled], counted: &BTreeMap<&str, &str>) -> Vec<
                 "`{site}` is scheduled as `{class}`, and the count classes it `{counted}`"
             )),
             Some(_) => {}
-            None if class != NOT_COUNTED => out.push(format!(
-                "`{site}` is scheduled as `{class}`, and the count holds no row for it: a \
-                 site the count did not class is scheduled as `{NOT_COUNTED}`, with why"
+            None => out.push(format!(
+                "`{site}` is scheduled as `{class}`, and the count holds no row for it: the \
+                 list takes no site the count did not class — such a site has a case, or a \
+                 reason the human ruled"
             )),
-            None if matches!(note, "" | "-") => out.push(format!(
-                "`{site}` is scheduled as `{NOT_COUNTED}` and does not say why the count \
-                 has no row for it"
-            )),
-            None => {}
         }
     }
     out
+}
+
+/// What a reason's projection line says in place of its ruling while nobody has ruled it.
+const OWED: &str = "owed";
+
+/// **The decisions log**, where a reason's ruling is held by its heading.
+const THE_LOG: &str = include_str!("../../../DECISIONS.md");
+
+/// The headings of a log's entries: every line that opens `## `, without it.
+fn headings(log: &str) -> BTreeSet<&str> {
+    log.lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .collect()
+}
+
+/// **Every reason whose ruling names no entry of `log`.** A reason nobody ruled names
+/// nothing here: it is owed, which the projection says.
+fn misruled(reasons: &[Reason], log: &str) -> Vec<String> {
+    let headings = headings(log);
+    reasons
+        .iter()
+        .filter_map(|reason| {
+            let site = reason.site;
+            match reason.ruled? {
+                "" => Some(format!(
+                    "the reason for `{site}` is ruled by an empty heading: it names no heading \
+                     of the decisions log"
+                )),
+                heading if !headings.contains(heading) => Some(format!(
+                    "the reason for `{site}` is ruled by `{heading}`, and the decisions log has \
+                     no entry of that heading"
+                )),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2807,6 +2847,7 @@ fn in_order() -> Rows {
         reasons: vec![Reason {
             site: ROUTELESS,
             why: Why::NoRoutePrinted,
+            ruled: None,
         }],
         claims: vec![BY_A_MATCH],
         no_code: vec![("setup.rs", "a file's name")],
@@ -2915,6 +2956,7 @@ fn every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row() {
         let reasons = vec![Reason {
             site: ROUTELESS,
             why,
+            ruled: None,
         }];
         says(
             &uncovered(
@@ -2931,6 +2973,7 @@ fn every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row() {
     let both = Reason {
         site: SPELLED,
         why: Why::NotConstructible("nothing reaches it"),
+        ruled: None,
     };
     says(
         &uncovered(
@@ -2963,6 +3006,7 @@ fn every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row() {
     let routeless = |site| Reason {
         site,
         why: Why::NoRoutePrinted,
+        ruled: None,
     };
     says(
         &uncovered(
@@ -3010,9 +3054,10 @@ fn every_blocking_refusal_site_has_a_case_a_reason_or_a_scheduled_row() {
 /// **A scheduled site is one the count holds unchanged.** The scheduled list is the rest of
 /// one ruling, put on one count: a row whose site the count classes otherwise is the
 /// ruling's to take in now, a row under another class than the count's is wrong, and a
-/// row for a site the count has no row for says why. On planted rows against a planted
-/// count; then the suite's list against the committed count — whose table is not empty and
-/// holds every scheduled site but the ones that say why it does not.
+/// row for a site the count has no row for is refused, whatever it says — the class
+/// `not-counted` is gone (the plan before the opening's task `P1`). On planted rows against
+/// a planted count; then the suite's list against the committed count — whose table is not
+/// empty and holds every scheduled site.
 #[test]
 fn a_scheduled_site_is_one_the_count_holds_unchanged() {
     let count = "| site (`file::function::code#ordinal`) | family | class | why |\n\
@@ -3030,27 +3075,26 @@ fn a_scheduled_site_is_one_the_count_holds_unchanged() {
     let row = |site, class, note| Scheduled { site, class, note };
     says(
         &misscheduled(
-            &[
-                row("a.rs::kept::task.kept#1", UNCHANGED, "-"),
-                row(
-                    "a.rs::handed::dynamic#1",
-                    NOT_COUNTED,
-                    "its severity is handed in",
-                ),
-            ],
+            &[row("a.rs::kept::task.kept#1", UNCHANGED, "-")],
             &counted_here,
         ),
         &[],
     );
+    // The class the count gives no site is no answer, however well its note says why.
+    let not_counted = "not-counted";
     says(
         &misscheduled(
             &[
                 row("a.rs::moved::task.moved#1", "route-changed", "-"),
                 row("a.rs::kept::task.kept#1", "function-changed", "-"),
-                row("a.rs::kept::task.kept#1", NOT_COUNTED, "it is"),
+                row("a.rs::kept::task.kept#1", not_counted, "it is"),
+                row(
+                    "a.rs::handed::dynamic#1",
+                    not_counted,
+                    "its severity is handed in",
+                ),
                 row("a.rs::new::task.new#1", UNCHANGED, "-"),
-                row("a.rs::new::task.new#1", NOT_COUNTED, "-"),
-                row("a.rs::new::task.new#1", NOT_COUNTED, ""),
+                row("a.rs::new::task.new#1", not_counted, "-"),
             ],
             &counted_here,
         ),
@@ -3064,9 +3108,9 @@ fn a_scheduled_site_is_one_the_count_holds_unchanged() {
                 "`a.rs::kept::task.kept#1`",
                 "the count classes it `unchanged`",
             ),
-            ("`a.rs::new::task.new#1`", "the count holds no row for it"),
-            ("`a.rs::new::task.new#1`", "does not say why"),
-            ("`a.rs::new::task.new#1`", "does not say why"),
+            ("`a.rs::handed::dynamic#1`", "a reason the human ruled"),
+            ("`a.rs::new::task.new#1`", "a reason the human ruled"),
+            ("`a.rs::new::task.new#1`", "a reason the human ruled"),
         ],
     );
 
@@ -3082,6 +3126,59 @@ fn a_scheduled_site_is_one_the_count_holds_unchanged() {
     assert!(
         wrong.is_empty(),
         "`route_catalog/scheduled.tsv` and the count it was cut from disagree:\n\n  {}",
+        wrong.join("\n  "),
+    );
+}
+
+/// **A reason's ruling is a heading of the decisions log** (fork 1 → A; the plan before the
+/// opening's task `P1`): a reason that names an entry the log does not hold, or names none
+/// with an empty heading, is named; a reason nobody ruled is not named here — it is owed,
+/// which its projection line says. On a planted log; then this tree's reasons against
+/// `DECISIONS.md`, with the headings the catalog names elsewhere held the same way.
+#[test]
+fn a_reasons_ruling_is_a_heading_of_the_decisions_log() {
+    let log = "# Decisions\n\n## 2026-01-01 — A reason allowed\n\nThe ruling.\n";
+    let ruled = |site, ruled| Reason {
+        site,
+        why: Why::NotConstructible("nothing reaches it"),
+        ruled,
+    };
+    says(
+        &misruled(
+            &[
+                ruled(SPELLED, Some("2026-01-01 — A reason allowed")),
+                ruled(ROUTELESS, Some("2026-01-02 — An entry nobody wrote")),
+                ruled(CLAIMED, Some("")),
+                ruled(ANOTHER, None),
+            ],
+            log,
+        ),
+        &[
+            (ROUTELESS, "`2026-01-02 — An entry nobody wrote`"),
+            (CLAIMED, "names no heading"),
+        ],
+    );
+
+    let headings = headings(THE_LOG);
+    assert!(
+        headings.len() > 1000,
+        "the decisions log holds {} headings: it was not read",
+        headings.len(),
+    );
+    let named = [THE_RULING_ON_FAMILIES, THE_RULING_ON_STATES]
+        .into_iter()
+        .chain(ADMITTED.iter().map(|(_, heading)| *heading));
+    for heading in named {
+        assert!(
+            headings.contains(heading),
+            "the catalog names the ruling `{heading}`, and `DECISIONS.md` has no entry of \
+             that heading",
+        );
+    }
+    let wrong = misruled(&rows().reasons, THE_LOG);
+    assert!(
+        wrong.is_empty(),
+        "a reason of the catalog names a ruling the decisions log does not hold:\n\n  {}",
         wrong.join("\n  "),
     );
 }
@@ -3187,7 +3284,11 @@ fn a_row_for_a_site_that_is_gone_is_named() {
     let fixture = fixture();
     says(&idle_rows(&fixture, &in_order()), &[]);
 
-    let reason = |site, why| Reason { site, why };
+    let reason = |site, why| Reason {
+        site,
+        why,
+        ruled: None,
+    };
     says(
         &idle_rows(
             &fixture,
@@ -8111,7 +8212,7 @@ const HEADER: &str = "\
 #   residue <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
 #   code <dynamic site> <code> <claim|minted-at>
 #   case <site> <case> <classification as the expected-red list holds it> <marked|-> <cause>
-#   reason <site> <why> <text>
+#   reason <site> <why> <the heading of its ruling's entry in DECISIONS.md|owed> <text>
 #   scheduled <site> <class> <note>
 #   without-case <site> <why> <cause> <text>
 #   not-followed <site> <why> <way out> <text>
@@ -8287,6 +8388,7 @@ fn projection(read: &Read, rows: &Rows, answers: &Answers) -> String {
             "reason".into(),
             reason.site.into(),
             word(&reason.why).into(),
+            reason.ruled.unwrap_or(OWED).into(),
             text(&reason.why),
         ]);
     }
@@ -8791,6 +8893,37 @@ fn a_parts_key_survives_a_site_added_to_another_file() {
     };
     assert_eq!(keys(&before).len(), 2, "{:#?}", parts(&before));
     assert_eq!(keys(&before), keys(&after));
+}
+
+/// **A reason's line says who ruled it, or that it is owed** — the heading of the ruling's
+/// entry, or `owed` where nobody has ruled it, before the reason's text.
+#[test]
+fn a_reasons_line_says_who_ruled_it_or_that_it_is_owed() {
+    let reason = |ruled| {
+        let projection = planted_projection(&Rows {
+            reasons: vec![Reason {
+                ruled,
+                ..in_order().reasons[0]
+            }],
+            ..in_order()
+        });
+        of_kind(&projection, "reason")
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        reason(Some("2026-01-01 — A reason allowed")),
+        [format!(
+            "{ROUTELESS}\tno-route-printed\t2026-01-01 — A reason allowed\t-"
+        )],
+        "a ruled reason's line names its ruling's heading, before its text",
+    );
+    assert_eq!(
+        reason(None),
+        [format!("{ROUTELESS}\tno-route-printed\towed\t-")],
+        "a reason nobody ruled is owed a ruling, and its line says so",
+    );
 }
 
 /// **The vocabulary header is the frame's** — the projection's `vocabulary` lines are the

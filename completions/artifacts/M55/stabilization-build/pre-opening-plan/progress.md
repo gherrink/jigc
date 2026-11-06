@@ -54,6 +54,7 @@ schema-version: 3
 <!-- fields -->
 - intent: P1 — stop counting the finding constructors as sites, and tie each standing reason to its ruling
 - workflow: builder
+- status: joined
 
 ### m-p0-merge-the-catalog  {#m-p0-merge-the-catalog}
 

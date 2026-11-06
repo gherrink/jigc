@@ -696,6 +696,7 @@ pub const REASONS: &[Reason] = &[Reason {
          default-workflow router` and `jigc config set finalize.fan-out.squash false` \
          exit 0",
     ),
+    ruled: None,
 }];
 
 /// The re-run under another root, which the three root refusals ask for in words.

@@ -287,6 +287,7 @@ pub const REASONS: &[Reason] = &[
              `config.repoint-failed`. It is followed there, in `config.rs`, over a file \
              and over a link to nothing",
         ),
+        ruled: None,
     },
     Reason {
         site: CORPUS_DESTINATION_COLLISION,
@@ -296,6 +297,7 @@ pub const REASONS: &[Reason] = &[
              reader's own. And the door prints a refused doc as a row of its report, \
              which is no finding the frame reads a route from",
         ),
+        ruled: None,
     },
 ];
 
