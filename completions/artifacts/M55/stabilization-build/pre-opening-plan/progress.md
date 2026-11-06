@@ -79,6 +79,94 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### u0-review-s1-the-plans-old-rule  {#u0-review-s1-the-plans-old-rule}
+
+<!-- fields -->
+- intent: U0 review, S1 — the plan's two copies of the old rule now say to record the new proxy in the part's row, from which arm (j) sets the bound
+- workflow: builder
+- status: joined
+
+### u0-review-s2-g-migrations-share  {#u0-review-s2-g-migrations-share}
+
+<!-- fields -->
+- intent: U0 review, S2 — the two ci.yml comments say g_migration runs in parts because the plan splits it, not because it passed 80 %
+- workflow: builder
+- status: joined
+
+### u0-review-s3-the-rule-for-parts  {#u0-review-s3-the-rule-for-parts}
+
+<!-- fields -->
+- intent: U0 review, S3 — the ci.yml header states the rule for parts and the floor for whole groups, the entry's proxy sentence corrected, and the pending row says what watches a whole group
+- workflow: builder
+- status: joined
+
+### u0-review-s4-a-filter-in-two  {#u0-review-s4-a-filter-in-two}
+
+<!-- fields -->
+- intent: U0 review, S4 — arm (i) refuses a filter held in another module's name, so no test runs in two parts
+- workflow: builder
+- status: joined
+
+### u0-review-n1-seeded-checks  {#u0-review-n1-seeded-checks}
+
+<!-- fields -->
+- intent: U0 review, N1 — arms (i) and (j) run their checks over seeded inputs that break them, each red on its seed
+- workflow: builder
+- status: joined
+
+### u0-review-n2-the-headers-rule  {#u0-review-n2-the-headers-rule}
+
+<!-- fields -->
+- intent: U0 review, N2 — arm (j) holds the header's written rule to the fence's floor and factor
+- workflow: builder
+- status: joined
+
+### u0-review-n3-the-fifteen-minutes  {#u0-review-n3-the-fifteen-minutes}
+
+<!-- fields -->
+- intent: U0 review, N3 — the promise of a green push in fifteen minutes, which the larger bounds no longer hold: the human's call
+- workflow: human question
+
+### u0-review-n4-before-anything-runs  {#u0-review-n4-before-anything-runs}
+
+<!-- fields -->
+- intent: U0 review, N4 — the init is asserted after the clone, so before anything runs means before the measured command: left as written
+- workflow: builder
+
+### u0-review-n5-init-and-ci  {#u0-review-n5-init-and-ci}
+
+<!-- fields -->
+- intent: U0 review, N5 — the init and CI=true confirmed real: nothing owed
+- workflow: builder
+- status: discarded
+
+### u0-review-n6-the-node-major  {#u0-review-n6-the-node-major}
+
+<!-- fields -->
+- intent: U0 review, N6 — the hand-written node major, noted on U1's posture declaration
+- workflow: builder
+- status: joined
+
+### u0-review-l1-the-image-it-built  {#u0-review-l1-the-image-it-built}
+
+<!-- fields -->
+- intent: U0 review, L1 — runner-faithful runs the image by the id its build wrote and asserts node 22 and CI=true in the run's header
+- workflow: builder
+- status: joined
+
+### u0-review-l2-the-fired-candidate  {#u0-review-l2-the-fired-candidate}
+
+<!-- fields -->
+- intent: U0 review, L2 — triage the runner-faithful docker arm, whose trigger U0 fired
+- workflow: main-session edit
+
+### u0-review-l3-an-overflowing-proxy  {#u0-review-l3-an-overflowing-proxy}
+
+<!-- fields -->
+- intent: U0 review, L3 — a proxy the rule overflows on is a finding of arm (j), not a panic
+- workflow: builder
+- status: joined
+
 ### m-u0-merge-the-small  {#m-u0-merge-the-small}
 
 <!-- fields -->

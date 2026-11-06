@@ -112,17 +112,21 @@
 #               count, where a cpuset makes all three read <n>, as on a runner. The cap is
 #               asserted: the container stops before anything runs if nproc is not <n>.
 #
+# It runs the image its own build wrote, by the id that build wrote (`docker build
+# --iidfile`), never by the tag, which another worktree's copy of this script can move.
 # It prints its header on stderr -- commit (not in registry mode), platform, cpus (nproc),
 # the container's first process, toolchain, node, git and the git config it reads -- from
-# inside the container, so the lines describe what actually ran. In `cargo` mode it ends
+# inside the container, so the lines describe what actually ran; and there it asserts node
+# 22 and CI=true again, the posture its measurements stand on. In `cargo` mode it ends
 # with the seconds the cargo command took, which is a leg's four-CPU proxy when the
 # command is that leg's argv under --cpus 4 (.github/workflows/ci.yml's header).
 #
 # Exit status: cargo's, when cargo ran; for `tarball` and `registry`, 0 when every step
 # passed and 1 at the first step that failed. 2 on a usage error; 125 when the run could not be set up
-# (no docker, the image build or its posture assertion failed, the commit is not
-# bundleable, the clone failed, nproc in the container is not the --cpus asked for, the
-# container's first process is not the init).
+# (no docker, the image build or its posture assertion failed or it wrote no image id,
+# the commit is not bundleable, the clone failed, nproc in the container is not the
+# --cpus asked for, the container's first process is not the init, its node is not 22 or
+# its CI is not true).
 
 set -u
 
@@ -218,6 +222,7 @@ docker build --platform "$platform" \
     --build-arg "RUST_TOOLCHAIN=$channel" \
     --build-arg "RUST_COMPONENTS=$components" \
     --build-arg "GIT_WEEK=$git_week" \
+    --iidfile "$work/image.id" \
     -t "$image" - >"$work/build.log" 2>&1 <<'DOCKERFILE'
 FROM ubuntu:24.04
 
@@ -308,6 +313,12 @@ if [ "$build_status" -ne 0 ]; then
     tail -n 30 "$work/build.log" >&2
     die "the image build failed (exit $build_status); a \`posture:\` line above is the posture assertion refusing it"
 fi
+# The run takes the image by the id this build wrote, never by the tag: the tag is keyed by
+# the toolchain and the platform only, so another worktree's copy of this script can retag
+# it between this build and the `docker create` below.
+image_id=$(cat "$work/image.id" 2>/dev/null)
+[ -n "$image_id" ] || die "the image build wrote no image id to $work/image.id"
+say "image     $image_id"
 
 # --- the source -------------------------------------------------------------
 # A bare sha is not bundleable (`git bundle` wants refs), so the bundle carries HEAD,
@@ -420,6 +431,8 @@ say "init      $(cat /proc/1/comm)"
 [ "$(cat /proc/1/comm)" = docker-init ] || { say "the first process is not the init, so nothing would reap; stopping before the run"; exit 125; }
 say "toolchain $(rustc --version)"
 say "node      $(node --version)"
+case "$(node --version 2>&1)" in v22.*) ;; *) say "node is not 22 but $(node --version 2>&1), so this is not the posture the image was built to; stopping before the run"; exit 125 ;; esac
+[ "${CI-}" = true ] || { say "CI is not true in the container, so this is not the posture the image was built to; stopping before the run"; exit 125; }
 say "git       $(git --version)"
 say "gitconfig $(git config --list --show-scope | grep -v "^local" | tr "\t\n" "  ")(the local config of the clone aside)"
 '
@@ -522,7 +535,7 @@ case "$mode" in
     registry) inner=$steps$header$run_registry ;;
 esac
 
-cid=$(docker create --init --platform "$platform" ${cpuset[@]+"${cpuset[@]}"} "$image" bash -c "$inner" runner-faithful "$@") \
+cid=$(docker create --init --platform "$platform" ${cpuset[@]+"${cpuset[@]}"} "$image_id" bash -c "$inner" runner-faithful "$@") \
     || die "docker create failed"
 trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
 if [ "$mode" != registry ]; then

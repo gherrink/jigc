@@ -277,6 +277,7 @@ Before a sentence is removed, the fences are searched for it.
 
 **U1 — `dev/runner-faithful` declares its posture in one place.** `--posture` prints what the image asserts; the build-time assertion reads the same declaration.
 - **Arms:** `--posture` prints the posture; the assertion is the declaration's; a usage error exits 2.
+- **Note** (U0's review, N6): the Node.js major, 22, is written by hand in the image's install (`latest-v22.x`, `node-v22.`), in its build-time posture (`v22.*`) and, since that review's fix, in the run's header; nothing reads it from the runner image's toolset (`node.default` in `toolset-2404.json`), so a change of the toolset's default would go unnoticed. The declaration is its home: one place to change, which every one of those reads.
 - **Writes also:** its `tooling.md` row.
 - **Gates:** 1 + 1.
 
@@ -392,7 +393,7 @@ The lane writes no product source. A red case is listed with a key and is never 
   - the strict expected-red list holds, including the left-to-infer classes;
   - every new case passes the act check, and a case left to infer is listed red with its key;
   - the projection is regenerated;
-  - one `dev/runner-faithful` run of the `route_catalog` part is green, with its proxy and wall seconds in the commit, and re-bounded or split in the same commit if the proxy passes half its bound;
+  - one `dev/runner-faithful` run of the `route_catalog` part is green, with its wall seconds in the commit and its new proxy recorded in the part's row of `ci.yml` in the same commit; `ci_matrix_fence.rs` arm (j) then sets the part's bound;
   - the named-binary arm, filtered to the family, has run on rc.24, with its table in the record;
   - the suite's seconds are in the commit;
   - new site-level reasons carry `ruled: None` and are named in the task's return;
@@ -760,7 +761,7 @@ The plan went through five versions between 2026-10-27 and 2026-10-29, each read
 | **B1** — J2's wrong base | J2 reads `cbb3d736..HEAD`. J2-0 decides coverage by commit range, with `dev/review-coverage` (U5). |
 | **B2** — `wf-neutralized-return` is in no task | T-NR: built in T (with the guard's binding while a probe is active), reviewed, merged T → loop, then run once from the loop checkout under the human's ruling B. One subject agent plus three counted step agents, each launched `once`. The record goes to the lane that owns it. |
 | **B3** — an unruled question inside a discharged row | F-C → A. D0 records the ruling; P-F1 is built on it; `wf-route-catalog-rest` is discharged at T10b, after P-Z. |
-| **S1** — CI bounds at 84–95 % | U0 re-bounds or splits every leg at or above 80 %. A P task re-bounds its part in the same commit if the proxy passes half its bound; for the other lanes, `dev/ci-runs` is read after each push. |
+| **S1** — CI bounds at 84–95 % | U0 re-bounds or splits every leg at or above 80 %. A P task records its part's new proxy in the part's row in the same commit, and arm (j) sets the bound; for the other lanes, `dev/ci-runs` is read after each push. |
 | **S2** — "a case per code" held by no fence | C16a's first commit adds the arm; P-Z refuses an owed code, and checks that every code prefix is catalogued. |
 | **S3** — `NotBuilt` can survive P-Z | P-F0 and the C-tasks write those cases; P-Z refuses `Why::NotBuilt`. |
 | **S4** — J2 leaves out parts | F-B → A, coverage by commit range. |

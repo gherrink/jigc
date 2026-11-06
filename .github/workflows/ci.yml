@@ -9,8 +9,9 @@ name: CI
 #                    the private denylist over the pushed range
 #                    (implementation/public-hygiene.md)
 #   fmt · clippy · build
-#   test             one row per `[[test]]` group target — and for `g_tooling` and
-#                    `g_migration`, whose one row outgrew a leg, one row per part (below)
+#   test             one row per `[[test]]` group target — and one row per part (below)
+#                    for `g_tooling`, whose one row outgrew a leg, and for `g_migration`,
+#                    which the plan before the stabilization run's opening splits
 #   unit             the lib and bin unit tests of every workspace member, and doctests
 #   manifest-freeze  the CI-only manifest-freeze fence
 #   publish-dry-run  `cargo publish --workspace --dry-run`
@@ -22,10 +23,13 @@ name: CI
 # check `main`'s ruleset requires (implementation/release.md -> The main branch), so a
 # job added here and not to its `needs` reddens tooling-tests/ci_matrix_fence.rs
 # instead of going unrequired. Every leg checks out full history, prints `nproc` in its
-# `CPU count` step, and is bounded by `timeout-minutes` at max(10, 3 x its leg's
-# measured four-CPU proxy), in whole minutes up — the human's ruling of 2026-11-06, where
-# M54 had set 2 x (completions/artifacts/M54/ci-runtime.md): DECISIONS.md -> 2026-11-06,
-# *CI's legs re-bounded*, whose proxies each part's row carries. The
+# `CPU count` step, and is bounded by `timeout-minutes`. A part of a group that runs in
+# parts (below) is bounded at max(10, 3 x its measured four-CPU proxy), in whole minutes
+# up — the human's ruling of 2026-11-06, where M54 had set 2 x
+# (completions/artifacts/M54/ci-runtime.md): DECISIONS.md -> 2026-11-06, *CI's legs
+# re-bounded*, whose proxies each part's row carries. A group that runs whole, and every
+# other job, keeps the floor of 10 minutes and carries no proxy here; their last measured
+# proxies are M54's, in that ci-runtime.md, the largest `g_flow`'s 221 s. The
 # `test` matrix is fenced to the targets `cargo metadata` reports
 # (tooling-tests/ci_matrix_fence.rs), so a group root added to the manifest and not
 # here reddens instead of going unrun, and a group that runs in parts is fenced to run
@@ -256,11 +260,13 @@ jobs:
           - g_doc
           - g_solo_store_sweep
           - g_solo_trial_corpus
-        # Two groups run in parts, because as one row neither ends inside its leg with
-        # room to spare: `g_tooling` was cancelled at ten minutes on every push from
-        # 2026-10-07 to 2026-10-12 (DECISIONS.md -> 2026-10-12, *The tooling leg runs in
-        # three parts*), and by 2026-11-06 its three parts and `g_migration` each ran past
-        # 80 % of their bounds (DECISIONS.md -> 2026-11-06, *CI's legs re-bounded*). A group
+        # Two groups run in parts. `g_tooling` was cancelled at ten minutes on every push
+        # from 2026-10-07 to 2026-10-12 (DECISIONS.md -> 2026-10-12, *The tooling leg runs in
+        # three parts*), and by 2026-11-06 its three parts each ran past 80 % of their
+        # bounds; `g_migration`, which peaked at 71 % of its ten minutes, runs in parts
+        # because the plan before the stabilization run's opening splits it, its task U0
+        # (completions/artifacts/M55/stabilization-build/pre-opening-plan/detail.md;
+        # DECISIONS.md -> 2026-11-06, *CI's legs re-bounded*). A group
         # stays one target — a target per part is a test binary more for every local gate to
         # link — so a part is the group's row with libtest's own arguments behind it: the
         # heaviest suites are a part each, by name, and the group's last part is every test
