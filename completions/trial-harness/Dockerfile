@@ -61,6 +61,15 @@ RUN --mount=type=bind,source=src,target=/fetch,rw \
       > /usr/local/share/jigc-base/record; \
     cat /usr/local/share/jigc-base/record
 
+# The toolchain is synced above, and only above. From here rustup installs nothing on its own
+# (rustup 1.28.1 and later read this; the base image carries 1.29.0): a candidate whose
+# toolchain file names a toolchain this layer lacks fails its build with rustup's own
+# "toolchain '…' is not installed", instead of syncing it quietly into a slower build that
+# still reads as a kept one. The build stage inherits it with the layer, and
+# check-base-layer.sh's case `a_toolchain_the_kept_base_lacks_fails_loudly` reads it off the
+# kept base.
+ENV RUSTUP_AUTO_INSTALL=0
+
 # ---- stage 1: build jigc for linux from the pinned tree, or install a published one --
 # This line is the end of what the base key reads (build-image.sh → base_stage_text).
 FROM ${JIGC_BASE} AS build
@@ -93,8 +102,10 @@ ARG JIGC_SHA=unknown
 # dependency set is not the binary the trial claims to be testing. Source mode's jigc build
 # is --frozen, --locked and offline: it builds on the kept base, which fetched everything
 # that lockfile locks, so a crate the base lacks fails the build loudly rather than being
-# downloaded quietly into a slower build that still reads as a kept one. A separate probe has
-# its own lockfile, which the base does not fetch, so its build stays --locked.
+# downloaded quietly into a slower build that still reads as a kept one. --frozen does not
+# reach the toolchain, which rustup syncs on its own; the base's RUSTUP_AUTO_INSTALL=0 does.
+# A separate probe has its own lockfile, which the base does not fetch, so its build stays
+# --locked.
 #
 # Every executable built is staged to /stage/bin, the ONE directory the session image
 # copies, and /stage/share records what was built: `layout` (read by verify-image.sh

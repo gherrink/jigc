@@ -15,6 +15,16 @@
 # cargo's exact match, and the stamp assertion below compares against it, so the mode
 # takes a version and refuses a requirement (`^1.0.0-rc.1` would install whatever the
 # registry resolves today).
+#
+# The kept base (K7): source mode builds on the image `jigc-gate-base:<key>` — the toolchain
+# and the fetched crates for one toolchain file, one lockfile, one base recipe and one
+# platform — building it first, with `--target base`, only when no image of that tag exists,
+# and keeping it. After the build it asserts that the image records that key and that tag's
+# layer, and fails otherwise (README → The kept base layer, which also says how to list and
+# remove kept bases; `docker builder prune` does not).
+#
+# The repository the commits are read from is JIGC_REPO when it is set and not empty, else
+# the repository this script sits in — never a path of one machine.
 set -euo pipefail
 
 # stamp_of <repo> <sha> — the version the tree at <sha> stamps into `jigc --version`.
@@ -44,35 +54,66 @@ stamp_of() {
 #   * Cargo.lock at the sha — the crates `cargo fetch` downloads. The manifests are not in
 #     the key: under `--locked` a tree's resolve is its lockfile, so two trees with one
 #     lockfile need one set of crates whatever their manifests say;
-#   * the Dockerfile down to its `build` stage, comments and blank lines dropped — the
-#     recipe of the layer itself. Below that line nothing reaches the layer.
-# Each input is hashed alone and the three lines hashed together, so no two inputs can be
+#   * the Dockerfile down to its `build` stage, comments and blank lines dropped but its
+#     parser directives (`# syntax=`, `# escape=`, `# check=`) kept, since they change how
+#     the recipe is read — the recipe of the layer itself. Below that line nothing reaches
+#     the layer;
+#   * the platform the layer is built for (`linux/arm64`), which both builds are then given
+#     with `--platform`, so a kept base of another platform is never the one taken.
+# Each input is hashed alone and the lines hashed together, so no two inputs can be
 # confused by where one ends. Sourcing this file defines these and runs nothing, so the key
-# is driven without docker: `check-base-layer.sh a_changed_lockfile_or_toolchain_file_builds_a_new_layer`.
+# is driven without docker — `tooling-tests/trial_image_base_key.rs` drives it in the gate.
 sha256_stdin() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1
 }
 
 # base_stage_text <dockerfile> — the Dockerfile above its `build` stage, as the key reads it.
 # A Dockerfile without that line has no base to key, and says so rather than keying all of it.
+# A parser directive is a `# <name>=<value>` line of a known name in the file's leading run of
+# directives — docker stops reading them at the first other line, comment or blank — so only
+# there is one kept; every other comment, a directive-shaped one further down included, and
+# every blank line is dropped.
 base_stage_text() {
   local df="$1"
   if ! grep -q '^FROM \${JIGC_BASE} AS build$' "$df"; then
     echo "no 'FROM \${JIGC_BASE} AS build' line in $df — the base layer cannot be keyed" >&2
     return 1
   fi
-  sed '/^FROM \${JIGC_BASE} AS build$/,$d' "$df" | grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$'
+  awk '
+    BEGIN { head = 1 }
+    /^FROM \$\{JIGC_BASE\} AS build$/ { exit }
+    head && tolower($0) ~ /^#[ \t]*(syntax|escape|check)[ \t]*=/ { print; next }
+    { head = 0 }
+    /^[ \t]*#/ || /^[ \t]*$/ { next }
+    { print }
+  ' "$df"
 }
 
-# base_key_of <repo> <sha> <dockerfile> — the base layer's key for the tree at <sha>.
+# docker_platform — the platform a build here is for: DOCKER_DEFAULT_PLATFORM when it is set
+# and not empty, else the docker server's own `<os>/<arch>`.
+docker_platform() {
+  if [ -n "${DOCKER_DEFAULT_PLATFORM:-}" ]; then
+    printf '%s\n' "$DOCKER_DEFAULT_PLATFORM"
+  else
+    docker version --format '{{.Server.Os}}/{{.Server.Arch}}'
+  fi
+}
+
+# base_key_of <repo> <sha> <dockerfile> <platform> — the base layer's key for the tree at
+# <sha>, built for <platform>. A key with no platform is refused rather than shared.
 base_key_of() {
-  local repo="$1" sha="$2" df="$3" text f lines
+  local repo="$1" sha="$2" df="$3" platform="${4:-}" text f lines
+  if [ -z "$platform" ]; then
+    echo "no platform — the base layer is keyed by the platform it is built for" >&2
+    return 1
+  fi
   text="$(base_stage_text "$df")" || return 1
   git -C "$repo" cat-file -e "${sha}^{commit}" 2>/dev/null || {
     echo "no commit '${sha}' in ${repo}" >&2
     return 1
   }
   lines="dockerfile-above-the-build-stage $(printf '%s\n' "$text" | sha256_stdin)"
+  lines+=$'\n'"platform ${platform}"
   for f in rust-toolchain.toml Cargo.lock; do
     if git -C "$repo" cat-file -e "${sha}:${f}" 2>/dev/null; then
       lines+=$'\n'"${f} $(git -C "$repo" show "${sha}:${f}" | sha256_stdin)"
@@ -120,7 +161,8 @@ else
 
   FULL_SHA="$(git -C "$REPO" rev-parse "$SHA")"
   STAMP="$(stamp_of "$REPO" "$FULL_SHA")"
-  BASE_KEY="$(base_key_of "$REPO" "$FULL_SHA" "$HERE/Dockerfile")"
+  PLATFORM="$(docker_platform)"
+  BASE_KEY="$(base_key_of "$REPO" "$FULL_SHA" "$HERE/Dockerfile" "$PLATFORM")"
   BASE_TAG="jigc-gate-base:${BASE_KEY}"
   BUILD_ARG="JIGC_SHA=${FULL_SHA}"
 
@@ -128,6 +170,7 @@ else
   echo "  sha     : ${FULL_SHA}"
   echo "  stamped : ${STAMP}"
   echo "  subject : $(git -C "$REPO" log -1 --format=%s "$FULL_SHA")"
+  echo "  platform: ${PLATFORM}"
   echo "  base    : ${BASE_TAG}"
 fi
 
@@ -149,12 +192,34 @@ if [ -n "${FULL_SHA:-}" ]; then
   else
     echo "base not kept: building ${BASE_TAG} from this tree (toolchain and crates)"
     T0=$SECONDS
-    docker build --target base -t "$BASE_TAG" --build-arg "JIGC_BASE_HASH=${BASE_KEY}" "$CTX"
+    docker build --platform "$PLATFORM" --target base -t "$BASE_TAG" \
+      --build-arg "JIGC_BASE_HASH=${BASE_KEY}" "$CTX"
     echo "base built in $((SECONDS - T0)) s"
   fi
   T0=$SECONDS
-  docker build -t "$TAG" --build-arg "$BUILD_ARG" --build-arg "JIGC_BASE=${BASE_TAG}" "$CTX"
+  docker build --platform "$PLATFORM" -t "$TAG" --build-arg "$BUILD_ARG" \
+    --build-arg "JIGC_BASE=${BASE_TAG}" "$CTX"
   echo "candidate built on ${BASE_TAG} in $((SECONDS - T0)) s"
+
+  # The base the build used is the one keyed: the image records the key this script computed
+  # and the mark of the layer the tag names now, and is of the platform keyed. Two builds of
+  # one key at once, or a tag removed or replaced between the inspect above and the build,
+  # would otherwise pass unseen.
+  GOT_BASE="$(docker run --rm --entrypoint cat "$TAG" /usr/local/share/jigc-image/base 2>/dev/null || true)"
+  KEPT_BASE="$(docker run --rm --entrypoint cat "$BASE_TAG" /usr/local/share/jigc-base/record 2>/dev/null || true)"
+  GOT_KEY="$(sed -n 's/^key //p' <<<"$GOT_BASE")"
+  GOT_LAYER="$(sed -n 's/^layer //p' <<<"$GOT_BASE")"
+  KEPT_LAYER="$(sed -n 's/^layer //p' <<<"$KEPT_BASE")"
+  GOT_PLATFORM="$(docker image inspect "$TAG" --format '{{.Os}}/{{.Architecture}}')"
+  WANT_PLATFORM="$(cut -d/ -f1-2 <<<"$PLATFORM")"
+  if [ "$GOT_KEY" != "$BASE_KEY" ] || [ -z "$GOT_LAYER" ] || [ "$GOT_LAYER" != "$KEPT_LAYER" ] \
+    || [ "$GOT_PLATFORM" != "$WANT_PLATFORM" ]; then
+    echo "MISMATCH: ${TAG} was not built on ${BASE_TAG} for ${WANT_PLATFORM}:" >&2
+    echo "  the image records key '${GOT_KEY}' and layer '${GOT_LAYER}', for ${GOT_PLATFORM}" >&2
+    echo "  the tag holds layer '${KEPT_LAYER}'" >&2
+    exit 1
+  fi
+  echo "base checked: ${TAG} records ${BASE_TAG}, layer ${GOT_LAYER}, ${GOT_PLATFORM}"
 else
   docker build -t "$TAG" --build-arg "$BUILD_ARG" "$CTX"
 fi

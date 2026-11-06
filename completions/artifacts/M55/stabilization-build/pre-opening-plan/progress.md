@@ -97,6 +97,96 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### k7-review-s1-a-missing-toolchain  {#k7-review-s1-a-missing-toolchain}
+
+<!-- fields -->
+- intent: K7 review S1 — a toolchain the kept base lacks fails loudly: the base stage ends with RUSTUP_AUTO_INSTALL=0 (the image's rustup is 1.29.0, which reads it), so the build stage inherits it and rustup refuses with its own is-not-installed instead of syncing; check-base-layer.sh's new docker case reads it off a kept base, red on the base built before the fix and green on the base built after it
+- workflow: fixer
+- status: joined
+
+### k7-review-s2-the-keys-arms  {#k7-review-s2-the-keys-arms}
+
+<!-- fields -->
+- intent: K7 review S2 — the key's and the repository's arms are a gate suite, tooling-tests/trial_image_base_key.rs, registered in the tooling group root and taken out of check-base-layer.sh, which keeps its docker cases, run by hand; with a new arm, a change to Cargo.toml alone keeps the key
+- workflow: fixer
+- status: joined
+
+### k7-review-s3-the-tooling-row  {#k7-review-s3-the-tooling-row}
+
+<!-- fields -->
+- intent: K7 review S3 — the trial harness's row of tooling.md says what holds the kept base: check-base-layer.sh's docker cases by hand, and the new suite in the gate
+- workflow: fixer
+- status: joined
+
+### k7-review-s4-the-registry-build  {#k7-review-s4-the-registry-build}
+
+<!-- fields -->
+- intent: K7 review S4 — registry mode driven, not only linted: build-image.sh --registry 1.0.0-rc.24 built in 54 s, recording single-binary, the registry source and no base, and verify-image.sh passes it 7/7; run by the fixer on the main session's go
+- workflow: fixer
+- status: joined
+
+### k7-review-s5-removing-kept-bases  {#k7-review-s5-removing-kept-bases}
+
+<!-- fields -->
+- intent: K7 review S5 — the README says how to list and remove kept bases, that docker builder prune does not, and that removing one breaks no image already built
+- workflow: fixer
+- status: joined
+
+### k7-review-n1-parser-directives  {#k7-review-n1-parser-directives}
+
+<!-- fields -->
+- intent: K7 review N1 — the key keeps the parser directives at the Dockerfile's head and drops only comments; arms for a syntax and an escape directive, and for a directive-shaped comment past the head
+- workflow: fixer
+- status: joined
+
+### k7-review-n2-the-platform  {#k7-review-n2-the-platform}
+
+<!-- fields -->
+- intent: K7 review N2 — the platform is in the key, and both builds are given it with --platform, so a kept base of another platform is never taken; a key with no platform is refused; arms for both
+- workflow: fixer
+- status: joined
+
+### k7-review-n3-the-floating-base  {#k7-review-n3-the-floating-base}
+
+<!-- fields -->
+- intent: K7 review N3 — recorded, no change: the kept base freezes the floating rust image and its apt packages at its first build, as docker's layer cache did before; only builder prune no longer refreshes them
+- workflow: fixer
+- status: joined
+
+### k7-review-n4-the-base-used  {#k7-review-n4-the-base-used}
+
+<!-- fields -->
+- intent: K7 review N4 — after the build, build-image.sh asserts the image records the key it computed, the layer its base tag holds and the platform keyed, and fails loudly if not; both rebuilt candidates printed base checked
+- workflow: fixer
+- status: joined
+
+### k7-review-minor-the-repository-arm  {#k7-review-minor-the-repository-arm}
+
+<!-- fields -->
+- intent: K7 review minor notes — the repository arm drives a copy of the script in a repository at another path, so a hard-coded path is red even from the main checkout; the key's throwaway repositories now remove themselves; the pair check resting on its liveness half stays as the README says it
+- workflow: fixer
+- status: joined
+
+### k7-review-l1-the-pair-default  {#k7-review-l1-the-pair-default}
+
+<!-- fields -->
+- intent: K7 review L1 — the README's PAIR_PROBES default is m50, as verify-pair.sh has it, with m50 listed
+- workflow: fixer
+- status: joined
+
+### k7-review-l2-a-committed-host-path  {#k7-review-l2-a-committed-host-path}
+
+<!-- fields -->
+- intent: K7 review L2 — a committed host path in an M26 evidence script; part of a wider host-path question for the human, not touched
+- workflow: human question
+
+### k7-review-l3-the-scripts-header  {#k7-review-l3-the-scripts-header}
+
+<!-- fields -->
+- intent: K7 review L3 — build-image.sh's header names the kept base, its check after the build, and the repository default
+- workflow: fixer
+- status: joined
+
 ### h2-ask-how-to-clear  {#h2-ask-how-to-clear}
 
 <!-- fields -->

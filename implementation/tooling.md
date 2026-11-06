@@ -63,12 +63,12 @@ The regression set's first part is a tool of its own, [dev/regression-set](../de
 
 ## The trial tooling
 
-Each is a directory with its own README, which owns it; none is run by the gate. Which to reach for, and where the rig and the fixture builder take over, is [CLAUDE.md](../CLAUDE.md)'s paragraph on trial tooling.
+Each is a directory with its own README, which owns it; none is run by the gate, but for the trial harness's base-layer key and repository, which a suite of the gate holds. Which to reach for, and where the rig and the fixture builder take over, is [CLAUDE.md](../CLAUDE.md)'s paragraph on trial tooling.
 
 | Home | The question it answers | How it is called | Owned by | Held by |
 |---|---|---|---|---|
 | [completions/trial-corpus-template/](../completions/trial-corpus-template/) | A foreign, pre-jigc corpus for an adoption trial, and is it clean? | `instantiate.sh [--clean-prose]` · `check-corpus.sh` | [its README](../completions/trial-corpus-template/README.md) | its `self-test.sh`, run by hand |
-| [completions/trial-harness/](../completions/trial-harness/) | The isolated container a blind session runs in, pinned by commit or published version, and verified | `build-image.sh` · `verify-image.sh` · `verify-pair.sh` · `check-base-layer.sh` · `run-session.sh` | [its README](../completions/trial-harness/README.md) | `verify-image.sh` over each image it builds |
+| [completions/trial-harness/](../completions/trial-harness/) | The isolated container a blind session runs in, pinned by commit or published version, and verified | `build-image.sh` · `verify-image.sh` · `verify-pair.sh` · `check-base-layer.sh` · `run-session.sh` | [its README](../completions/trial-harness/README.md) | `verify-image.sh` over each image it builds; the kept base layer by `check-base-layer.sh`'s docker cases, run by hand, and its key and repository by [trial_image_base_key.rs](../tooling-tests/trial_image_base_key.rs) in the gate |
 | [completions/trial-driver/](../completions/trial-driver/) | Drive and score a trial session without an operator | `python3 run.py observe` · `seed` · `fork` · `plant` · `gate`; `walk.py` | [its README](../completions/trial-driver/README.md) | its `test_*.py`, `python3 run.py test`, run by hand |
 | [completions/workflow-eval/](../completions/workflow-eval/) | Does a real agent select, engage and complete the right workflow? | `run-eval.sh` · `eval.py` · `analyze.py` | [its README](../completions/workflow-eval/README.md) | its `selftest.sh`, run by hand |
 

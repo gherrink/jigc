@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
 # check-base-layer.sh <case> [args…]
 #
-# The harness's own checks of the kept base layer: the toolchain and the fetched
-# dependencies, built once for one toolchain file and one lockfile and kept as the image
-# `jigc-gate-base:<key>`, so that a second candidate with the same two files compiles on it
-# instead of syncing the toolchain and downloading every crate again (build-image.sh, the
-# Dockerfile's `toolchain` and `base` stages; README → The kept base layer). One case per
-# call, named as the task that built the layer names it. Each prints PASS/FAIL lines and
-# exits 1 on any FAIL, 2 on a usage error.
+# The harness's own checks of the kept base layer that need docker: the toolchain and the
+# fetched dependencies, built once for one toolchain file, one lockfile, one base recipe and
+# one platform and kept as the image `jigc-gate-base:<key>`, so that a second candidate with
+# the same key compiles on it instead of syncing the toolchain and downloading every crate
+# again (build-image.sh, the Dockerfile's `toolchain` and `base` stages; README → The kept
+# base layer). One case per call, run by hand over images build-image.sh built. Each prints
+# PASS/FAIL lines and exits 1 on any FAIL, 2 on a usage error.
 #
-#   a_changed_lockfile_or_toolchain_file_builds_a_new_layer
-#       No docker. In a throwaway repository: a commit that changes code keeps the key; a
-#       commit that changes Cargo.lock, changes rust-toolchain.toml or removes it gets a new
-#       key; so does an edit to the Dockerfile above its build stage, and an edit below it,
-#       or to a comment, does not.
+# The halves that need no docker — the key (what moves it and what does not) and the
+# repository the commits are read from — are a suite of the gate,
+# tooling-tests/trial_image_base_key.rs, and are not repeated here.
+#
 #   a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first> <second>
 #       Two images build-image.sh built, in that order, from two commits with one lockfile
 #       and one toolchain file: both record the same base — its key and the layer's own
 #       mark — that base is still the image tagged by the key, and the key is the one
-#       base_key_of computes for each commit with this harness's Dockerfile.
+#       base_key_of computes for each commit with this harness's Dockerfile and the images'
+#       platform.
 #   the_binary_in_the_image_is_the_commits <first> <second>
 #       Each image records the commit it was built from, the same in its source record and
 #       in its JIGC_SHA (what verify-pair.sh reads), and the two binaries differ by sha256
 #       where the two commits' sources differ — so neither binary came from the kept base,
 #       which holds no tree and no build output.
-#   the_image_is_built_from_the_repository_the_harness_sits_in
-#       No docker. With JIGC_REPO empty, build-image.sh reads its commits from the
-#       repository it sits in, and JIGC_REPO still overrides it.
+#   a_toolchain_the_kept_base_lacks_fails_loudly <image>
+#       The kept base the image records, run as the build stage runs on it, with no network:
+#       a toolchain file naming a toolchain the base lacks fails with rustup's own "is not
+#       installed" and never starts a sync, and the base's own toolchain file still works.
 #
 # The repository the commits are read from is JIGC_REPO, else the one this script is in.
 set -uo pipefail
@@ -54,56 +55,6 @@ record_of() { docker run --rm --entrypoint cat "$1" "/usr/local/share/jigc-image
 field_of()  { sed -n "s/^$2 //p" <<<"$1" | head -1; }
 
 case "$CASE" in
-  a_changed_lockfile_or_toolchain_file_builds_a_new_layer)
-    echo "== a changed lockfile or toolchain file builds a new layer"
-    if have_key_fn; then
-      R="$(mktemp -d "${TMPDIR:-/tmp}/base-key.XXXXXX")"
-      g() { git -C "$R" -c user.email=t@t.t -c user.name=T -c commit.gpgsign=false "$@"; }
-      g init -q
-      printf 'version = 4\n[[package]]\nname = "a"\nversion = "1.0.0"\n' > "$R/Cargo.lock"
-      printf '[toolchain]\nchannel = "1.95.0"\n' > "$R/rust-toolchain.toml"
-      printf 'fn main() {}\n' > "$R/main.rs"
-      g add -A; g commit -qm base;                      C0="$(g rev-parse HEAD)"
-      printf 'fn main() { println!("x"); }\n' > "$R/main.rs"
-      g commit -qam code;                               C1="$(g rev-parse HEAD)"
-      printf '[[package]]\nname = "b"\nversion = "2.0.0"\n' >> "$R/Cargo.lock"
-      g commit -qam lock;                               C2="$(g rev-parse HEAD)"
-      g checkout -q "$C1" -- Cargo.lock
-      printf '[toolchain]\nchannel = "1.96.0"\n' > "$R/rust-toolchain.toml"
-      g commit -qam toolchain;                          C3="$(g rev-parse HEAD)"
-      g rm -q rust-toolchain.toml; g commit -qm no-toolchain; C4="$(g rev-parse HEAD)"
-
-      DF="$HERE/Dockerfile"
-      DF_ABOVE="$R/Dockerfile.above"; DF_BELOW="$R/Dockerfile.below"; DF_COMMENT="$R/Dockerfile.comment"
-      awk '/^FROM \$\{JIGC_BASE\} AS build$/ && !d { print "RUN true"; d=1 } { print }' "$DF" > "$DF_ABOVE"
-      { cat "$DF"; echo 'RUN true'; } > "$DF_BELOW"
-      awk 'NR==1 { print "# a comment edit"; print "" } { print }' "$DF" > "$DF_COMMENT"
-
-      K0="$(base_key_of "$R" "$C0" "$DF")"; K1="$(base_key_of "$R" "$C1" "$DF")"
-      K2="$(base_key_of "$R" "$C2" "$DF")"; K3="$(base_key_of "$R" "$C3" "$DF")"
-      K4="$(base_key_of "$R" "$C4" "$DF")"
-      KA="$(base_key_of "$R" "$C0" "$DF_ABOVE")"; KB="$(base_key_of "$R" "$C0" "$DF_BELOW")"
-      KC="$(base_key_of "$R" "$C0" "$DF_COMMENT")"
-      echo "  keys: base=$K0"
-      [[ "$K0" =~ ^[0-9a-f]{64}$ ]] && ok "the key is one sha256" || bad "the key is not a sha256: '$K0'"
-      [ "$K1" = "$K0" ] && ok "a code change keeps the layer"            || bad "a code change made a new key ($K1)"
-      [ "$K2" != "$K0" ] && ok "a lockfile change builds a new layer"     || bad "a lockfile change kept the key"
-      [ "$K3" != "$K0" ] && ok "a toolchain change builds a new layer"    || bad "a toolchain change kept the key"
-      [ "$K4" != "$K0" ] && [ "$K4" != "$K3" ] && ok "a removed toolchain file builds a new layer" \
-        || bad "a removed toolchain file kept a key ($K4)"
-      [ "$KA" != "$K0" ] && ok "an edit above the Dockerfile's build stage builds a new layer" \
-        || bad "an edit above the build stage kept the key"
-      [ "$KB" = "$K0" ] && ok "an edit below the build stage keeps the layer" || bad "an edit below the build stage made a new key"
-      [ "$KC" = "$K0" ] && ok "a comment keeps the layer"                     || bad "a comment made a new key"
-      NOMARK="$R/Dockerfile.nomark"; sed '/^FROM \${JIGC_BASE} AS build$/d' "$DF" > "$NOMARK"
-      if base_key_of "$R" "$C0" "$NOMARK" >/dev/null 2>&1; then
-        bad "a Dockerfile with no build-stage line still gave a key"
-      else
-        ok "a Dockerfile with no build-stage line gives no key"
-      fi
-    fi
-    ;;
-
   a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer)
     FIRST="${2:?usage: $0 $CASE <first-tag> <second-tag>}"; SECOND="${3:?usage: $0 $CASE <first-tag> <second-tag>}"
     echo "== a second candidate with the same lockfile builds on the kept layer ($FIRST, then $SECOND)"
@@ -123,10 +74,11 @@ case "$CASE" in
           || bad "jigc-gate-base:$K1 is not that layer ('$KEPT')"
         if [ -n "$S1" ] && [ -n "$S2" ] && [ "$S1" != "$S2" ]; then
           ok "two candidates: $S1, $S2"
+          P="$(docker image inspect "$FIRST" --format '{{.Os}}/{{.Architecture}}' 2>/dev/null)"
           have_key_fn && for S in "$S1" "$S2"; do
-            K="$(base_key_of "$REPO" "$S" "$HERE/Dockerfile" 2>/dev/null)"
-            [ "$K" = "$K1" ] && ok "base_key_of $S is the recorded key" \
-              || bad "base_key_of $S is '$K', not the recorded $K1"
+            K="$(base_key_of "$REPO" "$S" "$HERE/Dockerfile" "$P" 2>/dev/null)"
+            [ "$K" = "$K1" ] && ok "base_key_of $S for $P is the recorded key" \
+              || bad "base_key_of $S for $P is '$K', not the recorded $K1"
           done
         else
           bad "the two images do not record two commits ('$S1' / '$S2')"
@@ -159,26 +111,41 @@ case "$CASE" in
     fi
     ;;
 
-  the_image_is_built_from_the_repository_the_harness_sits_in)
-    # The commits a build archives, and the key it reads, come from one repository. With no
-    # JIGC_REPO that is the repository build-image.sh sits in — never a path of one machine.
-    echo "== the image is built from the repository the harness sits in"
-    if ! declare -F default_repo >/dev/null; then
-      bad "build-image.sh defines no default_repo — its repository is not derived from where it sits"
+  a_toolchain_the_kept_base_lacks_fails_loudly)
+    IMAGE="${2:?usage: $0 $CASE <image-tag>}"
+    echo "== a toolchain the kept base lacks fails loudly ($IMAGE)"
+    K="$(field_of "$(record_of "$IMAGE" base)" key)"
+    if [ -z "$K" ]; then
+      bad "$IMAGE records no base — it was not built on a kept layer"
     else
-      GOT="$(JIGC_REPO='' default_repo)"; WANT="$(git -C "$HERE" rev-parse --show-toplevel)"
-      [ "$GOT" = "$WANT" ] && ok "with no JIGC_REPO, the repository is $WANT" \
-        || bad "with no JIGC_REPO, the repository is '$GOT', not $WANT"
-      GOT="$(JIGC_REPO=/elsewhere default_repo)"
-      [ "$GOT" = /elsewhere ] && ok "JIGC_REPO still names it" || bad "JIGC_REPO=/elsewhere gave '$GOT'"
+      BASE="jigc-gate-base:$K"
+      # The base's own toolchain file, read off the commit the image records.
+      S="$(field_of "$(record_of "$IMAGE" source)" sha)"
+      OWN="$(git -C "$REPO" show "${S}:rust-toolchain.toml" 2>/dev/null)"
+      try() { # try <toolchain file text> — cargo --version under it, in the base, offline
+        docker run --rm --network none --entrypoint sh "$BASE" -c \
+          'mkdir /t && cd /t && printf "%s\n" "$1" > rust-toolchain.toml && cargo --version' _ "$1" 2>&1
+      }
+      OUT="$(try "$(printf '[toolchain]\nchannel = "1.1.0"')")"; RC=$?
+      if [ "$RC" -ne 0 ] && grep -q "is not installed" <<<"$OUT" && ! grep -q "syncing channel" <<<"$OUT"; then
+        ok "a toolchain $BASE lacks is refused, not synced: $(grep 'is not installed' <<<"$OUT" | head -1)"
+      else
+        bad "a toolchain $BASE lacks was not refused loudly (exit $RC): $(tr '\n' ' ' <<<"$OUT")"
+      fi
+      if [ -z "$OWN" ]; then
+        bad "the commit $S carries no rust-toolchain.toml to run the base's own toolchain under"
+      else
+        OUT="$(try "$OWN")"; RC=$?
+        [ "$RC" -eq 0 ] && ok "the base's own toolchain file runs: $OUT" \
+          || bad "the base's own toolchain file fails (exit $RC): $(tr '\n' ' ' <<<"$OUT")"
+      fi
     fi
     ;;
 
   *)
-    echo "usage: $0 a_changed_lockfile_or_toolchain_file_builds_a_new_layer" >&2
-    echo "       $0 a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first-tag> <second-tag>" >&2
+    echo "usage: $0 a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first-tag> <second-tag>" >&2
     echo "       $0 the_binary_in_the_image_is_the_commits <first-tag> <second-tag>" >&2
-    echo "       $0 the_image_is_built_from_the_repository_the_harness_sits_in" >&2
+    echo "       $0 a_toolchain_the_kept_base_lacks_fails_loudly <image-tag>" >&2
     exit 2 ;;
 esac
 

@@ -48,10 +48,10 @@ rather than inherited from the operator's `settings.json`.
 
 | Script | What it does |
 |---|---|
-| `build-image.sh <sha> [tag]` · `build-image.sh --registry <version> [tag]` | **Source mode** builds jigc for Linux from a `git archive` of that exact commit; **registry mode** runs `cargo install jigc --version <version> --locked` from crates.io instead, with no tree of ours in the build context, and refuses anything but one exact version. Either then installs the pinned Claude CLI, prints what it is building (sha, version stamp and commit subject, or the registry version) **before** building, and **asserts** `jigc --version` equals the stamp afterwards, exiting 1 on a mismatch. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other tree and every registry install builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and where the binary came from at `…/source` (`sha <sha>` or `registry jigc <version>`), and the build-time `ldd` gate runs over every executable staged. **Source mode builds on a kept base layer** (below): it reads the commits from `JIGC_REPO`, else from the repository it sits in, and prints `base kept:` or `base not kept:` with the base's tag, and the wall seconds of each build. |
+| `build-image.sh <sha> [tag]` · `build-image.sh --registry <version> [tag]` | **Source mode** builds jigc for Linux from a `git archive` of that exact commit; **registry mode** runs `cargo install jigc --version <version> --locked` from crates.io instead, with no tree of ours in the build context, and refuses anything but one exact version. Either then installs the pinned Claude CLI, prints what it is building (sha, version stamp and commit subject, or the registry version) **before** building, and **asserts** `jigc --version` equals the stamp afterwards, exiting 1 on a mismatch. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other tree and every registry install builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and where the binary came from at `…/source` (`sha <sha>` or `registry jigc <version>`), and the build-time `ldd` gate runs over every executable staged. **Source mode builds on a kept base layer** (below): it reads the commits from `JIGC_REPO`, else from the repository it sits in, and prints `base kept:` or `base not kept:` with the base's tag, and the wall seconds of each build, then asserts the image was built on that base, and exits 1 if not. |
 | `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. Check 2 runs the arm for the layout the image **records**, and fails an image that records none. The list below enumerates five; the script is the authority. |
-| `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. The probe set is **selected per trial** with `PAIR_PROBES` (`m48` rc.10→rc.11 · `m46` rc.11→rc.12 · `m49` rc.12→rc.13, the default), each probe stating what it expects on **both** sides — because the original three-verb set was vacuous on any pair where both sides carried those verbs, which an rc.11/rc.12 pair did. The default tracks the current trial on purpose: a default that is wrong for the trial in front of you is a trap wearing a convenience. |
-| `check-base-layer.sh <case> [tags]` | The harness's own checks of the kept base layer, one case per call: `a_changed_lockfile_or_toolchain_file_builds_a_new_layer` and `the_image_is_built_from_the_repository_the_harness_sits_in` need no docker; `a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first> <second>` and `the_binary_in_the_image_is_the_commits <first> <second>` read two built images. |
+| `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. The probe set is **selected per trial** with `PAIR_PROBES` (`m48` rc.10→rc.11 · `m46` rc.11→rc.12 · `m49` rc.12→rc.13 · `m50` rc.13→rc.14, the default), each probe stating what it expects on **both** sides — because the original three-verb set was vacuous on any pair where both sides carried those verbs, which an rc.11/rc.12 pair did. The default tracks the current trial on purpose: a default that is wrong for the trial in front of you is a trap wearing a convenience. |
+| `check-base-layer.sh <case> [tags]` | The harness's own checks of the kept base layer that need docker, one case per call, **run by hand**: `a_second_candidate_with_the_same_lockfile_builds_on_the_kept_layer <first> <second>` and `the_binary_in_the_image_is_the_commits <first> <second>` read two built images, and `a_toolchain_the_kept_base_lacks_fails_loudly <image>` runs the base one records. The half that needs no docker — what moves the key and what does not, and the repository the commits are read from — is a suite of the gate, [`tooling-tests/trial_image_base_key.rs`](../../tooling-tests/trial_image_base_key.rs). |
 | `run-session.sh [opts] <corpus> <out> [tag]` | Drives one session: corpus in, session, everything back out, container destroyed. Options precede the positionals: `--shell` (a plain `bash -l`) · `--exec <script>` · `--headless` with `--prompt-file <f>` · `--home <dir>` and `--arg <v>` (repeatable — how `seed`/`fork` pass `--session-id`/`--resume`/`--fork-session`) · `--cid-file <path>` (written **before** `docker start`, so a plant poller can attach) · `--strict-permissions`. There is **no `--bypass-permissions`**: `bypassPermissions` is the default and an unknown `-*` exits 2. |
 
 ### Two ways to build an image (M54 — settled 2026-09-28, built in Increment 7)
@@ -72,18 +72,35 @@ and the crate downloads, and both are the same for every candidate with the same
 §5, candidate 7). So source mode builds them once, as the image `jigc-gate-base:<key>` (the
 Dockerfile's `toolchain` and `base` stages, `docker build --target base`), and keeps it:
 
-- **The key** (`base_key_of`) is a sha256 over the toolchain file, the lockfile and the
-  Dockerfile above its `build` stage, with comments and blank lines dropped. A candidate with the same key builds on
-  the kept layer; a changed lockfile, toolchain file or base recipe builds a new one. The
-  manifests are not in it: under `--locked` a tree's resolve is its lockfile, so one lockfile
-  needs one set of crates.
+- **The key** (`base_key_of`) is a sha256 over the toolchain file, the lockfile, the
+  Dockerfile above its `build` stage — comments and blank lines dropped, parser directives
+  (`# syntax=`, `# escape=`, `# check=`) at its head kept — and the platform the layer is
+  built for. A candidate with the same key builds on the kept layer; a changed lockfile,
+  toolchain file, base recipe or platform builds a new one. The platform is
+  `DOCKER_DEFAULT_PLATFORM`, else the docker server's own, and both builds are given it
+  with `--platform`, so a kept base of another platform is never the one taken. The
+  manifests are not in the key: under `--locked` a tree's resolve is its lockfile, so one
+  lockfile needs one set of crates.
 - **The layer holds no tree and compiles nothing.** `cargo fetch --locked` runs over the tree
   bind-mounted, so every candidate compiles its own crates from its own tree, and its jigc
   build is `--frozen` — a crate the base lacks fails the build rather than downloading
-  quietly. A separate probe (an old tree) keeps its own lockfile and stays `--locked`.
+  quietly. `--frozen` does not reach the toolchain, so the base ends with
+  `RUSTUP_AUTO_INSTALL=0`: a toolchain the layer lacks fails with rustup's own *"is not
+  installed"* instead of being synced quietly (rustup 1.28.1 and later read it; the base
+  image carries 1.29.0). A separate probe (an old tree) keeps its own lockfile and stays
+  `--locked`.
 - **The image records its base** at `/usr/local/share/jigc-image/base`: the key and a random
   mark of the one layer it was built on, so two images say whether they share a layer.
+  `build-image.sh` reads it back after each build: an image that does not record the key it
+  computed, or the layer its tag holds, or is of another platform, fails the build.
   Registry mode has no lockfile of ours and builds on the plain `toolchain` stage, as before.
+- **Kept bases are kept until removed by hand.** Each new key mints an image of about
+  1.6 GB, and `docker builder prune` does not remove it, since it is a tagged image and not
+  build cache. List them with `docker image ls jigc-gate-base`, and remove one that no
+  candidate will use again with `docker image rm jigc-gate-base:<key>`. A trial image does
+  not contain its base — the base is a build stage, and the session image starts from its
+  own — so removing one breaks no image already built, and the next candidate with that
+  key builds it again.
 
 **Driven 2026-11-06**, on two commits with one lockfile and different manifests — `91834b5e`
 (rc.24's release commit) then `f6026ca3`: the first printed `base not kept`, built the base in
@@ -91,9 +108,24 @@ Dockerfile's `toolchain` and `base` stages, `docker build --target base`), and k
 built on the same layer, its compile step 27.6 s with no download and no sync, the image in
 32 s. That day's network was fast, so the saving measured is small — the canary's 1,256 s
 were a slow day's, and they are what a kept layer removes whatever the day. Both images pass
-`verify-image.sh` 7/7 and all four cases of `check-base-layer.sh`; their binaries differ by
+`verify-image.sh` 7/7 and all four cases `check-base-layer.sh` then had (its two that need no
+docker are now the gate's suite); their binaries differ by
 sha256, as their sources do. `verify-pair.sh` over the two passes its liveness and identity
 half 5/5; no probe set exists for an rc.24 → candidate pair, so its probe lines do not apply.
+
+**Driven again 2026-11-06, after the review's fixes** (the platform in the key, the
+directives kept, `RUSTUP_AUTO_INSTALL=0` in the base, the check after the build). The key
+moved for every commit, so the same two commits built a new base: `91834b5e` printed `base
+not kept`, built the base in 91 s (its sync-and-fetch step 20.4 s) and the candidate in
+150 s, 249 s in all; `f6026ca3` printed `base kept`, its compile step 58.9 s with no sync and
+no download, 65 s in all. Both printed `base checked` — the key, the tag's layer and
+`linux/arm64` — and pass `verify-image.sh` 7/7 and the three docker cases of
+`check-base-layer.sh`; the toolchain case, red on the base built before the fix (it began a
+sync), refuses a toolchain the new base lacks with rustup's *"is not installed"*.
+`--platform` with the local base tag resolved it from the local store, pulling nothing.
+**Registry mode driven, not only linted:** `./build-image.sh --registry 1.0.0-rc.24` built in
+54 s, recording `single-binary`, `registry jigc 1.0.0-rc.24` and no base, and
+`verify-image.sh` passes it 7/7.
 
 ## What each check buys, and why it is there
 

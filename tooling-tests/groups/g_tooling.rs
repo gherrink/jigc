@@ -68,5 +68,7 @@ mod stabilize_harness_fence;
 mod stabilize_simulation;
 #[path = "../tooling_index.rs"]
 mod tooling_index;
+#[path = "../trial_image_base_key.rs"]
+mod trial_image_base_key;
 #[path = "../workflow_action_runtime_fence.rs"]
 mod workflow_action_runtime_fence;
