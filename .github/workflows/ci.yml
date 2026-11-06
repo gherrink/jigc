@@ -122,7 +122,7 @@ jobs:
 
       # gitleaks, pinned, verified against the release's own checksum list, and run with
       # --redact so a finding never prints the value it found. `.gitleaks.toml` at the
-      # repo root is picked up automatically and allowlists the one known false positive.
+      # repo root is picked up automatically and allowlists the known false positives.
       - name: gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1

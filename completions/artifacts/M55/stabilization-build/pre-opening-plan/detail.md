@@ -594,7 +594,7 @@ Then one pass across all of them, which also reads J2-0's partition, class (iv) 
 - **Gates:** 1.
 
 **G1 — The `.gitleaks.toml` entry** (after H2, if A). One entry, exact file and exact line shape.
-- **Done when:** `gitleaks git --log-opts "origin/main..HEAD"` exits 0.
+- **Done when:** `gitleaks git --log-opts=HEAD` exits 0 — the whole history, which is what CI's `hygiene` job scans on a branch's first push (`before` is all zeros there); `origin/main..HEAD` is only a part of it.
 - **Gates:** 1.
 
 **Phase 3's end:** `dev/clean-litter`; every branch pushed; CI read; **H3**. The main session checks free disk before each lane's first gate (four worktrees, cold builds).

@@ -646,8 +646,9 @@ schema-version: 3
 ### g1-add-the-secret-scanners  {#g1-add-the-secret-scanners}
 
 <!-- fields -->
-- intent: G1 — add the secret scanner's allow entry
+- intent: G1 — add the secret scanner's allow entry; moved up from Phase 3, because the first push of any new branch is red in CI's hygiene job, where gitleaks scans the whole history and hits the known false positive (the tools lane's first push, CI run 42135119191)
 - workflow: builder
+- status: joined
 
 ### phase-3-end-clean  {#phase-3-end-clean}
 
