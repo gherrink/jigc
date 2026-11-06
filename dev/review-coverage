@@ -1,0 +1,335 @@
+#!/usr/bin/env python3
+#
+# dev/review-coverage — which commits of a range has no recorded review read, file by file,
+# decided by commit membership (the human's ruling F-B -> A, DECISIONS.md -> 2026-10-29,
+# "The three forks of plan v2's review": a file's lines count as reviewed only where a
+# recorded review's range covers the commit that wrote them). It is the instrument of the
+# partition J2-0 of the plan before the stabilization run's opening, its task U5
+# (completions/artifacts/M55/stabilization-build/pre-opening-plan/detail.md).
+#
+# THE REGISTRY is a committed file, REGISTRY below unless --registry names another: one row
+# per recorded review, four fields with one tab between each, under the header line
+#
+#   review<TAB>range<TAB>paths<TAB>heading
+#
+# Blank lines and lines that begin with `#` are skipped.
+#   review   a name of the review, lowercase words joined by `-`, unique in the file;
+#   range    the commits the review read: one or more items, separated by spaces, each a
+#            full 40-hex sha (that commit alone), `A..B` or `A^..B` (as `git rev-list`
+#            reads them). Never a branch or an abbreviated sha: a name that moves, or one
+#            that grows ambiguous, would change what the row covers without a commit;
+#   paths    the paths the review read, separated by spaces, as git pathspecs read
+#            literally (a directory holds every file under it; `.` is everything);
+#   heading  the `DECISIONS.md` heading that records the review, without its `## `.
+#
+# A commit C is COVERED for a file F when a row's range holds C and the row's paths hold F.
+# Nothing is covered by name or by part.
+#
+# WHAT A COMMIT TOUCHED. A commit with one parent (or none) touched each file of its diff to
+# that parent, with the lines it added there. A MERGE is judged against the automatic
+# re-merge of its parents (`git merge-tree --write-tree <p1> <p2>`):
+#   - a merge whose tree equals that re-merge adds nothing of its own: it touched no file,
+#     is never listed, and is covered through its parents — whose own commits are listed on
+#     their own merits;
+#   - a merge whose tree differs (a conflict resolved, a generated file regenerated, the
+#     decisions log put in order) touched exactly the files where it differs, with the lines
+#     it added against the re-merge; it is listed as `uncovered-merge` unless a row covers it.
+# A merge of more than two parents is refused: the rule has no re-merge for it.
+#
+# Usage:
+#   dev/review-coverage [--registry PATH] [--covered] <range> [<path>...]
+#       The listing. <range> is read by `git rev-list` (`A..B`, `A^!`, ...); the paths, if
+#       given, narrow it to the files they hold. Per file, sorted by path, the commits that
+#       touched it in topological order, oldest first, one line each:
+#         <TAB><sha, 12 hex><TAB>+<lines added><TAB><state><TAB><subject>
+#       where <state> is `uncovered`, `uncovered-merge`, or — under --covered, which lists
+#       the covered entries too — `covered:<review>,<review>`, the reviews sorted. A file
+#       with nothing to list is left out. The last line counts the uncovered entries, their
+#       files, and the clean merges covered through their parents. The listing reads the
+#       registry it is handed and trusts its headings; --check is what holds them.
+#
+#   dev/review-coverage [--registry PATH] --check
+#       Holds every row: each commit its range names is in HEAD's history, and its heading
+#       stands exactly once as a `## ` heading of the repository's DECISIONS.md, read from
+#       the working tree. One line per problem, `check: <review>: <what>`.
+#
+# Run from inside the repository; the registry's default path, and DECISIONS.md, are read
+# from its top level.
+#
+# Exit status: 0 the listing printed, or --check found nothing · 1 --check found a problem ·
+# 2 usage error, or a registry that cannot be read (a malformed row, a commit the repository
+# does not have), before anything is listed.
+#
+# Held by tooling-tests/dev_review_coverage.rs.
+
+import os
+import re
+import subprocess
+import sys
+
+REGISTRY = "completions/artifacts/M55/stabilization-build/review-ranges.tsv"
+HEADER = ["review", "range", "paths", "heading"]
+SHA = r"[0-9a-f]{40}"
+ITEM = re.compile(rf"^(?:{SHA}|{SHA}\^?\.\.{SHA})$")
+NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+SHAS = re.compile(SHA)
+
+
+class Refused(Exception):
+    pass
+
+
+def git(args, ok=(0,)):
+    proc = subprocess.run(
+        ["git", "--literal-pathspecs", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if proc.returncode not in ok:
+        raise Refused(f"git {' '.join(args)}: {proc.stderr.strip()}")
+    return proc
+
+
+def read_registry(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+    except OSError as e:
+        raise Refused(f"cannot read the registry {path}: {e.strerror}")
+    rows = []
+    header_seen = False
+    for n, line in enumerate(lines, 1):
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if not header_seen:
+            if fields != HEADER:
+                raise Refused(f"{path}:{n}: the first row is the header `{chr(9).join(HEADER)}`")
+            header_seen = True
+            continue
+        if len(fields) != 4 or not all(field.strip() for field in fields):
+            raise Refused(f"{path}:{n}: a row has four fields, none empty")
+        review, rng, paths, heading = fields
+        if not NAME.match(review):
+            raise Refused(f"{path}:{n}: `{review}` is not a review name (lowercase words joined by `-`)")
+        if any(r["review"] == review for r in rows):
+            raise Refused(f"{path}:{n}: review `{review}` is registered twice")
+        items = rng.split(" ")
+        for item in items:
+            if not ITEM.match(item):
+                raise Refused(
+                    f"{path}:{n}: `{item}`: a range item is a full 40-hex sha, `A..B` or `A^..B`"
+                )
+        pathspecs = paths.split(" ")
+        for p in pathspecs:
+            if not p or p.startswith("/"):
+                raise Refused(f"{path}:{n}: `{paths}`: paths are repository-relative, one space apart")
+        rows.append(
+            {"review": review, "items": items, "paths": pathspecs, "heading": heading, "line": n}
+        )
+    if not header_seen:
+        raise Refused(f"{path}: no header row `{chr(9).join(HEADER)}`")
+    for row in rows:
+        for sha in sorted(set(SHAS.findall(" ".join(row["items"])))):
+            if git(["cat-file", "-e", f"{sha}^{{commit}}"], ok=(0, 1, 128)).returncode != 0:
+                raise Refused(f"review `{row['review']}`: {sha} is not a commit of this repository")
+    return rows
+
+
+def row_commits(row):
+    commits = set()
+    for item in row["items"]:
+        spec = item if ".." in item else f"{item}^!"
+        commits.update(git(["rev-list", spec]).stdout.split())
+    return commits
+
+
+class History:
+    """What each commit touched, memoized per (commit, pathspecs)."""
+
+    def __init__(self):
+        self.parents = {}
+        self.remerge = {}
+        self.touched = {}
+
+    def parents_of(self, c):
+        if c not in self.parents:
+            self.parents[c] = git(["rev-list", "--parents", "-n", "1", c]).stdout.split()[1:]
+        return self.parents[c]
+
+    def base_of(self, c):
+        """The tree a commit is diffed against, or None when it touched nothing."""
+        parents = self.parents_of(c)
+        if len(parents) < 2:
+            return parents[0] if parents else ""
+        if len(parents) > 2:
+            raise Refused(f"{c} merges {len(parents)} parents; only a two-parent merge has a re-merge")
+        if c not in self.remerge:
+            out = git(["merge-tree", "--write-tree", parents[0], parents[1]], ok=(0, 1))
+            tree = out.stdout.split("\n", 1)[0].strip()
+            mine = git(["rev-parse", f"{c}^{{tree}}"]).stdout.strip()
+            self.remerge[c] = None if tree == mine else tree
+        return self.remerge[c]
+
+    def files(self, c, pathspecs):
+        key = (c, tuple(pathspecs))
+        if key not in self.touched:
+            base = self.base_of(c)
+            if base is None:
+                files = {}
+            else:
+                args = ["diff-tree", "-r", "--numstat", "--no-renames", "--no-commit-id"]
+                args += [base, c] if base else ["--root", c]
+                if pathspecs:
+                    args += ["--", *pathspecs]
+                files = {}
+                for line in git(args).stdout.splitlines():
+                    added, _deleted, path = line.split("\t", 2)
+                    files[path] = added
+            self.touched[key] = files
+        return self.touched[key]
+
+    def is_dirty_merge(self, c):
+        return len(self.parents_of(c)) == 2 and self.base_of(c) is not None
+
+    def is_clean_merge(self, c):
+        return len(self.parents_of(c)) == 2 and self.base_of(c) is None
+
+
+def plural(n, one, many):
+    return f"{n} {one if n == 1 else many}"
+
+
+def listing(rows, rng, paths, show_covered):
+    if rng.startswith("-"):
+        raise Refused(f"`{rng}` is not a range")
+    log = git(["log", "--topo-order", "--reverse", "--format=%H%x00%s", rng]).stdout
+    commits = []
+    for line in log.splitlines():
+        sha, subject = line.split("\0", 1)
+        commits.append((sha, subject))
+    members = [(row, row_commits(row)) for row in rows]
+    history = History()
+    by_file = {}
+    clean = 0
+    for sha, subject in commits:
+        if history.is_clean_merge(sha):
+            clean += 1
+            continue
+        holders = [row for row, held in members if sha in held]
+        for path, added in history.files(sha, paths).items():
+            covering = sorted(
+                row["review"] for row in holders if path in history.files(sha, row["paths"])
+            )
+            if covering:
+                state = "covered:" + ",".join(covering)
+            elif history.is_dirty_merge(sha):
+                state = "uncovered-merge"
+            else:
+                state = "uncovered"
+            by_file.setdefault(path, []).append((sha, added, state, subject))
+    out = []
+    uncovered = 0
+    files = 0
+    for path in sorted(by_file, key=lambda p: p.encode("utf-8")):
+        entries = [e for e in by_file[path] if show_covered or not e[2].startswith("covered:")]
+        open_here = sum(1 for e in by_file[path] if not e[2].startswith("covered:"))
+        uncovered += open_here
+        files += 1 if open_here else 0
+        if not entries:
+            continue
+        out.append(path)
+        for sha, added, state, subject in entries:
+            shown = "bin" if added == "-" else added
+            out.append(f"\t{sha[:12]}\t+{shown}\t{state}\t{subject}")
+    out.append(
+        f"review-coverage: {plural(uncovered, 'uncovered entry', 'uncovered entries')} on "
+        f"{plural(files, 'file', 'files')}; "
+        + (
+            "1 clean merge covered through its parents"
+            if clean == 1
+            else f"{clean} clean merges covered through their parents"
+        )
+    )
+    sys.stdout.write("\n".join(out) + "\n")
+    return 0
+
+
+def check(rows, top):
+    problems = []
+    try:
+        with open(os.path.join(top, "DECISIONS.md"), encoding="utf-8") as f:
+            headings = [line[3:] for line in f.read().split("\n") if line.startswith("## ")]
+    except OSError as e:
+        raise Refused(f"cannot read DECISIONS.md: {e.strerror}")
+    for row in rows:
+        for sha in sorted(set(SHAS.findall(" ".join(row["items"])))):
+            proc = git(["merge-base", "--is-ancestor", sha, "HEAD"], ok=(0, 1))
+            if proc.returncode != 0:
+                problems.append(f"check: {row['review']}: {sha} is not in HEAD's history")
+        count = headings.count(row["heading"])
+        if count == 0:
+            problems.append(f"check: {row['review']}: no heading `{row['heading']}` in DECISIONS.md")
+        elif count > 1:
+            problems.append(
+                f"check: {row['review']}: the heading `{row['heading']}` stands {count} times in DECISIONS.md"
+            )
+    if problems:
+        sys.stdout.write("\n".join(problems) + "\n")
+        return 1
+    sys.stdout.write(
+        f"check: {plural(len(rows), 'review', 'reviews')}; every commit in HEAD's history, "
+        "every heading once in DECISIONS.md\n"
+    )
+    return 0
+
+
+def usage():
+    sys.stderr.write(
+        "usage: dev/review-coverage [--registry PATH] [--covered] <range> [<path>...]\n"
+        "       dev/review-coverage [--registry PATH] --check\n"
+    )
+    return 2
+
+
+def main(argv):
+    if argv in (["-h"], ["--help"]):
+        with open(__file__, encoding="utf-8") as f:
+            for line in f.read().split("\n")[2:]:
+                if not line.startswith("#"):
+                    break
+                sys.stdout.write(line[2:] + "\n")
+        return 0
+    registry = None
+    show_covered = False
+    do_check = False
+    rest = []
+    args = list(argv)
+    while args:
+        a = args.pop(0)
+        if a == "--registry" and args:
+            registry = args.pop(0)
+        elif a == "--covered":
+            show_covered = True
+        elif a == "--check":
+            do_check = True
+        elif a.startswith("-") and a != "-" and not rest:
+            return usage()
+        else:
+            rest.append(a)
+    if (do_check and (rest or show_covered)) or (not do_check and not rest):
+        return usage()
+    try:
+        top = git(["rev-parse", "--show-toplevel"]).stdout.strip()
+        rows = read_registry(registry if registry else os.path.join(top, REGISTRY))
+        if do_check:
+            return check(rows, top)
+        return listing(rows, rest[0], rest[1:], show_covered)
+    except Refused as e:
+        sys.stderr.write(f"review-coverage: {e}\n")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

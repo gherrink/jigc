@@ -24,6 +24,8 @@ mod ci_matrix_fence;
 mod dev_gate_report;
 #[path = "../dev_regression_set.rs"]
 mod dev_regression_set;
+#[path = "../dev_review_coverage.rs"]
+mod dev_review_coverage;
 #[path = "../dev_runner_faithful.rs"]
 mod dev_runner_faithful;
 #[path = "../dev_stabilize_canary.rs"]

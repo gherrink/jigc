@@ -186,6 +186,7 @@ schema-version: 3
 <!-- fields -->
 - intent: U5 — list the commits no review has read, from a registry of past reviews
 - workflow: builder
+- status: joined
 
 ### k7-give-the-trial-image  {#k7-give-the-trial-image}
 
