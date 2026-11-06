@@ -2,6 +2,26 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-11-06 — The refused command run again with a value of the reader's own: `Act::RerunOwn`, its cases at six of the piece's nine lines, and `config.value-rejected` answered by a case (the plan before the opening's task `P-F0`, commit 4)
+
+**What landed.** The shared piece that more of the reason table's lines need than any other, *rerun-with-a-value-of-the-readers-own*, built as `Act::RerunOwn(Swapped)`:
+- **What it runs:** the refusing argv once more, with the argument at an index replaced by a value the case names, and why.
+- **How it is held:** as `Act::Rerun` is. It is refused beside a printed product line that no act runs as printed, and it comes out no better than *operand implied*.
+- **Its faults:** an index outside the argv, a value that is what was typed, a value with no reason, and a value the command quotes back as refused are each a fault of the case.
+- **Red first:** `route_catalog::a_refused_command_is_run_again_with_a_value_of_the_readers_own`. Against a runner that declared the act and did nothing, all five of its planted cases were wrong: the value's run came out *holds* with nothing done, and the four faults were followed. The shape arm takes `Swapped` as a payload, with its doc saying why.
+
+**The cases (six of the piece's nine lines):**
+- **T1, `config.value-rejected`.** Five causes, one for each shape the declared type refuses: an enum's non-member, a bool's non-boolean, and a string's empty value, control character or `[…]`. They come with a reading. This was a site-level reason and one of the nine `H1` puts to the human, so **`H1`'s question now holds eight reasons**.
+- **T2's three root refusals.** The `root!` macro now gives every cause its second way: the cited `jigc config list`, then the re-run with `handbook`, held to land in the project layer's manifest. That is fourteen cases over their thirteen causes, one cause being followed at both knobs.
+- **T17:** `jigc milestone create "Spread work"` over the refused `Fan out`.
+- **T129:** `jigc rename adr:use-tabs` after the cited `jigc describe`.
+
+All 21 new cases come out *followed, holds, operand implied*. Their reasons and ways are gone, and the projection is regenerated.
+
+**The piece's other three lines (T27, T31, T32) stay reasons.** Each route prints a product line for its other way: `--slug <slug>`, or a continuation line. Beside such a line, the human's rule of 2026-10-12 refuses a re-run. Building around the rule would assume an answer to fork R1, so the reason table names R1 as their owner beside the piece, and the fork now covers six lines.
+
+**The count of cases that hold implied rises by 21,** every one a re-run by construction. That is the class P-F1's act check reads, and H0 is judged again there.
+
 ## 2026-11-06 — `jigc uninstall`'s reasons get their cases: `rm -r` removes a directory whole, two listed commands are run, a sub-task's staged doc is planted, and three cases are red under three keys (the plan before the opening's task `P-F0`, commit 3)
 
 **What landed.** The reason table's rows for `jigc uninstall`, the family that has no C-task, and the one piece only it needs.

@@ -31,7 +31,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Word,
+    Act, Case, Check, Cited, Named, Operand, Place, Promise, Says, Step, Swapped, Word,
 };
 
 // The sites, as the committed list of refusal sites names them.
@@ -86,28 +86,62 @@ macro_rules! in_force {
     };
 }
 
-/// **A root refused at the door, followed the one way the frame can follow it**: the
-/// command the route cites, run as printed — its span by index, which differs by refusal —
-/// and held to what the route says it shows.
+/// **A root refused at the door, followed both ways its route offers**: the command the
+/// route cites, run as printed — its span by index, which differs by refusal — and held to
+/// what the route says it shows; and that list read, *re-run with* a root of the reader's
+/// own ([`Act::RerunOwn`]), which lands in the project layer's manifest.
 macro_rules! root {
     ($site:expr, $name:literal, $cause:literal, state: $state:expr, $knob:tt, $value:expr, list: $list:literal $(,)?) => {
-        [Case {
-            name: concat!($name, "-config-list-read-as-printed"),
-            site: $site,
-            cause: $cause,
-            state: $state,
-            refusing: &["config", "set", $knob, $value],
-            acts: &[Act::RunCited(Cited {
-                line: $list,
-                promised: in_force!($knob),
-            })],
-            untouched: &[MANIFEST],
-            ..C
-        }]
+        [
+            Case {
+                name: concat!($name, "-config-list-read-as-printed"),
+                site: $site,
+                cause: $cause,
+                state: $state,
+                refusing: &["config", "set", $knob, $value],
+                acts: &[Act::RunCited(Cited {
+                    line: $list,
+                    promised: in_force!($knob),
+                })],
+                untouched: &[MANIFEST],
+                ..C
+            },
+            Case {
+                name: concat!($name, "-re-run-with-a-root-of-the-readers-own"),
+                site: $site,
+                cause: $cause,
+                state: $state,
+                refusing: &["config", "set", $knob, $value],
+                acts: &[
+                    Act::RunCited(Cited {
+                        line: $list,
+                        promised: in_force!($knob),
+                    }),
+                    Act::RerunOwn(Swapped {
+                        argument: 3,
+                        value: A_ROOT_OF_THE_READERS_OWN,
+                        why: WHY_THAT_ROOT,
+                    }),
+                ],
+                holds: &[Check::Contains(
+                    Place::Repo(MANIFEST),
+                    A_ROOT_OF_THE_READERS_OWN,
+                )],
+                ..C
+            },
+        ]
     };
 }
 
-const A_ROOT_ABOVE_THE_REPOSITORY: [Case; 1] = root!(
+/// The root a reader re-runs a refused root knob with, and why — inside every bound the
+/// three routes' words set: a repo-relative directory under the repository root, outside
+/// `.git/` and `.jigc/`, one jigc creates.
+const A_ROOT_OF_THE_READERS_OWN: &str = "handbook";
+const WHY_THAT_ROOT: &str = "a root git can record, outside `.git/` and `.jigc/`, a \
+                             repo-relative directory jigc should create — what each of the \
+                             three routes asks for";
+
+const A_ROOT_ABOVE_THE_REPOSITORY: [Case; 2] = root!(
     UNTRACKABLE_ROOT,
     "untrackable-root-above-the-repository",
     "the root climbs out of the repository: it resolves outside the repository root",
@@ -116,27 +150,32 @@ const A_ROOT_ABOVE_THE_REPOSITORY: [Case; 1] = root!(
     "../elsewhere",
     list: 1,
 );
-const A_ROOT_IN_GITS_DIRECTORY: [Case; 2] = [
-    root!(
-        UNTRACKABLE_ROOT,
-        "untrackable-root-in-gits-directory",
-        "the root has a `.git` component: git refuses to track any path under one",
-        state: &[SETUP],
-        "docs-root",
-        ".git/docs",
-        list: 1,
-    )[0],
-    root!(
-        UNTRACKABLE_ROOT,
-        "untrackable-root-in-gits-directory-the-placement-knob",
-        "the root has a `.git` component: git refuses to track any path under one",
-        state: &[SETUP],
-        "placement-root",
-        ".git",
-        list: 1,
-    )[0],
+/// The two knobs of one cause, by the two ways each.
+const THE_DOCS_ROOT_IN_GITS_DIRECTORY: [Case; 2] = root!(
+    UNTRACKABLE_ROOT,
+    "untrackable-root-in-gits-directory",
+    "the root has a `.git` component: git refuses to track any path under one",
+    state: &[SETUP],
+    "docs-root",
+    ".git/docs",
+    list: 1,
+);
+const THE_PLACEMENT_ROOT_IN_GITS_DIRECTORY: [Case; 2] = root!(
+    UNTRACKABLE_ROOT,
+    "untrackable-root-in-gits-directory-the-placement-knob",
+    "the root has a `.git` component: git refuses to track any path under one",
+    state: &[SETUP],
+    "placement-root",
+    ".git",
+    list: 1,
+);
+const A_ROOT_IN_GITS_DIRECTORY: [Case; 4] = [
+    THE_DOCS_ROOT_IN_GITS_DIRECTORY[0],
+    THE_DOCS_ROOT_IN_GITS_DIRECTORY[1],
+    THE_PLACEMENT_ROOT_IN_GITS_DIRECTORY[0],
+    THE_PLACEMENT_ROOT_IN_GITS_DIRECTORY[1],
 ];
-const A_ROOT_IN_A_GIT_DIRECTORY_OF_ANOTHER_NAME: [Case; 1] = root!(
+const A_ROOT_IN_A_GIT_DIRECTORY_OF_ANOTHER_NAME: [Case; 2] = root!(
     UNTRACKABLE_ROOT,
     "untrackable-root-in-a-git-directory-of-another-name",
     "the repository keeps its git directory under another name, inside the work tree, and \
@@ -149,7 +188,7 @@ const A_ROOT_IN_A_GIT_DIRECTORY_OF_ANOTHER_NAME: [Case; 1] = root!(
     "gitdata/docs",
     list: 1,
 );
-const A_ROOT_IN_ANOTHER_REPOSITORY: [Case; 1] = root!(
+const A_ROOT_IN_ANOTHER_REPOSITORY: [Case; 2] = root!(
     UNTRACKABLE_ROOT,
     "untrackable-root-in-another-repository",
     "the root lies in a directory that is a repository of its own — an embedded one, whose \
@@ -163,7 +202,7 @@ const A_ROOT_IN_ANOTHER_REPOSITORY: [Case; 1] = root!(
     list: 1,
 );
 
-const A_ROOT_IN_THE_WORKBENCH: [Case; 1] = root!(
+const A_ROOT_IN_THE_WORKBENCH: [Case; 2] = root!(
     WORKBENCH_ROOT,
     "workbench-root-typed",
     "the root is typed inside jigc's own workbench",
@@ -172,7 +211,7 @@ const A_ROOT_IN_THE_WORKBENCH: [Case; 1] = root!(
     ".jigc/docs",
     list: 1,
 );
-const A_ROOT_THAT_REACHES_THE_WORKBENCH: [Case; 1] = root!(
+const A_ROOT_THAT_REACHES_THE_WORKBENCH: [Case; 2] = root!(
     WORKBENCH_ROOT,
     "workbench-root-reached-by-a-hop",
     "the root reaches jigc's own workbench only once its `..` hop is applied",
@@ -182,7 +221,7 @@ const A_ROOT_THAT_REACHES_THE_WORKBENCH: [Case; 1] = root!(
     list: 1,
 );
 
-const AN_ABSOLUTE_ROOT: [Case; 1] = root!(
+const AN_ABSOLUTE_ROOT: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-absolute",
     "the root is an absolute path",
@@ -191,7 +230,7 @@ const AN_ABSOLUTE_ROOT: [Case; 1] = root!(
     "/elsewhere/docs",
     list: 5,
 );
-const A_ROOT_PADDED_WITH_WHITESPACE: [Case; 1] = root!(
+const A_ROOT_PADDED_WITH_WHITESPACE: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-padded-with-whitespace",
     "a component of the root carries whitespace at its edge",
@@ -200,7 +239,7 @@ const A_ROOT_PADDED_WITH_WHITESPACE: [Case; 1] = root!(
     " docs",
     list: 5,
 );
-const A_ROOT_GIT_READS_AS_PATHSPEC_MAGIC: [Case; 1] = root!(
+const A_ROOT_GIT_READS_AS_PATHSPEC_MAGIC: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-leading-colon",
     "the root begins with `:`, which git reads as pathspec magic and not as a name",
@@ -209,7 +248,7 @@ const A_ROOT_GIT_READS_AS_PATHSPEC_MAGIC: [Case; 1] = root!(
     ":docs",
     list: 5,
 );
-const A_ROOT_GIT_READS_AS_A_PATTERN: [Case; 1] = root!(
+const A_ROOT_GIT_READS_AS_A_PATTERN: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-wildmatch-character",
     "the root contains `*`, which git reads as a pattern and not as part of a name",
@@ -226,7 +265,7 @@ const A_COMPONENT_OF_300_BYTES: &str = concat!(
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 );
-const A_ROOT_OVER_THE_NAME_CEILING: [Case; 1] = root!(
+const A_ROOT_OVER_THE_NAME_CEILING: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-component-over-the-name-ceiling",
     "a component of the root is longer than a path component may be",
@@ -238,7 +277,7 @@ const A_ROOT_OVER_THE_NAME_CEILING: [Case; 1] = root!(
 // A component of the root that is a symbolic link is no cause of this site since
 // 2026-10-28: it is the link-on-the-way state, refused under `store.link-on-the-way` ahead
 // of this check, and its case stands with that site's (`doc_read.rs`).
-const A_ROOT_THAT_IS_A_FILE: [Case; 1] = root!(
+const A_ROOT_THAT_IS_A_FILE: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-a-file",
     "the root names a file, not a directory",
@@ -247,7 +286,7 @@ const A_ROOT_THAT_IS_A_FILE: [Case; 1] = root!(
     "README.md",
     list: 5,
 );
-const A_ROOT_UNDER_THE_INSTALLS_OWN_ARTIFACTS: [Case; 1] = root!(
+const A_ROOT_UNDER_THE_INSTALLS_OWN_ARTIFACTS: [Case; 2] = root!(
     UNUSABLE_ROOT,
     "unusable-root-under-the-installs-own-artifacts",
     "the root lies where jigc's own install writes the assistant adapter's artifacts",
@@ -652,9 +691,86 @@ const A_LINK_AT_A_HOME_THE_RECORD_HOLDS: [Case; 2] = over_a_stale_key!(
     Step::LinkTo(Place::Repo(THE_LOG_MOVED), "nowhere"),
 );
 
+// ---------------------------------------------------------------------------
+// `run_set` · `config.value-rejected` — a value outside the knob's declared type
+// ---------------------------------------------------------------------------
+
+/// **A value outside the knob's declared type, followed the one way the route offers** —
+/// *set a value matching the knob's declared type*: the refused command once more, with a
+/// value of the reader's own in place of the one typed ([`Act::RerunOwn`]); the value
+/// lands in the project layer's manifest. A cause a shape of the type the knob declares.
+macro_rules! value_rejected {
+    ($name:literal, $cause:literal, $knob:literal, $typed:expr, $value:literal, $why:literal $(,)?) => {
+        [Case {
+            name: concat!(
+                "value-rejected-",
+                $name,
+                "-set-again-with-a-value-of-its-type"
+            ),
+            site: VALUE_REJECTED,
+            cause: $cause,
+            state: &[SETUP],
+            refusing: &["config", "set", $knob, $typed],
+            acts: &[Act::RerunOwn(Swapped {
+                argument: 3,
+                value: $value,
+                why: $why,
+            })],
+            holds: &[Check::Contains(Place::Repo(MANIFEST), $value)],
+            ..C
+        }]
+    };
+}
+
+const A_VALUE_NO_ENUM_HAS: [Case; 1] = value_rejected!(
+    "enum",
+    "an enum knob is set to a value that is not one of its members",
+    "default-workflow",
+    "no-such-workflow",
+    "router",
+    "a member of the enum, which the refusal's message lists",
+);
+const A_VALUE_NO_BOOL_IS: [Case; 1] = value_rejected!(
+    "bool",
+    "a bool knob is set to a value that is neither `true` nor `false`",
+    "finalize.fan-out.squash",
+    "maybe",
+    "false",
+    "one of the two values a bool takes, which the refusal's message names",
+);
+const AN_EMPTY_STRING: [Case; 1] = value_rejected!(
+    "empty",
+    "a string knob that keeps no sentinel for the empty value is set to nothing",
+    "validation.schema-conformance.repeatable-populated.exempt",
+    "",
+    "decisions-log",
+    "a non-empty value of one line: the name of a doctype the check is to leave alone",
+);
+const A_CONTROL_CHARACTER: [Case; 1] = value_rejected!(
+    "control-character",
+    "a string knob is set to a value that holds a control character",
+    "docs-root",
+    "hand\tbook",
+    "handbook",
+    "the value meant, without the tab: a single line",
+);
+const A_BRACKETED_VALUE: [Case; 1] = value_rejected!(
+    "bracketed",
+    "a string knob is set to a value wrapped in `[…]`, which is no clear of a scalar",
+    "validation.schema-conformance.repeatable-populated.exempt",
+    "[decisions-log]",
+    "decisions-log",
+    "the value without its brackets: one scalar",
+);
+
 /// The cases of the family, a group a cause — and, within a group, a case a way out of the
 /// cause's route.
 pub const CASES: &[&[Case]] = &[
+    &A_VALUE_NO_ENUM_HAS,
+    &A_VALUE_NO_BOOL_IS,
+    &AN_EMPTY_STRING,
+    &A_CONTROL_CHARACTER,
+    &A_BRACKETED_VALUE,
     &A_ROOT_ABOVE_THE_REPOSITORY,
     &A_ROOT_IN_GITS_DIRECTORY,
     &A_ROOT_IN_A_GIT_DIRECTORY_OF_ANOTHER_NAME,
@@ -683,33 +799,28 @@ pub const CASES: &[&[Case]] = &[
 ];
 
 /// The sites of the family that have no case, each with why.
-pub const REASONS: &[Reason] = &[Reason {
-    site: VALUE_REJECTED,
-    why: Why::NotConstructible(
-        "the state is planted by anyone — a value outside the knob's declared type — and \
-         the route cannot be followed: *set a value matching the knob's declared type* \
-         names one act, the refused command with another value, and prints neither a line \
-         nor a value. The value is the reader's own, and the frame runs a refusing command \
-         again only as it was typed, which is the refusal again. Driven by hand over an \
-         enum knob and a bool knob: `jigc config set default-workflow \"\"` and `jigc \
-         config set finalize.fan-out.squash maybe` are refused, exit 1; `jigc config set \
-         default-workflow router` and `jigc config set finalize.fan-out.squash false` \
-         exit 0",
-    ),
-    ruled: None,
-}];
-
-/// The re-run under another root, which the three root refusals ask for in words.
-const ANOTHER_ROOT_IS_THE_READERS: &str = "the root is the reader's own and an argument of the \
-    refused command, which the frame runs again only as it was typed and only where the \
-    route prints no command line — this one prints `jigc config list`. Driven by hand at \
-    the first cause of each of the three refusals: `jigc config set docs-root handbook` \
-    exits 0 and the knob lands";
+pub const REASONS: &[Reason] = &[];
 
 /// **What was read for each site, and how many causes it holds** — a hand count, with its
 /// derivation; the causes that have no case, each with why; and the ways out of its route
 /// that are not followed, each with why.
 pub const READINGS: &[Reading] = &[
+    Reading {
+        site: VALUE_REJECTED,
+        read: &[
+            "crates/cli/src/config.rs::run_set — step 2, on the folded value, behind the key's own question",
+            "crates/engine/src/write.rs::check_value, check_scalar, check_writable_scalar and check_opaque_scalar — the type checks a scalar knob's value meets",
+            "crates/cli/packs/dev/config/knobs.yaml — the knobs' declared types: enum, bool and string, and no other",
+        ],
+        causes: 5,
+        derivation: "one code and one route, a cause a shape the declared type refuses: an \
+                     enum's value not among its members; a bool's value neither `true` nor \
+                     `false`; and a string's empty, holding a control character, or wrapped \
+                     in `[…]`. An empty root knob is no cause: `run_set` makes it `.` \
+                     before this check",
+        without_case: &[],
+        not_followed: &[],
+    },
     Reading {
         site: UNTRACKABLE_ROOT,
         read: &[
@@ -724,10 +835,7 @@ pub const READINGS: &[Reading] = &[
                      another repository. Which of the two root knobs is set changes one \
                      word of the message: the second reason is followed at both",
         without_case: &[],
-        not_followed: &[(
-            "*re-run with a root git can record — a path under the repository root and outside `.git/`*",
-            Why::NotConstructible(ANOTHER_ROOT_IS_THE_READERS),
-        )],
+        not_followed: &[],
     },
     Reading {
         site: WORKBENCH_ROOT,
@@ -740,10 +848,7 @@ pub const READINGS: &[Reading] = &[
                      workbench — met by a root typed inside it, and by one that reaches it \
                      only once a `..` hop is applied; the message quotes what was typed",
         without_case: &[],
-        not_followed: &[(
-            "*re-run with a root outside `.jigc/`*",
-            Why::NotConstructible(ANOTHER_ROOT_IS_THE_READERS),
-        )],
+        not_followed: &[],
     },
     Reading {
         site: UNUSABLE_ROOT,
@@ -760,10 +865,7 @@ pub const READINGS: &[Reading] = &[
                      2026-10-28: it is refused ahead of this check under \
                      `store.link-on-the-way`, the one code for the state",
         without_case: &[],
-        not_followed: &[(
-            "*re-run with a repo-relative directory — an existing one, or one jigc should create*",
-            Why::NotConstructible(ANOTHER_ROOT_IS_THE_READERS),
-        )],
+        not_followed: &[],
     },
     Reading {
         site: REPOINT_FAILED,

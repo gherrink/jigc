@@ -59,6 +59,9 @@ for (kind, site, cause), e in lines.items():
             owner = 'P-F0'
     else:
         owner = '-'
+    if e['d'] in cl.RULE_TOO:
+        piece = f"{piece} + rerun-beside-another-ways-line (a rule)"
+        owner = 'a ruling (the piece changes a rule)'
     if e['d'] in cl.BUILT:
         owner = f"{owner} — {cl.BUILT[e['d']]}"
 

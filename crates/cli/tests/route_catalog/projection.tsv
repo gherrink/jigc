@@ -60,7 +60,7 @@ site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source
 site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::resolve_fork_bytes::config.anchor-absent#1	prose	no backticked span	scheduled
 site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.untrackable-root#1	prose	backticked span	case
 site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.unusable-root#1	prose	backticked span	case
-site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.value-rejected#1	prose	no backticked span	reason
+site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.value-rejected#1	prose	no backticked span	case
 site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.workbench-root#1	prose	backticked span	case
 site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::undeclared_key_finding::config.undeclared-key#1	prose	backticked span	scheduled
 site	config	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	variable	not read	scheduled
@@ -73,7 +73,7 @@ acts	config	Run	11
 acts	config	RunFilled	0
 acts	config	RunChosen	0
 acts	config	RunNamed	4
-acts	config	RunCited	14
+acts	config	RunCited	28
 acts	config	RemoveDirectory	0
 acts	config	MoveAway	1
 acts	config	MoveOut	2
@@ -97,6 +97,7 @@ acts	config	RerunWith	0
 acts	config	RunListed	0
 acts	config	Unstage	0
 acts	config	PutOnPath	0
+acts	config	RerunOwn	19
 family	doc read	11	6
 door	doc read	doc add-item
 door	doc read	doc list
@@ -132,7 +133,7 @@ acts	doc read	Run	25
 acts	doc read	RunFilled	0
 acts	doc read	RunChosen	4
 acts	doc read	RunNamed	0
-acts	doc read	RunCited	3
+acts	doc read	RunCited	4
 acts	doc read	RemoveDirectory	0
 acts	doc read	MoveAway	3
 acts	doc read	MoveOut	0
@@ -156,6 +157,7 @@ acts	doc read	RerunWith	0
 acts	doc read	RunListed	0
 acts	doc read	Unstage	0
 acts	doc read	PutOnPath	0
+acts	doc read	RerunOwn	2
 family	doc write	29	8
 door	doc write	doc add-item
 door	doc write	doc author
@@ -231,6 +233,7 @@ acts	doc write	RerunWith	0
 acts	doc write	RunListed	0
 acts	doc write	Unstage	0
 acts	doc write	PutOnPath	0
+acts	doc write	RerunOwn	0
 family	ingest	3	1
 door	ingest	ingest
 part	ingest	crates/cli/src/ingest.rs	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	3
@@ -266,6 +269,7 @@ acts	ingest	RerunWith	0
 acts	ingest	RunListed	0
 acts	ingest	Unstage	0
 acts	ingest	PutOnPath	0
+acts	ingest	RerunOwn	0
 family	migrate	2	1
 door	migrate	migrate
 part	migrate	crates/cli/src/migrate.rs	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	2
@@ -300,6 +304,7 @@ acts	migrate	RerunWith	0
 acts	migrate	RunListed	0
 acts	migrate	Unstage	0
 acts	migrate	PutOnPath	0
+acts	migrate	RerunOwn	0
 family	migrate-corpus	3	2
 door	migrate-corpus	migrate-corpus
 part	migrate-corpus	crates/cli/src/migrate_corpus.rs	crates/cli/src/migrate_corpus.rs::blocked_finding::dynamic#1	2
@@ -336,6 +341,7 @@ acts	migrate-corpus	RerunWith	0
 acts	migrate-corpus	RunListed	0
 acts	migrate-corpus	Unstage	0
 acts	migrate-corpus	PutOnPath	0
+acts	migrate-corpus	RerunOwn	0
 family	milestone	32	5
 door	milestone	milestone add-from-spec
 door	milestone	milestone add-task
@@ -412,6 +418,7 @@ acts	milestone	RerunWith	0
 acts	milestone	RunListed	13
 acts	milestone	Unstage	3
 acts	milestone	PutOnPath	0
+acts	milestone	RerunOwn	0
 family	setup	36	5
 door	setup	setup
 part	setup	crates/cli/src/locate.rs	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1	2
@@ -484,6 +491,7 @@ acts	setup	RerunWith	0
 acts	setup	RunListed	0
 acts	setup	Unstage	0
 acts	setup	PutOnPath	1
+acts	setup	RerunOwn	0
 family	start	11	3
 door	start	start
 door	start	workflow
@@ -530,6 +538,7 @@ acts	start	RerunWith	0
 acts	start	RunListed	0
 acts	start	Unstage	0
 acts	start	PutOnPath	0
+acts	start	RerunOwn	0
 family	task bind	2	1
 door	task bind	task bind
 part	task bind	crates/cli/src/task.rs	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	2
@@ -564,6 +573,7 @@ acts	task bind	RerunWith	0
 acts	task bind	RunListed	0
 acts	task bind	Unstage	0
 acts	task bind	PutOnPath	0
+acts	task bind	RerunOwn	0
 family	task discard	4	1
 door	task discard	task discard
 part	task discard	crates/cli/src/task.rs	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	4
@@ -600,6 +610,7 @@ acts	task discard	RerunWith	0
 acts	task discard	RunListed	0
 acts	task discard	Unstage	0
 acts	task discard	PutOnPath	0
+acts	task discard	RerunOwn	0
 family	task finalize	61	16
 door	task finalize	milestone finalize
 door	task finalize	task finalize
@@ -710,6 +721,7 @@ acts	task finalize	RerunWith	6
 acts	task finalize	RunListed	0
 acts	task finalize	Unstage	0
 acts	task finalize	PutOnPath	0
+acts	task finalize	RerunOwn	0
 family	uninstall	21	4
 door	uninstall	uninstall
 part	uninstall	crates/cli/src/locate.rs	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1	2
@@ -766,6 +778,7 @@ acts	uninstall	RerunWith	0
 acts	uninstall	RunListed	3
 acts	uninstall	Unstage	0
 acts	uninstall	PutOnPath	1
+acts	uninstall	RerunOwn	0
 family	validate	2	2
 door	validate	validate
 part	validate	crates/cli/src/render.rs	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	1
@@ -801,6 +814,7 @@ acts	validate	RerunWith	0
 acts	validate	RunListed	0
 acts	validate	Unstage	0
 acts	validate	PutOnPath	0
+acts	validate	RerunOwn	0
 residue	crates/cli/src/doc_code_probe/mod.rs::dangling::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/repo.rs::finding_at::dynamic#1	human	not read	scheduled
@@ -919,19 +933,38 @@ case	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	repoint-f
 case	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	repoint-failed-the-manifest-a-directory-moved-away-and-re-run-as-printed	followed, holds, operand implied	marked	a directory stands where the project layer's manifest is read and written, so the knob cannot land
 case	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	repoint-failed-the-manifest-not-yaml-mended-and-re-run-as-printed	followed, holds, operand implied	marked	the project layer's manifest holds text that is no YAML, so the knob cannot land
 case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-above-the-repository-config-list-read-as-printed	followed, holds	-	the root climbs out of the repository: it resolves outside the repository root
+case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-above-the-repository-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root climbs out of the repository: it resolves outside the repository root
 case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-a-git-directory-of-another-name-config-list-read-as-printed	followed, holds	-	the repository keeps its git directory under another name, inside the work tree, and the root lies in it
+case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-a-git-directory-of-another-name-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the repository keeps its git directory under another name, inside the work tree, and the root lies in it
 case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-another-repository-config-list-read-as-printed	followed, holds	-	the root lies in a directory that is a repository of its own — an embedded one, whose paths this index cannot record
+case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-another-repository-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root lies in a directory that is a repository of its own — an embedded one, whose paths this index cannot record
 case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-gits-directory-config-list-read-as-printed	followed, holds	-	the root has a `.git` component: git refuses to track any path under one
+case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-gits-directory-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root has a `.git` component: git refuses to track any path under one
 case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-gits-directory-the-placement-knob-config-list-read-as-printed	followed, holds	-	the root has a `.git` component: git refuses to track any path under one
+case	crates/cli/src/config.rs::run_set::config.untrackable-root#1	untrackable-root-in-gits-directory-the-placement-knob-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root has a `.git` component: git refuses to track any path under one
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-component-over-the-name-ceiling-config-list-read-as-printed	followed, holds	-	a component of the root is longer than a path component may be
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-component-over-the-name-ceiling-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	a component of the root is longer than a path component may be
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-file-config-list-read-as-printed	followed, holds	-	the root names a file, not a directory
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-file-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root names a file, not a directory
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-leading-colon-config-list-read-as-printed	followed, holds	-	the root begins with `:`, which git reads as pathspec magic and not as a name
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-leading-colon-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root begins with `:`, which git reads as pathspec magic and not as a name
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-wildmatch-character-config-list-read-as-printed	followed, holds	-	the root contains `*`, which git reads as a pattern and not as part of a name
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-a-wildmatch-character-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root contains `*`, which git reads as a pattern and not as part of a name
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-absolute-config-list-read-as-printed	followed, holds	-	the root is an absolute path
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-absolute-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root is an absolute path
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-padded-with-whitespace-config-list-read-as-printed	followed, holds	-	a component of the root carries whitespace at its edge
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-padded-with-whitespace-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	a component of the root carries whitespace at its edge
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-under-the-installs-own-artifacts-config-list-read-as-printed	followed, holds	-	the root lies where jigc's own install writes the assistant adapter's artifacts
+case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-under-the-installs-own-artifacts-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root lies where jigc's own install writes the assistant adapter's artifacts
+case	crates/cli/src/config.rs::run_set::config.value-rejected#1	value-rejected-bool-set-again-with-a-value-of-its-type	followed, holds, operand implied	-	a bool knob is set to a value that is neither `true` nor `false`
+case	crates/cli/src/config.rs::run_set::config.value-rejected#1	value-rejected-bracketed-set-again-with-a-value-of-its-type	followed, holds, operand implied	-	a string knob is set to a value wrapped in `[…]`, which is no clear of a scalar
+case	crates/cli/src/config.rs::run_set::config.value-rejected#1	value-rejected-control-character-set-again-with-a-value-of-its-type	followed, holds, operand implied	-	a string knob is set to a value that holds a control character
+case	crates/cli/src/config.rs::run_set::config.value-rejected#1	value-rejected-empty-set-again-with-a-value-of-its-type	followed, holds, operand implied	-	a string knob that keeps no sentinel for the empty value is set to nothing
+case	crates/cli/src/config.rs::run_set::config.value-rejected#1	value-rejected-enum-set-again-with-a-value-of-its-type	followed, holds, operand implied	-	an enum knob is set to a value that is not one of its members
 case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-reached-by-a-hop-config-list-read-as-printed	followed, holds	-	the root reaches jigc's own workbench only once its `..` hop is applied
+case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-reached-by-a-hop-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root reaches jigc's own workbench only once its `..` hop is applied
 case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-typed-config-list-read-as-printed	followed, holds	-	the root is typed inside jigc's own workbench
+case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-typed-re-run-with-a-root-of-the-readers-own	followed, holds, operand implied	-	the root is typed inside jigc's own workbench
 case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-a-sub-task-appended-by-the-named-verb	followed, holds, operand implied	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
 case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-the-milestone-finalized-by-the-named-verb	followed, holds, operand implied	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
 case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-an-ordinary-task-a-sub-task-appended-by-the-named-verb	followed, holds, operand implied	-	an ordinary task, no part of the milestone, retitles an item of the milestone's record
@@ -1021,6 +1054,7 @@ case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-cont
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-provisioned-and-nothing-staged-milestone-discarded-as-printed	followed, holds	-	the sub-task's worktree is provisioned and holds nothing: no staged code, no doc
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-work-unstaged-milestone-discarded-as-printed	followed, another failure	-	the sub-task's work is written in its worktree and not staged, and no doc of a sub-task's promotes
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed	followed, holds, operand implied	-	the sub-task's work is written in its worktree and not staged, and no doc of a sub-task's promotes
+case	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	rename-not-found-no-doc-of-that-id-surface-read-and-run-again-with-its-id	followed, holds, operand implied	-	the id names a doc the store does not hold: nothing stands at its home
 case	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	rename-not-found-no-doc-of-that-id-surface-read-as-printed	followed, holds	-	the id names a doc the store does not hold: nothing stands at its home
 case	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	rename-not-found-the-doc-gone-from-the-working-tree-surface-read-as-printed	followed, holds	-	the id is a committed doc's, and the doc is gone from the working tree — deleted, the deletion in no commit
 case	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed	followed, holds	-	the id the doc is renamed to is another committed doc's
@@ -1512,6 +1546,7 @@ case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-doc-rename-destination-a-link-link-moved-out	followed, holds	-	`jigc doc rename`: the home of the id the task's doc is renamed to holds a symbolic link
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-migration-over-a-link-link-moved-out-reviewed-and-approved-as-printed	followed, holds	-	`jigc task finalize` of a migration: the home the migrated doc promotes to holds a symbolic link
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-milestone-create-over-a-directory-moved-away-and-created-again	followed, holds, operand implied	-	`jigc milestone create`: the record's home holds a directory
+case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-milestone-create-over-a-link-created-under-a-different-title	followed, holds, operand implied	-	`jigc milestone create`: the record's home holds a symbolic link
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-milestone-create-over-a-link-link-moved-out-and-created-again	followed, holds, operand implied	-	`jigc milestone create`: the record's home holds a symbolic link
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-milestone-edited-over-a-link-to-a-copy-the-file-itself-put-there-and-finalized-as-printed	followed, holds	-	`jigc milestone finalize`: the home of a committed doc a sub-task edits was turned into a symbolic link to a copy of the doc
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-milestone-fixed-identity-over-a-link-link-moved-out-and-finalized-as-printed	followed, holds	-	`jigc milestone finalize`: the home of a doc under a fixed identity, which a sub-task minted, holds a symbolic link
@@ -1536,7 +1571,6 @@ case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-task-minted-over-a-link-to-a-file-link-moved-out-and-finalized-as-printed	followed, holds	-	`jigc task finalize`: the home of a doc the task minted holds a symbolic link to a file outside the repository
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-task-minted-over-a-link-to-nothing-link-moved-out-and-finalized-as-printed	followed, holds	-	`jigc task finalize`: the home of a doc the task minted holds a symbolic link that leads nowhere
 case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	home-shape-task-minted-over-a-link-to-nothing-renamed-and-finalized-as-printed	followed, holds	-	`jigc task finalize`: the home of a doc the task minted holds a symbolic link that leads nowhere
-reason	crates/cli/src/config.rs::run_set::config.value-rejected#1	not-constructible	owed	the state is planted by anyone — a value outside the knob's declared type — and the route cannot be followed: *set a value matching the knob's declared type* names one act, the refused command with another value, and prints neither a line nor a value. The value is the reader's own, and the frame runs a refusing command again only as it was typed, which is the refusal again. Driven by hand over an enum knob and a bool knob: `jigc config set default-workflow ""` and `jigc config set finalize.fan-out.squash maybe` are refused, exit 1; `jigc config set default-workflow router` and `jigc config set finalize.fan-out.squash false` exit 0
 reason	crates/cli/src/migrate_corpus.rs::blocked_finding::migrate-corpus.destination-collision#dynamic-1	not-constructible	owed	it takes a doctype whose home moved at a version bump, with an instance still at the prior home — which no shipped schema has pending: a pack of the reader's own. And the door prints a refused doc as a row of its report, which is no finding the frame reads a route from
 reason	crates/cli/src/relocate.rs::refuse::write.already-present#dynamic-1	not-constructible	owed	the state is constructible — a home the record holds a key for, with a file or a link to nothing standing at it — and no door of the shipped packs prints this refusal as a finding of its own: `jigc relocate` moves the instances of a doctype no manifest governs, which takes a pack of the reader's own, and a `placement-root` re-point carries the refusal inside the message of `config.repoint-failed`. It is followed there, in `config.rs`, over a file and over a link to nothing
 reason	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	not-constructible	owed	read: `commit_install`, `repo::SeamSubject::live_exempt` and `verify`, `render::blocked_finding`. The site is the fallback for a posture re-probe that fails without a finding of its own, and `verify` has two such arms — the git directory is no longer the one the subject was built against, and `HEAD` is on another ref — while a posture breach carries its finding and its own code. The subject is built and verified in one expression, so either arm needs the repository to change between two reads a few instructions apart: no state stands still in it
@@ -1801,9 +1835,6 @@ without-case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regu
 without-case	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	not-constructible	the task's finalize: a committed doc it edits, over a directory	the route's one way is *put the regular file itself there — for a link, a copy of the file it points at*, and over a directory it names no source for the file: it is the reader's to bring back, and the frame has no act that writes a file of a case's own
 not-followed	crates/cli/src/combine.rs::collision_finding::combine.code-collision#1	not-constructible	*or combine their overlapping changes by hand*	the combined bytes are the reader's own; the way ends, like the other, in one sub-task holding the path and the other none — which is what the cases do
 not-followed	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	not-constructible	*move one back if you want it where it stood* — the parked file	the clause belongs to the cause that has no case; and the frame has no act that moves an entry to a path the route prints
-not-followed	crates/cli/src/config.rs::run_set::config.untrackable-root#1	not-constructible	*re-run with a root git can record — a path under the repository root and outside `.git/`*	the root is the reader's own and an argument of the refused command, which the frame runs again only as it was typed and only where the route prints no command line — this one prints `jigc config list`. Driven by hand at the first cause of each of the three refusals: `jigc config set docs-root handbook` exits 0 and the knob lands
-not-followed	crates/cli/src/config.rs::run_set::config.unusable-root#1	not-constructible	*re-run with a repo-relative directory — an existing one, or one jigc should create*	the root is the reader's own and an argument of the refused command, which the frame runs again only as it was typed and only where the route prints no command line — this one prints `jigc config list`. Driven by hand at the first cause of each of the three refusals: `jigc config set docs-root handbook` exits 0 and the knob lands
-not-followed	crates/cli/src/config.rs::run_set::config.workbench-root#1	not-constructible	*re-run with a root outside `.jigc/`*	the root is the reader's own and an argument of the refused command, which the frame runs again only as it was typed and only where the route prints no command line — this one prints `jigc config list`. Driven by hand at the first cause of each of the three refusals: `jigc config set docs-root handbook` exits 0 and the knob lands
 not-followed	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	not-constructible	*choose a distinct `--title`* — the committed arm's first way at `create`, in words	a distinct title and no `--slug` is the refused command with another argument, and no line the route prints: the line it prints carries `--slug <slug>` and is followed with the title kept, the route's second way. The frame runs a refusing command again only as it was typed, and only where the route prints no command line. Driven by hand: `jigc doc create adr --title 'Use spaces' --task again` exits 0 and stages a second ADR
 not-followed	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	not-constructible	*then re-run this write unchanged* — the staged arm, behind the printed rename	the write is the refused command, and the frame runs a refusing command again only where the route prints no command line of the product — this one prints the rename. Driven by hand after the printed rename, at the first cause: the same `jigc doc create` exits 0 with *already existed — copied in for update*
 not-followed	crates/cli/src/link_way.rs::finding::store.link-on-the-way#1	not-built	*a copy of what it leads to*, where git does not track the link and what the link led to holds a file at an install member's path (`jigc setup`'s settings file)	driven: the copy brings that file in as work in no commit, and the re-run meets the install's dirty gate, whose own route — commit it, or `--force` — then lands the install; the catalog follows one route a case, so the way is followed where the link is committed and the clause commits the copy with it
@@ -1814,7 +1845,6 @@ not-followed	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlan
 not-followed	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1	not-constructible	the recipe on a line that brings a checkout back, and the line that re-links one	the line is a shell line — `mkdir -p … && printf 'gitdir: %s\n' … > …/.git && git -C … restore .`, or the `printf … > …/.git` that re-links a checkout — and the frame runs one command of git's or jigc's a line, handing it no shell's operators. Driven by hand at the finalize, over a worktree whose directory is gone and whose registration holds a staged path: the recipe as printed exits 0, and the milestone's finalize then lands the commit
 not-followed	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1	not-constructible	the route's other way, `jigc milestone discard <id>`, at every cause	it is one line, the same at every cause, and it leads to the discard door's own question of the same path: followed where it is the one line the frame can run — three causes — and at no other
 not-followed	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	not-constructible	*execute the sub-tasks* — the work itself, between the provision and the `git add`	the sub-tasks' work is the reader's own: the way is followed from the one state in which it is already written and only the staging is left
-not-followed	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	not-constructible	*check the id you typed against it* — the refused command with another id	the id is the reader's own, an argument of the refused command, which the frame runs again only as it was typed and only where the route prints no command line
 not-followed	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	not-constructible	*and rename that one instead*	the route names the act and prints no line for it: the title to give the other doc is the reader's own
 not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the command that brings a checkout back, on the listed line of a registration whose directory is gone	the line is a recipe of several commands joined by a shell's operators — `mkdir -p …` and a `printf … > …/.git` before the `git -C … restore` — and the frame runs a listed line only where it is one command of `git` or `jigc` (`Act::RunListed`). The command that keeps a commit and the one that abandons an operation are followed
 not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the milestone abandoned, at the three causes that are about a registration	one arm, one line — `jigc milestone discard <milestone-id> --force` — whatever the registered path is held for: followed at the live worktree, where the refusal lists no milestone to fill it with and no shell splits it as printed
@@ -1875,4 +1905,3 @@ not-followed	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	not
 not-followed	crates/engine/src/milestone.rs::record_home_refusal::milestone.record-exists#1	not-constructible	*or create this one under a different title*	the title is the reader's own and is an argument of the refused command, which the frame runs again only where the route prints no command line of the product — every route here prints one
 not-followed	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	not-constructible	*choose a distinct `--title`* — the first way of a `create` in a task that holds no doc, in words	a distinct title and no `--slug` is the refused command with another argument, and no line the route prints: the line it prints carries `--slug <slug>` and is followed with the title kept, the route's second way. Driven by hand: `jigc doc create jigc-feedback --title 'Another' --task report-a-bug` exits 0 and stages the finding
 not-followed	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	not-constructible	*and re-run this rename* — `jigc doc rename`'s destination, behind the link moved out	the re-run is the refused command, and the frame runs a refusing command again only where the route prints no command line of the product — this one prints the rename under another slug
-not-followed	crates/engine/src/store.rs::home_shape_refusal::store.home-not-regular-file#1	not-constructible	*create this milestone under a different title*	the title is the reader's own and an argument of the refused command, which the frame runs again only as it was typed

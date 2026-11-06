@@ -22,7 +22,7 @@
 
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
-    Act, Case, Check, Chosen, Cited, Own, Place, Promise, Says, Step,
+    Act, Case, Check, Chosen, Cited, Own, Place, Promise, Says, Step, Swapped,
 };
 
 // The sites, as a claim names each: the dynamic site's function, and the code minted there.
@@ -137,7 +137,32 @@ const THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE: &[Promise] = &[Promise::Line(&[S
     "The doc-types you can author. adr is ",
 )])];
 
-const NO_DOC_OF_THAT_ID: [Case; 1] = [Case {
+const NO_DOC_OF_THAT_ID: [Case; 2] = [
+    NO_DOC_OF_THAT_ID_READ,
+    Case {
+        name: "rename-not-found-no-doc-of-that-id-surface-read-and-run-again-with-its-id",
+        acts: &[
+            Act::RunCited(Cited {
+                line: 0,
+                promised: THE_DOCTYPE_SURFACE_WITH_THE_IDS_DOCTYPE,
+            }),
+            Act::RerunOwn(Swapped {
+                argument: 1,
+                value: "adr:use-tabs",
+                why: "the id checked against the surface the route cites: `adr` is a \
+                      doctype there, and `use-tabs` is the one ADR the repository holds — \
+                      the id the reader meant",
+            }),
+        ],
+        holds: &[
+            Check::RegularFile(Place::Repo(THE_DESTINATION)),
+            Check::Absent(Place::Repo(THE_ADR)),
+        ],
+        untouched: &[],
+        ..NO_DOC_OF_THAT_ID_READ
+    },
+];
+const NO_DOC_OF_THAT_ID_READ: Case = Case {
     name: "rename-not-found-no-doc-of-that-id-surface-read-as-printed",
     site: RENAME_NO_SUCH_DOC,
     cause: "the id names a doc the store does not hold: nothing stands at its home",
@@ -149,7 +174,7 @@ const NO_DOC_OF_THAT_ID: [Case; 1] = [Case {
     })],
     untouched: &[THE_ADR],
     ..U
-}];
+};
 const THE_DOC_GONE_FROM_THE_WORKING_TREE: [Case; 1] = [Case {
     name: "rename-not-found-the-doc-gone-from-the-working-tree-surface-read-as-printed",
     site: RENAME_NO_SUCH_DOC,
@@ -319,14 +344,7 @@ pub const READINGS: &[Reading] = &[
                      here by the previous release's binary and are answered by the store's \
                      site on this tree, where each has its case",
         without_case: &[],
-        not_followed: &[(
-            "*check the id you typed against it* — the refused command with another id",
-            Why::NotConstructible(
-                "the id is the reader's own, an argument of the refused command, which \
-                 the frame runs again only as it was typed and only where the route \
-                 prints no command line",
-            ),
-        )],
+        not_followed: &[],
     },
     Reading {
         site: RENAME_DESTINATION_TAKEN,

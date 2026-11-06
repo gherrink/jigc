@@ -95,6 +95,13 @@ Each is a heading of [route-catalog-findings.md](route-catalog-findings.md) → 
   - T135's two ways, both *followed, another failure*, a permission bit and so a declared bound, listed under two keys;
   - T140 with the piece `remove-a-directory`, built as `Act::RemoveDirectory` — *`rm -r` takes them*, over the parking home the route prints, the case marked with its doubt;
   - T141's three ways, by `Step::JigcAt`: read and thrown away, and the consent, both *holds*; the sub-task row's own *land it*, *followed, the same refusal again*, listed under a key.
+- **Commit 4** built `rerun-with-a-value-of-the-readers-own` as `Act::RerunOwn`: the refused command once more, one argument replaced by a value the case names with why, held as a re-run is. Six of its nine lines got cases:
+  - T1, `config.value-rejected` — one of `H1`'s nine owed reasons, so now a case and no reason: five causes, a shape of the declared type each, with a reading;
+  - T2's three root refusals, fourteen cases over their thirteen causes, the cited `jigc config list` run first;
+  - T17, `jigc milestone create` under a different title;
+  - T129, `jigc rename` again with the id checked against the cited surface.
+
+  All come out *followed, holds, operand implied*, as a re-run does. **The other three — T27, T31, T32 — the piece does not reach:** each route prints a product line for its other way, beside which the human's rule of 2026-10-12 refuses a re-run. They join fork R1, and their owner is a ruling.
 
 ## What this does not establish
 

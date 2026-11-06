@@ -28,6 +28,7 @@
 use super::{Reading, Reason, Why};
 use crate::support::route_case::{
     Act, Case, Check, Chosen, Cited, LinkAndDirectory, Operand, Own, Place, Promise, Says, Step,
+    Swapped,
 };
 
 // The site, as the committed list of refusal sites names it.
@@ -550,7 +551,7 @@ const A_SUB_TASKS_EDITED_DOC_OVER_A_LINK_TO_A_COPY: [Case; 1] = [Case {
     ..H
 }];
 
-const THE_RECORDS_HOME_TAKEN_AT_THE_CREATE: [Case; 2] = [
+const THE_RECORDS_HOME_TAKEN_AT_THE_CREATE: [Case; 3] = [
     Case {
         name: "home-shape-milestone-create-over-a-link-link-moved-out-and-created-again",
         cause: "`jigc milestone create`: the record's home holds a symbolic link",
@@ -571,6 +572,26 @@ const THE_RECORDS_HOME_TAKEN_AT_THE_CREATE: [Case; 2] = [
         refusing: &["milestone", "create", "Fan out"],
         acts: &[Act::MoveAway(Operand::Span(1)), Act::Rerun],
         holds: &[Check::RegularFile(Place::Repo(RECORD))],
+        ..H
+    },
+    Case {
+        name: "home-shape-milestone-create-over-a-link-created-under-a-different-title",
+        cause: "`jigc milestone create`: the record's home holds a symbolic link",
+        state: &[
+            SETUP,
+            Step::Dir(Place::Repo("docs/milestone-records")),
+            Step::LinkTo(Place::Repo(RECORD), "nowhere"),
+        ],
+        refusing: &["milestone", "create", "Fan out"],
+        acts: &[Act::RerunOwn(Swapped {
+            argument: 2,
+            value: "Spread work",
+            why: "a different title, as the route asks: one that slugs to another id, whose \
+                  record's home nothing stands at",
+        })],
+        holds: &[Check::RegularFile(Place::Repo(
+            "docs/milestone-records/spread-work.md",
+        ))],
         ..H
     },
 ];
@@ -1464,19 +1485,10 @@ pub const READINGS: &[Reading] = &[
                 ),
             ),
         ],
-        not_followed: &[
-            (
-                "*and re-run this rename* — `jigc doc rename`'s destination, behind the link moved out",
-                Why::NotConstructible(THE_REFUSED_COMMAND_AGAIN),
-            ),
-            (
-                "*create this milestone under a different title*",
-                Why::NotConstructible(
-                    "the title is the reader's own and an argument of the refused command, \
-                 which the frame runs again only as it was typed",
-                ),
-            ),
-        ],
+        not_followed: &[(
+            "*and re-run this rename* — `jigc doc rename`'s destination, behind the link moved out",
+            Why::NotConstructible(THE_REFUSED_COMMAND_AGAIN),
+        )],
     },
 ];
 

@@ -47,7 +47,15 @@ BUILT = {
     135: "cases written in commit 3 (`uninstall-worktree-path-git-cannot-list-the-worktrees-…`), red under two keys",
     140: "piece and case written in commit 3 (`Act::RemoveDirectory`, `uninstall-parked-file-parking-home-deleted`)",
     141: "cases written in commit 3 (`uninstall-sub-tasks-staged-doc-…`), one red under a key",
+    1: "piece and cases written in commit 4 (`Act::RerunOwn`, `value-rejected-…`, five causes)",
+    2: "cases written in commit 4 (`…-re-run-with-a-root-of-the-readers-own`, fourteen over thirteen causes)",
+    17: "case written in commit 4 (`home-shape-milestone-create-over-a-link-created-under-a-different-title`)",
+    129: "case written in commit 4 (`rename-not-found-no-doc-of-that-id-surface-read-and-run-again-with-its-id`)",
 }
+
+# The piece's rows that it does not reach: their routes print a product line for the other
+# way, beside which the re-run is refused by the human's rule of 2026-10-12 — fork R1.
+RULE_TOO = {27, 31, 32}
 
 PACK = "a pack of the reader's own is files a `Step::File` plants — the byte table plants one (`byte_table/movers.rs`, the note pack: `note-pack/` and `.jigc/config/packs.yaml`); the ruling of 2026-10-11 calls foreign content no bound"
 

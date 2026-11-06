@@ -228,6 +228,9 @@
 //! ([`a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm`]). And
 //! a directory `rm -r` takes is removed whole, and nothing else is
 //! ([`a_directory_rm_r_takes_is_removed_with_everything_in_it_and_nothing_else_is`]).
+//! And the refused command is run again with a value of the reader's own where the route
+//! asks for one in words
+//! ([`a_refused_command_is_run_again_with_a_value_of_the_readers_own`]).
 //!
 //! **And every case on another binary** — one ignored arm, run by hand
 //! ([`the_cases_are_followed_on_the_binary_a_variable_names`]; the plan's step `P5`): it
@@ -317,7 +320,7 @@ use crate::support::refusal_sites::{self, DYNAMIC, FAMILIES, Site, Source};
 use crate::support::route_case::{
     self, Act, Bound, Case, Check, Chosen, Cited, Classification, ExpectedRed, Filled, Followed,
     LinkAndDirectory, Named, Operand, Over, Own, Place, Promise, Refusal, Says, Seen, Standing,
-    Step, Var, Word,
+    Step, Swapped, Var, Word,
 };
 use crate::support::rust_source;
 use cli::cli::{DOCTYPE_DOORS, DoctypeArg, VERB_KINDS, VerbKind};
@@ -3788,7 +3791,8 @@ fn suite_files() -> Vec<(&'static str, &'static str)> {
 /// The source half reads the frame, this file and every command's. An [`Act`] carries an
 /// [`Operand`], a span's index, a line with the indices of the listed values that fill it
 /// ([`Filled`]), a line with the reader's own values for its placeholders ([`Chosen`]), a
-/// cited line with what its output must hold ([`Cited`]), or nothing at all — never a
+/// cited line with what its output must hold ([`Cited`]), an argument of the refusing
+/// command with a value of the reader's own ([`Swapped`]), or nothing at all — never a
 /// path or a command of the case's own to act with: what a cited line carries beside its
 /// span's index is a witness, bytes its output is asked for as a check's are asked of a
 /// file, and nothing the runner runs or touches. **One word of a case's own does reach a
@@ -3819,6 +3823,7 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
                 || variant.ends_with("(Chosen)")
                 || variant.ends_with("(Named)")
                 || variant.ends_with("(Cited)")
+                || variant.ends_with("(Swapped)")
                 || variant.ends_with("(LinkAndDirectory)")
                 || !variant.contains('('),
             "the act `{variant}` takes something that is neither an operand, a span's index, \
@@ -5337,6 +5342,110 @@ fn a_directory_rm_r_takes_is_removed_with_everything_in_it_and_nothing_else_is()
                 case.name, followed.classification, followed.detail
             )),
             Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
+}
+
+/// A refusal over a value of the reader's own — the one typed as the command's third word
+/// — whose route asks for another and prints no command line: `exit 0` where it is `kept`.
+const ANOTHER_VALUE: &str = "test \"$0\" = kept && exit 0; \
+     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+     '  route: set a value the command keeps'; exit 1";
+
+/// A value of the reader's own, in place of the refusing command's third word.
+const KEPT: Swapped = Swapped {
+    argument: 2,
+    value: "kept",
+    why: "planted: the value the refusing command keeps",
+};
+
+/// **The refusing command is run again with one argument a value of the reader's own**
+/// ([`Act::RerunOwn`]; the pre-opening plan's task `P-F0`). *Set a value matching the
+/// knob's declared type*, *create this milestone under a different title*: the route
+/// names the act and leaves the value to its reader, and the command is the one they
+/// typed. The argv is the refusing one with that argument replaced, the record holds the
+/// value and why, and the case is held as a re-run is: no better than *operand implied*,
+/// and refused beside a printed command line of the product that no act runs. A value
+/// that is no change, one with no reason, and an argument the command does not have are
+/// faults of the case.
+#[test]
+fn a_refused_command_is_run_again_with_a_value_of_the_readers_own() {
+    // A case's acts are a static slice; each planted case here is built once, so its one
+    // act is leaked for the length of the test.
+    let planted = |name: &'static str, refusing: &'static [&'static str], swapped: Swapped| Case {
+        name,
+        refusing,
+        acts: Box::leak(Box::new([Act::RerunOwn(swapped)])),
+        ..PLANTED
+    };
+    let mut wrong = Vec::new();
+    match route_case::follow(
+        Path::new("/bin/sh"),
+        &planted(
+            "planted-a-command-run-again-with-the-readers-own-value",
+            &["-c", ANOTHER_VALUE, "typed"],
+            KEPT,
+        ),
+    ) {
+        Ok(followed)
+            if followed.classification == Classification::HoldsOperandImplied
+                && followed.detail.contains("`kept`")
+                && followed.detail.contains(KEPT.why) => {}
+        Ok(followed) => wrong.push(format!(
+            "the re-run with `kept` came out {}, where `followed, holds, operand implied` was \
+             planted with the value and why in its record\n{}",
+            followed.classification, followed.detail
+        )),
+        Err(fault) => wrong.push(format!(
+            "the re-run with `kept` cannot be followed: {fault}"
+        )),
+    }
+    for (name, refusing, swapped, why) in [
+        (
+            "planted-a-re-run-beside-a-printed-command-line",
+            &[
+                "-c",
+                "test \"$0\" = kept && exit 0; \
+                 printf '%s\\n' 'blocking · setup.install-hook — refused' \
+                 '  route: set a value the command keeps, or run `jigc -c \"exit 0\"`'; exit 1",
+                "typed",
+            ][..],
+            KEPT,
+            "a printed command line of the product no act runs",
+        ),
+        (
+            "planted-a-re-run-with-the-value-typed",
+            &["-c", ANOTHER_VALUE, "kept-not"][..],
+            Swapped {
+                value: "kept-not",
+                ..KEPT
+            },
+            "a value that is what was typed",
+        ),
+        (
+            "planted-a-re-run-with-no-reason",
+            &["-c", ANOTHER_VALUE, "typed"][..],
+            Swapped { why: "", ..KEPT },
+            "a value with no reason",
+        ),
+        (
+            "planted-a-re-run-of-an-argument-the-command-does-not-have",
+            &["-c", ANOTHER_VALUE, "typed"][..],
+            Swapped {
+                argument: 3,
+                ..KEPT
+            },
+            "an argument the command does not have",
+        ),
+    ] {
+        let refusing: &'static [&'static str] = Box::leak(refusing.to_vec().into_boxed_slice());
+        match route_case::follow(Path::new("/bin/sh"), &planted(name, refusing, swapped)) {
+            Err(_) => {}
+            Ok(followed) => wrong.push(format!(
+                "`{name}` — {why} — came out {} where it is a fault of the case\n{}",
+                followed.classification, followed.detail
+            )),
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));

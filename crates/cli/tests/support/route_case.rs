@@ -237,6 +237,13 @@
 //! ([`Act::RemoveDirectory`]): the directory the printed span names, with everything in
 //! it — a link is not followed, and an entry that is no directory is not removed.
 //!
+//! **And where a route asks for the refused command again with another value of the
+//! reader's own, the runner runs it so** ([`Act::RerunOwn`], [`Swapped`]): *set a value
+//! matching the knob's declared type*, *create this milestone under a different title*.
+//! The command is the one the case typed, the value the case names with why, and the act
+//! is held as a re-run is — refused beside a printed product line no act runs, and no
+//! better than *operand implied*.
+//!
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
 //! on the binary handed in: the state is that release's own, and no case copies the
@@ -415,6 +422,22 @@ pub struct Chosen {
     /// a cited line is ([`Promise`]), its own output asked for each. Empty for a line the
     /// route says nothing of but to run it, which is held to exit 0.
     pub promised: &'static [Promise],
+}
+
+/// **One argument of the refusing command, and the value of the reader's own it is run
+/// again with** ([`Act::RerunOwn`]) — what *set a value matching the knob's declared type*,
+/// *re-run with a root git can record* and *create this milestone under a different title*
+/// ask for: the reader's own command once more, with the value they typed replaced by
+/// another of their own choosing, inside what the route's words bound it by.
+#[derive(Clone, Copy, Debug)]
+pub struct Swapped {
+    /// The index, in [`Case::refusing`], of the argument the reader types anew.
+    pub argument: usize,
+    /// The value a reader would choose there, in the case's state.
+    pub value: &'static str,
+    /// Why a reader would choose that value there. It is printed with the command that
+    /// was run; a value with no reason is a fault of the case.
+    pub why: &'static str,
 }
 
 /// **One word a case hands a command its route names without the operand** ([`Named`]).
@@ -645,6 +668,17 @@ pub enum Act {
     /// the case. The commands before the act, the refusing command among them, keep the
     /// case's `PATH`.
     PutOnPath(usize),
+    /// **Run the refusing command again with one argument a value of the reader's own**
+    /// ([`Swapped`]) — what a route asks for in words where the value it wants is the
+    /// reader's to choose and the command is the one they typed: the argv the runner
+    /// provoked the refusal with, the argument at the index replaced by the value, where
+    /// the case stands. Held as [`Act::Rerun`] is: refused wherever the printed route holds
+    /// a command line of the product that no act of the case runs as printed, and no
+    /// better than [`Classification::HoldsOperandImplied`]. An index outside the argv, a
+    /// value that is what was typed, and a value with no reason are faults of the case; a
+    /// value the command refuses for itself — its output quotes it back — is the case's
+    /// mistake, as a filled placeholder's is.
+    RerunOwn(Swapped),
 }
 
 /// **The two operands of [`Act::MoveDirectoryIn`]** — the link the route names first, and
@@ -688,6 +722,7 @@ impl Act {
             | Act::RunListed(_)
             | Act::Cd(_)
             | Act::PutOnPath(_)
+            | Act::RerunOwn(_)
             | Act::Rerun
             | Act::RerunInTheRepository
             | Act::RerunWith(_) => None,
@@ -722,7 +757,7 @@ impl Act {
         self.marked()
             || matches!(
                 self,
-                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
+                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_) | Act::RerunOwn(_)
             )
             || match self {
                 Act::RunNamed(named) => named
@@ -1921,6 +1956,7 @@ impl Sandbox {
                 | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::PutOnPath(_)
+                | Act::RerunOwn(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
                 | Act::RerunWith(_) => {
@@ -2015,6 +2051,7 @@ impl Sandbox {
                 | Act::RunListed(_)
                 | Act::Cd(_)
                 | Act::PutOnPath(_)
+                | Act::RerunOwn(_)
                 | Act::Rerun
                 | Act::RerunInTheRepository
                 | Act::RerunWith(_) => {
@@ -2414,6 +2451,45 @@ impl Sandbox {
                     ),
                 )
             }
+            Act::RerunOwn(Swapped {
+                argument,
+                value,
+                why,
+            }) => {
+                let Some(typed) = case.refusing.get(argument) else {
+                    return Err(format!(
+                        "an act runs the refusing command again with argument {argument} its \
+                         reader's own, and the command has {} arguments",
+                        case.refusing.len()
+                    ));
+                };
+                if *typed == value {
+                    return Err(format!(
+                        "an act runs the refusing command again with `{value}` for argument \
+                         {argument}, which is what was typed: that is the refusal again"
+                    ));
+                }
+                if why.trim().is_empty() {
+                    return Err(format!(
+                        "an act runs the refusing command again with `{value}` for argument \
+                         {argument}, and says not why a reader would choose it"
+                    ));
+                }
+                let mut argv = case.refusing.to_vec();
+                argv[argument] = value;
+                (
+                    format!(
+                        "run the refusing command again with the reader's own `{value}` for \
+                         `{typed}` (argument {argument}) — {why}: `jigc {}`, where the case \
+                         stands (no command line is printed)",
+                        argv.join(" ")
+                    ),
+                    self.run(
+                        self.tested(case, binary, &stand).args(&argv),
+                        self.under_test,
+                    ),
+                )
+            }
             Act::PutOnPath(at) => {
                 let program = span(at)?;
                 if program.is_empty()
@@ -2464,6 +2540,20 @@ impl Sandbox {
         } else if refusal_in(&ran.said, code).is_some() {
             seen.same_refusal = true;
             format!("{what}: {}, `{code}` again", ran.exit())
+        } else if let Act::RerunOwn(swapped) = act
+            && ['`', '"', '\''].iter().any(|quote| {
+                ran.said
+                    .contains(&format!("{quote}{}{quote}", swapped.value))
+            })
+        {
+            return Err(self.shown(&format!(
+                "{what}: {} — refused for the value the case names: the command's output \
+                 quotes `{}` back. A value the command refuses for itself is the case's \
+                 mistake, and what the re-run came to says nothing of the route\n{}",
+                ran.exit(),
+                swapped.value,
+                ran.said
+            )));
         } else if let Some(own) = quoted_back(act, &ran.said) {
             return Err(self.shown(&format!(
                 "{what}: {} — refused for the value the case names for `{}`: the line's \
@@ -3229,7 +3319,7 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
         for act in case.acts {
             if matches!(
                 act,
-                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
+                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_) | Act::RerunOwn(_)
             ) {
                 // The command is the route's to give wherever the route prints a line to
                 // run that the case does not run: a line the case runs as printed is

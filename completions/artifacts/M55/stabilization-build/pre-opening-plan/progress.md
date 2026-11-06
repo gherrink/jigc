@@ -376,6 +376,13 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### p-f0-4-the-refused-command  {#p-f0-4-the-refused-command}
+
+<!-- fields -->
+- intent: P-F0 commit 4 — the refused command run again with a value of the reader's own (Act::RerunOwn); cases at six of its nine lines (config.value-rejected's five causes, which leaves H1 eight reasons, the fourteen root cases, milestone create, rename); T27, T31 and T32 join fork R1
+- workflow: builder
+- status: joined
+
 ### t-nr-build-build  {#t-nr-build-build}
 
 <!-- fields -->
