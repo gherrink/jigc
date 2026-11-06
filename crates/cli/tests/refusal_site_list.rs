@@ -43,7 +43,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
 use crate::support::refusal_sites::{
-    self, CONSTRUCTORS, DYNAMIC, FAMILIES, Site, Source, UNASSIGNED,
+    self, CONSTRUCTORS, DYNAMIC, FAMILIES, FINDING_HOME, Site, Source, UNASSIGNED,
 };
 use crate::support::{goldens, rust_source};
 
@@ -444,8 +444,9 @@ fn a_dynamic_site_is_listed_unassigned_and_never_dropped() {
 // 5b — the constructors' own bodies are no sites, and nothing else is left out
 // ---------------------------------------------------------------------------
 
-/// `Finding`'s home, as a fixture: the constructors' bodies inside `impl Finding`, a call
-/// inside that block that spells its code, and a literal outside it.
+/// `Finding`'s home, as a fixture: the three constructors' bodies inside `impl Finding`;
+/// inside that block, a call that spells its code, a helper's literal that spells its
+/// code, and a helper's literal handed its code; and a literal outside the block.
 const THE_CONSTRUCTORS_HOME: &str = r#"
 pub struct Finding {
     pub severity: Severity,
@@ -453,6 +454,15 @@ pub struct Finding {
 }
 
 impl Finding {
+    pub fn blocking(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let code = code.into();
+        Self {
+            severity: Severity::Blocking,
+            code,
+            route: None,
+        }
+    }
+
     pub fn block(code: impl Into<String>, message: impl Into<String>, route: impl Into<Route>) -> Self {
         Self {
             severity: Severity::Blocking,
@@ -471,6 +481,22 @@ impl Finding {
 
     pub fn a_helper_that_spells_its_code() -> Self {
         Finding::block("store.spelled-in-the-impl", "m", "r")
+    }
+
+    pub fn a_helper_that_builds_its_own() -> Self {
+        Self {
+            severity: Severity::Blocking,
+            code: "store.built-in-the-impl".to_string(),
+            route: None,
+        }
+    }
+
+    pub fn a_helper_handed_its_code(code: String) -> Self {
+        Self {
+            severity: Severity::Blocking,
+            code,
+            route: None,
+        }
     }
 }
 
@@ -496,17 +522,63 @@ impl Finding {
 }
 "#;
 
-/// `Finding`'s home in production source.
-const FINDING_HOME: &str = "crates/engine/src/finding.rs";
+/// A constructor of `Finding`'s name whose body spells its code: every call of it mints that
+/// one code, so its body is where the refusal is worded.
+const A_CONSTRUCTOR_THAT_SPELLS_ITS_CODE: &str = r#"
+impl Finding {
+    pub fn graded(severity: Severity, route: Option<Route>) -> Self {
+        Self {
+            severity,
+            code: "store.spelled-by-a-constructor".to_string(),
+            route,
+        }
+    }
+}
+"#;
+
+/// A function of a constructor's name outside `impl Finding`, in `Finding`'s home, whose
+/// literal is handed its code: it is no constructor's body.
+const A_FREE_FUNCTION_OF_A_CONSTRUCTORS_NAME: &str = r#"
+mod by_hand {
+    pub fn graded(code: String) -> Finding {
+        Finding {
+            severity: Severity::Blocking,
+            code,
+            route: None,
+        }
+    }
+}
+"#;
+
+/// A file also named `finding.rs`, in the engine too, whose `impl Finding` has a constructor
+/// of one of the three names: it is not `Finding`'s home.
+const ANOTHER_FINDING_RS: &str = "crates/engine/src/probe/finding.rs";
+
+const A_CONSTRUCTOR_IN_ANOTHER_FINDING_RS: &str = r#"
+impl Finding {
+    pub fn block(code: impl Into<String>) -> Self {
+        Self {
+            severity: Severity::Blocking,
+            code: code.into(),
+            route: None,
+        }
+    }
+}
+"#;
+
+/// The three constructors of `impl Finding` in `Finding`'s home whose bodies are no sites,
+/// spelled here and not read from the scan, so that the rule is held and not echoed.
+const THE_THREE: [&str; 3] = ["block", "blocking", "graded"];
 
 /// **The constructors' own bodies are no sites** (fork 3 → A: *`Finding`'s own
-/// constructors are no sites*; the pre-opening plan's task `P1`, B1). A literal inside
-/// `impl Finding` in `Finding`'s home is the constructor every call reaches, not a place a
-/// refusal is worded — and a constructor *call* there still is one.
+/// constructors are no sites*; the pre-opening plan's task `P1`, B1). A literal in the body
+/// of `block`, `blocking` or `graded` inside `impl Finding` in `Finding`'s home, handed its
+/// code, is the constructor every call reaches, not a place a refusal is worded — and a
+/// constructor *call* there still is one.
 #[test]
 fn the_constructors_own_bodies_in_findings_home_are_no_sites() {
     let sites = refusal_sites::scan(&[Source::new(FINDING_HOME, THE_CONSTRUCTORS_HOME)]);
-    for constructor in ["block", "graded"] {
+    for constructor in THE_THREE {
         assert!(
             sites.iter().all(|s| s.function != constructor),
             "the body of `Finding::{constructor}` is the constructor, not a site; the scan \
@@ -521,11 +593,16 @@ fn the_constructors_own_bodies_in_findings_home_are_no_sites() {
         "a constructor call inside `impl Finding` is a site like any other call",
     );
 
-    // On this tree: none of the three constructors' bodies is a row.
+    // On this tree: none of the three constructors' bodies is a row. A literal elsewhere
+    // in the file is not asked about here: it would be a site, as the negative control says.
     let tree = refusal_sites::scan_tree();
     let bodies: Vec<String> = tree
         .iter()
-        .filter(|s| s.file == FINDING_HOME && s.form == "literal")
+        .filter(|s| {
+            s.file == FINDING_HOME
+                && s.form == "literal"
+                && THE_THREE.contains(&s.function.as_str())
+        })
         .map(Site::id)
         .collect();
     assert!(
@@ -534,15 +611,74 @@ fn the_constructors_own_bodies_in_findings_home_are_no_sites() {
     );
 }
 
-/// **The negative control of the one exclusion** — it reaches the bodies of `impl Finding`
-/// in `Finding`'s home and nothing else: a `Finding { … }` literal outside that block is
-/// still a site, and so is a `Self { … }` inside another file's `impl Finding`.
+/// **The negative control of the one exclusion** — it reaches the literals in the bodies of
+/// the three constructors of `impl Finding` in `Finding`'s home whose code is handed in, and
+/// nothing else: a `Finding { … }` literal outside that block is still a site, in a function
+/// of a constructor's name too; inside it, a helper's literal is one whether it spells its
+/// code or is handed it; a constructor's body that spells its code is one; and so is a
+/// `Self { … }` inside another file's `impl Finding` — another file named `finding.rs`, in
+/// the engine, included.
 #[test]
 fn a_finding_literal_outside_impl_finding_is_still_a_site() {
     let sites = refusal_sites::scan(&[
         Source::new(FINDING_HOME, THE_CONSTRUCTORS_HOME),
         Source::new("crates/cli/src/probe.rs", ANOTHER_IMPL_FINDING),
+        Source::new(ANOTHER_FINDING_RS, A_CONSTRUCTOR_IN_ANOTHER_FINDING_RS),
     ]);
+    let spelled = in_fn(&sites, "a_helper_that_builds_its_own");
+    assert_eq!(
+        (spelled.file.as_str(), spelled.form, spelled.code.as_str()),
+        (FINDING_HOME, "literal", "store.built-in-the-impl"),
+        "a literal inside `impl Finding` in `Finding`'s home that spells its code, in a \
+         function that is none of the three constructors, constructs a refusal",
+    );
+    let handed = in_fn(&sites, "a_helper_handed_its_code");
+    assert_eq!(
+        (handed.file.as_str(), handed.form, handed.code.as_str()),
+        (FINDING_HOME, "literal", DYNAMIC),
+        "a helper's literal inside `impl Finding` in `Finding`'s home, handed its code, is \
+         no constructor's body: only `block`, `blocking` and `graded` are",
+    );
+    let elsewhere: Vec<&Site> = sites
+        .iter()
+        .filter(|s| s.file == ANOTHER_FINDING_RS)
+        .collect();
+    assert_eq!(
+        elsewhere
+            .iter()
+            .map(|s| (s.function.as_str(), s.form, s.code.as_str()))
+            .collect::<Vec<_>>(),
+        [("block", "literal", DYNAMIC)],
+        "`{ANOTHER_FINDING_RS}` is named `finding.rs` and is not `Finding`'s home: its \
+         `block`'s body is a site",
+    );
+
+    let own = refusal_sites::scan(&[Source::new(
+        FINDING_HOME,
+        A_CONSTRUCTOR_THAT_SPELLS_ITS_CODE,
+    )]);
+    assert_eq!(
+        own.iter()
+            .map(|s| (s.function.as_str(), s.form, s.code.as_str()))
+            .collect::<Vec<_>>(),
+        [("graded", "literal", "store.spelled-by-a-constructor")],
+        "a constructor's body that spells its code is where every call's refusal is worded: \
+         it is a site",
+    );
+
+    let free = refusal_sites::scan(&[Source::new(
+        FINDING_HOME,
+        A_FREE_FUNCTION_OF_A_CONSTRUCTORS_NAME,
+    )]);
+    assert_eq!(
+        free.iter()
+            .map(|s| (s.function.as_str(), s.form, s.code.as_str()))
+            .collect::<Vec<_>>(),
+        [("graded", "literal", DYNAMIC)],
+        "a function of a constructor's name outside `impl Finding` is no constructor: its \
+         literal is a site",
+    );
+
     let outside = in_fn(&sites, "outside_the_impl");
     assert_eq!(
         (outside.file.as_str(), outside.form, outside.code.as_str()),

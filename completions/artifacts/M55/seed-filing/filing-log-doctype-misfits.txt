@@ -16,3 +16,6 @@ filed 7 docs (7 jigc-feedback, 0 inconsistency) in one commit
 staged jigc-feedback/doctype-misfit-m8 as jigc-feedback:definitions-have-no-place in sub-task doctype-misfit-m8
 filed jigc-feedback/doctype-misfit-m8 as docs/jigc-feedback/definitions-have-no-place.md -> jigc-feedback/definitions-have-no-place.md
 filed 1 docs (1 jigc-feedback, 0 inconsistency) in one commit
+staged jigc-feedback/doctype-misfit-m9 as jigc-feedback:review-findings-have-no-place in sub-task doctype-misfit-m9
+filed jigc-feedback/doctype-misfit-m9 as docs/jigc-feedback/review-findings-have-no-place.md -> jigc-feedback/review-findings-have-no-place.md
+filed 1 docs (1 jigc-feedback, 0 inconsistency) in one commit

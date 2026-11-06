@@ -2310,15 +2310,26 @@ const OWED: &str = "owed";
 /// **The decisions log**, where a reason's ruling is held by its heading.
 const THE_LOG: &str = include_str!("../../../DECISIONS.md");
 
-/// The headings of a log's entries: every line that opens `## `, without it.
-fn headings(log: &str) -> BTreeSet<&str> {
-    log.lines()
-        .filter_map(|line| line.strip_prefix("## "))
-        .collect()
+/// The headings of a log's entries — every line that opens `## `, without it — each with
+/// the number of entries that carry it.
+fn headings(log: &str) -> BTreeMap<&str, usize> {
+    let mut out: BTreeMap<&str, usize> = BTreeMap::new();
+    for heading in log.lines().filter_map(|line| line.strip_prefix("## ")) {
+        *out.entry(heading).or_default() += 1;
+    }
+    out
 }
 
-/// **Every reason whose ruling names no entry of `log`.** A reason nobody ruled names
+/// **Every reason whose ruling names no one entry of `log`** — no entry of that heading, or
+/// more than one, so that which ruling it cites cannot be told. A reason nobody ruled names
 /// nothing here: it is owed, which the projection says.
+///
+/// *Why the heading alone binds it, and not the site's code in the entry's text.* A ruling
+/// may take a class of reasons and name none of its codes — the families ruling of
+/// 2026-10-12 takes *a reason* as a class — and a dynamic site's code is `dynamic`, which
+/// no entry spells. A test of the text would refuse those rulings, or be loosened until it
+/// held nothing; which entry the reason cites is the author's word, and a reviewer's to
+/// read.
 fn misruled(reasons: &[Reason], log: &str) -> Vec<String> {
     let headings = headings(log);
     reasons
@@ -2330,11 +2341,17 @@ fn misruled(reasons: &[Reason], log: &str) -> Vec<String> {
                     "the reason for `{site}` is ruled by an empty heading: it names no heading \
                      of the decisions log"
                 )),
-                heading if !headings.contains(heading) => Some(format!(
-                    "the reason for `{site}` is ruled by `{heading}`, and the decisions log has \
-                     no entry of that heading"
-                )),
-                _ => None,
+                heading => match headings.get(heading) {
+                    None => Some(format!(
+                        "the reason for `{site}` is ruled by `{heading}`, and the decisions log \
+                         has no entry of that heading"
+                    )),
+                    Some(&1) => None,
+                    Some(times) => Some(format!(
+                        "the reason for `{site}` is ruled by `{heading}`, a heading the \
+                         decisions log holds {times} times: which ruling it names cannot be told"
+                    )),
+                },
             }
         })
         .collect()
@@ -3132,13 +3149,15 @@ fn a_scheduled_site_is_one_the_count_holds_unchanged() {
 }
 
 /// **A reason's ruling is a heading of the decisions log** (fork 1 → A; the plan before the
-/// opening's task `P1`): a reason that names an entry the log does not hold, or names none
-/// with an empty heading, is named; a reason nobody ruled is not named here — it is owed,
-/// which its projection line says. On a planted log; then this tree's reasons against
-/// `DECISIONS.md`, with the headings the catalog names elsewhere held the same way.
+/// opening's task `P1`): a reason that names an entry the log does not hold, names none
+/// with an empty heading, or names a heading the log holds more than once — so that which
+/// ruling it cites cannot be told — is named; a reason nobody ruled is not named here — it
+/// is owed, which its projection line says. On a planted log; then this tree's reasons
+/// against `DECISIONS.md`, with the headings the catalog names elsewhere held the same way.
 #[test]
 fn a_reasons_ruling_is_a_heading_of_the_decisions_log() {
-    let log = "# Decisions\n\n## 2026-01-01 — A reason allowed\n\nThe ruling.\n";
+    let log = "# Decisions\n\n## 2026-01-01 — A reason allowed\n\nThe ruling.\n\n\
+               ## 2026-01-03\n\nOne entry.\n\n## 2026-01-03\n\nAnother entry.\n";
     let ruled = |site, ruled| Reason {
         site,
         why: Why::NotConstructible("nothing reaches it"),
@@ -3151,12 +3170,14 @@ fn a_reasons_ruling_is_a_heading_of_the_decisions_log() {
                 ruled(ROUTELESS, Some("2026-01-02 — An entry nobody wrote")),
                 ruled(CLAIMED, Some("")),
                 ruled(ANOTHER, None),
+                ruled(MINTED, Some("2026-01-03")),
             ],
             log,
         ),
         &[
             (ROUTELESS, "`2026-01-02 — An entry nobody wrote`"),
             (CLAIMED, "names no heading"),
+            (MINTED, "holds 2 times"),
         ],
     );
 
@@ -3170,10 +3191,11 @@ fn a_reasons_ruling_is_a_heading_of_the_decisions_log() {
         .into_iter()
         .chain(ADMITTED.iter().map(|(_, heading)| *heading));
     for heading in named {
-        assert!(
-            headings.contains(heading),
-            "the catalog names the ruling `{heading}`, and `DECISIONS.md` has no entry of \
-             that heading",
+        assert_eq!(
+            headings.get(heading),
+            Some(&1),
+            "the catalog names the ruling `{heading}`, and `DECISIONS.md` must hold exactly \
+             one entry of that heading",
         );
     }
     let wrong = misruled(&rows().reasons, THE_LOG);
@@ -7004,7 +7026,8 @@ fn a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of(
         Classification::HoldsOperandImplied,
         &[
             "run the named command `git mv held 'kept here'` (span 1, `git mv`, on span 0 \
-             `held`, the case's `kept here` — planted: the path the refusal is over): exit 0",
+             `held`, the reader's own `kept here` — planted: the path the refusal is over): \
+             exit 0",
             "run the refusing command again",
         ],
     );
@@ -9328,7 +9351,8 @@ fn routes(row: &Beside) -> &'static str {
 
 /// **The table: a line a case, tab-separated** — the case, its site, whether its route
 /// prints the operand of every act (`printed`), the case names one (`implied`) or the case
-/// names a value of the reader's own for a placeholder the route prints (`chosen`), whether
+/// names a value of the reader's own (`chosen`: for a placeholder the route prints, or a
+/// word of a command the route names without it, [`Word::Own`] — [`operand`]), whether
 /// it rests on a doubtful reading, the key it is listed red under on this tree; then for
 /// this tree's binary and for the named one what the case came to, how its refusing
 /// command ended ([`refusing_ended`]) and what became of its witnesses ([`witnesses`]);
@@ -9468,6 +9492,100 @@ fn doubts(rows: &[Beside]) -> String {
         }
     }
     out
+}
+
+/// **The table's operand column says each of its three words, each where it belongs** — on
+/// planted cases that run nothing: every operand printed is `printed`; a placeholder filled
+/// with a value of the reader's own ([`Act::RunChosen`]) and a word of the reader's own
+/// handed a named command ([`Word::Own`]) are each `chosen`; a word of the case's own for
+/// an operand the route prints nowhere ([`Word::Named`]) is `implied`, and so it stays
+/// beside a word of the reader's own. Then this tree's cases: each of the three words is
+/// some case's, so the column the ignored arm prints is not one word over the catalog.
+#[test]
+fn the_operand_column_says_printed_chosen_and_implied_each_where_it_belongs() {
+    const MEANS: &str = "planted: the operand the route speaks of";
+    const AN_INTENT: &[Own] = &[Own {
+        placeholder: "<intent>",
+        value: "a thing",
+        why: "planted: any intent",
+    }];
+    let case = |name: &'static str, acts: &'static [Act]| Case {
+        name,
+        acts,
+        ..PLANTED
+    };
+    let planted: [(Case, &str); 5] = [
+        (case("planted-printed", &[Act::Run(0)]), "printed"),
+        (
+            case(
+                "planted-a-filled-placeholder",
+                &[Act::RunChosen(Chosen {
+                    line: 0,
+                    own: AN_INTENT,
+                    promised: &[],
+                })],
+            ),
+            "chosen",
+        ),
+        (
+            case(
+                "planted-a-word-of-the-readers-own",
+                &[Act::RunNamed(Named {
+                    name: 1,
+                    on: &[Word::Span(0), Word::Own("kept here")],
+                    within: None,
+                    means: MEANS,
+                })],
+            ),
+            "chosen",
+        ),
+        (
+            case(
+                "planted-a-word-of-the-cases-own",
+                &[Act::RunNamed(Named {
+                    name: 1,
+                    on: &[Word::Named("the-milestone")],
+                    within: None,
+                    means: MEANS,
+                })],
+            ),
+            "implied",
+        ),
+        (
+            case(
+                "planted-both-words",
+                &[Act::RunNamed(Named {
+                    name: 1,
+                    on: &[Word::Own("kept here")],
+                    within: Some(Word::Named("the-worktree")),
+                    means: MEANS,
+                })],
+            ),
+            "implied",
+        ),
+    ];
+    let wrong: Vec<String> = planted
+        .iter()
+        .filter(|(case, expected)| operand(case) != *expected)
+        .map(|(case, expected)| {
+            format!(
+                "`{}` is `{}`, where `{expected}` was planted",
+                case.name,
+                operand(case)
+            )
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+
+    let mut words: BTreeMap<&str, usize> = BTreeMap::new();
+    for case in cases() {
+        *words.entry(operand(case)).or_default() += 1;
+    }
+    assert_eq!(
+        words.keys().copied().collect::<Vec<_>>(),
+        ["chosen", "implied", "printed"],
+        "the catalog's cases, by the operand column's word: {words:?}",
+    );
 }
 
 /// **The table follows each binary with the state that binary built.** Two shells stand in

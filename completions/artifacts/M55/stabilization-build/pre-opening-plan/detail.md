@@ -361,6 +361,10 @@ The lane writes no product source. A red case is listed with a key and is never 
     - each left-to-infer class is red and listed;
     - the two classes are told apart by the strict list's *classification moved* arm;
     - the rewritten arm is red against the old `is_red`.
+- **[Also owed, from the second review of the catalog lane (2026-11-06, its S2 and N-d; [DECISIONS.md](../../../../../DECISIONS.md) → *The second review of the catalog lane, worked*):** two pieces of work the lane recorded and did not do, because each is this act check's.
+  - **S2 — the guard on a case's word.** Whether a named command's word is `Word::Named` (the case's own, *operand implied*) or `Word::Own` (the reader's own, *holds*) is the case author's label alone, and since the review of `P0` it decides between the two classes. A deterministic guard holds the label: **an `Own` value is not a value the refusal lists, and a `Named` word is not a printed span** — a case that breaks either is a fault the runner names, red first against a planted case of each. On the tree today one planted case breaks the second rule: `planted-a-named-command-started-where-the-case-says` in `crates/cli/tests/route_catalog.rs`, whose `within: Word::Named("sub")` is span 1 of the route it plants; it is rewritten with the guard. The rename's `--to` (`crates/cli/tests/route_catalog/config.rs`, `Word::Named("--to")`) goes with S2: it is flag grammar, not an object, and inert only while that case also re-runs the refusing command; the guard's commit says what `--to` is.
+  - **N-d — `implies` decides every act.** `Act::implies` (`crates/cli/tests/support/route_case.rs`) ends in `_ => false`, so a new `Act` variant that carries a `Word` reads as not implied without anything forcing a decision. It becomes an exhaustive `match` over `enum Act`, as the act-verb table is, so a new variant does not compile until it says whether it implies.
+  - The guard's refusals land in the commit whose class moves they cause, by the rule above: a guard that moves no class lands in commit 1.**]**
 - **Gates:** 2 + 1.
 - **Then:** loop → P.
 

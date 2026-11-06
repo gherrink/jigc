@@ -56,12 +56,15 @@
 //!   * **Nesting.** The reader's `enclosing_fn` is the last `fn` declared before the site,
 //!     so a site after a nested `fn` reports the inner name.
 //!
-//! **One thing is left out, by rule:** the literals inside `impl Finding` in
-//! [`FINDING_HOME`], `engine/src/finding.rs` — the three constructors' own bodies. Each
-//! is the constructor every call of it reaches, so its code is a parameter and the call
-//! is the site (fork 3 → A: *`Finding`'s own constructors are no sites*). The exclusion
-//! reaches no further: a literal outside that block is a site, a `Self { … }` in another
-//! file's `impl Finding` is one, and a constructor *call* inside the block is one too
+//! **One thing is left out, by rule:** the literals in the bodies of the three
+//! constructors `block`, `blocking` and `graded` of `impl Finding` in [`FINDING_HOME`],
+//! `engine/src/finding.rs`, whose code is handed in. Each is the constructor every call
+//! of it reaches, so its code is a parameter and the call is the site (fork 3 → A:
+//! *`Finding`'s own constructors are no sites*). The exclusion reaches no further: a
+//! literal outside that block is a site; inside it, a literal in any other function is
+//! one, and so is a constructor's literal that spells its code; a `Self { … }` in another
+//! file's `impl Finding` is one, another file named `finding.rs` included; and a
+//! constructor *call* inside the block is one too
 //! (`refusal_site_list::a_finding_literal_outside_impl_finding_is_still_a_site`).
 
 use std::collections::BTreeMap;
@@ -486,8 +489,29 @@ fn calls(
 }
 
 /// `Finding`'s home: the one file whose `impl Finding` block holds the constructors' own
-/// bodies — the literals every constructor call reaches, so no literal there is a site.
+/// bodies — the literals every constructor call reaches ([`a_constructors_own_body`]).
 pub const FINDING_HOME: &str = "crates/engine/src/finding.rs";
+
+/// **Whether a literal is a constructor's own body, and so no site** — in `Finding`'s home
+/// ([`FINDING_HOME`], the path whole), inside its `impl Finding`, in the body of one of
+/// the three constructors a call is found by ([`CONSTRUCTORS`]), with a code that is handed
+/// in ([`DYNAMIC`]). Every call of such a constructor reaches that literal with the code
+/// the call spells, so the call is the site. A literal there that spells its code is where
+/// every call's refusal is worded, and a literal in any other function of the block — a
+/// helper, whatever its code — is a refusal constructed there: both are sites.
+fn a_constructors_own_body(file: &File, at: usize, inside_impl: bool, code: &str) -> bool {
+    let named = |function: &str| {
+        CONSTRUCTORS.iter().any(|call| {
+            call.strip_prefix("Finding::")
+                .and_then(|name| name.strip_suffix('('))
+                == Some(function)
+        })
+    };
+    file.path == FINDING_HOME
+        && inside_impl
+        && code == DYNAMIC
+        && rust_source::enclosing_fn(&file.code, at).is_some_and(named)
+}
 
 /// The byte ranges of every `impl Finding { … }` body — where `Self { … }` is a
 /// `Finding` literal.
@@ -517,9 +541,8 @@ fn literals(
                 continue;
             }
             let inside_impl = in_impl.iter().any(|(lo, hi)| at > *lo && at < *hi);
-            // `Self { … }` constructs a `Finding` only inside `impl Finding`; and in
-            // `Finding`'s home that block holds the constructors' own bodies.
-            if (head == "Self {" && !inside_impl) || (inside_impl && file.path == FINDING_HOME) {
+            // `Self { … }` constructs a `Finding` only inside `impl Finding`.
+            if head == "Self {" && !inside_impl {
                 continue;
             }
             // The declaration of a struct of that name sets no field.
@@ -558,16 +581,20 @@ fn literals(
                 .iter()
                 .copied()
                 .find(|(lo, hi)| code[*lo..*hi].trim().starts_with(".."));
+            // A shorthand field (`code`, `route`) reads as the variable it is.
+            let code = match (named("code"), base) {
+                (Some(span), _) => read_code(files, index, span, constants),
+                (None, Some(base)) => (DYNAMIC.to_string(), file.written(base)),
+                (None, None) => (DYNAMIC.to_string(), String::new()),
+            };
+            if a_constructors_own_body(file, at, inside_impl, &code.0) {
+                continue;
+            }
             out.push(Found {
                 at,
                 form: "literal",
                 severity: read_severity(&file.shape(severity)),
-                // A shorthand field (`code`, `route`) reads as the variable it is.
-                code: match (named("code"), base) {
-                    (Some(span), _) => read_code(files, index, span, constants),
-                    (None, Some(base)) => (DYNAMIC.to_string(), file.written(base)),
-                    (None, None) => (DYNAMIC.to_string(), String::new()),
-                },
+                code,
                 route: match named("route") {
                     Some(span) => read_route(file, span, true),
                     None => ("variable", String::new()),

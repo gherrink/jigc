@@ -133,11 +133,81 @@ schema-version: 3
 - workflow: fixer
 - status: joined
 
+### p0-review-2-m2-an-arm  {#p0-review-2-m2-an-arm}
+
+<!-- fields -->
+- intent: P0 review 2 M2 — an arm asserts the operand column's three words on planted cases, a chosen row for a filled placeholder and one for a word of the reader's own among them, and that the catalog's cases hold all three; red against operand without its Own clause
+- workflow: fixer
+- status: joined
+
+### p0-review-2-na-the-tables  {#p0-review-2-na-the-tables}
+
+<!-- fields -->
+- intent: P0 review 2 N-a — the table's doc says that chosen counts a word of the reader's own, Word::Own, beside a filled placeholder
+- workflow: fixer
+- status: joined
+
+### p0-review-2-ne-the-run  {#p0-review-2-ne-the-run}
+
+<!-- fields -->
+- intent: P0 review 2 N-e — the run record writes a Word::Own as the reader's own and a Word::Named as the case's; the one planted expectation that pinned the old words is the red arm
+- workflow: fixer
+- status: joined
+
+### p0-review-2-s2-the-guard  {#p0-review-2-s2-the-guard}
+
+<!-- fields -->
+- intent: P0 review 2 S2 — recorded in detail.md at P-F1 as work it owes, not done here: a guard that an Own value is not a value the refusal lists and a Named word is not a printed span, the planted within sub and the rename's --to with it
+- workflow: fixer
+- status: joined
+
+### p0-review-2-nd-implies-decides  {#p0-review-2-nd-implies-decides}
+
+<!-- fields -->
+- intent: P0 review 2 N-d — recorded in detail.md at P-F1 as work it owes, not done here: Act::implies' catch-all becomes an exhaustive match over enum Act
+- workflow: fixer
+- status: joined
+
 ### p1-stop-counting-the-finding  {#p1-stop-counting-the-finding}
 
 <!-- fields -->
 - intent: P1 — stop counting the finding constructors as sites, and tie each standing reason to its ruling
 - workflow: builder
+- status: joined
+
+### p1-review-s1-the-exclusion  {#p1-review-s1-the-exclusion}
+
+<!-- fields -->
+- intent: P1 review S1 — the exclusion narrowed to a literal in the body of block, blocking or graded inside impl Finding in finding.rs whose code reads dynamic; a helper's literal there, spelled or handed its code, and a constructor's literal that spells its code are sites, each red first
+- workflow: fixer
+- status: joined
+
+### p1-review-m1-the-path  {#p1-review-m1-the-path}
+
+<!-- fields -->
+- intent: P1 review M1 — a fixture's other file is crates/engine/src/probe/finding.rs, whose block body is a site, so the path is matched whole: red against ends_with finding.rs and against contains engine/
+- workflow: fixer
+- status: joined
+
+### p1-review-nc-one-home  {#p1-review-nc-one-home}
+
+<!-- fields -->
+- intent: P1 review N-c — refusal_site_list imports FINDING_HOME from support, and its tree half asks only the three constructors' bodies
+- workflow: fixer
+- status: joined
+
+### p1-review-q3-a-heading  {#p1-review-q3-a-heading}
+
+<!-- fields -->
+- intent: P1 review Q3 — a reason's ruling names a heading the decisions log holds exactly once, or it is named as ambiguous; the entry's text is not held to the site's code, because a class ruling and a dynamic site's code would be refused
+- workflow: fixer
+- status: joined
+
+### p1-review-misfit-review-findings  {#p1-review-misfit-review-findings}
+
+<!-- fields -->
+- intent: P1 review misfit — row M9 of the doctype-misfits register: a milestone-record has no place for a review's findings, so they are written as task items; seeded as its jigc-feedback doc
+- workflow: fixer
 - status: joined
 
 ### m-p0-merge-the-catalog  {#m-p0-merge-the-catalog}

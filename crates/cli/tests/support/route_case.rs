@@ -2173,9 +2173,11 @@ impl Sandbox {
                     Word::Named("") | Word::Own("") => {
                         Err("an act hands a named command a word of no bytes".to_string())
                     }
-                    Word::Named(bytes) | Word::Own(bytes) => {
-                        Ok((bytes.to_string(), "the case's".to_string()))
-                    }
+                    // The record tells the two apart, as `implies` does: the case's own
+                    // word stands for an object the route prints nowhere, the reader's own
+                    // for a value the route leaves to its reader.
+                    Word::Named(bytes) => Ok((bytes.to_string(), "the case's".to_string())),
+                    Word::Own(bytes) => Ok((bytes.to_string(), "the reader's own".to_string())),
                 };
                 let on: Vec<(String, String)> =
                     named.on.iter().map(&word).collect::<Result<_, _>>()?;
