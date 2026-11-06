@@ -137,6 +137,20 @@ schema-version: 3
 - workflow: fixer
 - status: joined
 
+### t0-c3-review-sf4-the-door  {#t0-c3-review-sf4-the-door}
+
+<!-- fields -->
+- intent: T0 review, cycle 3, SF4 — scope-set's host-path refusal names the door by its place, included door N, and never by its text, which may be the very path refused; the class is the refusals reworded builds from the refused text, two callers, this one site
+- workflow: fixer
+- status: joined
+
+### t0-c3-review-sf5-the-tools-text  {#t0-c3-review-sf5-the-tools-text}
+
+<!-- fields -->
+- intent: T0 review, cycle 3, SF5 — the Tools text does what its sentence says, consistently with cell by one definition both read: every character a cell takes as a line break is a line end, every other C0 character but the tab and DEL a space, a C1 character other than NEL kept; a report's own fence keeps the newline-only line count armed
+- workflow: fixer
+- status: joined
+
 ### rb1-judge-a-regression-against  {#rb1-judge-a-regression-against}
 
 <!-- fields -->
@@ -211,6 +225,55 @@ schema-version: 3
 
 <!-- fields -->
 - intent: RB1 review, left open 3 — why a fact is unknown stands beside its key in state, regression_unknown_why, and in the stop's view, read through one definition, why_unknown, which the filing's print uses too; a run without an order answers as it did
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf1-two-drives  {#rb1-c3-review-sf1-two-drives}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF1 — any two drives of one binary hash that disagree make the fact unknown, never a regression: candidate, previous and every earlier binary, pairwise, by one predicate, drives_disagree, used at the filing and at every read; the word is drives-disagree
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf2-a-fix-stage  {#rb1-c3-review-sf2-a-fix-stage}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF2 — triage-set takes --stage test|fix, required, and the harness passes its stage: a fix stage's entries, driven on the round's tip, say no fact that is not a regression in round 1 too; in a run with a queue the round record counts them as entry-no-earlier, so the state says why beside them
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf3-not-said  {#rb1-c3-review-sf3-not-said}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF3 — arms for not-said, for the filing's print of a flake beside no said regression, for the read's guard on a resealed previous null, and for the vet's another-binary words
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf5-the-docs  {#rb1-c3-review-sf5-the-docs}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF5 — the docs held to the code: the N1 clause superseded, the A_STAGE_AS_IT_WAS claim round 1 only, triage-set's Prints line, the state header's reason for a filing that said no regression, and the unknown condition of wf-regression-base
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-n2-the-flake-reading  {#rb1-c3-review-n2-the-flake-reading}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, N2 — the rule that a flake overrides a green previous release is marked in DECISIONS.md as the builders' reading, open to being overturned, for the main session to put to the human
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-n4-the-dead-assignment  {#rb1-c3-review-n4-the-dead-assignment}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, N4 — the dead assignment of unknown in verdict is removed
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-lead-never-driven  {#rb1-c3-review-lead-never-driven}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, its lead — an earlier round whose record names no binary leaves every later fact that is not true unknown: recorded as a clause of wf-regression-base; the harness writes candidate and binary in one call and neither on a re-run, a drop or a part
 - workflow: fixer
 - status: joined
 

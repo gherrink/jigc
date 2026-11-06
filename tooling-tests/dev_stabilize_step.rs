@@ -2318,7 +2318,7 @@ impl Stage {
                         "clause": "clause-a", "repro": "the report"}]),
             ),
             call(
-                &["triage-set", "--run", RUN, "--round", "1"],
+                &["triage-set", "--run", RUN, "--round", "1", "--stage", "test"],
                 json!([{"key": "f-1", "grade": "breaks", "verdict": "refuted"}]),
             ),
             call(
@@ -8767,7 +8767,7 @@ fn the_state_digest_carries_the_queue_as_keys_and_counts() {
         .collect();
     rig.wrote(&format!("ledger-add --run {RUN}"), &json!(rows).to_string());
     rig.wrote(
-        &format!("triage-set --run {RUN} --round 1"),
+        &format!("triage-set --run {RUN} --round 1 --stage test"),
         &json!(sent_on).to_string(),
     );
     let (seen, document) = rig.state_digest("test-1");
@@ -8868,7 +8868,7 @@ fn the_state_digest_says_what_the_budget_has_left_and_that_a_stage_continues() {
     rig.wrote(&format!("ledger-add --run {RUN}"), &json!(rows).to_string());
     let verdict = |key: &str| json!({"key": key, "grade": "breaks", "verdict": "refuted"});
     rig.wrote(
-        &format!("triage-set --run {RUN} --round 1"),
+        &format!("triage-set --run {RUN} --round 1 --stage test"),
         &json!([verdict("route-01"), {"key": "route-02", "grade": "breaks"},
                 {"key": "route-03", "grade": "breaks"}])
         .to_string(),
@@ -8906,7 +8906,7 @@ fn the_state_digest_says_what_the_budget_has_left_and_that_a_stage_continues() {
 
     // Spent: the step is the human's, and nothing says `verify`.
     rig.wrote(
-        &format!("triage-set --run {RUN} --round 1"),
+        &format!("triage-set --run {RUN} --round 1 --stage test"),
         &verdict("route-02").to_string(),
     );
     let (seen, _) = rig.state_digest("test-2");
@@ -8994,7 +8994,7 @@ fn the_state_digest_carries_the_stops_view_as_counts_a_path_and_a_hash() {
         entry
     };
     rig.wrote(
-        &format!("triage-set --run {RUN} --round 1"),
+        &format!("triage-set --run {RUN} --round 1 --stage test"),
         &json!([
             said(
                 "route-in",
@@ -12039,7 +12039,7 @@ impl Stage {
             ),
             call(&["ledger-add", "--run", RUN], json!([found("f-1"), found("f-2")])),
             call(
-                &["triage-set", "--run", RUN, "--round", "1"],
+                &["triage-set", "--run", RUN, "--round", "1", "--stage", "test"],
                 json!([{"key": "f-1", "grade": "breaks"}, {"key": "f-2", "grade": "breaks"}]),
             ),
             call(

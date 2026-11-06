@@ -1475,7 +1475,7 @@ function stageRecordCommands(ctx, rec) {
   if (rec.results && rec.results.rows.length) calls.push(call('result-set --run ' + ctx.run + ' --round ' + ctx.round + ' --commit ' + rec.results.commit + ' --scratch ' + ctx.scratch, [], rec.results.rows))
   if (rec.rows.length) calls.push(call('ledger-add --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.rows))
   if (rec.patches.length) calls.push(call('ledger-set --run ' + ctx.run + ' --scratch ' + ctx.scratch, [], rec.patches))
-  if (rec.triage.length) calls.push(call('triage-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.triage))
+  if (rec.triage.length) calls.push(call('triage-set --run ' + ctx.run + ' --round ' + ctx.round + ' --stage ' + ctx.stage, [], rec.triage))
   if (rec.facts) calls.push(call('round-set --run ' + ctx.run + ' --round ' + ctx.round, [], rec.facts))
   if (rec.keys.length) calls.push(call('check-ledger --run ' + ctx.run + ' --', rec.keys))
   return calls
@@ -1931,6 +1931,8 @@ function selfTest() {
   const cycleRecord = stageRecordCommands(ctx, { reporters: [], rows: [{ key: 'f-2' }], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [{ key: 'f-1', disposition: 'fixed', detail: 'c'.repeat(40) }], clauses: [], facts: null, keys: ['f-1', 'f-2'] }).map((made) => made.argv[0])
   const at = (name) => cycleRecord.indexOf(name)
   check('a cycle\'s fixes are on the rows before its audit\'s triage reads them', at('ledger-add') >= 0 && at('ledger-add') < at('ledger-set') && at('ledger-set') < at('triage-set') && at('triage-set') < at('check-ledger'))
+  const triageOf = (stage) => stageRecordCommands(Object.assign({}, ctx, { stage }), { reporters: [], rows: [], triage: [{ key: 'f-1', grade: 'breaks' }], patches: [], clauses: [], facts: null, keys: ['f-1'] }).find((made) => made.argv[0] === 'triage-set').argv.join(' ')
+  check('a stage\'s triage entries are recorded under its stage', triageOf('fix') === 'triage-set --run rc24-tier1 --round 2 --stage fix' && triageOf('test') === 'triage-set --run rc24-tier1 --round 2 --stage test')
 
   const held = { status: 'recorded', commit: 'a'.repeat(40), gate: { ok: true, verdict: 'pass', red: 0, known: 0, new: 0 }, applied: { calls: 4, checks: 2, failed: 0 } }
   const composed = { calls: 4, checks: 2 }
