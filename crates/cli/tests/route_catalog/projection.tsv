@@ -775,9 +775,6 @@ residue	crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	variable	not read
 residue	crates/cli/src/repo.rs::finding_at::dynamic#1	human	not read	scheduled
 residue	crates/engine/src/cascade.rs::into_finding::dynamic#1	human	span	scheduled
 residue	crates/engine/src/cascade.rs::into_finding::dynamic#2	human	span	scheduled
-residue	crates/engine/src/finding.rs::block::dynamic#1	variable	not read	scheduled
-residue	crates/engine/src/finding.rs::blocking::dynamic#1	none	no route	scheduled
-residue	crates/engine/src/finding.rs::graded::dynamic#1	variable	not read	scheduled
 residue	crates/engine/src/override_default.rs::delta_block::dynamic#1	variable	not read	scheduled
 code	crates/cli/src/author.rs::reject::dynamic#1	write.malformed-value	minted-at
 code	crates/cli/src/author.rs::reject::dynamic#1	write.wrong-shape	minted-at
@@ -1597,9 +1594,6 @@ scheduled	crates/engine/src/finalize.rs::promote_io_finding::finalize.promote-io
 scheduled	crates/engine/src/finalize.rs::render_io_finding::finalize.render-io#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` changed — it gained a parameter (the claims git holds at a home) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before that, so the change stands behind it
 scheduled	crates/engine/src/finalize.rs::residual_task_area_finding::finalize.no-task#1	unchanged	-
 scheduled	crates/engine/src/finalize.rs::task_missing_finding::finalize.no-task#1	unchanged	caller: `crates/engine/src/finalize.rs::plan_finalize` and `plan_milestone_finalize` changed — each gained parameters (the claims git holds at a home, a merged doc's origins) that it hands to the clobber guard, which it calls once the promotions are planned; this refusal returns before either, so the change stands behind it
-scheduled	crates/engine/src/finding.rs::block::dynamic#1	unchanged	-
-scheduled	crates/engine/src/finding.rs::blocking::dynamic#1	unchanged	-
-scheduled	crates/engine/src/finding.rs::graded::dynamic#1	not-counted	the count takes the rows whose severity is written `blocking`; this one's is handed in — it is the body of `Finding::graded`, the constructor every graded site calls
 scheduled	crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	unchanged	-
 scheduled	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	unchanged	-
 scheduled	crates/engine/src/milestone.rs::cross_group_collision_finding::join.same-doc-clash#1	unchanged	-
