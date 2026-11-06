@@ -689,7 +689,9 @@
 #       ITS TEXT goes through the one write every writer's goes through (WHAT A WRITER DOES
 #       TO ITS TEXT, below): host paths replaced, the public-hygiene scan hard. A HIT
 #       REFUSES THE FILING AND NAMES THE ENTRY (hygiene) — by its place in the file, never
-#       by what matched — so that one entry is reworded and the file handed over again.
+#       by what matched — so that one entry is reworded and the file handed over again. A
+#       HOST PATH NO PLACEHOLDER REPLACES NAMES THE ENTRY AND ITS TEXT too (host-path), and
+#       says to reword it, never to pass another --scratch: the call is typed as it stands.
 #       THE RECORD IS COMPOSED FROM THIS FILE (the plan's K3), and the file is THE HOME OF
 #       WHO REPORTED A ROW (state: a row's `reporters`): the entries name the handed
 #       findings folded into each row, and nothing else writes that.
@@ -704,9 +706,16 @@
 #       definition carries has an agent say what it wrote or wished for under **Tools**, the
 #       last section of its report — and a triage under this writer writes no report, and its
 #       return is held to this call's line. The file is markdown, UTF-8, and says something
-#       (bad-value: not there, not text, or blank — nothing is written); its host paths are
-#       replaced as a report's are, its blank lines at either end dropped, and it is A MEMBER
-#       OF THE DATA, `tools`, after the entries — and RENDERED AS THE REPORT'S LAST SECTION,
+#       (bad-value: not there, not UTF-8, a NUL in it, or blank — nothing is written); its
+#       host paths are replaced as a report's are (host-path: one no placeholder replaces, by
+#       its line in the file, to be reworded — the call is typed as it stands, so no other
+#       --scratch can be passed), a line that would redden a fence is refused by its line in
+#       the file (fence), and its blank lines at either end — every line that holds nothing
+#       but whitespace — are dropped, every other byte kept as it stands. EVERY REFUSAL OF IT
+#       NAMES --tools, or the text under **Tools**, AND SAYS WHAT TO CHANGE: the triage's
+#       definition has it correct its file where a refusal names it, and the text is
+#       optional, so no fault of it may cost the triage. It is A MEMBER OF THE DATA, `tools`,
+#       after the entries — and RENDERED AS THE REPORT'S LAST SECTION,
 #       `## Tools`, after the data block, which closes at its own fence: so it may hold fences
 #       of its own, and it is sealed with the rest. A HIT OF THE SCAN IN IT names the text
 #       under **Tools**, never what matched. A triage that names no such file renders as it
@@ -3032,8 +3041,15 @@ def host_roots(scratch):
     return roots
 
 
-def public(text, scratch):
-    """`text` with every host path replaced by its public placeholder."""
+def undeclared_scratch(lines):
+    """What a writer is told of a session's scratch area its call did not declare."""
+    return "line %s still names this machine's home directory inside a path (a session's scratch area?) — pass that area's root as --scratch" % lines
+
+
+def public(text, scratch, left=undeclared_scratch):
+    """`text` with every host path replaced by its public placeholder. A host path no
+    placeholder could replace is refused (host-path) with what `left` says of its lines —
+    by default, what to pass; a text whose caller cannot pass another root says otherwise."""
     roots = host_roots(scratch)
     shared = {form for path in ANY_HOSTS_TMP for form in spellings(path)}
 
@@ -3069,7 +3085,7 @@ def public(text, scratch):
         flat = re.sub(r"[^A-Za-z0-9]", "-", home)
         lines = [str(n) for n, line in enumerate(text.split("\n"), 1) if flat in line]
         if len(flat) > 3 and lines:
-            refuse("host-path", "line %s still names this machine's home directory inside a path (a session's scratch area?) — pass that area's root as --scratch" % ", ".join(lines))
+            refuse("host-path", left(", ".join(lines)))
     return text
 
 
@@ -3083,11 +3099,13 @@ def scratch_roots(args):
 # --- the one write --------------------------------------------------------------
 
 
-def fence_check(text):
+def fence_check(text, whose=""):
+    """Refused (fence) where a line of `text` would redden a fence that reads the tree —
+    named by its line, in the text `whose` names where it is part of a larger file."""
     for name, what, reddens in FENCES:
         lines = [str(n) for n, line in enumerate(text.splitlines(), 1) if reddens(line)]
         if lines:
-            refuse("fence", "line %s %s, which would redden %s — write the command inside a line" % (", ".join(lines), what, name))
+            refuse("fence", "%sline %s %s, which would redden %s — write the command inside a line" % (whose, ", ".join(lines), what, name))
 
 
 def did_not_run(why):
@@ -5112,6 +5130,13 @@ def entry_of(n, entry, round_number, handed, scratch):
     fields(entry, ENTRY_SAID, ("bound",) + ENTRY_ROW + KIND_FIELDS, "an entry of a triage")
     key = slug(entry["key"], "key")
     what = "entry %d (%s)" % (n, key)
+    # A HOST PATH NO PLACEHOLDER REPLACES names the entry and its text, and is reworded: a
+    # triage's call is typed as it stands, so it can pass no other root, and its definition
+    # has it correct its file where a refusal names an entry. Asked here of each text as the
+    # entry holds it, before the row's writers ask it again under a row's name.
+    for name in ("why", "bound") + ENTRY_ROW + KIND_FIELDS:
+        if isinstance(entry.get(name), str):
+            public(entry[name], scratch, left=lambda lines: "%s: its `%s`, line %s, still names this machine's home directory inside a path (a session's scratch area?) — reword it out of that text, naming what you mean and never where it lay, and hand the file over again; nothing was written" % (what, name, lines))
     found = one_of(entry["found"], FOUND, what + ": found")
     _, graded = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
     stored = dict.fromkeys(ENTRY_FIELDS)
@@ -5183,7 +5208,9 @@ def rendered(text):
         shaped = (
             isinstance(record, dict)
             and tuple(record) in (TRIAGED_FIELDS, TRIAGED_FIELDS + (TRIAGED_TOOLS,))
-            and (TRIAGED_TOOLS not in record or (isinstance(record[TRIAGED_TOOLS], str) and bool(record[TRIAGED_TOOLS].strip())))
+            # A text under **Tools** only as the writer leaves one: it says something, and
+            # opens and closes with a line that does.
+            and (TRIAGED_TOOLS not in record or (isinstance(record[TRIAGED_TOOLS], str) and bool(record[TRIAGED_TOOLS]) and tools_trimmed(record[TRIAGED_TOOLS]) == record[TRIAGED_TOOLS] and "\0" not in record[TRIAGED_TOOLS]))
             and type(record["round"]) is int
             and type(record["attempt"]) is int
             and isinstance(record["reporter"], str)
@@ -5257,20 +5284,43 @@ def triaged_in(run_dir, numbers):
     return found
 
 
+def tools_trimmed(text):
+    """The text under **Tools** as the writer keeps it: its blank lines at either end — every
+    line that holds nothing but whitespace — dropped, and every other byte as it stands (the
+    first line that says something keeps its indentation, which markdown reads)."""
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def tools_text(path, scratch):
     """WHAT A TRIAGE SAYS UNDER **Tools**, from the file it names (the header: triage): text
     that says something, its host paths replaced as a report's are and its blank lines at
-    either end dropped — or the refusal (bad-value), before anything is written."""
+    either end dropped — or the refusal, before anything is written. EVERY REFUSAL OF IT
+    NAMES --tools AND SAYS WHAT TO CHANGE, by the file's own line where it is a line's: the
+    triage's definition has it correct its file where a refusal names that file, and halt on
+    any other — and this text is optional, so no fault of it may cost the triage."""
+    where = "--tools %s" % shown(path)
     try:
         with open(path, "rb") as file:
             text = file.read().decode("utf-8")
     except OSError as err:
-        refuse("bad-value", "--tools %s cannot be read as a file (%s); nothing was written" % (shown(path), " ".join(str(err).split())))
+        refuse("bad-value", "%s cannot be read as a file (%s): write what you say under **Tools** to that file — or, with nothing to say there, make the call without --tools; nothing was written" % (where, " ".join(str(err).split())))
     except ValueError:
-        refuse("bad-value", "--tools %s is not UTF-8 text; nothing was written" % shown(path))
-    if "\0" in text or not text.strip():
-        refuse("bad-value", "--tools %s says nothing, or is not text: a triage with nothing to say under **Tools** names no such file; nothing was written" % shown(path))
-    return public(text, scratch).strip("\n")
+        refuse("bad-value", "%s is not UTF-8 text: write it again as UTF-8, and make the call again; nothing was written" % where)
+    if "\0" in text:
+        refuse("bad-value", "%s holds a NUL byte, so it is not text: write it again without one, and make the call again; nothing was written" % where)
+    if not text.strip():
+        refuse("bad-value", "%s says nothing: a triage with nothing to say under **Tools** makes the call without --tools; nothing was written" % where)
+    # Asked of the file as it was written, so that a line is the file's line — the host-path
+    # check and the fence would otherwise ask it of the report it is rendered into, and name
+    # a line of that report and neither --tools nor a change the triage can make.
+    text = public(text, scratch, left=lambda lines: "%s: line %s of the file still names this machine's home directory inside a path (a session's scratch area?) — reword it out of what you say under **Tools**, naming the script and never where it lay, and make the call again; nothing was written" % (where, lines))
+    fence_check(text, "%s: in the file, " % where)
+    return tools_trimmed(text)
 
 
 def triage(args):

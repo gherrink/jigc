@@ -2522,12 +2522,28 @@ fn an_undeclared_scratch_area_is_refused_rather_than_half_replaced() {
         let before = rig.snapshot();
         let (seen, _) = (writer.call)(rig, &text, &[]);
         seen.refused(HOST_PATH, writer.name);
-        assert!(
-            seen.stderr.contains("--scratch"),
-            "{}: the refusal says what to pass: {}",
-            writer.name,
-            seen.stderr
-        );
+        if writer.name == "triage (an entry's `why`)" {
+            // A TRIAGE'S CALL IS TYPED AS IT STANDS (the review of the plan's task `T0`): it
+            // can pass no other root, and its definition has it correct its file where a
+            // refusal names an entry and halt on any other — so the refusal names the entry
+            // and its text, and says to reword it, never to pass a root.
+            assert!(
+                seen.stderr.contains("entry 1 (audit-f3)")
+                    && seen.stderr.contains("`why`")
+                    && seen.stderr.contains("reword")
+                    && !seen.stderr.contains("--scratch"),
+                "{}: the refusal names the entry and says to reword it: {}",
+                writer.name,
+                seen.stderr
+            );
+        } else {
+            assert!(
+                seen.stderr.contains("--scratch"),
+                "{}: the refusal says what to pass: {}",
+                writer.name,
+                seen.stderr
+            );
+        }
         assert_eq!(rig.snapshot(), before, "{}: nothing written", writer.name);
 
         let (seen, path) = (writer.call)(rig, &text, &[format!("--scratch={scratch}")]);
@@ -24049,6 +24065,226 @@ fn what_a_triage_says_under_tools_is_its_reports_last_section() {
         VET_MISMATCH,
         "a rendering whose text under Tools a hand edited",
     );
+}
+
+/// **Every refusal of the text under *Tools* names `--tools` and says what to change** (the
+/// review of the plan's task `T0`, `S1`). `finding-triage.md` has a triage correct its file
+/// where a refusal names an entry or a handed finding, and halt on any other — so a refusal
+/// of the optional text under **Tools** that names neither would lose the whole triage over
+/// a fault the triage can repair. Each one names `--tools` and the change, by the file's own
+/// line where it is a line's: a file that is not there, one that is not UTF-8, one that holds
+/// a NUL, one that says nothing; a host path the placeholders could not replace, which the
+/// triage rewords — it cannot pass another `--scratch` to a call typed as it stands; and a
+/// line the fence would redden, by its line in the file, never in the report. Each writes
+/// nothing.
+#[test]
+fn every_refusal_of_the_tools_text_names_it_and_what_to_change() {
+    let rig = a_triage_run("triage-tools-refusals");
+    let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
+    let entries = two_entries().to_string();
+    let before = rig.snapshot();
+    let refused = |name: &str, bytes: &[u8], code: i32, change: &str| {
+        let path = rig.tmp.join(name);
+        if !bytes.is_empty() || name != "no-such-file" {
+            fs::write(&path, bytes).expect("write what the triage says under Tools");
+        }
+        let args = triage_args(
+            RUN,
+            "1",
+            TRIAGE,
+            "1",
+            &[
+                format!("--scratch={scratch}"),
+                format!("--tools={}", path.display()),
+            ],
+            &TWO_SOURCES,
+        );
+        let seen = rig.run(&args, &entries);
+        seen.refused(code, name);
+        assert!(
+            seen.stderr.contains("--tools") && seen.stderr.contains(change),
+            "{name}: the refusal names --tools and says what to change ({change}): {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{name}: nothing written");
+        seen.stderr.clone()
+    };
+
+    refused("no-such-file", b"", BAD_VALUE, "without --tools");
+    refused(
+        "latin1.md",
+        b"It ran on a caf\xe9.\n",
+        BAD_VALUE,
+        "as UTF-8",
+    );
+    refused("nul.md", b"It ran.\0\n", BAD_VALUE, "NUL");
+    refused("blank.md", b" \n\r\n\t\n", BAD_VALUE, "without --tools");
+
+    // A HOST PATH THE PLACEHOLDERS CANNOT REPLACE — a session's scratch area nobody declared —
+    // by its line in the file, and reworded: not another --scratch.
+    let undeclared = format!(
+        "{}/agent-501/{}-projects-jigc/0a1b/scratchpad",
+        rig.tmp.display(),
+        flattened(&rig.home)
+    );
+    let said = refused(
+        "host.md",
+        format!("A fold counter.\n\nIt lay at {undeclared}/folds.py.\n").as_bytes(),
+        HOST_PATH,
+        "line 3",
+    );
+    assert!(
+        said.contains("reword") && !said.contains("as --scratch"),
+        "the change is one the triage can make: {said}"
+    );
+
+    // A LINE THE FENCE WOULD REDDEN, by its line in the file — the report's would be another.
+    let said = refused(
+        "fence.md",
+        b"\nThe install, as the guide has it:\n\ncargo install jigc --version 1.0.0\n",
+        FENCE,
+        "line 4",
+    );
+    assert!(said.contains("inside a line"), "the change is said: {said}");
+}
+
+/// **A host path in any text of an entry names the entry and that text** (the review of the
+/// plan's task `T0`): the cells a new finding brings for its row — here its `repro` and its
+/// `route` — are asked as the entry holds them, so the refusal names the entry, as the
+/// triage's definition reads a refusal it corrects, and never the row they become nor
+/// another `--scratch`, which a call typed as it stands cannot pass.
+#[test]
+fn a_host_path_in_any_text_of_an_entry_names_the_entry_and_that_text() {
+    let rig = a_triage_run("triage-entry-host-path");
+    let undeclared = format!(
+        "{}/agent-501/{}-projects-jigc/0a1b/scratchpad",
+        rig.tmp.display(),
+        flattened(&rig.home)
+    );
+    let before = rig.snapshot();
+    for field in ["repro", "route"] {
+        let mut entries = two_entries();
+        entries[0][field] = json!(format!("{undeclared}/fin1/routes.sh"));
+        let seen = hand_over(&rig, "1", &TWO_SOURCES, &entries);
+        seen.refused(HOST_PATH, field);
+        assert!(
+            seen.stderr.contains("entry 1 (setup-leaves-a-link)")
+                && seen.stderr.contains(&format!("`{field}`"))
+                && seen.stderr.contains("reword")
+                && !seen.stderr.contains("--scratch"),
+            "{field}: the refusal names the entry and its text: {}",
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{field}: nothing written");
+    }
+}
+
+/// **A hit of the scan in an entry and in the text under *Tools* names both** (the review of
+/// the plan's task `T0`, `N1`): the entry by its place, the text by what it is, and neither
+/// by what matched.
+#[test]
+fn a_hit_in_an_entry_and_in_the_tools_text_names_both() {
+    let rig = a_triage_run("triage-tools-and-entry");
+    let term = DENY_TERM.to_uppercase();
+    let mut entries = two_entries();
+    entries[1]["why"] = json!(format!("it was seen on the host {term}"));
+    let path = rig.tmp.join("denied.md");
+    fs::write(&path, format!("It ran on the host {term}.\n")).expect("write the tools text");
+    let before = rig.snapshot();
+    let seen = rig.run(
+        &triage_args(
+            RUN,
+            "1",
+            TRIAGE,
+            "1",
+            &[format!("--tools={}", path.display())],
+            &TWO_SOURCES,
+        ),
+        &entries.to_string(),
+    );
+    seen.refused(
+        HYGIENE,
+        "an entry and the tools text that name a denylisted term",
+    );
+    assert!(
+        seen.stderr.contains("entry 2")
+            && !seen.stderr.contains("entry 1")
+            && seen.stderr.contains("under **Tools**")
+            && seen.stderr.contains("reword them")
+            && !seen.stderr.to_lowercase().contains(DENY_TERM),
+        "both are named, by where and never by what: {}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing written");
+}
+
+/// **The text under *Tools* drops the blank lines at either end — every line that holds
+/// nothing but whitespace — and keeps every other byte** (the review of the plan's task `T0`,
+/// `N3`): a line of spaces, or the `\r` a CRLF file ends its blank lines with, is a blank
+/// line; the indentation of the first line that says something is not, since markdown reads
+/// it.
+#[test]
+fn the_tools_text_drops_its_blank_lines_at_either_end_and_nothing_else() {
+    let rig = a_triage_run("triage-tools-blank-ends");
+    let path = rig.tmp.join("tools.md");
+    fs::write(
+        &path,
+        "  \r\n\t\n    folds.py --count entries.json\n\nIt ran twice.\r\n \r\n\t\n\n",
+    )
+    .expect("write the tools text");
+    rig.run(
+        &triage_args(
+            RUN,
+            "1",
+            TRIAGE,
+            "1",
+            &[format!("--tools={}", path.display())],
+            &TWO_SOURCES,
+        ),
+        &two_entries().to_string(),
+    )
+    .must(
+        OK,
+        "the entries, and a tools text with blank lines at either end",
+    );
+    let text = rig.read(&report_path("1", TRIAGE, "1"));
+    assert_eq!(
+        data_of(&text)["tools"],
+        json!("    folds.py --count entries.json\n\nIt ran twice.\r"),
+        "the blank lines at either end dropped, and nothing else: {text}"
+    );
+    assert!(
+        text.ends_with("## Tools\n\n    folds.py --count entries.json\n\nIt ran twice.\r\n\n<!-- end of report -->\n"),
+        "{text}"
+    );
+}
+
+/// **A rendering holds a text under *Tools* only as the writer leaves it** (the review of the
+/// plan's task `T0`, `N1`): a hand that forges a rendering whose `tools` is empty, or opens
+/// with a blank line, leaves a file no triage call renders — refused by the vet though it
+/// renders from its own data, where the same file with a text the writer leaves is taken.
+#[test]
+fn a_rendering_whose_tools_text_no_writer_leaves_is_refused() {
+    let rig = a_triage_run("triage-tools-forged");
+    let path = report_path("1", TRIAGE, "1");
+    let forged = |tools: &str| {
+        let section = format!(
+            " ],\n \"tools\": {}\n}}\n```\n\n## Tools\n\n{tools}\n\n<!-- end of report -->\n",
+            json!(tools)
+        );
+        A_TRIAGES_REPORT.replacen(DATA_CLOSES, &section, 1)
+    };
+    fs::write(rig.root.join(&path), forged("It ran twice.")).expect("a rendering by hand");
+    rig.run(&vet(RUN, None, &[&path]), "")
+        .must(OK, "the control: a text the writer leaves is taken");
+    for (tools, what) in [
+        ("", "an empty text"),
+        ("\nIt ran twice.", "a text opening blank"),
+    ] {
+        fs::write(rig.root.join(&path), forged(tools)).expect("a forged rendering");
+        rig.run(&vet(RUN, None, &[&path]), "")
+            .must(VET_MISMATCH, what);
+    }
 }
 
 /// The agents the state names for a row — `reporters`, a field only of a row that has any.
