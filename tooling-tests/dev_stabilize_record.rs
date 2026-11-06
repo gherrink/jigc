@@ -22657,8 +22657,10 @@ fn data_of(text: &str) -> Value {
     let (_, rest) = text
         .split_once("\n```json\n")
         .unwrap_or_else(|| panic!("a rendered report holds its entries as data:\n{text}"));
+    // The block closes at the first fence after it: no line of its JSON is one, and a text
+    // rendered after it may hold fences of its own.
     let (block, _) = rest
-        .rsplit_once("\n```\n")
+        .split_once("\n```\n")
         .unwrap_or_else(|| panic!("the block closes:\n{text}"));
     serde_json::from_str(block).unwrap_or_else(|e| panic!("the block is JSON ({e}):\n{block}"))
 }
@@ -23417,6 +23419,134 @@ fn an_entrys_text_with_a_denylisted_term_refuses_the_filing_and_names_the_entry(
     seen.refused(HYGIENE, "a secret, and a scanner that runs once");
     assert!(seen.stderr.contains("stub-rule"), "{}", seen.stderr);
     assert_eq!(rig.snapshot(), before, "nothing written");
+}
+
+/// What a triage writes under **Tools**, as its file holds it: a script it ran more than once,
+/// with a fence of its own and the host path it lay at.
+fn tools_text(scratch: &str) -> String {
+    format!(
+        "The fold counter — `folds.py`, run three times: does every handed finding stand in exactly one entry?\n\n```python\nimport json, sys\nprint(sum(len(v) for e in json.load(open(sys.argv[1])) for v in e[\"folds\"].values()))\n```\n\nIt lay at {scratch}/folds.py, and is gone when the triage returns.\n\n"
+    )
+}
+
+/// How the report [`A_TRIAGES_REPORT`] closes: its data block, and the end marker.
+const DATA_CLOSES: &str = " ]\n}\n```\n\n<!-- end of report -->\n";
+
+/// How the same report closes when its triage handed [`tools_text`] over: the text a member of
+/// the data, after the entries — its host path replaced, its trailing blank lines gone — and
+/// rendered as the report's last section.
+const TOOLS_CLOSES: &str = r##" ],
+ "tools": "The fold counter — `folds.py`, run three times: does every handed finding stand in exactly one entry?\n\n```python\nimport json, sys\nprint(sum(len(v) for e in json.load(open(sys.argv[1])) for v in e[\"folds\"].values()))\n```\n\nIt lay at <scratch>/folds.py, and is gone when the triage returns."
+}
+```
+
+## Tools
+
+The fold counter — `folds.py`, run three times: does every handed finding stand in exactly one entry?
+
+```python
+import json, sys
+print(sum(len(v) for e in json.load(open(sys.argv[1])) for v in e["folds"].values()))
+```
+
+It lay at <scratch>/folds.py, and is gone when the triage returns.
+
+<!-- end of report -->
+"##;
+
+/// **What a triage says under *Tools* is its report's last section** (the plan before the
+/// opening's task `T0`; its review's `S5`). The paragraph every definition carries has an
+/// agent say what it wrote or wished for *under **Tools**, the last section of your report, or
+/// in your return where you write no report* — and the one triage writes no report, its
+/// report is rendered from its entries, and its return is held to the call's line. So the
+/// writer takes that text from a file of its own (`--tools`): a member of the data, rendered
+/// after it, sealed with the rest — the vet refuses a hand's edit of it — and scanned as every
+/// text of the file is, a hit naming the text and never what matched. A triage that hands none
+/// over renders the bytes it rendered before (the arm above holds them), and a file that is not
+/// there, or says nothing, is refused and writes nothing.
+#[test]
+fn what_a_triage_says_under_tools_is_its_reports_last_section() {
+    let rig = a_triage_run("triage-tools");
+    let scratch = format!("{}/agent/scratchpad", rig.tmp.display());
+    let called = |tools: &Path| {
+        triage_args(
+            RUN,
+            "1",
+            TRIAGE,
+            "1",
+            &[
+                format!("--scratch={scratch}"),
+                format!("--tools={}", tools.display()),
+            ],
+            &TWO_SOURCES,
+        )
+    };
+    let fed = |name: &str, text: &str| {
+        let path = rig.tmp.join(name);
+        fs::write(&path, text).expect("write what the triage says under Tools");
+        path
+    };
+
+    // A FILE THAT IS NOT THERE, ONE THAT SAYS NOTHING, AND A TEXT THE SCAN STOPS: refused, and
+    // nothing written — the scan's refusal naming the text, never what matched.
+    let before = rig.snapshot();
+    let entries = two_entries().to_string();
+    let seen = rig.run(&called(&rig.tmp.join("no-such-file")), &entries);
+    seen.refused(BAD_VALUE, "a tools file that is not there");
+    assert!(seen.stderr.contains("--tools"), "{}", seen.stderr);
+    rig.run(&called(&fed("blank.md", "\n  \n")), &entries)
+        .refused(BAD_VALUE, "a tools file that says nothing");
+    let term = DENY_TERM.to_uppercase();
+    let seen = rig.run(
+        &called(&fed("denied.md", &format!("It ran on the host {term}.\n"))),
+        &entries,
+    );
+    seen.refused(HYGIENE, "a tools text that names a denylisted term");
+    assert!(
+        seen.stderr.contains("**Tools**")
+            && !seen.stderr.contains("entry ")
+            && !seen.stderr.to_lowercase().contains(DENY_TERM),
+        "the text is named, and never what matched: {}",
+        seen.stderr
+    );
+    assert_eq!(
+        rig.snapshot(),
+        before,
+        "nothing of a refused filing was written"
+    );
+
+    // THE TEXT, RENDERED: the report the same entries render, closed by the text as data and
+    // as the last section.
+    rig.run(&called(&fed("tools.md", &tools_text(&scratch))), &entries)
+        .must(OK, "the entries, and what the triage says under Tools");
+    let path = report_path("1", TRIAGE, "1");
+    let text = rig.read(&path);
+    assert!(
+        A_TRIAGES_REPORT.ends_with(DATA_CLOSES),
+        "the control: the report without the text closes so"
+    );
+    assert_eq!(
+        text,
+        A_TRIAGES_REPORT.replacen(DATA_CLOSES, TOOLS_CLOSES, 1),
+        "the report, its text the last section"
+    );
+    assert_eq!(
+        data_of(&text)["entries"],
+        data_of(A_TRIAGES_REPORT)["entries"],
+        "the entries are what they were: the data block closes at its own fence, before the text's"
+    );
+
+    // SEALED WITH THE REST: the vet covers the file — and refuses a hand's edit of the text.
+    let vetted = rig.run(&vet(RUN, None, &[&path]), "");
+    vetted.must(OK, "the vet covers the rendering");
+    assert_eq!(vetted.json()["vetted"][&path], json!(sha256_of(&text)));
+    let edited = text.replacen("run three times: does", "run once: does", 1);
+    assert_ne!(edited, text, "the control: the edit is one");
+    fs::write(rig.root.join(&path), &edited).expect("a hand's edit of the text");
+    rig.run(&vet(RUN, None, &[&path]), "").must(
+        VET_MISMATCH,
+        "a rendering whose text under Tools a hand edited",
+    );
 }
 
 /// The agents the state names for a row — `reporters`, a field only of a row that has any.

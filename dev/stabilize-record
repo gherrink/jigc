@@ -594,7 +594,7 @@
 #
 #   dev/stabilize-record triage --run R --round N --reporter S --attempt A
 #                        [--scratch DIR]... [--] SOURCE=COUNT... <entries.json
-#   dev/stabilize-record triage … --from FILE [--] SOURCE=COUNT...
+#   dev/stabilize-record triage … --from FILE [--tools FILE] [--] SOURCE=COUNT...
 #       A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the build plan of the reshaped `test` stage,
 #       §5, K2: triage typed every entry twice — in its report, and again in its return —
 #       and what it returned grew with what it was handed). The entries on stdin — or, with
@@ -664,6 +664,18 @@
 #       ATTEMPT THAT IS BEGUN, as a verifier's report is (report): the rendering is a report
 #       under a reporter that is no finding's verifier, so under an attempt nobody began it
 #       would read as that attempt's marker — it is refused (bad-value), and writes nothing.
+#       WHAT THE TRIAGE SAYS UNDER **Tools** (the plan before the opening's task T0) comes
+#       from a file of its own, --tools FILE, and from nowhere else: the paragraph every
+#       definition carries has an agent say what it wrote or wished for under **Tools**, the
+#       last section of its report — and a triage under this writer writes no report, and its
+#       return is held to this call's line. The file is markdown, UTF-8, and says something
+#       (bad-value: not there, not text, or blank — nothing is written); its host paths are
+#       replaced as a report's are, its blank lines at either end dropped, and it is A MEMBER
+#       OF THE DATA, `tools`, after the entries — and RENDERED AS THE REPORT'S LAST SECTION,
+#       `## Tools`, after the data block, which closes at its own fence: so it may hold fences
+#       of its own, and it is sealed with the rest. A HIT OF THE SCAN IN IT names the text
+#       under **Tools**, never what matched. A triage that names no such file renders as it
+#       did, with no member and no section.
 #       Prints ITS DIGEST, one line, with no text of an entry in it — what a triage's
 #       return is held to: {"triage": the path, "sha256": the hash of the file's bytes,
 #       "round", "reporter", "attempt", "handed": {source: count}, "findings": how many in
@@ -2654,6 +2666,8 @@ SOURCE_NAMES = re.compile(r"`?(%s)(?![A-Za-z0-9_-])" % SLUG.pattern)
 # triage says: an instrument's own (`hunt`).
 TRIAGE_OPENS = "<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->"
 TRIAGED_FIELDS = ("round", "reporter", "attempt", "handed", "entries")
+# What a triage says under **Tools**: a member of the record only where it handed one over.
+TRIAGED_TOOLS = "tools"
 ENTRY_FIELDS = ("key", "found", "grade", "bound", "why", "folds", "doctype", "door", "clause", "repro", "kind", "given", "code", "site", "evidence")
 ENTRY_SAID = ("key", "found", "grade", "why", "folds")
 ENTRY_ROW = ("doctype", "door", "clause", "repro")
@@ -5046,7 +5060,10 @@ def triage_text(record):
         grade = OUT_OF_SCOPE + entry["bound"] if entry["bound"] else entry["grade"]
         kind = "-" if entry["kind"] is None else GIVEN + entry["given"] if entry["given"] else entry["kind"]
         lines.append("| %d | %s | %s | %s | %s | %s |" % (n, tick(entry["key"]), "new" if entry["found"] == "new" else "found again", grade, kind, folds_said(entry["folds"])))
-    lines += ["", "## The entries, as data", "", "```json", json.dumps(record, indent=1, ensure_ascii=False), "```", "", REPORT_ENDS]
+    lines += ["", "## The entries, as data", "", "```json", json.dumps(record, indent=1, ensure_ascii=False), "```"]
+    if TRIAGED_TOOLS in record:
+        lines += ["", "## Tools", "", record[TRIAGED_TOOLS]]
+    lines += ["", REPORT_ENDS]
     return "\n".join(lines) + "\n"
 
 
@@ -5058,10 +5075,14 @@ def rendered(text):
     writer by nothing: who wrote a file is not holdable.)"""
     lines = text.split("\n")
     try:
-        record = json.loads("\n".join(lines[lines.index("```json") + 1 : len(lines) - 1 - lines[::-1].index("```")]))
+        # The data block closes at the first fence after it: no line of its JSON is one, and
+        # the text under **Tools** rendered after it may hold fences of its own.
+        opens = lines.index("```json") + 1
+        record = json.loads("\n".join(lines[opens : lines.index("```", opens)]))
         shaped = (
             isinstance(record, dict)
-            and tuple(record) == TRIAGED_FIELDS
+            and tuple(record) in (TRIAGED_FIELDS, TRIAGED_FIELDS + (TRIAGED_TOOLS,))
+            and (TRIAGED_TOOLS not in record or (isinstance(record[TRIAGED_TOOLS], str) and bool(record[TRIAGED_TOOLS].strip())))
             and type(record["round"]) is int
             and type(record["attempt"]) is int
             and isinstance(record["reporter"], str)
@@ -5135,6 +5156,22 @@ def triaged_in(run_dir, numbers):
     return found
 
 
+def tools_text(path, scratch):
+    """WHAT A TRIAGE SAYS UNDER **Tools**, from the file it names (the header: triage): text
+    that says something, its host paths replaced as a report's are and its blank lines at
+    either end dropped — or the refusal (bad-value), before anything is written."""
+    try:
+        with open(path, "rb") as file:
+            text = file.read().decode("utf-8")
+    except OSError as err:
+        refuse("bad-value", "--tools %s cannot be read as a file (%s); nothing was written" % (shown(path), " ".join(str(err).split())))
+    except ValueError:
+        refuse("bad-value", "--tools %s is not UTF-8 text; nothing was written" % shown(path))
+    if "\0" in text or not text.strip():
+        refuse("bad-value", "--tools %s says nothing, or is not text: a triage with nothing to say under **Tools** names no such file; nothing was written" % shown(path))
+    return public(text, scratch).strip("\n")
+
+
 def triage(args):
     """A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the header: triage): one file of the round — its
     report, rendered from the entries, which holds them as data — and nothing of a table.
@@ -5154,6 +5191,7 @@ def triage(args):
         refuse("bad-value", "stdin must be the entries of a triage: a JSON array of objects, one an entry")
     held = [entry_of(n, entry, int(round_number), handed, scratch) for n, entry in enumerate(given, 1)]
     entries = [stored for stored, _, _ in held]
+    tools = None if args.tools is None else tools_text(args.tools, scratch)
     distinct([entry["key"] for entry in entries], "the entry under the key")
     partition(handed, entries)
     one_writer(run_dir)
@@ -5188,6 +5226,8 @@ def triage(args):
         else:
             refuse("no-such-row", "entry %d (%s): it says `again`, and the run holds no row under that key — the ledger has none, no filed verdict handed one on, and it is no red run's key of an item of the test set. A finding the ledger does not hold is `new`, and brings what its row needs. Nothing was written" % (n, key))
     record = dict(zip(TRIAGED_FIELDS, (int(round_number), reporter, int(attempt), handed, entries)))
+    if tools is not None:
+        record[TRIAGED_TOOLS] = tools
     text = triage_text(record)
     publish(run_dir, parts, text, replace=False, taken="a triage hands its entries over once an attempt, as a report is written once: a re-run passes the next attempt")
     try:
@@ -5198,14 +5238,17 @@ def triage(args):
         # A HIT REFUSES THE FILING AND NAMES THE ENTRY — by its place in the file, never by
         # what matched: each entry scanned as a text of its own. Where that names none — the
         # hit is in a name of the file's own — or cannot be asked, the first refusal stands.
+        # The text under **Tools** is scanned as a text of its own beside them, and named so.
         try:
-            hits = scan_hits([("entry-%d" % n, json.dumps(entry, indent=1, ensure_ascii=False) + "\n") for n, entry in enumerate(entries, 1)])
+            hits = scan_hits([("entry-%d" % n, json.dumps(entry, indent=1, ensure_ascii=False) + "\n") for n, entry in enumerate(entries, 1)] + ([(TRIAGED_TOOLS, tools + "\n")] if tools is not None else []))
         except Refusal:
             raise refusal
-        places = sorted(int(name[len("entry-"):]) for name in hits)
+        places = sorted(int(name[len("entry-"):]) for name in hits if name.startswith("entry-"))
+        if TRIAGED_TOOLS in hits and not places:
+            raise Refusal("hygiene", "what a triage says under **Tools** is stopped by the public-hygiene scan — by where, never by what: reword the file --tools names, and make the call again; nothing was written. What the scan said of the report it would have been: %s" % refusal.detail, refusal.where)
         if not places:
             raise
-        raise Refusal("hygiene", "the entries a triage handed over are stopped by the public-hygiene scan at %s of the file — by where, never by what: reword %s, and hand the file over again; nothing was written. What the scan said of the report it would have been: %s" % ("entry %d" % places[0] if len(places) == 1 else "the entries %s and %d" % (", ".join(str(n) for n in places[:-1]), places[-1]), "it" if len(places) == 1 else "them", refusal.detail), refusal.where)
+        raise Refusal("hygiene", "the entries a triage handed over are stopped by the public-hygiene scan at %s of the file%s — by where, never by what: reword %s, and hand the file over again; nothing was written. What the scan said of the report it would have been: %s" % ("entry %d" % places[0] if len(places) == 1 else "the entries %s and %d" % (", ".join(str(n) for n in places[:-1]), places[-1]), ", and at what it says under **Tools**" if TRIAGED_TOOLS in hits else "", "it" if len(places) == 1 and TRIAGED_TOOLS not in hits else "them", refusal.detail), refusal.where)
     grades, counted_ = {}, {}
     for entry, word in zip(entries, classes):
         grades[entry["grade"]] = grades.get(entry["grade"], 0) + 1
@@ -7858,7 +7901,7 @@ def arguments(argv):
     command("scope-set", scope_set, [("round", True), ("from", False)], writes=True)
     command("triage-set", triage_set, [("round", True)])
     command("verdict", verdict, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True)
-    command("triage", triage, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True, names=True)
+    command("triage", triage, [("round", True), ("reporter", True), ("attempt", True), ("from", False), ("tools", False)], writes=True, names=True)
     command("item-set", item_set, [], writes=True)
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])

@@ -65,6 +65,7 @@ schema-version: 3
 <!-- fields -->
 - intent: T0 — give agents a channel to report the tools they wrote
 - workflow: builder
+- status: joined
 
 ### rb1-judge-a-regression-against  {#rb1-judge-a-regression-against}
 

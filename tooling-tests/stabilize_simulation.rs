@@ -6729,8 +6729,10 @@ impl Sim {
         let (_, rest) = text
             .split_once("\n```json\n")
             .unwrap_or_else(|| panic!("a rendered report holds its entries as data:\n{text}"));
+        // The block closes at the first fence after it: no line of its JSON is one, and the
+        // text under Tools rendered after it may hold fences of its own.
         let (block, _) = rest
-            .rsplit_once("\n```\n")
+            .split_once("\n```\n")
             .unwrap_or_else(|| panic!("the block closes:\n{text}"));
         serde_json::from_str(block).unwrap_or_else(|e| panic!("the block is JSON ({e}):\n{block}"))
     }
@@ -6981,7 +6983,8 @@ const HUNCH: &str = "doc-set-may-drop-a-slot";
 /// AS A SOURCE UNDER THE KEY ITS ROW IS FILED WITH — graded from the tool's verdict, by its
 /// file — and the rows nobody graded, by the read that prints them. It hands its entries over
 /// as ONE FILE, by the call the prompt spells whole, and its return holds a path, a hash and
-/// the counts: no entry passes through the harness.
+/// the counts: no entry passes through the harness. What it says under *Tools* it hands over
+/// by the same call, spelled a second time with the file it is written to.
 #[test]
 fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
     if !can_run() {
@@ -7020,7 +7023,7 @@ fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
                         hunch,
                         found_again("red-regression-set", "breaks", json!({"red-regression-set": [1]})),
                         seeded,
-                    ]},
+                    ], "tools": format!("The fold counter, run twice: `{scratch}/folds.sh`.\n")},
                 },
             }),
             &[ROUTE, "red-regression-set"],
@@ -7163,6 +7166,26 @@ fn a_red_held_check_is_graded_by_the_stages_one_triage_under_its_own_key() {
         json!([5, 4, {"key": "red-regression-set", "found": "again", "grade": "breaks",
                       "class": "behaviour hunt"}]),
         "{line}"
+    );
+
+    // WHAT THE TRIAGE SAYS UNDER TOOLS reaches the record by the call the prompt spells for it
+    // (the plan before the opening's task `T0`) — made as it stands, and its text the rendered
+    // report's last section, its host path replaced, in the record the stage commits below.
+    let with_tools = format!(
+        "`dev/stabilize-record triage --run {RUN} --round 1 --reporter triage --attempt 1 --scratch {scratch} --from {entries_file} --tools {scratch}/triage/r1.a1.tools.md -- area-a-review=2 scope=1 red-regression-set=1 ledger=1`"
+    );
+    assert!(
+        prompt.contains(&with_tools),
+        "the call with the text under Tools, spelled whole ({with_tools}):\n{prompt}"
+    );
+    let said = "The fold counter, run twice: `<scratch>/folds.sh`.";
+    assert_eq!(data["tools"], json!(said), "{data}");
+    let on_disk = sim.rig.read(&rendering(1, 1));
+    assert!(
+        on_disk.ends_with(&format!(
+            "\n```\n\n## Tools\n\n{said}\n\n<!-- end of report -->\n"
+        )) && !on_disk.contains(&scratch),
+        "{on_disk}"
     );
 
     // (3) THE STAGE ENDS WHERE THE PATH IS BUILT TO: at its first record — the red result's

@@ -1012,6 +1012,13 @@ function heldSaid(job) {
 // so no paragraph of their own. The fence holds this copy to the definitions' bytes.
 const NEVER = "**Never push to or merge into `main`, force-push any branch, merge a pull request, push a tag, approve or reject a deployment, or yank a crate.** Those acts are the human's ([release.md](../../implementation/release.md) → *What agents may not do*). You may merge an increment branch into its milestone branch locally, and push `milestone/*`, `fix/*` and `work/*` branches — always by name (`git push origin <branch>`), never a bare `git push`, and never forced (no `--force`, `--force-with-lease`, `-f` or `+` refspec). `.claude/settings.json` denies the commands that perform the human's acts; a denial is the answer, never something to route around."
 
+// The other paragraph every agent definition carries, verbatim (tooling-tests/
+// tooling_index.rs holds it there): an agent hands on, under **Tools**, the scripts it wrote
+// and the tools it wished for — so the two roles that have no definition are told it here,
+// before the one above, as a definition has the two (the plan before the opening's task
+// `T0`). The fence holds this copy to the definitions' bytes.
+const TOOLS = "**Tools: use them, doubt them, hand yours on.** jigc is deterministic, so much of what you establish a script or test can establish too — before you judge, hunt or build, look in [tooling.md](../../implementation/tooling.md) for the tool that answers your question, and use it rather than rebuilding it ([working-principles.md](../../implementation/working-principles.md) → *Deterministic first*). A tool can be wrong: if you suspect a bug in one, investigate it and report it as a finding with its evidence — never work around it silently. And if you wrote a script or probe you ran more than once, or needed a tool that does not exist, say so under **Tools**, the last section of your report, or in your return where you write no report: what it does, the question it answers, and its text if it is short — a scratch path is gone when you return."
+
 // THE WRITE GUARD, AS A PROMPT SAYS IT (DECISIONS.md -> 2026-10-16, "The write guard of a
 // stabilization run"; dev/stabilize-guard). Every agent of a run but its git steps and its
 // fixers is fenced by a hook: a file-tool write into the repository is refused, a call of
@@ -1707,6 +1714,12 @@ function testReport(ctx, name) {
 // The file the one triage of a run with a queue writes its entries to before it hands them over.
 function entriesFile(ctx) {
   return ctx.scratch + '/triage/r' + ctx.round + '.a' + ctx.attempt + '.json'
+}
+// toolsFile — where that triage writes what it says under **Tools**, beside its entries: its
+// report is rendered from them and its return is held to the call's line, so this file is
+// the one road that text has to the record (the plan before the opening's task `T0`).
+function toolsFile(ctx) {
+  return ctx.scratch + '/triage/r' + ctx.round + '.a' + ctx.attempt + '.tools.md'
 }
 // redSources — EVERY RED RESULT OF AN INVOCATION AS A SOURCE OF THE STAGE'S ONE TRIAGE, IN A
 // RUN WITH A QUEUE (the reshape's plan, T5a; its review's B1: the record call files a red
@@ -2831,6 +2844,7 @@ function oneTriagePrompt(ctx, launch, name, sources) {
     'Grade every finding below — ' + sources.reduce((n, s) => n + findingsOf(s), 0) + ' in all, from ' + sources.length + ' source(s). EVERY FINDING HAS A NUMBER, from 1 to its source\'s count, under its source\'s name, and an entry says what it folds by the source and those numbers. A reporter\'s report is the file named, its list that reporter\'s structured return, and an entry marked `left open` is what an agent left open, triaged like any finding.',
   ].concat(sources.map(said)).concat([
     'YOUR ENTRIES ARE ONE FILE, HANDED OVER ONCE. Write them — a JSON array, one object an entry — to the file `' + entriesFile(ctx) + '` WITH YOUR FILE TOOL, and hand it over by ONE plain call, typed as it stands: ' + typed(RECORD_TOOL, 'triage --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + entriesFile(ctx) + ' -- ' + sources.map((s) => s.reporter + '=' + findingsOf(s)).join(' ')) + '. Its last words say how many findings each source above handed you, and the record script holds every number of every source to being in exactly one entry.',
+    'WHAT YOU WOULD SAY UNDER **Tools** — a script or probe you ran more than once, a tool you needed and did not have — IS YOUR REPORT\'S LAST SECTION, and goes there by the same call: your return carries none of it. Where you have something to say there, write it — as markdown, without its heading — to the file `' + toolsFile(ctx) + '` WITH YOUR FILE TOOL, and make the call with that file named instead, typed as it stands: ' + typed(RECORD_TOOL, 'triage --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + entriesFile(ctx) + ' --tools ' + toolsFile(ctx) + ' -- ' + sources.map((s) => s.reporter + '=' + findingsOf(s)).join(' ')) + '. Where you have nothing to say there, write no such file, and make the call above.',
     'WHAT YOUR RETURN IS HELD TO, and it holds no entry. That call prints ONE line of JSON. Return status = filed with three things of it: `report`, the path it printed as `triage` — held to `' + testReport(ctx, name) + '`, the path a report of your name and attempt has; `sha256`, the hash it printed beside that path — held to being one; and `handed`, what it printed under that name, one entry a source with its count — held to the sources and the counts of the call above, each by name: a call typed with another count held another partition, and the stage halts on it. Nothing else is read from your return: no entry, no grade and no key is typed a second time, and you name nothing to verify — what is verified is the record script\'s queue. Where you halt, return status = halted with the halt report, a refusal\'s line verbatim in it.',
   ]).join('\n')
 }
@@ -2915,6 +2929,7 @@ function proposalPrompt(ctx, name, fork, advocate, built) {
     'THE BEFORE of each step is the candidate itself, and its hash is ASKED OF THE TOOL, by ONE plain call typed as it stands, and never computed by a command of your own: ' + typed(STEP_TOOL, 'hash --scratch ' + ctx.scratch + ' --file ' + below(ctx.scratch, built.candidate.binary)) + ' prints ONE line of JSON whose `content_sha256` must be ' + built.candidate.sha256 + ', and you return that hash as `asserted_sha256`.',
     'WHAT YOU RETURN. One entry of `steps` per next step: the command, what it printed and exited, and `agrees` — whether that is what the advocate reported. `holds` is true only when every step ran as the proposal says. What you hit that is not this proposal goes in `left_open`.',
     'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report. ' + reportHandOver(ctx, name) + ' ' + GUARD,
+    TOOLS,
     NEVER,
   ].join('\n')
 }
@@ -2935,6 +2950,7 @@ function crossModelPrompt(ctx, name, unit) {
     'WHAT ITS CLAIMS ARE. Leads, never findings: a claim one model makes that nobody reproduced is a lead, and the row\'s reconciler drives every one. Return each as a finding with `lead` set to true, its door in the exact words of the list below (or named plainly and marked unlisted), the clause it would break as the claim reads, and `repro` = the heading you give the claim in your report. A pass that returned nothing usable is a halt, with its output as the evidence.',
     doorLines(ctx, unit),
     'WHAT YOU MAY TOUCH. Nothing in this repository: no edit, no commit, no branch, no push, no install. One file reaches it — your report, the pass\'s output whole and your list of leads. ' + reportHandOver(ctx, name) + ' ' + GUARD,
+    TOOLS,
     NEVER,
   ].join('\n')
 }

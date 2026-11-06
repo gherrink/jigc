@@ -123,7 +123,10 @@
 //                                  its `REPORT:` line. `counts` has it type the call with
 //                                  OTHER COUNTS than the prompt spells: a triage that did not
 //                                  type the call as it stands. `overwrites` is written over
-//                                  its rendered report, as over any. Its return is read off the
+//                                  its rendered report, as over any. `tools` is what it says
+//                                  under Tools: written to the file the prompt's other spelling
+//                                  of the call names (`--tools`), and that call made instead —
+//                                  a prompt that spells none fails the run. Its return is read off the
 //                                  ONE line the call printed, which is reported (`reads`):
 //                                  the path, the hash, what each source handed
 //   verify:*   finding-verifier    A VERIFIER THAT FILES ITS VERDICT, IN A RUN WITH A QUEUE — what
@@ -558,10 +561,16 @@ function oneTriage(label, prompt) {
     const printed = numbers === null ? JSON.parse((reads.find((r) => r.label === label && r.command.startsWith('dev/stabilize-record untriaged ')) || { printed: '{}' }).printed).count : null
     if (numbers === null ? printed !== count : numbers.length !== count || numbers.some((n, i) => n !== i + 1)) fail('the prompt of `' + label + '` names ' + count + ' finding(s) of `' + source + '` in its call, and ' + (numbers === null ? 'the read it names printed ' + printed : 'numbers them ' + JSON.stringify(numbers)))
   }
+  // WHAT IT SAYS UNDER TOOLS, where the scenario scripts it (`tools`): written to the file the
+  // prompt's other spelling of the call names, and handed over by THAT call, as it stands.
+  const withTools = said.tools == null ? null : (/`(dev\/stabilize-record triage --run [^`]* --tools [^`]*)`/.exec(prompt) || [])[1]
+  if (said.tools != null && !withTools) fail('the scenario scripts what `' + label + '` says under Tools, and its prompt spells no call that hands it over')
+  const spelled = withTools || command
   // The call as the triage types it: as it stands — or with the counts the scenario has it type.
-  const typed = said.counts ? command.split(' -- ')[0] + ' -- ' + Object.entries(said.counts).map(([source, count]) => source + '=' + count).join(' ') : command
+  const typed = said.counts ? spelled.split(' -- ')[0] + ' -- ' + Object.entries(said.counts).map(([source, count]) => source + '=' + count).join(' ') : spelled
   const handOver = (entries) => {
     fileTool(file[1], JSON.stringify(entries))
+    if (withTools) fileTool(/ --tools (\S+)/.exec(withTools)[1], said.tools)
     return sh(typed)
   }
   let out = handOver(said.entries)

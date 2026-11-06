@@ -1907,6 +1907,52 @@ fn o_the_roles_with_no_definition_carry_the_never_paragraph_as_every_definition_
     );
 }
 
+/// **The same two roles carry the *Tools* paragraph too** (the plan before the opening's task
+/// `T0`): every definition has an agent hand on, under **Tools**, the scripts it wrote and
+/// the tools it wished for ([`tooling_index`](super::tooling_index) holds that paragraph in
+/// every one) — and a role whose prompt is its whole contract is told so by its prompt, or
+/// nothing it wrote reaches the orchestrator's list. The copy is the definitions' bytes, as
+/// arm (o) holds the *Never* paragraph's, and it stands before that one, as there.
+#[test]
+fn o_the_roles_with_no_definition_carry_the_tools_paragraph_as_every_definition_has_it() {
+    let full = harness();
+    let opening = "**Tools: use them, doubt them, hand yours on.**";
+    let paragraphs: BTreeSet<String> = definitions()
+        .values()
+        .map(|text| {
+            text.lines()
+                .find(|line| line.starts_with(opening))
+                .expect("every definition carries the paragraph")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        paragraphs.len(),
+        1,
+        "the paragraph is one text across the definitions"
+    );
+    let paragraph = paragraphs.into_iter().next().expect("one");
+    assert_eq!(
+        full.lines()
+            .find(|line| line.starts_with("const TOOLS = "))
+            .expect("the script holds the paragraph"),
+        format!("const TOOLS = \"{paragraph}\""),
+        "the script's copy of the paragraph is the definitions', byte for byte"
+    );
+    for role in ["proposal", "crossModel"] {
+        let prompt = function(&full, &format!("{role}Prompt"));
+        assert!(
+            prompt.contains("\n    TOOLS,\n    NEVER,\n  ].join('\\n')"),
+            "`{role}Prompt` does not end with the paragraph, before the Never paragraph"
+        );
+    }
+    assert_eq!(
+        without(&full, &["selfTest"]).matches("TOOLS").count(),
+        3,
+        "the paragraph is declared once and handed to those two prompts"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // (p) what an agent's ending decides has one road each
 // ---------------------------------------------------------------------------
@@ -3358,6 +3404,18 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
             && one.contains("s.read")
             && one.contains("(i + 1) + '. '"),
         "the prompt spells the call whole — one word a source, by the count it hands — carries the report line, hands the rows nobody graded as the read, and numbers every other finding"
+    );
+    // WHAT THE TRIAGE SAYS UNDER TOOLS (the plan before the opening's task `T0`): it writes no
+    // report and its return is held to the call's line, so the text reaches the record by the
+    // same call, spelled whole a second time with the file it is written to — the one flag
+    // more, before the words.
+    assert!(
+        one.contains("typed(RECORD_TOOL, 'triage --run ' + ctx.run + ' --round ' + ctx.round + ' --reporter ' + name + ' --attempt ' + ctx.attempt + ' --scratch ' + ctx.scratch + ' --from ' + entriesFile(ctx) + ' --tools ' + toolsFile(ctx) + ' -- ' + sources.map((s) => s.reporter + '=' + findingsOf(s)).join(' '))")
+            && function(&full, "toolsFile").contains(
+                "ctx.scratch + '/triage/r' + ctx.round + '.a' + ctx.attempt + '.tools.md'"
+            )
+            && record.contains("(\"tools\", False)"),
+        "the prompt spells the call with the text under Tools, by the flag the record script takes"
     );
     let red = function(&full, "redSources");
     assert!(
