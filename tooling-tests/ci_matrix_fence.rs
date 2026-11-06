@@ -9,7 +9,7 @@
 //! targets from **`cargo metadata`**, never from `tests/groups/` on disk or from a parse
 //! of `Cargo.toml`, because what cargo reports is what `cargo test` compiles.
 //!
-//! Nine properties, one arm each: **(a)** the `test` matrix's rows name exactly the
+//! Ten properties, one arm each: **(a)** the `test` matrix's rows name exactly the
 //! metadata's `test`-kind targets; **(b)** every other tested target is covered by the
 //! `unit` job; **(c)** every job S8 names exists and runs its pinned command; **(d)**
 //! every job carries `timeout-minutes`, and every leg a full-history checkout and the
@@ -19,7 +19,8 @@
 //! `ci-ok`, `needs` exactly every other job and runs `if: always()`; **(h)** its body is
 //! green only when every needed job's result is `success`, driven over each result GitHub
 //! reports; **(i)** a group that runs in parts runs whole — every part but one names the
-//! suites it runs, and the one that is left skips exactly those. The design is
+//! suites it runs, and the one that is left skips exactly those; **(j)** a part's bound is
+//! the header's rule over the proxy its row records. The design is
 //! [dev-workflow.md](../implementation/dev-workflow.md) → Gate, the required check
 //! [release.md](../implementation/release.md) → The main branch; the measurement behind
 //! each `timeout-minutes` is `completions/artifacts/M54/ci-runtime.md`, and behind a
@@ -216,6 +217,8 @@ struct Part {
     skips: Vec<String>,
     /// Its own bound, where it names one.
     minutes: Option<Value>,
+    /// Its four-CPU proxy in seconds, where it names one — what its bound is set from.
+    proxy: Option<Value>,
 }
 
 /// Every part the matrix names. A part's `tests` is read whole: `--`, then filters and
@@ -265,6 +268,7 @@ fn parts(workflow: &Value) -> Vec<Part> {
                 filters,
                 skips,
                 minutes: row.get("minutes").cloned(),
+                proxy: row.get("proxy").cloned(),
             }
         })
         .collect()
@@ -620,6 +624,68 @@ fn i_a_group_that_runs_in_parts_runs_whole() {
     assert!(
         wrong.is_empty(),
         "a group the `test` matrix runs in parts must run whole:\n{}",
+        wrong.join("\n"),
+    );
+}
+
+/// The factor of the workflow header's rule: 3 since the human's ruling of 2026-11-06,
+/// where M54 had set 2 — the hosted runner had come to take 1.5 to 2.5 times a part's
+/// proxy, and at 2 no part above the floor stays under 80 % of its bound.
+const PROXY_FACTOR: u64 = 3;
+
+/// A leg's bound by the workflow header's rule, in whole minutes: `max(10, 3 x its
+/// four-CPU proxy)`, the tripled proxy rounded up to the next minute.
+fn bound_by_the_rule(proxy_seconds: u64) -> u64 {
+    TIMEOUT_FLOOR.max((PROXY_FACTOR * proxy_seconds).div_ceil(60))
+}
+
+/// **(j)** A part's bound is the rule's over its own measured proxy. Every part names
+/// `proxy`, the seconds its exact argv took cold in `dev/runner-faithful --cpus 4`, and its
+/// `minutes` is `max(10, 3 x proxy)` rounded up to a whole minute — so a bound is never set
+/// by hand, and a part re-measured is re-bounded in the same line. The rule's arithmetic is
+/// checked first: the floor, a proxy exactly on a minute and one a second past it.
+///
+/// **Its bound.** It holds the bound to the proxy the row records, never the proxy to a
+/// measurement: what the proxy is, and on which commit it was taken, is the `DECISIONS.md`
+/// entry the workflow's header names. And a group that runs whole names no proxy; its row
+/// takes the floor.
+#[test]
+fn j_a_parts_bound_is_the_rule_over_its_recorded_proxy() {
+    for (proxy, minutes) in [(1, 10), (200, 10), (201, 11), (240, 12), (365, 19)] {
+        assert_eq!(
+            bound_by_the_rule(proxy),
+            minutes,
+            "the rule over a proxy of {proxy} s"
+        );
+    }
+    let workflow = workflow();
+    let mut wrong = Vec::new();
+    for part in parts(&workflow) {
+        let at = format!("`{}` part `{}`", part.group, part.name);
+        let Some(proxy) = part
+            .proxy
+            .as_ref()
+            .and_then(Value::as_u64)
+            .filter(|p| *p > 0)
+        else {
+            wrong.push(format!(
+                "{at}: no `proxy`, a positive number of seconds, to set its bound from ({:?})",
+                part.proxy
+            ));
+            continue;
+        };
+        let want = bound_by_the_rule(proxy);
+        if part.minutes.as_ref().and_then(Value::as_u64) != Some(want) {
+            wrong.push(format!(
+                "{at}: `minutes` is {:?}, and the rule over its proxy of {proxy} s gives {want}",
+                part.minutes
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a part's bound is max({TIMEOUT_FLOOR}, {PROXY_FACTOR} x its four-CPU proxy), in minutes \
+         up:\n{}",
         wrong.join("\n"),
     );
 }

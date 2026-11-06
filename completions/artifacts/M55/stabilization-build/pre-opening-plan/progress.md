@@ -77,6 +77,7 @@ schema-version: 3
 <!-- fields -->
 - intent: U0 — give CI's slowest legs room, so none runs above 80 % of its limit
 - workflow: builder
+- status: joined
 
 ### m-u0-merge-the-small  {#m-u0-merge-the-small}
 
@@ -101,6 +102,7 @@ schema-version: 3
 <!-- fields -->
 - intent: H2 — ask how to clear the secret scanner's flag on an old line of the decisions log
 - workflow: human question
+- status: joined
 
 ### p-f0-classify-the-reason  {#p-f0-classify-the-reason}
 

@@ -255,7 +255,7 @@ Before a sentence is removed, the fences are searched for it.
 ### Lane U
 
 **U0 — CI's legs re-bounded.**
-- **What:** `g_migration` split into parts (`route_catalog` · `byte_table` · the rest); `g_tooling`'s `rest` and `simulation` parts measured again and re-bounded or split. Each part's bound is max(10, 2 × its four-CPU proxy), measured in `dev/runner-faithful`.
+- **What:** `g_migration` split into parts (`route_catalog` · `byte_table` · the rest); `g_tooling`'s `rest` and `simulation` parts measured again and re-bounded or split. Each part's bound is max(10, 3 × its four-CPU proxy), measured in `dev/runner-faithful` (the factor was 2 until the human's ruling A of 2026-11-06, `DECISIONS.md` → *2026-11-06 — CI's legs re-bounded*).
 - **Red first:** the fence's arms.
 - **Done when:** a pushed CI run shows every leg under 80 % of its bound.
 - **Gates:** 1 + 1.
@@ -585,7 +585,7 @@ Then one pass across all of them, which also reads J2-0's partition, class (iv) 
 - **Also:** `completions/artifacts/M55/stabilization-build/README.md` and the lessons list.
 - **Gates:** 1.
 
-**G1 — The `.gitleaks.toml` entry** (after H2, if A). One entry, exact file and exact line shape.
+**G1 — The `.gitleaks.toml` entry** (after H2, if A — **A was ruled on 2026-11-06**, `DECISIONS.md` → *2026-11-06 — The gitleaks hit at `85661425` … is cleared by one `.gitleaks.toml` entry*). One entry, exact file and exact line shape.
 - **Done when:** `gitleaks git --log-opts "origin/main..HEAD"` exits 0.
 - **Gates:** 1.
 
