@@ -131,7 +131,7 @@ class SeedRefusals(unittest.TestCase):
 
 
 #: A subagent is named by its `agentId`, never by the session id.
-_SUBAGENT = "agent-a0b447359ae72c2bd.jsonl"
+_SUBAGENT = "agent-a0123456789abcdef.jsonl"
 
 
 def _fake_drive(calls: list, *, main: bool = True, subagent: bool = True):

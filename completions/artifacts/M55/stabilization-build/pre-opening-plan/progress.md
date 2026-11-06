@@ -126,6 +126,7 @@ schema-version: 3
 <!-- fields -->
 - intent: U0 review, N3 — the promise of a green push in fifteen minutes, which the larger bounds no longer hold: the human's call
 - workflow: human question
+- status: joined
 
 ### u0-review-n4-before-anything-runs  {#u0-review-n4-before-anything-runs}
 
@@ -164,6 +165,13 @@ schema-version: 3
 
 <!-- fields -->
 - intent: U0 review, L3 — a proxy the rule overflows on is a finding of arm (j), not a panic
+- workflow: builder
+- status: joined
+
+### hp-host-path-rule-and-n3  {#hp-host-path-rule-and-n3}
+
+<!-- fields -->
+- intent: HP — the human's two rulings of 2026-11-06: no absolute host path enters the repository, held on every added line by the hygiene scan, with session and agent ids held beside it; and N3's fifteen-minute promise, watched by the pending row's trigger and by U3's reader
 - workflow: builder
 - status: joined
 

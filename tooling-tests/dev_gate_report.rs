@@ -2198,6 +2198,30 @@ impl ScanRepo {
             String::from_utf8_lossy(&out.stderr).to_string(),
         )
     }
+
+    /// Run the copied scan with `args` as they are — options, the denylist's place and the
+    /// range — and the fixture denylist written beside the repo; return (exit code,
+    /// stdout, stderr). `@LIST` in `args` stands for that denylist's path.
+    fn scan_with(&self, denylist: &str, args: &[&str]) -> (i32, String, String) {
+        let list = self.aux.path().join("denylist");
+        std::fs::write(&list, denylist).expect("write the fixture denylist");
+        let out = self
+            .cmd(&self.dir.join("dev/hygiene-scan"))
+            .args(args.iter().map(|arg| {
+                if *arg == "@LIST" {
+                    list.clone().into_os_string()
+                } else {
+                    (*arg).into()
+                }
+            }))
+            .output()
+            .expect("spawn dev/hygiene-scan");
+        (
+            out.status.code().expect("the scan exits, not a signal"),
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    }
 }
 
 #[test]
@@ -2593,6 +2617,582 @@ fn hygiene_scan_stopped_by_a_signal_leaves_no_work_directory_behind() {
             work_dirs_left(&repo),
             Vec::<String>::new(),
             "{signal}: the scan left its work directory in its TMPDIR",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The host-path rule: no absolute host path enters the repository.
+// ---------------------------------------------------------------------------
+//
+// The human's ruling of 2026-11-06 (`implementation/public-hygiene.md` → rule 6;
+// `DECISIONS.md` → *2026-11-06 — No absolute host path enters the repository*): a path is
+// written relative to the repository root, and a home path with `~`. `dev/hygiene-scan`
+// holds every line a range ADDS to it, with the denylist or without one, and never the
+// tree, a removed line or a commit message. The refused shapes are put together at run
+// time and never written whole in this file: the scan reads the lines a commit adds, and
+// this file is one of them.
+
+const USERS: &str = "/Users";
+const HOMES: &str = "/home";
+const MAC_TMP: &str = "/var/folders";
+/// A denylist no fixture line matches, so that every hit an arm sees is the host-path
+/// rule's. A bracket class keeps the pattern from matching its own spelling here.
+const NO_TERM: &str = "zq[9]x7kw-no-such-term\n";
+
+/// The refused shapes, one per line: a home under each root, the macOS temp root in both
+/// its spellings, a path at the end of a line and behind a character that opens no path —
+/// and a name that only begins with an exempted one, which is a name of its own.
+fn host_paths() -> Vec<String> {
+    vec![
+        format!("{USERS}/hostile-login/work/x"),
+        format!("{HOMES}/hostile-login/work/x"),
+        format!("a home alone, at the end: {HOMES}/hostile-login"),
+        format!("a url: file://{USERS}/hostile-login/x.html"),
+        format!("quoted: (\"{USERS}/hostile-login\")"),
+        format!("an option: --dir={HOMES}/hostile-login/x"),
+        format!("{MAC_TMP}/q3/z9r_8k0000gn/T/jigc-gate"),
+        format!("/private{MAC_TMP}/q3/z9r_8k0000gn/T"),
+        format!("not the temp directory, and still the root: {MAC_TMP}/q3/z9r_8k0000gn/C/x"),
+        format!("{HOMES}/nodejs/x"),
+        format!("{USERS}/xavier/x"),
+        format!("{HOMES}/runner2/x"),
+        format!("{USERS}/somebody.else/x"),
+    ]
+}
+
+/// What passes: each written exemption, and paths that are no host path at all — a home
+/// path with `~`, a path segment named `home` or `Users`, a placeholder, an elided root, a
+/// variable, the shared temp directory, and a root with no name after it.
+fn not_host_paths() -> Vec<String> {
+    vec![
+        format!("{HOMES}/node/.claude/settings.json"),
+        format!("{HOMES}/runner/work/jigc/jigc"),
+        format!("{USERS}/x/proj"),
+        format!("{USERS}/me/my repos/app"),
+        format!("{USERS}/somebody/work/x"),
+        format!("{HOMES}/u/.config/jigc"),
+        format!("{MAC_TMP}/xx/yy/T/jigc-gate"),
+        format!("/private{MAC_TMP}/xx/yy/T"),
+        "~/.config/jigc/denylist".to_owned(),
+        "docs/home/z crates/Users/x/y".to_owned(),
+        "<scratch>/home/q and <tmp>/x".to_owned(),
+        "/Users/<name>/… and /home/<name>/…".to_owned(),
+        "/var/folders/… and /var/folders/*/*/T".to_owned(),
+        "/home/$USER/x".to_owned(),
+        "/tmp/x /private/tmp/y /var/tmp/z".to_owned(),
+        "a root alone: /Users/ and /home/".to_owned(),
+    ]
+}
+
+/// **Every host-path shape on an added line is a hit, by where and never by what** (the
+/// ruling's guard). Each line of the file is one shape, and each is named by its commit,
+/// its path and its line — never by the name it holds.
+#[test]
+fn hygiene_scan_refuses_every_host_path_shape_on_an_added_line_and_never_prints_it() {
+    let repo = ScanRepo::new("hygiene-scan-host-refused");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    let shapes = host_paths();
+    let body: String = shapes.iter().map(|line| format!("{line}\n")).collect();
+    repo.write("f", &body);
+    repo.commit_all("the shapes");
+    let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+    let want: Vec<String> = (1..=shapes.len())
+        .map(|n| format!("  hostpath {sha}  f:{n}"))
+        .collect();
+
+    for (with, args) in [
+        ("with the denylist", vec!["@LIST", "HEAD^..HEAD"]),
+        (
+            "with the denylist and --tree",
+            vec!["--tree", "@LIST", "HEAD^..HEAD"],
+        ),
+        ("without a denylist", vec!["--no-denylist", "HEAD^..HEAD"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 1,
+            "{with}: a host path on an added line is a hit.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+        let mut hits = scan_hits(&stdout);
+        hits.sort_by_key(|hit| hit.rsplit(':').next().and_then(|n| n.parse::<usize>().ok()));
+        assert_eq!(
+            hits, want,
+            "{with}: every shape, by its commit, its path and its line.\nstdout: {stdout}",
+        );
+        for name in [
+            "hostile-login",
+            "z9r_8k0000gn",
+            "nodejs",
+            "xavier",
+            "runner2",
+            "somebody.else",
+        ] {
+            assert!(
+                !stdout.contains(name) && !stderr.contains(name),
+                "{with}: a hit is reported by where it is, never by the name it holds: \
+                 `{name}`.\nstdout: {stdout}\nstderr: {stderr}",
+            );
+        }
+    }
+}
+
+/// **Each written exemption passes, and so does every path that is no host path** — the
+/// exemptions are the narrow list the scan's own header writes, each with its reason, and
+/// the rule reads a host path where no path is already running.
+#[test]
+fn hygiene_scan_lets_each_written_exemption_and_every_non_host_path_through() {
+    let repo = ScanRepo::new("hygiene-scan-host-passes");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    let body: String = not_host_paths()
+        .iter()
+        .map(|line| format!("{line}\n"))
+        .collect();
+    repo.write("f", &body);
+    repo.commit_all("what passes");
+    for (with, args) in [
+        ("with the denylist", ["@LIST", "HEAD^..HEAD"]),
+        ("without a denylist", ["--no-denylist", "HEAD^..HEAD"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 0,
+            "{with}: no host path was added.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+        assert!(
+            stdout.contains("no host path added"),
+            "{with}: a clean scan says the rule ran.\nstdout: {stdout}",
+        );
+    }
+
+    // The list the scan exempts is the one its help writes, each entry with its reason.
+    let (code, help, _) = repo.scan_with(NO_TERM, &["--help"]);
+    assert_eq!(code, 0, "{help}");
+    let exempt: Vec<&str> = help
+        .lines()
+        .filter_map(|line| line.strip_prefix("  exempt  "))
+        .collect();
+    assert!(
+        !exempt.is_empty(),
+        "the help writes the exemptions.\n{help}"
+    );
+    for entry in &exempt {
+        let mut words = entry.split_whitespace();
+        let root = words.next().unwrap_or_default();
+        assert!(
+            words.next().is_some(),
+            "an exemption is written with its reason: `{entry}`",
+        );
+        // A root is driven here, an id by the id rule's passing arm.
+        let driven = if root.starts_with('/') {
+            body.contains(&format!("{root}/"))
+        } else {
+            not_ids().iter().any(|line| line.contains(root))
+        };
+        assert!(
+            driven,
+            "each exemption is driven by a passing arm: `{root}`"
+        );
+    }
+}
+
+/// **Only an added line is read for a host path** — never a commit message, a removed line
+/// or the tracked tree, which `--tree` scans with the denylist alone: what is already in
+/// the repository stays as it is, and the rule holds what enters it from now on.
+#[test]
+fn hygiene_scan_reads_a_host_path_on_an_added_line_alone() {
+    let repo = ScanRepo::new("hygiene-scan-host-added-only");
+    let host = format!("{USERS}/hostile-login/work");
+    repo.write("f", &format!("{host}\n"));
+    repo.write("g", "a\n");
+    repo.commit_all("base");
+    // The control: the base's own line is a hit.
+    let (code, stdout, _) = repo.scan_with(NO_TERM, &["@LIST", "HEAD"]);
+    assert_eq!(code, 1, "control: the base adds a host path.\n{stdout}");
+
+    repo.write("f", "plain\n");
+    repo.write("g", "a\nb\n");
+    repo.commit_all(&format!(
+        "the line removed, and a message that names {host}"
+    ));
+    for (with, args) in [
+        ("the denylist", vec!["@LIST", "HEAD^..HEAD"]),
+        (
+            "the denylist and the tree",
+            vec!["--tree", "@LIST", "HEAD^..HEAD"],
+        ),
+        ("no denylist", vec!["--no-denylist", "HEAD^..HEAD"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 0,
+            "with {with}: a message and a removed line are no added line.\n\
+             stdout: {stdout}\nstderr: {stderr}",
+        );
+    }
+    repo.write("h", &format!("{host}\n"));
+    repo.git_ok(&["add", "h"]);
+    let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--tree", "@LIST", "HEAD^..HEAD"]);
+    assert_eq!(
+        code, 0,
+        "the tracked tree is the denylist's alone: a host path in it is not new.\n\
+         stdout: {stdout}\nstderr: {stderr}",
+    );
+}
+
+/// **`--no-denylist` runs the built-in rules alone, and `--denylist-only` the denylist
+/// alone** — the first where the private list is absent (a clone, a fork's pull request),
+/// the second where a caller holds its text to a host-path rule of its own; neither
+/// combines with what it leaves out.
+#[test]
+fn hygiene_scan_runs_each_half_alone_and_refuses_what_leaves_nothing_to_scan() {
+    let repo = ScanRepo::new("hygiene-scan-host-halves");
+    repo.write(
+        "f",
+        &format!("{HOMES}/hostile-login/x and a zebrafixture\n"),
+    );
+    repo.commit_all("base");
+    let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+
+    let (code, stdout, stderr) = repo.scan_with("zebrafixture\n", &["--no-denylist", "HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(scan_hits(&stdout), [format!("  hostpath {sha}  f:1")]);
+
+    let (code, stdout, stderr) =
+        repo.scan_with("zebrafixture\n", &["--denylist-only", "@LIST", "HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(scan_hits(&stdout), [format!("  added    {sha}  f:1")]);
+
+    let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--denylist-only", "@LIST", "HEAD"]);
+    assert_eq!(code, 0, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("denylist clean"), "stdout: {stdout}");
+
+    for (what, args) in [
+        (
+            "the tree, without the denylist that scans it",
+            vec!["--tree", "--no-denylist", "HEAD"],
+        ),
+        (
+            "neither half",
+            vec!["--denylist-only", "--no-denylist", "HEAD"],
+        ),
+        ("no range", vec!["--no-denylist"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 2,
+            "{what}: a usage error is exit 2.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+        assert!(
+            !stdout.contains("clean") && !stdout.contains("no host path"),
+            "{what}: {stdout}"
+        );
+    }
+}
+
+/// **A line this repository's history added before the rule is history** — the records
+/// under `completions/artifacts/` that carry a host path stay as they are (the ruling): the
+/// scan does not hold a commit that the rule's base commit holds, wherever a range reaches
+/// back to, as a branch's first push in CI does. Driven on this repository's own history:
+/// `0313fda4` added two lines with a macOS temp root to an M54 record.
+#[test]
+fn hygiene_scan_holds_no_commit_from_before_the_rule() {
+    const BEFORE: &str = "0313fda4bf6eede9cd3c229e1fdab0aaf055bf57";
+    let shown = Command::new("git")
+        .args(["show", "--format=", BEFORE])
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn git show");
+    assert!(shown.status.success(), "the history holds {BEFORE}");
+    let shown = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.starts_with('+') && line.contains(&format!("{MAC_TMP}/"))),
+        "control: {BEFORE} adds a line with a macOS temp root",
+    );
+    let tmp = ScratchDir::new("hygiene-scan-host-history");
+    let out = Command::new(repo_root().join("dev/hygiene-scan"))
+        .args(["--no-denylist", &format!("{BEFORE}^!")])
+        .current_dir(repo_root())
+        .env("TMPDIR", tmp.path())
+        .output()
+        .expect("spawn dev/hygiene-scan");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a commit from before the rule is not held to it.\nstdout: {stdout}\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The host-path rule in `dev/gate`'s hygiene advisory.
+// ---------------------------------------------------------------------------
+//
+// The advisory runs over this repository's own range in the arms above, where no host path
+// can be planted; so these run copies of `dev/gate` and `dev/hygiene-scan` in a fixture
+// repository, `--quick` with cargo absent, over the one commit the fixture makes.
+
+/// `dev/gate --quick` in a fixture whose one commit adds `body` as `f`; return its stdout.
+fn quick_gate_in_fixture(label: &str, denylist: Option<&str>, body: &str) -> String {
+    let repo = ScanRepo::new(label);
+    placed_executable::copy(&gate(), &repo.dir.join("dev/gate"));
+    repo.write("f", body);
+    repo.commit_all("the change");
+    let list = repo.aux.path().join("denylist");
+    if let Some(body) = denylist {
+        std::fs::write(&list, body).expect("write the fixture denylist");
+    }
+    let out = repo
+        .cmd(&repo.dir.join("dev/gate"))
+        .arg("--quick")
+        .env("PATH", "/usr/bin:/bin")
+        .env("CARGO_TARGET_DIR", repo.aux.path())
+        .env("JIGC_DENYLIST_FILE", &list)
+        .env("JIGC_GATE_HYGIENE_RANGE", "HEAD")
+        .output()
+        .expect("spawn dev/gate --quick");
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+#[test]
+fn the_gate_names_an_added_host_path_by_location_with_a_denylist_or_without() {
+    let body = format!("a\nbuilt in {USERS}/hostile-login/work\n");
+    for denylist in [Some(NO_TERM), None] {
+        let text = quick_gate_in_fixture("gate-hygiene-host", denylist, &body);
+        assert!(
+            text.contains("gate: HYGIENE  host path(s) added"),
+            "{denylist:?}: an added host path is reported.\n{text}",
+        );
+        assert!(
+            text.lines()
+                .any(|l| l.starts_with("gate:  ") && l.ends_with("  f:2")),
+            "{denylist:?}: named by commit, path and line.\n{text}",
+        );
+        assert!(
+            !text.contains("hostile-login"),
+            "{denylist:?}: never by what it holds.\n{text}",
+        );
+        assert!(
+            text.lines()
+                .any(|l| l == "GATE: FAIL (step: fmt clippy build)"),
+            "{denylist:?}: the advisory joins neither the step list nor the verdict.\n{text}",
+        );
+    }
+    let absent = quick_gate_in_fixture("gate-hygiene-host-absent", None, &body);
+    assert!(
+        absent
+            .lines()
+            .any(|l| l.starts_with("gate: hygiene  no denylist at ")
+                && l.ends_with("-- denylist scan skipped")),
+        "without a denylist its scan is named as skipped, and the host-path rule still \
+         runs.\n{absent}",
+    );
+}
+
+#[test]
+fn the_gate_says_no_host_path_was_added_with_a_denylist_or_without() {
+    for denylist in [Some(NO_TERM), None] {
+        let text = quick_gate_in_fixture("gate-hygiene-host-clean", denylist, "a\nb\n");
+        assert!(
+            text.lines()
+                .any(|l| l.starts_with("gate: hygiene  ") && l.contains("no host path added")),
+            "{denylist:?}: a clean scan says the rule ran.\n{text}",
+        );
+        assert!(
+            !text.lines().any(|l| l.starts_with("gate: HYGIENE")),
+            "{denylist:?}: and raises no alarm.\n{text}",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The id rule: no session or agent id, and no session's scratch path.
+// ---------------------------------------------------------------------------
+//
+// The project's standing rule against agent and session ids in committed files, which
+// neither gitleaks nor the denylist enforced (the coordinator's addition to the ruling of
+// 2026-11-06 — `implementation/public-hygiene.md` → rule 6). Held by `dev/hygiene-scan`
+// beside the host-path rule: on every added line, and on every commit message but its
+// `Claude-Session:` trailer, which every commit carries. The refused shapes are put
+// together at run time here too.
+
+const AGENT: &str = "agent-";
+const SESSION: &str = "session_";
+const SCRATCH_ROOT: &str = "/tmp/claude-";
+/// Sixteen hex characters, as an agent id carries after its `a`.
+const HEX16: &str = "4f0e9b1c27d3a865";
+/// A session id's shape: mixed case and digits.
+const SESSION_ID: &str = "01QzR7vKp2LmXw9TfNbH4sJd";
+
+/// The refused id shapes, one per line.
+fn ids() -> Vec<String> {
+    vec![
+        format!("a transcript at subagents/{AGENT}a{HEX16}.jsonl"),
+        format!("the agent {AGENT}a{HEX16}, alone"),
+        format!("{AGENT}a{HEX16}"),
+        format!("Claude-Session: https://claude.ai/code/{SESSION}{SESSION_ID}"),
+        format!("a session: {SESSION}{SESSION_ID}."),
+        format!("scratch at /private{SCRATCH_ROOT}501/-flat-home/abc/scratchpad/x"),
+        format!("scratch at {SCRATCH_ROOT}501/x"),
+    ]
+}
+
+/// What passes: the written synthetic agent id, hex that is no agent id, identifiers that
+/// begin `session_`, and a `/tmp/claude-` that is no session's root.
+fn not_ids() -> Vec<String> {
+    vec![
+        "agent-a0123456789abcdef.jsonl".to_owned(),
+        format!("a hash: a{HEX16}0 and {HEX16}{HEX16} and a{HEX16}"),
+        format!("too short: {AGENT}a{}", &HEX16[..12]),
+        format!("too long, so a hash: {AGENT}a{HEX16}9"),
+        format!("not hex: {AGENT}a{}zz", &HEX16[..14]),
+        "session_id session_start session_transcript_directory_name".to_owned(),
+        format!("lower case alone: {SESSION}abcdefghijklmnopqrstuvwxyz"),
+        format!("no letter: {SESSION}012345678901234567890123"),
+        format!("{SCRATCH_ROOT}code/x and /tmp/claudette-1/x and docs/tmp/claude-1/x"),
+    ]
+}
+
+/// **Every id shape on an added line is a hit, by where and never by what** — and the
+/// `Claude-Session:` trailer's own form is no exemption in a file.
+#[test]
+fn hygiene_scan_refuses_every_id_shape_on_an_added_line_and_never_prints_it() {
+    let repo = ScanRepo::new("hygiene-scan-ids-refused");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    let shapes = ids();
+    let body: String = shapes.iter().map(|line| format!("{line}\n")).collect();
+    repo.write("f", &body);
+    repo.commit_all("the shapes");
+    let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+    let want: Vec<String> = (1..=shapes.len())
+        .map(|n| format!("  id       {sha}  f:{n}"))
+        .collect();
+    for (with, args) in [
+        ("with the denylist", ["@LIST", "HEAD^..HEAD"]),
+        ("without a denylist", ["--no-denylist", "HEAD^..HEAD"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 1,
+            "{with}: an id on an added line is a hit.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+        let mut hits = scan_hits(&stdout);
+        hits.sort_by_key(|hit| hit.rsplit(':').next().and_then(|n| n.parse::<usize>().ok()));
+        assert_eq!(
+            hits, want,
+            "{with}: every shape, by where.\nstdout: {stdout}"
+        );
+        for needle in [HEX16, SESSION_ID, "-flat-home"] {
+            assert!(
+                !stdout.contains(needle) && !stderr.contains(needle),
+                "{with}: never by what it holds: `{needle}`.\nstdout: {stdout}",
+            );
+        }
+    }
+    let (code, stdout, _) = repo.scan_with(NO_TERM, &["--denylist-only", "@LIST", "HEAD^..HEAD"]);
+    assert_eq!(
+        code, 0,
+        "--denylist-only leaves the built-in rules out.\n{stdout}"
+    );
+}
+
+/// **The written synthetic id passes, and so does everything that is no id** — a hex hash
+/// of any length but an agent id's, and identifiers that only begin as a session id does.
+#[test]
+fn hygiene_scan_lets_the_written_id_exemption_and_every_non_id_through() {
+    let repo = ScanRepo::new("hygiene-scan-ids-pass");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    let body: String = not_ids().iter().map(|line| format!("{line}\n")).collect();
+    repo.write("f", &body);
+    repo.commit_all("what passes");
+    let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--no-denylist", "HEAD^..HEAD"]);
+    assert_eq!(
+        code, 0,
+        "nothing here is an id.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+/// **A commit message is held to the id rule, but for its `Claude-Session:` trailer** —
+/// required on every commit and kept by the M54 audit. The trailer's exemption is the
+/// message's alone: the same line in a file is a hit (the arm above).
+#[test]
+fn hygiene_scan_holds_a_message_to_the_id_rule_but_for_its_session_trailer() {
+    let repo = ScanRepo::new("hygiene-scan-ids-message");
+    repo.write("f", "a\n");
+    repo.commit_all("base");
+    repo.write("f", "a\nb\n");
+    repo.commit_all(&format!(
+        "feat: a change\n\nBody.\n\nCo-Authored-By: someone <noreply@example.invalid>\n\
+         Claude-Session: https://claude.ai/code/{SESSION}{SESSION_ID}"
+    ));
+    for args in [["@LIST", "HEAD^..HEAD"], ["--no-denylist", "HEAD^..HEAD"]] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(
+            code, 0,
+            "{args:?}: the trailer is no hit.\nstdout: {stdout}\nstderr: {stderr}",
+        );
+    }
+
+    for (what, message) in [
+        (
+            "an agent id in the body",
+            format!("fix: a change\n\nAs {AGENT}a{HEX16} found."),
+        ),
+        (
+            "a session id outside the trailer",
+            format!("fix: a change\n\nIn {SESSION}{SESSION_ID}."),
+        ),
+        (
+            "a trailer that is not the line alone",
+            format!(
+                "fix: a change\n\nsee Claude-Session: https://claude.ai/code/{SESSION}{SESSION_ID}"
+            ),
+        ),
+        (
+            "a scratch path",
+            format!("fix: a change\n\nRan in {SCRATCH_ROOT}501/x."),
+        ),
+    ] {
+        repo.write("f", &format!("a\n{what}\n"));
+        repo.commit_all(&message);
+        let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--no-denylist", "HEAD^..HEAD"]);
+        assert_eq!(
+            code, 1,
+            "{what}: a hit.\nstdout: {stdout}\nstderr: {stderr}"
+        );
+        assert_eq!(
+            scan_hits(&stdout),
+            [format!("  idmsg    {sha}")],
+            "{what}: named by its commit.\nstdout: {stdout}",
+        );
+    }
+}
+
+#[test]
+fn the_gate_names_an_added_id_by_location() {
+    let body = format!("a\nran as {AGENT}a{HEX16}\n");
+    for denylist in [Some(NO_TERM), None] {
+        let text = quick_gate_in_fixture("gate-hygiene-id", denylist, &body);
+        assert!(
+            text.contains("gate: HYGIENE  session or agent id(s) added"),
+            "{denylist:?}: an added id is reported.\n{text}",
+        );
+        assert!(
+            text.lines()
+                .any(|l| l.starts_with("gate:  ") && l.ends_with("  f:2")),
+            "{denylist:?}: named by commit, path and line.\n{text}",
+        );
+        assert!(
+            !text.contains(HEX16),
+            "{denylist:?}: never by what.\n{text}"
         );
     }
 }

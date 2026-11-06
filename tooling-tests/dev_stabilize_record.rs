@@ -2444,8 +2444,7 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
             "logs: <tmp>/gate.log, <tmp>/b, <tmp>/c; a sentence ends at <tmp>.",
         ),
         (
-            "macOS: /var/folders/nj/abc_123/T/jigc-gate and /private/var/folders/nj/abc_123/T"
-                .to_owned(),
+            "macOS: /var/folders/xx/yy/T/jigc-gate and /private/var/folders/xx/yy/T".to_owned(),
             "macOS: <tmp>/jigc-gate and <tmp>",
         ),
         // The session's scratch area.
@@ -12861,6 +12860,90 @@ fn vet_holds_a_file_to_what_a_writer_of_the_script_would_have_left() {
         rig.run(&strings(&args), "")
             .refused(status, &args.join(" "));
     }
+}
+
+/// **A host path a push would publish is refused by where it is, and once** (the human's
+/// ruling of 2026-11-06 — `implementation/public-hygiene.md`, rule 6: no absolute host path
+/// enters the repository). The range's vet runs `dev/hygiene-scan` as CI's `hygiene` job
+/// does, and its host-path rule holds every line the range adds: a file of no run as much
+/// as a file of one, word `host-path`. Where a file of a run is refused for its host path
+/// by the rule its writer holds it to, the scan's hit at the same place is that refusal,
+/// never a second. So is a session or agent id, on an added line or in a message, word
+/// `hygiene` (rule 6's id half). Each is put together here, never written whole: this file
+/// is a line the scan reads too.
+#[test]
+fn a_host_path_a_push_would_publish_is_refused_by_where_it_is_and_once() {
+    let rig = Rig::new("range-host-path");
+    rig.run(&report(RUN, "1", "audit-install", "1"), BODY)
+        .must(OK, "a report");
+    rig.run(
+        &scope_set(RUN, "1"),
+        &scope(&["jigc setup"], &[]).to_string(),
+    )
+    .must(OK, "the round's scope");
+    let host = format!("{}/q7-login/work", "/home");
+    let by_hand = report_path("1", "review-source", "1");
+    fs::write(
+        rig.root.join(&by_hand),
+        format!("# a report\n\nIt ran in {host}.\n{ENDS}\n"),
+    )
+    .expect("a report by hand");
+    fs::write(rig.root.join("README.md"), format!("built in {host}\n")).expect("a readme");
+    let agent = format!("{}a{}", "agent-", "4f0e9b1c27d3a865");
+    fs::write(rig.root.join("TOOLS.md"), format!("found by {agent}\n")).expect("tools");
+    // MUST NOT REFUSE, beside them: a path a home path is written with, and the shared
+    // temp directory, which is no host's own.
+    fs::write(rig.root.join("NOTES.md"), "kept in ~/work and /tmp/x\n").expect("notes");
+
+    rig.init_repository();
+    let git = |args: &[&str]| {
+        let out = rig
+            .hermetic(Command::new("git"))
+            .args(args)
+            .current_dir(&rig.root)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["add", "-A"]);
+    git(&[
+        "-c",
+        "user.name=rig",
+        "-c",
+        "user.email=rig@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "-m",
+        &format!("docs(record): what a hand added\n\nAs {agent} found."),
+    ]);
+    let published = rig.run(&strings(&["vet", "--range", "--", "HEAD"]), "");
+    published.must(VET_MISMATCH, "a commit that adds a host path");
+    let refused: Vec<Value> = published.json()["refused"]
+        .as_array()
+        .expect("what the range's vet refused")
+        .iter()
+        .map(|entry| json!([entry["path"], entry["why"]]))
+        .collect();
+    assert_eq!(
+        refused,
+        [
+            json!([null, "hygiene"]),
+            json!(["README.md", "host-path"]),
+            json!(["TOOLS.md", "hygiene"]),
+            json!([by_hand, "host-path"]),
+        ],
+        "{}",
+        published.stdout
+    );
+    assert!(
+        !published.stdout.contains("q7-login")
+            && !published.stderr.contains("q7-login")
+            && !published.stdout.contains("4f0e9b1c27d3a865"),
+        "named by where, never by what: {}",
+        published.stdout
+    );
 }
 
 /// **A check kept in an applied batch never outlives the report it was a check of** (the

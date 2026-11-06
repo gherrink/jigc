@@ -154,7 +154,7 @@ H-cycle can come up at any step. Tell-NR was given on 2026-10-29, before any of 
   - *A planned break:* the human says they want to stop. The main session starts nothing new and lets the tasks in flight finish; each ends pushed, after at most its review and fix rounds. Then it tells the human that nothing is running. Worst case, the drain takes one task plus its review cycles — possibly hours. A step's end is a natural point to ask for one.
   - *An unplanned stop* (a crash, a restart): every worktree and every brief lives in a persistent place, never in a scratch folder — the worktrees are siblings of the main checkout, and the briefs are in the repository. An unplanned stop then costs only the in-flight tasks' uncommitted work: they are redone from their last pushed commit, and `progress.md` says where to resume.
   - *The probe exception:* no break while the T-NR probe runs (minutes). If it is cut, its marker stays, and the guard refuses every command except the probe's own — so no gate and no commit — until the main session removes the marker.
-- **Pushes:** every task pushes its branch at its end. After each push, the main session reads `dev/ci-runs` (from U3 on) and applies the 80 % rule: a leg past 80 % of its bound is re-bounded as that lane's next task.
+- **Pushes:** every task pushes its branch at its end. After each push, the main session reads `dev/ci-runs` (from U3 on) and applies the 80 % rule: a leg past 80 % of its bound is re-bounded as that lane's next task. A leg past 15 minutes fires the pending row `ci-where-the-time-goes` (ruling of 2026-11-06 on N3).
 - **Declared overlaps:**
   - `DECISIONS.md`: resolved by `dev/merge-logs`;
   - `tooling.md`, `tooling-tests/groups/g_tooling.rs`, `ci.yml`, `ci_matrix_fence.rs`, the review-range registry: different rows, resolved by hand;
@@ -286,6 +286,7 @@ Before a sentence is removed, the fences are searched for it.
 - **Gates:** 1 + 1.
 
 **U3 — `dev/ci-runs`.** Per job: conclusion, seconds, the bound from `ci.yml`, the share of the bound, the image, and the git version. `--compare A B`.
+- **And a leg past 15 minutes** (the human's ruling A of 2026-11-06 on U0's review, N3): every leg whose hosted time has reached 15 minutes is reported by name, beside each leg's share of its bound — the promise that a green push reports within 15 minutes is watched by this reader and by the pending row `ci-where-the-time-goes`, whose trigger it fires, and is enforced by no bound.
 - **Suite:** a stub `gh` serving fixtures. The tool never prints an environment value.
 - **Gates:** 1 + 1.
 

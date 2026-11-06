@@ -86,8 +86,11 @@
 #
 # Every run also prints a `gate: hygiene` advisory (implementation/public-hygiene.md):
 # the private denylist at ~/.config/jigc/denylist (or $JIGC_DENYLIST_FILE) over the
-# unpushed commits and the tracked working tree, via dev/hygiene-scan, and gitleaks
-# over the unpushed commits when it is installed. A hit WARNS and names the file; like
+# unpushed commits and the tracked working tree, and the built-in rules -- no host path
+# on a line those commits add, no session or agent id on one or in their messages --
+# with the denylist or, where there is none, alone, via
+# dev/hygiene-scan, and gitleaks over the unpushed commits when it is installed. A hit
+# WARNS and names the file; like
 # the deps count it is never a step and never fails a run -- CI holds the hard stop.
 # JIGC_GATE_HYGIENE=off skips it; JIGC_GATE_HYGIENE_RANGE=<rev-list args> scans that
 # range instead of the unpushed commits.
@@ -528,24 +531,45 @@ else
     fi
     printf 'gate: hygiene  range %s\n' "$range_desc"
 
+    # The built-in rules need no private list, so they run where the denylist is absent
+    # too: `--no-denylist` runs them alone.
     denylist=${JIGC_DENYLIST_FILE:-${HOME:-}/.config/jigc/denylist}
+    hygiene_log=$(mktemp "$tmp_root/jigc-gate-hygiene-XXXXXX") || exit 2
     if [ ! -f "$denylist" ]; then
         printf 'gate: hygiene  no denylist at %s -- denylist scan skipped\n' "$denylist"
-    else
-        hygiene_log=$(mktemp "$tmp_root/jigc-gate-hygiene-XXXXXX") || exit 2
         # Bare: no pipe, so $? is the scan's own status (0 clean, 1 hit, 2 error).
+        "$script_dir/hygiene-scan" --no-denylist "$@" >"$hygiene_log" 2>&1
+        hygiene_code=$?
+        clean_says="no host path added; no id"
+        scan_name="host-path and id scan"
+    else
         "$script_dir/hygiene-scan" --tree "$denylist" "$@" >"$hygiene_log" 2>&1
         hygiene_code=$?
-        if [ "$hygiene_code" -eq 0 ]; then
-            printf 'gate: hygiene  denylist clean (%s)\n' "$denylist"
-        elif [ "$hygiene_code" -eq 1 ]; then
+        clean_says="denylist clean ($denylist); no host path added; no id"
+        scan_name="denylist scan"
+    fi
+    if [ "$hygiene_code" -eq 0 ]; then
+        printf 'gate: hygiene  %s\n' "$clean_says"
+    elif [ "$hygiene_code" -eq 1 ]; then
+        # Each kind under its own heading: a denylist hit (a message, an added line, the
+        # tree, a path), a host path added, and an id added or in a message; each named
+        # by where it is.
+        if grep -q -E '^  (message|added|tree|path) ' "$hygiene_log"; then
             printf 'gate: HYGIENE  denylist hit(s) -- terms from %s are in this change:\n' "$denylist"
-            sed -n 's/^  /gate:            /p' "$hygiene_log"
-            printf 'gate:          fix before pushing (implementation/public-hygiene.md)\n'
-        else
-            printf 'gate: HYGIENE  the denylist scan could not run (exit %s): %s\n' \
-                "$hygiene_code" "$hygiene_log"
+            sed -n -E 's/^  ((message|added|tree|path) )/gate:            \1/p' "$hygiene_log"
         fi
+        if grep -q '^  hostpath ' "$hygiene_log"; then
+            printf 'gate: HYGIENE  host path(s) added -- write a path repository-relative, and a home path with ~:\n'
+            sed -n 's/^  hostpath /gate:            /p' "$hygiene_log"
+        fi
+        if grep -q -E '^  (id|idmsg) ' "$hygiene_log"; then
+            printf 'gate: HYGIENE  session or agent id(s) added -- an id is never committed, but in the Claude-Session trailer:\n'
+            sed -n -E 's/^  (id|idmsg) +/gate:            /p' "$hygiene_log"
+        fi
+        printf 'gate:          fix before pushing (implementation/public-hygiene.md)\n'
+    else
+        printf 'gate: HYGIENE  the %s could not run (exit %s): %s\n' \
+            "$scan_name" "$hygiene_code" "$hygiene_log"
     fi
 
     if command -v gitleaks >/dev/null 2>&1; then

@@ -2203,8 +2203,10 @@
 #      the call's batch are committed, each at its own path, into ONE throwaway
 #      repository, and the two scanners CI runs over a push run over that commit — once
 #      per batch, however many files it holds: dev/hygiene-scan, unmodified, with the
-#      private denylist ($JIGC_DENYLIST_FILE, else ~/.config/jigc/denylist), and
-#      gitleaks with this repository's .gitleaks.toml. A hit is refused (hygiene), by
+#      private denylist ($JIGC_DENYLIST_FILE, else ~/.config/jigc/denylist) and
+#      --denylist-only, because step 1 holds the text to a stricter host-path rule of
+#      its own (a run's pushes are held to the scan's built-in rules by vet --range),
+#      and gitleaks with this repository's .gitleaks.toml. A hit is refused (hygiene), by
 #      where it is and never by what matched. A scanner that could not run — no
 #      denylist, no gitleaks, a pattern no matcher accepts, a scanner error — DID NOT
 #      RUN (did-not-run): that is never a pass, and nothing is written.
@@ -3097,7 +3099,10 @@ def hygiene_scan(files):
             if out.returncode != 0:
                 did_not_run("git %s failed in the scan's repository: %s" % (step, last_line(out)))
 
-        out = ran([os.path.join(repo, "dev", "hygiene-scan"), "--tree", denylist, "HEAD"], "dev/hygiene-scan")
+        # The denylist alone: a text a writer holds is held to its host-path rule already
+        # (public), which is stricter than the scan's — the shared temp directory too —
+        # and a push of it to the scan's built-in rules, by the range's vet.
+        out = ran([os.path.join(repo, "dev", "hygiene-scan"), "--tree", "--denylist-only", denylist, "HEAD"], "dev/hygiene-scan")
         if out.returncode == 1:
             places = []
             for line in out.stdout.decode("utf-8", "replace").split("\n"):
@@ -7636,10 +7641,22 @@ def range_scan(revs):
         for line in out.stdout.decode("utf-8", "replace").split("\n"):
             message = re.fullmatch(r"  message  ([0-9a-f]+)", line)
             added = re.fullmatch(r"  added    ([0-9a-f]+)  (\S.*):([0-9]+)", line)
+            # A HOST PATH ON AN ADDED LINE (the human's ruling of 2026-11-06): the word a
+            # writer refuses one with, whatever file of the range holds it.
+            host = re.fullmatch(r"  hostpath ([0-9a-f]+)  (\S.*):([0-9]+)", line)
+            # A SESSION OR AGENT ID on an added line or in a message (rule 6 of the same).
+            ident = re.fullmatch(r"  id       ([0-9a-f]+)  (\S.*):([0-9]+)", line)
+            ident_message = re.fullmatch(r"  idmsg    ([0-9a-f]+)", line)
             if message:
                 hits.append({"commit": message.group(1), "path": None, "why": "hygiene", "detail": "the denylist matches its message"})
             elif added:
                 hits.append({"commit": added.group(1), "path": added.group(2), "why": "hygiene", "detail": "the denylist matches at line %s" % added.group(3)})
+            elif host:
+                hits.append({"commit": host.group(1), "path": host.group(2), "why": "host-path", "detail": "line %s names a host path: a path is written relative to the repository, a home path with ~ (implementation/public-hygiene.md)" % host.group(3)})
+            elif ident:
+                hits.append({"commit": ident.group(1), "path": ident.group(2), "why": "hygiene", "detail": "line %s names a session or agent id, or a session's scratch path (implementation/public-hygiene.md)" % ident.group(3)})
+            elif ident_message:
+                hits.append({"commit": ident_message.group(1), "path": None, "why": "hygiene", "detail": "its message names a session or agent id, or a session's scratch path, outside its Claude-Session trailer (implementation/public-hygiene.md)"})
         if not hits:
             hits.append({"commit": None, "path": None, "why": "hygiene", "detail": "the denylist matches in the range"})
     elif out.returncode != 0:
@@ -7676,9 +7693,10 @@ RANGE_THEN = "nothing of the range is on the remote, and a commit that is refuse
 
 
 def vet_range(revs):
-    """What a push of the range would publish, vetted: the two scanners over the range, and
-    — for every commit that changes a file of an opened run — the rules a writer holds its
-    text to, on each such file as the commit holds it, and no host path in its message."""
+    """What a push of the range would publish, vetted: the two scanners over the range — the
+    denylist's with its host-path rule — and, for every commit that changes a file of an
+    opened run, the rules a writer holds its text to, on each such file as the commit holds
+    it, and no host path in its message."""
     for rev in revs:
         if not REV.fullmatch(rev):
             refuse("bad-value", "%s is no argument of a range: a name, `--not`, or `--remotes=<remote>`" % shown(rev))
@@ -7689,6 +7707,7 @@ def vet_range(revs):
     for hit in refused:
         whole = [commit for commit in commits if hit["commit"] and commit.startswith(hit["commit"])]
         hit["commit"] = whole[0] if len(whole) == 1 else hit["commit"]
+    scanned = len(refused)
     # WHAT A COMMIT SAYS IS HELD TO WHAT ITS FILES ARE HELD TO. The range scan reads every
     # message against the denylist, and gitleaks reads added lines and NEVER a message — so
     # the messages of the range are scanned as the files of a batch are: each a file of ONE
@@ -7757,6 +7776,12 @@ def vet_range(revs):
                 if refusal.kind in ("did-not-run", "usage"):
                     raise
                 refused.append({"commit": commit, "path": None, "why": refusal.kind, "detail": refusal.detail})
+    # ONE REFUSAL FOR ONE HOST PATH: where a file of a run is refused for a host path by
+    # the rule its writer holds it to, the range scan's hit at the same commit and path is
+    # that refusal, not a second — and on a host whose temp directory is itself a host
+    # path (macOS), the answer is the one another host gives.
+    held = {(hit["commit"], hit["path"]) for hit in refused[scanned:] if hit["why"] == "host-path"}
+    refused = [hit for n, hit in enumerate(refused) if n >= scanned or hit["why"] != "host-path" or (hit["commit"], hit["path"]) not in held]
     ok = not refused
     say(json.dumps({"check": "vet", "ok": ok, "range": revs, "commits": commits, "refused": refused, "then": None if ok else RANGE_THEN}))
     return 0 if ok else VET_MISMATCH

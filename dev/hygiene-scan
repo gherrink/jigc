@@ -1,12 +1,47 @@
 #!/usr/bin/env bash
 #
-# dev/hygiene-scan — the denylist half of the public-hygiene guard
-# (implementation/public-hygiene.md).
+# dev/hygiene-scan — the denylist half of the public-hygiene guard, and its built-in
+# rules: host paths and ids (implementation/public-hygiene.md).
 #
 # Scans a revision range for any line of a private denylist, case-insensitively:
 # every commit message in the range and every line the range ADDS (removed lines are
 # not new exposure, and a history rewrite is the only fix for an old one). With
 # --tree it also scans the tracked working-tree files and their paths.
+#
+# And two built-in rules (implementation/public-hygiene.md, rule 6), whose patterns are
+# no secret, so they are held here and run with the denylist or without one:
+#
+#   - AN ABSOLUTE HOST PATH, on every line the range ADDS and nowhere else -- never a
+#     message, a removed line or the tree (the human's ruling of 2026-11-06). A host
+#     path is a home under /Users/<name>/… or /home/<name>/…, or a macOS temp root,
+#     /var/folders/<a>/<b>/… or /private/var/folders/<a>/<b>/…, standing where no path
+#     is already running (docs/home/x is none) and read to the end of its name.
+#   - A SESSION OR AGENT ID, on every line the range adds and in every commit message:
+#     an agent id, agent-a<16 hex> standing whole (a run of hex alone is a hash, and is
+#     not read as an id); a session id, session_<20 or more letters and digits, of both
+#     cases and with a digit>; and a session's scratch path, /tmp/claude-<n>/… or
+#     /private/tmp/claude-<n>/…. A message's `Claude-Session:` trailer line -- exactly
+#     `Claude-Session: https://claude.ai/code/session_<id>`, required on every commit
+#     and kept by the M54 audit -- is exempt, in a message only, never in a file.
+#
+# A line or a message some commit before the rules added is history and stays (the
+# records that carry one): a commit the rules' base commit holds is not held to them,
+# in a repository that has that commit at all.
+#
+# The exemptions -- a narrow, written list, each with its reason. A root or an id is
+# exempt only whole: a name that merely begins with an exempted one is its own.
+#
+#   exempt  /home/node          the user of the node container image the trial harness runs in: a path inside an image, the same on every machine
+#   exempt  /home/runner        the hosted CI runner's home, and the user dev/runner-faithful's image makes to match it: generic, nobody's own
+#   exempt  /Users/x            a synthetic name a test fixture uses (completions/trial-driver)
+#   exempt  /Users/me           a synthetic name an example uses (crates/engine)
+#   exempt  /Users/somebody     a synthetic name a test fixture uses (tooling-tests)
+#   exempt  /home/u             a synthetic name an example uses (crates/engine, crates/cli)
+#   exempt  /var/folders/xx/yy  a synthetic macOS temp root a test fixture uses (tooling-tests)
+#   exempt  agent-a0123456789abcdef  a synthetic agent id a test fixture uses (completions/trial-driver)
+#
+# A test that needs a host-shaped or id-shaped fixture uses a shape this list exempts,
+# or puts it together at run time so that no added line holds it whole.
 #
 # What `git log` prints is read BY WHERE A LINE STANDS, never by what it opens with:
 # where a commit begins is a byte git wrote and no commit can hold, and inside a hunk
@@ -20,13 +55,20 @@
 #
 # A hit is reported by WHERE it is -- commit, path, line number -- and never by
 # what matched: CI logs are public, so echoing the matching line would publish the
-# very term the scan exists to keep out.
+# very term the scan exists to keep out, and a host path holds a name, an id a session.
 #
 # Usage:
-#   dev/hygiene-scan [--tree] <denylist-file> <rev-list args...>
+#   dev/hygiene-scan [--tree] [--denylist-only] <denylist-file> <rev-list args...>
+#   dev/hygiene-scan --no-denylist <rev-list args...>    # the built-in rules alone
 #   dev/hygiene-scan ~/.config/jigc/denylist origin/main..HEAD
 #   dev/hygiene-scan --tree ~/.config/jigc/denylist HEAD --not --remotes
 #   dev/hygiene-scan <file> HEAD           # the whole history reachable from HEAD
+#
+# --no-denylist is for where the private list is absent (a fresh clone, a fork's pull
+# request); --denylist-only for a caller that holds its text to rules of its own
+# (dev/stabilize-record's writers, whose host-path rule is stricter; a run's pushes are
+# held to the built-in rules by its range vet). --tree is the denylist's, so it takes no
+# --no-denylist, and neither half may be left out with the other.
 #
 # Exit status: 0 no hit · 1 at least one hit · 2 usage or setup error -- a denylist
 # pattern a matcher rejects is a setup error, never a clean scan, and is named by its
@@ -34,31 +76,46 @@
 
 set -u
 
+usage() {
+    printf 'dev/hygiene-scan: %s -- usage: dev/hygiene-scan [--tree] [--denylist-only] <denylist-file> <rev-list args...>, or dev/hygiene-scan --no-denylist <rev-list args...>\n' "$1" >&2
+    exit 2
+}
+
 tree=0
-if [ "${1:-}" = "--tree" ]; then
-    tree=1
+builtin=1
+while :; do
+    case "${1:-}" in
+        --tree) tree=1; shift ;;
+        --denylist-only) builtin=0; shift ;;
+        -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+        *) break ;;
+    esac
+done
+use_denylist=1
+denylist=''
+if [ "${1:-}" = "--no-denylist" ]; then
+    use_denylist=0
     shift
+    [ "$tree" -eq 0 ] || usage "--tree scans with the denylist, and --no-denylist leaves it out"
+    [ "$builtin" -eq 1 ] || usage "--denylist-only and --no-denylist leave nothing to scan"
+    [ $# -ge 1 ] || usage "no range"
+else
+    [ $# -ge 2 ] || usage "no denylist, or no range"
+    denylist=$1
+    shift
+    if [ ! -r "$denylist" ]; then
+        printf 'dev/hygiene-scan: cannot read denylist %s\n' "$denylist" >&2
+        exit 2
+    fi
+    # Absolute before the cd below, or a relative denylist path stops resolving.
+    case "$denylist" in
+        /*) ;;
+        *) denylist="$PWD/$denylist" ;;
+    esac
 fi
-case "${1:-}" in
-    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
-esac
-if [ $# -lt 2 ]; then
-    printf 'dev/hygiene-scan: usage: dev/hygiene-scan [--tree] <denylist-file> <rev-list args...>\n' >&2
-    exit 2
-fi
-denylist=$1
-shift
-if [ ! -r "$denylist" ]; then
-    printf 'dev/hygiene-scan: cannot read denylist %s\n' "$denylist" >&2
-    exit 2
-fi
-# Absolute before the cd below, or a relative denylist path stops resolving.
-case "$denylist" in
-    /*) ;;
-    *) denylist="$PWD/$denylist" ;;
-esac
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+self="$script_dir/$(basename -- "$0")"
 repo_root=$(dirname -- "$script_dir")
 cd "$repo_root" || exit 2
 
@@ -92,33 +149,35 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 work=$(mktemp -d "$tmp_root/jigc-hygiene-XXXXXX") || exit 2
 
-# A blank line in a `grep -f` file matches EVERY line, so the patterns are normalised
-# first: CR stripped, blank and comment lines dropped.
 pats="$work/patterns"
-# Each kept pattern's line number in the denylist goes beside it, so a bad pattern can
-# be named by where it is.
-tr -d '\r' <"$denylist" | awk -v lines="$work/pattern-lines" 'NF && $1 !~ /^#/ { print NR >lines; print }' >"$pats"
-if [ ! -s "$pats" ]; then
-    printf 'dev/hygiene-scan: denylist %s holds no pattern\n' "$denylist" >&2
-    exit 2
-fi
-
-# A pattern grep rejects makes every `grep -f` below exit 2 with no output, and an
-# empty hits file reads as clean -- one typo in the secret would switch the whole guard
-# off while CI stays green. So each pattern is compiled on its own first, and a bad one
-# is named by its line in the denylist, never by its text: matcher diagnostics quote
-# the pattern, so their stderr is discarded.
-nth=0
-while IFS= read -r pat; do
-    nth=$((nth + 1))
-    printf '%s\n' "$pat" >"$work/one-pattern"
-    grep -i -E -f "$work/one-pattern" </dev/null >/dev/null 2>&1
-    if [ "$?" -gt 1 ]; then
-        printf 'dev/hygiene-scan: denylist %s line %s is not a valid extended regex -- the scan did not run\n' \
-            "$denylist" "$(sed -n "${nth}p" "$work/pattern-lines")" >&2
+if [ "$use_denylist" -eq 1 ]; then
+    # A blank line in a `grep -f` file matches EVERY line, so the patterns are normalised
+    # first: CR stripped, blank and comment lines dropped.
+    # Each kept pattern's line number in the denylist goes beside it, so a bad pattern can
+    # be named by where it is.
+    tr -d '\r' <"$denylist" | awk -v lines="$work/pattern-lines" 'NF && $1 !~ /^#/ { print NR >lines; print }' >"$pats"
+    if [ ! -s "$pats" ]; then
+        printf 'dev/hygiene-scan: denylist %s holds no pattern\n' "$denylist" >&2
         exit 2
     fi
-done <"$pats"
+
+    # A pattern grep rejects makes every `grep -f` below exit 2 with no output, and an
+    # empty hits file reads as clean -- one typo in the secret would switch the whole guard
+    # off while CI stays green. So each pattern is compiled on its own first, and a bad one
+    # is named by its line in the denylist, never by its text: matcher diagnostics quote
+    # the pattern, so their stderr is discarded.
+    nth=0
+    while IFS= read -r pat; do
+        nth=$((nth + 1))
+        printf '%s\n' "$pat" >"$work/one-pattern"
+        grep -i -E -f "$work/one-pattern" </dev/null >/dev/null 2>&1
+        if [ "$?" -gt 1 ]; then
+            printf 'dev/hygiene-scan: denylist %s line %s is not a valid extended regex -- the scan did not run\n' \
+                "$denylist" "$(sed -n "${nth}p" "$work/pattern-lines")" >&2
+            exit 2
+        fi
+    done <"$pats"
+fi
 
 # Every matcher below exits 0 on a hit, 1 on none, and 2 or more when it could not
 # run; the last must never fall through to `denylist clean`. Its stderr is kept out of
@@ -149,9 +208,102 @@ marked() {
     fi
 }
 
+# --- the built-in rules' history -------------------------------------------
+# The rules' base commit: what it and its ancestors added is history, and stays as it
+# is (the header). Excluded with a leading `^`, before the caller's arguments, where no
+# `--not` of theirs can turn it round; in a repository that does not hold the commit (a
+# fixture, a rig) nothing is excluded, because nothing there is that old. Without the
+# denylist only the built-in rules read the range, so the history is left out of
+# what git is asked for at all -- a branch's first push asks for the whole history.
+# With it, the denylist reads it all, and the rules only the commits after.
+host_path_base=e5d804c6909e1ed1f5193bf5a59187f4348b27ae
+since=0
+if [ "$builtin" -eq 1 ] && git cat-file -e "$host_path_base^{commit}" 2>/dev/null; then
+    if [ "$use_denylist" -eq 0 ]; then
+        set -- "^$host_path_base" "$@"
+    else
+        since=1
+        git rev-list "^$host_path_base" "$@" >"$work/host-commits" 2>"$work/git.err"
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+            printf 'dev/hygiene-scan: git rev-list failed (%s):\n' "$rc" >&2
+            cat "$work/git.err" >&2
+            exit 2
+        fi
+    fi
+fi
+
+# --- the built-in rules, read by awk --------------------------------------------
+# One program for the messages and the added lines: the exemptions, the commits after
+# the rules' base, and the two rules. Read byte by byte (LC_ALL=C), so that any text a
+# line holds is read; a hit is named by where it is, and what it held is never printed.
+#
+# A host path opens where no path is running -- after a character that is neither part
+# of a name nor a `~` or a placeholder's `>`, as dev/stabilize-record's writers read one
+# (PATH_OPENS) -- and its name runs to its end. An agent id is `agent-a` and sixteen hex
+# characters with no letter or digit after them; a session id is `session_` and a run
+# of twenty or more letters and digits that holds a digit and a capital; a scratch path
+# is a `/tmp/claude-<n>` root, opening as a host path does. No interval expression is
+# used (`{16}`), because not every awk a runner has reads one.
+if [ "$builtin" -eq 1 ]; then
+    awk '/^#   exempt  / { print $3 }' "$self" >"$work/exempt"
+    if [ ! -s "$work/exempt" ]; then
+        printf 'dev/hygiene-scan: no exemption could be read from %s -- the built-in rules did not run\n' "$self" >&2
+        exit 2
+    fi
+fi
+rules='
+    BEGIN {
+        FS = "\t"
+        while ((getline entry < exempt) > 0) ok[entry] = 1
+        if (since) while ((getline sha < commits) > 0) held[sha] = 1
+        name = "[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"
+        host = "[^A-Za-z0-9_.~>-]((/private)?/var/folders/" name "/" name "|/(Users|home)/" name ")"
+        hex = ""
+        for (i = 0; i < 16; i++) hex = hex "[0-9a-f]"
+        agent = "agent-a" hex "[^0-9A-Za-z]"
+        run = ""
+        for (i = 0; i < 20; i++) run = run "[A-Za-z0-9]"
+        session = "session_" run
+        scratch = "[^A-Za-z0-9_.~>-](/private)?/tmp/claude-[0-9]+[^A-Za-z0-9_-]"
+        trailer = "^Claude-Session: https://claude\\.ai/code/session_[A-Za-z0-9]+$"
+    }
+    function host_in(text,    rest, root) {
+        rest = " " text
+        while (match(rest, host)) {
+            root = substr(rest, RSTART + 1, RLENGTH - 1)
+            sub(/^\/private/, "", root)
+            if (!(root in ok)) return 1
+            # On from the last character of the exempted name, which opens no path.
+            rest = substr(rest, RSTART + RLENGTH - 1)
+        }
+        return 0
+    }
+    function id_in(text,    rest, at, id) {
+        rest = " " text " "
+        while (match(rest, agent)) {
+            id = substr(rest, RSTART, RLENGTH - 1)
+            if (!(id in ok)) return 1
+            rest = substr(rest, RSTART + RLENGTH - 1)
+        }
+        rest = text
+        while (match(rest, session)) {
+            at = RSTART + length("session_")
+            id = substr(rest, at)
+            match(id, /^[A-Za-z0-9]*/)
+            id = substr(id, 1, RLENGTH)
+            if (id ~ /[0-9]/ && id ~ /[A-Z]/) return 1
+            rest = substr(rest, at + length(id))
+        }
+        return match(" " text " ", scratch) > 0
+    }
+    since && !($1 in held) { next }
+'
+
 # --- commit messages ---------------------------------------------------------
 # One record per message line, prefixed with its commit, so a hit can be named by
-# commit without printing the line.
+# commit without printing the line. The denylist reads every line; the id rule every
+# line but the `Claude-Session:` trailer (the header).
 git log --no-color --format='%x00%H%n%B' "$@" >"$work/msgs.raw" 2>"$work/git.err"
 rc=$?
 if [ "$rc" -ne 0 ]; then
@@ -161,9 +313,25 @@ if [ "$rc" -ne 0 ]; then
 fi
 marked "$work/msgs.raw" "$work/msgs" "commit-message"
 awk '/^\001/ { sha = substr($0, 2); next } { print sha "\t" $0 }' "$work/msgs" >"$work/msg-lines"
-grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
-matched "$?" "commit-message"
-awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u >>"$hits"
+if [ "$use_denylist" -eq 1 ]; then
+    grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
+    matched "$?" "commit-message"
+    awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u >>"$hits"
+fi
+if [ "$builtin" -eq 1 ]; then
+    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" "$rules"'
+        {
+            line = substr($0, index($0, "\t") + 1)
+            if (line !~ trailer && id_in(line)) print "idmsg    " substr($1, 1, 12)
+        }
+    ' "$work/msg-lines" >"$work/id-msg-hits"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: the id scan of the messages failed (awk exited %s) -- the scan did not complete\n' "$rc" >&2
+        exit 2
+    fi
+    sort -u "$work/id-msg-hits" >>"$hits"
+fi
 
 # --- added lines ---------------------------------------------------------------
 # --no-renames: a pure rename has no `+++` line, so with rename detection on, the
@@ -215,9 +383,29 @@ awk '
     }
     /^\+/ && path != ""    { print sha "\t" path "\t" ln "\t" substr($0, 2); ln++ }
 ' "$work/diff" >"$work/added"
-grep -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
-matched "$?" "added-line"
-awk -F'\t' '{ print "added    " substr($1, 1, 12) "  " $2 ":" $3 }' "$work/added-hits" | sort -u >>"$hits"
+if [ "$use_denylist" -eq 1 ]; then
+    grep -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
+    matched "$?" "added-line"
+    awk -F'\t' '{ print "added    " substr($1, 1, 12) "  " $2 ":" $3 }' "$work/added-hits" | sort -u >>"$hits"
+fi
+
+# --- host paths and ids on the added lines -------------------------------------
+if [ "$builtin" -eq 1 ]; then
+    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" "$rules"'
+        {
+            line = $0
+            for (i = 0; i < 3; i++) line = substr(line, index(line, "\t") + 1)
+            if (host_in(line)) print "hostpath " substr($1, 1, 12) "  " $2 ":" $3
+            if (id_in(line)) print "id       " substr($1, 1, 12) "  " $2 ":" $3
+        }
+    ' "$work/added" >"$work/builtin-hits"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: the host-path and id scan failed (awk exited %s) -- the scan did not complete\n' "$rc" >&2
+        exit 2
+    fi
+    sort -u "$work/builtin-hits" >>"$hits"
+fi
 
 # --- the working tree ----------------------------------------------------------
 if [ "$tree" -eq 1 ]; then
@@ -239,9 +427,15 @@ fi
 count=$(wc -l <"$hits")
 count=$((count))
 if [ "$count" -eq 0 ]; then
-    printf 'hygiene: denylist clean (%s pattern(s))\n' "$(wc -l <"$pats" | tr -d ' ')"
+    if [ "$use_denylist" -eq 0 ]; then
+        printf 'hygiene: no host path added; no id (no denylist given)\n'
+    elif [ "$builtin" -eq 0 ]; then
+        printf 'hygiene: denylist clean (%s pattern(s))\n' "$(wc -l <"$pats" | tr -d ' ')"
+    else
+        printf 'hygiene: denylist clean (%s pattern(s)); no host path added; no id\n' "$(wc -l <"$pats" | tr -d ' ')"
+    fi
     exit 0
 fi
-printf 'hygiene: %s denylist hit(s) -- by location only, never by content:\n' "$count"
+printf 'hygiene: %s hit(s) -- by location only, never by content:\n' "$count"
 sed 's/^/  /' "$hits"
 exit 1

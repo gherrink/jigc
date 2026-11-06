@@ -17,7 +17,8 @@
 //! its contributor's to name; pushes are always checked) — its body driven verbatim for
 //! each event. **(d)** the fork is exempt from the name rule and nothing else: no
 //! hygiene step is conditional, so gitleaks runs, and the denylist step, without the
-//! secret a fork's pull request never receives, skips with its notice and exit 0.
+//! secret a fork's pull request never receives, skips with its notice and runs the
+//! built-in host-path and id rules alone, which need no secret.
 
 use crate::support::ci_workflow::{CI_WORKFLOW, repo_root};
 use serde_yaml_ng::Value;
@@ -373,7 +374,8 @@ fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_
 /// Neither the job nor any hygiene step carries an `if:`, so gitleaks runs once the name
 /// step passes; gitleaks reads no secret; and the denylist step, with `JIGC_DENYLIST`
 /// empty — what a fork's pull request receives — or unset, exits 0 with its notice
-/// rather than failing or passing silently.
+/// rather than failing or passing silently, and runs the built-in host-path and id rules
+/// alone.
 #[test]
 fn d_a_fork_pull_request_still_gets_gitleaks_and_a_clean_denylist_skip() {
     let job = hygiene_job();
@@ -419,6 +421,16 @@ fn d_a_fork_pull_request_still_gets_gitleaks_and_a_clean_denylist_skip() {
             out.status.success() && stdout.contains("::notice title=denylist skipped::"),
             "with JIGC_DENYLIST {secret:?} the denylist step must skip with its notice and \
              exit 0; exit {:?}\n{stdout}{}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // … AND THE BUILT-IN RULES RUN ALONE (`implementation/public-hygiene.md`, rule 6):
+        // their patterns are in the repository, not in the secret, so a fork's pull
+        // request is held to them as every push is.
+        assert!(
+            stdout.contains("no host path added"),
+            "with JIGC_DENYLIST {secret:?} the step must still run the host-path scan; \
+             exit {:?}\n{stdout}{}",
             out.status.code(),
             String::from_utf8_lossy(&out.stderr)
         );

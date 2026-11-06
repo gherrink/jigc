@@ -2995,12 +2995,13 @@ fn nothing_is_published_that_was_not_vetted() {
     let home = format!("{}/probe", rig.home.display());
 
     // MUST NOT REFUSE: a tuning commit outside the run's directory that the remote lacks —
-    // source code names `/tmp`, and so may its message: the placeholder rule is the
-    // record's, and what a file outside the run is held to is the two scanners.
-    rig.write(
-        "README.md",
-        &format!("a scratch file under /tmp/x, and {home}\n"),
-    );
+    // source code names `/tmp`, and its message may name a host path too: the placeholder
+    // rule is the record's, and what a file outside the run is held to is the two scanners,
+    // the host-path rule of `dev/hygiene-scan` among them since the human's ruling of
+    // 2026-11-06 — which holds `/tmp` to nothing, and the rig's home, on macOS a temp root,
+    // to itself. The record suite's
+    // `a_host_path_a_push_would_publish_is_refused_by_where_it_is_and_once` drives its refusal.
+    rig.write("README.md", "a scratch file under /tmp/x\n");
     rig.git(&["add", "--", "README.md"]);
     rig.git(&[
         "commit",

@@ -2,12 +2,18 @@ name: CI
 
 # The dev-workflow gate on every push and PR, split into one job per leg so a green
 # push reports in <= 15 min of slowest-job wall clock and a red push reports EVERY
-# failure (M54 S8; implementation/dev-workflow.md -> Gate). The union of the jobs below
-# is the gate `dev/gate` runs locally in one process:
+# failure (M54 S8; implementation/dev-workflow.md -> Gate). The 15 minutes are a promise
+# that is watched, never a bound that is enforced: a part's `timeout-minutes` below may
+# pass them. What watches it is the pending row `ci-where-the-time-goes`
+# (implementation/decisions-pending.md), whose trigger fires when any leg's hosted time
+# reaches 15 minutes, and `dev/ci-runs`, the planned CI-run reader, which reports such a
+# leg (the human's ruling of 2026-11-06 on N3: DECISIONS.md -> 2026-11-06, *No absolute
+# host path enters the repository, and the fifteen-minute promise is watched*). The union
+# of the jobs below is the gate `dev/gate` runs locally in one process:
 #
 #   hygiene          the public-hygiene guard: the branch-name rule, then gitleaks and
-#                    the private denylist over the pushed range
-#                    (implementation/public-hygiene.md)
+#                    the private denylist over the pushed range, and its built-in
+#                    host-path and id rules (implementation/public-hygiene.md)
 #   fmt · clippy · build
 #   test             one row per `[[test]]` group target — and one row per part (below)
 #                    for `g_tooling`, whose one row outgrew a leg, and for `g_migration`,
@@ -146,15 +152,19 @@ jobs:
       # The denylist: private terms (names, hosts, ticket keys) that gitleaks has no rule
       # for. The list itself is the JIGC_DENYLIST secret and never a repo file, because a
       # committed denylist is the leak. Hits are reported by commit, path and line only.
-      # Unset (a fork's pull request has no secrets), the step says so rather than
-      # passing silently.
+      # The same scan holds the range to its built-in rules -- no host path on an added
+      # line, no session or agent id on one or in a message -- whose patterns are in
+      # dev/hygiene-scan and no secret (implementation/public-hygiene.md, rule 6). Unset
+      # (a fork's pull request has no secrets), the step says the denylist did not run
+      # rather than passing silently, and runs the built-in rules alone.
       - name: denylist
         env:
           JIGC_DENYLIST: ${{ secrets.JIGC_DENYLIST }}
         run: |
           if [ -z "$JIGC_DENYLIST" ]; then
-            echo "::notice title=denylist skipped::the JIGC_DENYLIST secret is not set, so the denylist scan did not run"
-            exit 0
+            echo "::notice title=denylist skipped::the JIGC_DENYLIST secret is not set, so the denylist scan did not run; the host-path and id scan runs alone"
+            dev/hygiene-scan --no-denylist "$HYGIENE_RANGE"
+            exit
           fi
           list=$(mktemp)
           printf '%s\n' "$JIGC_DENYLIST" > "$list"
