@@ -48,12 +48,168 @@ schema-version: 3
 <!-- fields -->
 - intent: P0 — generate the catalog's overview of families, parts, sites and answers
 - workflow: builder
+- status: joined
+
+### p0-review-s1-act-implies  {#p0-review-s1-act-implies}
+
+<!-- fields -->
+- intent: P0 review S1 — Act::implies counts a word of the case's own for an operand the route prints nowhere (Word::Named) and a marked directory of MoveDirectoryIn; a value the route leaves its reader is Word::Own and implies nothing, so the two git mv cases stay followed, holds; seven cases move to operand implied; red first against two mutants; the section 13 key widened to its class, its refusal half open
+- workflow: fixer
+- status: joined
+
+### p0-review-s2-the-span  {#p0-review-s2-the-span}
+
+<!-- fields -->
+- intent: P0 review S2 — the span column says backticked span or no backticked span, a span of any kind, because an operand span cannot be told from a route's text deterministically; the departure from the spec recorded in DECISIONS.md and in detail.md beside the spec's sentence
+- workflow: fixer
+- status: joined
+
+### p0-review-s3-the-doors  {#p0-review-s3-the-doors}
+
+<!-- fields -->
+- intent: P0 review S3 — the projection's header, doors' comment, pinning.md section 6 and tooling.md call a family's doors a reading, never where its codes print, with store.link-on-the-way as the counter-example
+- workflow: fixer
+- status: joined
+
+### p0-review-n1-the-pilots  {#p0-review-n1-the-pilots}
+
+<!-- fields -->
+- intent: P0 review N1 — the pilot's rate corrected to 32 of 188, 17.0 % and twice it 34.0 %, in detail.md, the planning record, the roadmap and DECISIONS.md; the plan's history files keep the old figure as history
+- workflow: fixer
+- status: joined
+
+### p0-review-n2-seen-implied  {#p0-review-n2-seen-implied}
+
+<!-- fields -->
+- intent: P0 review N2 — Seen.implied's comment and Act::implies' comment say what the code does
+- workflow: fixer
+- status: joined
+
+### p0-review-n3-the-arm  {#p0-review-n3-the-arm}
+
+<!-- fields -->
+- intent: P0 review N3 — the P0 entry of DECISIONS.md counts eight arms beside the committed one, the named arm included: nine tests, all red first
+- workflow: fixer
+- status: joined
+
+### p0-review-n4-the-doors  {#p0-review-n4-the-doors}
+
+<!-- fields -->
+- intent: P0 review N4 — FAMILIES' comment points at doors, the one statement of which doors a family's word stands for
+- workflow: fixer
+- status: joined
+
+### p0-review-n5-the-act  {#p0-review-n5-the-act}
+
+<!-- fields -->
+- intent: P0 review N5 — the act-use counter's unanswered half, which acts have no product vocabulary, is a Candidates row of tooling.md again
+- workflow: fixer
+- status: joined
+
+### p0-review-n6-the-act  {#p0-review-n6-the-act}
+
+<!-- fields -->
+- intent: P0 review N6 — the projection's header says the act counts are counted over the cases as the macros expand them, a case in every family its site is a row of; four sites stand in more than one family, rollback's in three
+- workflow: fixer
+- status: joined
+
+### p0-review-n7-the-whitespace  {#p0-review-n7-the-whitespace}
+
+<!-- fields -->
+- intent: P0 review N7 — message_whitespace_fence written down in dev-workflow.md under Gate: the trailing backslash, the floor of nine spaces, what the floor concedes
+- workflow: fixer
+- status: joined
+
+### p0-review-l1-sixty-parts  {#p0-review-l1-sixty-parts}
+
+<!-- fields -->
+- intent: P0 review L1 — recorded at T1 and T8 in detail.md as a fact to price there, not decided: 60 parts over 14 families, 35 of them of at most 2 sites, so a full round is 60 route-hunt items
+- workflow: fixer
+- status: joined
+
+### p0-review-l2-a-hunt  {#p0-review-l2-a-hunt}
+
+<!-- fields -->
+- intent: P0 review L2 — T1 in detail.md says a hunt is never bounded by its family's door list, citing S3
+- workflow: fixer
+- status: joined
+
+### p0-review-2-m2-an-arm  {#p0-review-2-m2-an-arm}
+
+<!-- fields -->
+- intent: P0 review 2 M2 — an arm asserts the operand column's three words on planted cases, a chosen row for a filled placeholder and one for a word of the reader's own among them, and that the catalog's cases hold all three; red against operand without its Own clause
+- workflow: fixer
+- status: joined
+
+### p0-review-2-na-the-tables  {#p0-review-2-na-the-tables}
+
+<!-- fields -->
+- intent: P0 review 2 N-a — the table's doc says that chosen counts a word of the reader's own, Word::Own, beside a filled placeholder
+- workflow: fixer
+- status: joined
+
+### p0-review-2-ne-the-run  {#p0-review-2-ne-the-run}
+
+<!-- fields -->
+- intent: P0 review 2 N-e — the run record writes a Word::Own as the reader's own and a Word::Named as the case's; the one planted expectation that pinned the old words is the red arm
+- workflow: fixer
+- status: joined
+
+### p0-review-2-s2-the-guard  {#p0-review-2-s2-the-guard}
+
+<!-- fields -->
+- intent: P0 review 2 S2 — recorded in detail.md at P-F1 as work it owes, not done here: a guard that an Own value is not a value the refusal lists and a Named word is not a printed span, the planted within sub and the rename's --to with it
+- workflow: fixer
+- status: joined
+
+### p0-review-2-nd-implies-decides  {#p0-review-2-nd-implies-decides}
+
+<!-- fields -->
+- intent: P0 review 2 N-d — recorded in detail.md at P-F1 as work it owes, not done here: Act::implies' catch-all becomes an exhaustive match over enum Act
+- workflow: fixer
+- status: joined
 
 ### p1-stop-counting-the-finding  {#p1-stop-counting-the-finding}
 
 <!-- fields -->
 - intent: P1 — stop counting the finding constructors as sites, and tie each standing reason to its ruling
 - workflow: builder
+- status: joined
+
+### p1-review-s1-the-exclusion  {#p1-review-s1-the-exclusion}
+
+<!-- fields -->
+- intent: P1 review S1 — the exclusion narrowed to a literal in the body of block, blocking or graded inside impl Finding in finding.rs whose code reads dynamic; a helper's literal there, spelled or handed its code, and a constructor's literal that spells its code are sites, each red first
+- workflow: fixer
+- status: joined
+
+### p1-review-m1-the-path  {#p1-review-m1-the-path}
+
+<!-- fields -->
+- intent: P1 review M1 — a fixture's other file is crates/engine/src/probe/finding.rs, whose block body is a site, so the path is matched whole: red against ends_with finding.rs and against contains engine/
+- workflow: fixer
+- status: joined
+
+### p1-review-nc-one-home  {#p1-review-nc-one-home}
+
+<!-- fields -->
+- intent: P1 review N-c — refusal_site_list imports FINDING_HOME from support, and its tree half asks only the three constructors' bodies
+- workflow: fixer
+- status: joined
+
+### p1-review-q3-a-heading  {#p1-review-q3-a-heading}
+
+<!-- fields -->
+- intent: P1 review Q3 — a reason's ruling names a heading the decisions log holds exactly once, or it is named as ambiguous; the entry's text is not held to the site's code, because a class ruling and a dynamic site's code would be refused
+- workflow: fixer
+- status: joined
+
+### p1-review-misfit-review-findings  {#p1-review-misfit-review-findings}
+
+<!-- fields -->
+- intent: P1 review misfit — row M9 of the doctype-misfits register: a milestone-record has no place for a review's findings, so they are written as task items; seeded as its jigc-feedback doc
+- workflow: fixer
+- status: joined
 
 ### m-p0-merge-the-catalog  {#m-p0-merge-the-catalog}
 

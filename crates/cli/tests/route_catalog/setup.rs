@@ -2830,6 +2830,7 @@ pub const REASONS: &[Reason] = &[
             "`adapter::inject_hook` and `merge_hook`",
             "`setup-settings-hooks-no-object-…` and `setup-settings-hook-event-no-array-…`"
         ),
+        ruled: None,
     },
     Reason {
         site: "crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1",
@@ -2837,6 +2838,7 @@ pub const REASONS: &[Reason] = &[
             "`adapter::inject_deny` and `merge_deny`",
             "`setup-settings-deny-no-array-…`"
         ),
+        ruled: None,
     },
     Reason {
         site: "crates/cli/src/setup.rs::write_install_span::setup.install-hook#1",
@@ -2847,6 +2849,7 @@ pub const REASONS: &[Reason] = &[
              environment takes that away, and the binary is one the runner started by its \
              path",
         ),
+        ruled: None,
     },
     Reason {
         site: "crates/cli/src/setup.rs::commit_install::setup.install-commit#1",
@@ -2860,6 +2863,7 @@ pub const REASONS: &[Reason] = &[
              repository to change between two reads a few instructions apart: no state stands \
              still in it",
         ),
+        ruled: None,
     },
 ];
 

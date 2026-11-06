@@ -103,7 +103,7 @@ H-cycle can come up at any step. Tell-NR was given on 2026-10-29, before any of 
   | `g_migration` | 504 s | 10 min | 84 % |
   | `g_tooling, record` | 518 s | 14 min | 62 % |
 
-- **Routes that print no operand.** In the pilot, 32 of the 183 cases that hold did so with an operand the case had to supply (*holds, operand implied*), out of 74 cases whose route printed no operand (`route-catalog-pilot.md` §6, after its correction of 2026-10-11). That is H0's expectation.
+- **Routes that print no operand.** In the pilot, 32 of the 188 cases that hold did so with an operand the case had to supply (*holds, operand implied*) — 17.0 %, and twice that 34.0 % — out of 74 cases whose route printed no operand (`route-catalog-pilot.md` §6 and §5's note of 2026-10-11: *188 hold (156, and 32 with the operand implied)*). That is H0's expectation. **[Corrected 2026-11-06 (the review of `08c396f6`, N1): this line read *32 of the 183*, which put the corrected count of implied cases over the uncorrected count of cases that hold (17.5 %, twice it 35 %).]**
 - **The act vocabulary in the product:** only `link_way::WayOut` (`link_way.rs:66-88`). Its route clause is rendered by a private `fn clause` (`:109`). The one public question is `Link::at(root, at, stands)` (`:99`, its `way_out` field public).
 - **`enum Act` has 27 variants** (`support/route_case.rs:467-604`). By use count in the catalog: `Rerun` 45, `Remove` 32, `Commit` 28, `MoveOut` 24, `Cd` 19, `MakeWritable` 18, `MoveAway` 17, `RunListed` 17, `MoveLinkOut` 16, `PointAt*` 15, `PutTheFileItself` 13, `MakeReadable` 11, `Revert` 11, `Mend` 6, `Unstage` 5, `RerunWith` 5, `RerunInTheRepository` 4, and the other `Run*` forms and link acts.
   - The `Rerun*` acts are *"no better than operand implied"* by construction (`route_case.rs:575`, `:590`).
@@ -314,9 +314,10 @@ The lane writes no product source. A red case is listed with a key and is never 
   - per family, its act uses by kind, over every one of `enum Act`'s 27 variants;
   - the residue;
   - for F-C: per site, whether its route prints an operand span, and per case, whether it is *holds, operand implied* or uses the marked form.
+    - **[As built, a departure (2026-11-06, the review of `08c396f6`, S2; [DECISIONS.md](../../../../../DECISIONS.md) → *The review of the route catalog's projection, worked*):** the projection says per site whether its route's literals hold a **backticked span of any kind** — `backticked span`, `no backticked span`, `not read`, `no route` — and not whether an operand span is printed. A span is a command line, a flag or an operand, and a site's route text cannot tell which deterministically: an operand rides inside a command line (`jigc doc show <address>`), names an entry with no `/` (`CLAUDE.md`), or is a path only the planted sandbox shows (`route_case::path_spans` asks the filesystem). Which acts take their operand from a printed span is read per case, at run time, by the runner and by P-F1's act check.**]**
 - **Also:** the named-binary arm takes `JIGC_ROUTE_CATALOG_FAMILY`.
 - **Red first:** v2's six arms, plus `a_dynamic_sites_minted_codes_are_its_rows` and `a_parts_key_survives_a_site_added_to_another_file`.
-- **The H0 check:** the commit reports the count of *operand implied* and marked-form cases, beside the pilot's 32 of 183. More than twice the pilot's rate is H0.
+- **The H0 check:** the commit reports the count of *operand implied* and marked-form cases, beside the pilot's 32 of 188 (17.0 %). More than twice the pilot's rate (34.0 %) is H0. **[As counted, after the review of `08c396f6` (S1): 108 of the 430 cases that hold do so with the operand implied, 25.1 % — below 34.0 %, so H0 does not fire at P0. 78 cases take the marked form, 53 of them holding implied.]**
 - **Gates:** 1 + 1.
 
 **P1 — B1, then the fence.** Two commits.
@@ -360,6 +361,10 @@ The lane writes no product source. A red case is listed with a key and is never 
     - each left-to-infer class is red and listed;
     - the two classes are told apart by the strict list's *classification moved* arm;
     - the rewritten arm is red against the old `is_red`.
+- **[Also owed, from the second review of the catalog lane (2026-11-06, its S2 and N-d; [DECISIONS.md](../../../../../DECISIONS.md) → *The second review of the catalog lane, worked*):** two pieces of work the lane recorded and did not do, because each is this act check's.
+  - **S2 — the guard on a case's word.** Whether a named command's word is `Word::Named` (the case's own, *operand implied*) or `Word::Own` (the reader's own, *holds*) is the case author's label alone, and since the review of `P0` it decides between the two classes. A deterministic guard holds the label: **an `Own` value is not a value the refusal lists, and a `Named` word is not a printed span** — a case that breaks either is a fault the runner names, red first against a planted case of each. On the tree today one planted case breaks the second rule: `planted-a-named-command-started-where-the-case-says` in `crates/cli/tests/route_catalog.rs`, whose `within: Word::Named("sub")` is span 1 of the route it plants; it is rewritten with the guard. The rename's `--to` (`crates/cli/tests/route_catalog/config.rs`, `Word::Named("--to")`) goes with S2: it is flag grammar, not an object, and inert only while that case also re-runs the refusing command; the guard's commit says what `--to` is.
+  - **N-d — `implies` decides every act.** `Act::implies` (`crates/cli/tests/support/route_case.rs`) ends in `_ => false`, so a new `Act` variant that carries a `Word` reads as not implied without anything forcing a decision. It becomes an exhaustive `match` over `enum Act`, as the act-verb table is, so a new variant does not compile until it says whether it implies.
+  - The guard's refusals land in the commit whose class moves they cause, by the rule above: a guard that moves no class lands in commit 1.**]**
 - **Gates:** 2 + 1.
 - **Then:** loop → P.
 
@@ -464,6 +469,8 @@ The lane writes no product source. A red case is listed with a key and is never 
 - **Gates:** build 3–4 (2–3 + 1); record 1 + 0–1.
 
 **T1 — An item names `family` and optionally `part`**, keyed by file plus first site id, held to the projection read at the round's candidate commit. **T1 waits for a loop → T taken after both M-P0 and M-TNR.** The partition check: in a round, the `route-hunt` items of every family in scope partition its parts, and a family in scope whose parts are not all hunted is `not_ready`, naming the uncovered part.
+- **A hunt is never bounded by its family's door list.** The projection's `door` lines are a reading of the family's word, not where its codes print: `store.link-on-the-way`, a code of `doc read`, is printed by every writing leaf through `Command::link_guard` and by `config`, `setup` and `migrate-corpus` besides (the review of `08c396f6`, S3). A hunt's prompt hands the doors as a place to start, and never as the doors a cause may be planted at.
+- **A fact to price here, not decided:** the projection at the commit of the review's fix holds **60 parts over 14 families** (237 site lines, 232 distinct sites); **35 of the parts hold at most 2 sites** — 18 hold 1, 17 hold 2. Under O-def's item 3 (*one `route-hunt` item per family part*) a full round is 60 `route-hunt` items (the review of `08c396f6`, L1).
 - **Gates:** 1 + 1.
 
 **T2 — The hunt writer, `hunt --from FILE`.**
@@ -493,6 +500,7 @@ The lane writes no product source. A red case is listed with a key and is never 
   - `huntPrompt`: the projection at the candidate's commit, the family and part, the catalog's cases (not hunted again), the not-constructible causes to try by hand, Bash timeouts, T2's call, and "say whether each cause can be planted". The prompt reads: *"every site of your part, for causes beyond the catalog's; a (site, cause) the catalog has is not hunted again"*, held by an arm.
 - **The fence:** `launched_under` and its fixture change.
 - **Size:** the generated size is printed. Over 440,000 bytes, the task stops.
+- **A fact to price here, not decided:** one hunter per item makes a full round 60 hunters over the projection's 60 parts, 35 of them of at most 2 sites (18 of 1, 17 of 2) — T1's count (the review of `08c396f6`, L1).
 - **Red first:** the route-hunter plan's five simulation arms; `kit --role hunt` prints §6 by its heading and exits 27 when the heading has moved; `the_files_the_hunters_prompt_names_exist`; `the_hunters_prompt_hunts_every_site_of_its_part_for_new_causes`.
 - **Gates:** 2 + 1.
 
@@ -602,7 +610,7 @@ Each stop is one question at a time, with its recommendation. H-J0 is gone: F-B 
 
 | # | When | The question | Recommended | Told with it |
 |---|---|---|---|---|
-| **H0** (conditional) | After P0, or after P-F1's commit 1, before the C-tasks | The count of routes that leave an act or an operand to infer, against the pilot's 32 of 183. **Likely to fire:** the 54 uses of `Rerun`, `RerunWith` and `RerunInTheRepository` are *"no better than operand implied"* by construction. | Carry on, every one keyed for the run | — |
+| **H0** (conditional) | After P0, or after P-F1's commit 1, before the C-tasks | The count of routes that leave an act or an operand to infer, against the pilot's 32 of 188 (17.0 %; H0 fires over 34.0 %). **Likely to fire:** the 54 uses of `Rerun`, `RerunWith` and `RerunInTheRepository` are *"no better than operand implied"* by construction — 54 written in the source; the projection counts acts per case as the macros expand them, `Rerun` alone 92. **[At P0, after its review: 108 of 430, 25.1 % — not fired.]** | Carry on, every one keyed for the run | — |
 | **Tell-NR** (a tell, not a question) | **Done 2026-10-29**, before T-NR's build | — | — | The human's "one agent" is built as one subject agent plus three counted step agents (begin, the record writer, the verdict), each launched once, with the guard refusing commits, pushes and writes outside the probe's root while it runs |
 | **H1** | After the review of P-F1's commit 1 | One question: the nine standing site-level reasons and the act-verb table — *"accept as worded, or name the entries you challenge"* | Accept, except any the reviewer flags | F-C's reading (the verb plus its operand by span; `Link::at` for link cases) as an engineering reading of the ruling; (b)'s last clause and (c) do nothing until the `fix` half's repair. A challenged entry of the act-verb table moves cases already built, since nothing waits on H1: its fix re-runs and re-lists them. |
 | **H2** | Phase 1, any time | The gitleaks hit at `85661425`, `DECISIONS.md:99` | A: one `.gitleaks.toml` entry (B, a fingerprint, drifts; C, a rewrite, is not viable) | — |
