@@ -225,7 +225,9 @@
 //! commands after the act the runner's own
 //! ([`a_program_the_route_puts_on_path_is_there_for_every_command_after_the_act`]); a
 //! printed line whose program cannot be started is a failure of the line, which ends no arm
-//! ([`a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm`]).
+//! ([`a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm`]). And
+//! a directory `rm -r` takes is removed whole, and nothing else is
+//! ([`a_directory_rm_r_takes_is_removed_with_everything_in_it_and_nothing_else_is`]).
 //!
 //! **And every case on another binary** — one ignored arm, run by hand
 //! ([`the_cases_are_followed_on_the_binary_a_variable_names`]; the plan's step `P5`): it
@@ -675,6 +677,21 @@ const EXPECTED_RED: &[(&str, Classification, &[&str])] = &[
         &["uninstall-worktree-path-unreadable-moved-out"],
     ),
     (
+        WORKTREES_UNKNOWN_RERUN,
+        Classification::AnotherFailure,
+        &["uninstall-worktree-path-git-cannot-list-the-worktrees-moved-out"],
+    ),
+    (
+        WORKTREES_UNKNOWN_FORCED,
+        Classification::AnotherFailure,
+        &["uninstall-worktree-path-git-cannot-list-the-worktrees-forced"],
+    ),
+    (
+        SUB_TASK_LAND_EXIT_LANDS_NOTHING,
+        Classification::SameRefusalAgain,
+        &["uninstall-sub-tasks-staged-doc-landed-by-the-listed-command"],
+    ),
+    (
         WORKTREE_REMOVE_NO_PATH,
         Classification::SameRefusalAgain,
         &["uninstall-worktrees-root-unreadable-worktrees-removed-as-printed"],
@@ -985,6 +1002,23 @@ const LATE_REFUSAL: &str =
 /// A FIFO at a file the teardown reads — `CLAUDE.md`, the settings file, the hook: the
 /// command does not end, with `.jigc/` already removed.
 const UNINSTALL_HELD: &str = "r1-uninstall-fifo-at-a-file-the-teardown-reads-holds-the-command";
+/// The worktree guard where git cannot list this repository's worktrees — a `.git/config`
+/// git may not read: the route says to get the work out and re-run, and the re-run meets
+/// git failing again, under another code; its words name nothing of git's failure.
+/// Minted by the pre-opening plan's task `P-F0`, commit 3, with the cases that were its
+/// reason's (T135 of the reason table).
+const WORKTREES_UNKNOWN_RERUN: &str =
+    "r1-uninstall-worktrees-unknown-route-leads-to-git-failing-again";
+/// The same state, by the consent: `jigc uninstall --force` removes the held path and then
+/// refuses at the hook step, part-way through the teardown.
+const WORKTREES_UNKNOWN_FORCED: &str =
+    "r1-uninstall-force-over-an-unreadable-git-config-tears-down-part-way";
+/// A sub-task that stages its commit doc and nothing else: its row's exit *land it with
+/// `jigc milestone finalize`* lands nothing — the milestone's finalize refuses
+/// `milestone.zero-contribution` — and the printed re-run refuses as before. Minted by
+/// `P-F0`, commit 3 (T141 of the reason table).
+const SUB_TASK_LAND_EXIT_LANDS_NOTHING: &str =
+    "r1-uninstall-sub-task-row-land-exit-lands-nothing-without-work";
 
 /// git refuses to stage a promoted doc whose home an ignore rule covers; the route names
 /// a lock and a rule over three other paths, and the printed re-run refuses again.
@@ -4649,8 +4683,9 @@ fn a_path_git_does_not_ignore_does_not_hold() {
 
 /// Every act that takes an operand, with the marked form naming the directory the planted
 /// refusals below are about.
-const MARKED: [&[Act]; 17] = [
+const MARKED: [&[Act]; 18] = [
     &[Act::MoveLinkOut(Operand::Unprinted("in/the-way"))],
+    &[Act::RemoveDirectory(Operand::Unprinted("in/the-way"))],
     &[Act::PutTheFileItself(Operand::Unprinted("in/the-way"))],
     &[Act::Unstage(Operand::Unprinted("in/the-way"))],
     &[Act::Revert(Operand::Unprinted("in/the-way"))],
@@ -4747,6 +4782,7 @@ fn no_file_act_is_done_outside_the_sandbox() {
         ],
         acts: &[
             Act::MoveAway(Operand::Span(0)),
+            Act::RemoveDirectory(Operand::Span(0)),
             Act::MoveOut(Operand::Span(0)),
             Act::MoveLinkOut(Operand::Span(0)),
             Act::PutTheFileItself(Operand::Span(1)),
@@ -4778,8 +4814,8 @@ fn no_file_act_is_done_outside_the_sandbox() {
                 .matches("not done — it names nothing inside")
                 .count()
         ),
-        (Classification::AnotherFailure, 16),
-        "all sixteen acts are refused, and the case is red for it:\n{}",
+        (Classification::AnotherFailure, 17),
+        "all seventeen acts are refused, and the case is red for it:\n{}",
         followed.detail,
     );
 
@@ -5234,6 +5270,76 @@ fn a_printed_line_whose_program_cannot_be_started_is_a_failure_and_ends_no_arm()
         case.name,
         followed.detail
     );
+}
+
+/// A refusal whose route deletes what stands at `parked` — *`rm -r` takes it* — and runs a
+/// line that holds only once nothing stands there: `parked` is span 0, `rm -r` span 1.
+const RM_R_TAKES_IT: &str = "test -e parked || exit 0; \
+     printf '%s\\n' 'blocking · setup.install-hook — refused' \
+     '  route: delete `parked` (`rm -r` takes it), then re-run `jigc -c \"test ! -e parked\"`'; \
+     exit 1";
+
+/// **A directory `rm -r` takes is removed with everything in it, and nothing else is**
+/// ([`Act::RemoveDirectory`]; the pre-opening plan's task `P-F0`). The act removes the
+/// directory the printed span names, whatever it holds; an entry there that is no directory
+/// — a link to one, a file — is not removed, the act is not done, and what a link leads to
+/// is untouched.
+#[test]
+fn a_directory_rm_r_takes_is_removed_with_everything_in_it_and_nothing_else_is() {
+    let planted = |name: &'static str, state: &'static [Step]| Case {
+        name,
+        state,
+        refusing: &["-c", RM_R_TAKES_IT],
+        acts: &[Act::RemoveDirectory(Operand::Span(0)), Act::Run(2)],
+        ..PLANTED
+    };
+    let mut wrong = Vec::new();
+    for (case, expected, record) in [
+        (
+            planted(
+                "planted-a-directory-removed-whole",
+                &[
+                    Step::File(Place::Repo("parked/a/kept"), "kept\n"),
+                    Step::File(Place::Repo("parked/b"), "kept\n"),
+                ],
+            ),
+            Classification::Holds,
+            "with what it holds (span 0): removed",
+        ),
+        (
+            Case {
+                witnesses: &["there/kept"],
+                ..planted(
+                    "planted-a-link-to-a-directory-not-removed",
+                    &[
+                        Step::File(Place::Outside("there/kept"), "kept\n"),
+                        Step::Link(Place::Repo("parked"), Place::Outside("there")),
+                    ],
+                )
+            },
+            Classification::AnotherFailure,
+            "not done — no directory stands there",
+        ),
+        (
+            planted(
+                "planted-a-file-not-removed-as-a-directory",
+                &[Step::File(Place::Repo("parked"), "kept\n")],
+            ),
+            Classification::AnotherFailure,
+            "not done — no directory stands there",
+        ),
+    ] {
+        match route_case::follow(Path::new("/bin/sh"), &case) {
+            Ok(followed)
+                if followed.classification == expected && followed.detail.contains(record) => {}
+            Ok(followed) => wrong.push(format!(
+                "`{}` — {}, where `{expected}` was planted with `{record}` in its record\n{}",
+                case.name, followed.classification, followed.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n\n"));
 }
 
 /// The three acts that run the refusing command again.

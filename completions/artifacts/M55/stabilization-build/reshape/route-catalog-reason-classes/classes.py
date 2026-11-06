@@ -43,6 +43,10 @@ ONE_FAMILY = {"drop-a-line", "merge", "move-head", "move-the-repository", "move-
 BUILT = {
     91: "case written in commit 2 (`setup-git-not-on-path-put-on-path`)",
     147: "case written in commit 2 (`uninstall-git-not-on-path-put-on-path`)",
+    131: "cases written in commit 3 for two of its three listed commands (`…-kept-by-the-listed-command`, `…-abandoned-by-the-listed-command`); the third, a recipe, stays a reason (fork R2)",
+    135: "cases written in commit 3 (`uninstall-worktree-path-git-cannot-list-the-worktrees-…`), red under two keys",
+    140: "piece and case written in commit 3 (`Act::RemoveDirectory`, `uninstall-parked-file-parking-home-deleted`)",
+    141: "cases written in commit 3 (`uninstall-sub-tasks-staged-doc-…`), one red under a key",
 }
 
 PACK = "a pack of the reader's own is files a `Step::File` plants — the byte table plants one (`byte_table/movers.rs`, the note pack: `note-pack/` and `.jigc/config/packs.yaml`); the ruling of 2026-10-11 calls foreign content no bound"

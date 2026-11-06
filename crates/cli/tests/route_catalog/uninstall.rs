@@ -369,6 +369,20 @@ const A_DIRECTORY_NOTHING_VOUCHES_FOR: [Case; 2] = unregistered_ways!(
     plant: [COPIED_WORK],
     moved: [Check::RegularFile(Place::Moved(".jigc/worktrees/copied/work.txt"))],
 );
+/// **git cannot list this repository's worktrees** — a `.git/config` git cannot read, a
+/// permission bit and so a declared bound: whether the held path is registered is unknown,
+/// and the route is the one above. Each way meets git failing again in the main checkout
+/// (the reading's text before P-F0 said so, driven by hand), and the case says what it
+/// comes to.
+const GIT_CANNOT_LIST_THE_WORKTREES: [Case; 2] = unregistered_ways!(
+    "uninstall-worktree-path-git-cannot-list-the-worktrees",
+    "a directory under `.jigc/worktrees/` holds content, and git cannot list this \
+     repository's worktrees — its `.git/config` may not be read — so whether the path is \
+     registered is unknown",
+    Act::MoveAway(Operand::Unprinted(COPIED)),
+    plant: [COPIED_WORK, shut!("000", ".git/config")],
+    moved: [Check::RegularFile(Place::Moved(".jigc/worktrees/copied/work.txt"))],
+);
 const A_FILE_WHERE_A_WORKTREE_GOES: [Case; 2] = unregistered_ways!(
     "uninstall-worktree-path-a-file",
     "a plain file stands under `.jigc/worktrees/`",
@@ -432,8 +446,8 @@ const A_LIVE_FAN_OUT_WORKTREE: [Case; 3] = [
 /// **What git's registration of a path holds, where the checkout is in order or gone** —
 /// a staged path with no directory left, a commit no ref reaches, an operation git left
 /// un-concluded. The route says each *has nothing to move out* and that the command for it
-/// *is on its line* — a line of the refusal's listing, which is no part of the route: the
-/// one way a case can follow is the consent.
+/// *is on its line* — a line of the refusal's listing: the consent here, and the command on
+/// the line where it is one command of git's ([`BY_THE_LISTED_COMMAND`], below).
 macro_rules! registration_forced {
     ($name:literal, $cause:expr, plant: [$($plant:expr),* $(,)?] $(,)?) => {
         [Case {
@@ -462,25 +476,59 @@ const A_REGISTRATION_WITH_NO_DIRECTORY: [Case; 1] = registration_forced!(
         ]),
     ],
 );
+const A_COMMIT_NO_REF_REACHES_CAUSE: &str =
+    "a fan-out worktree is clean, and its `HEAD` holds a commit no ref reaches";
+const A_COMMIT: Step = Step::Git(&["-C", SUB_TASK, "commit", "-q", "-m", "work"]);
 const A_COMMIT_NO_REF_REACHES: [Case; 1] = registration_forced!(
     "uninstall-fan-out-worktree-commit-no-ref-reaches-forced",
-    "a fan-out worktree is clean, and its `HEAD` holds a commit no ref reaches",
-    plant: [
-        WORK,
-        WORK_STAGED,
-        Step::Git(&["-C", SUB_TASK, "commit", "-q", "-m", "work"]),
-    ],
+    A_COMMIT_NO_REF_REACHES_CAUSE,
+    plant: [WORK, WORK_STAGED, A_COMMIT],
 );
+const A_MERGE_LEFT_OPEN_CAUSE: &str =
+    "a fan-out worktree is clean, and git has left a merge un-concluded in it";
+const A_MERGE_LEFT_OPEN: Step = Step::Git(&[
+    "-c",
+    "alias.merging=!git -C .jigc/worktrees/do-a-thing rev-parse HEAD > \
+     \"$(git -C .jigc/worktrees/do-a-thing rev-parse --absolute-git-dir)/MERGE_HEAD\"",
+    "merging",
+]);
 const AN_OPERATION_LEFT_OPEN: [Case; 1] = registration_forced!(
     "uninstall-fan-out-worktree-mid-merge-forced",
-    "a fan-out worktree is clean, and git has left a merge un-concluded in it",
-    plant: [Step::Git(&[
-        "-c",
-        "alias.merging=!git -C .jigc/worktrees/do-a-thing rev-parse HEAD > \
-         \"$(git -C .jigc/worktrees/do-a-thing rev-parse --absolute-git-dir)/MERGE_HEAD\"",
-        "merging",
-    ])],
+    A_MERGE_LEFT_OPEN_CAUSE,
+    plant: [A_MERGE_LEFT_OPEN],
 );
+/// **The command on the held path's line, run as the listing prints it** — what *the
+/// command that keeps the commit … is on its line* and *the command that abandons it is on
+/// its line* send the reader to ([`Act::RunListed`]), then the printed `jigc uninstall`.
+/// The third such command, the one that brings a checkout back, is a recipe of several
+/// commands, which the frame runs by no case.
+const BY_THE_LISTED_COMMAND: [Case; 2] = [
+    Case {
+        name: "uninstall-fan-out-worktree-commit-no-ref-reaches-kept-by-the-listed-command",
+        site: DIRTY_WORKTREE,
+        cause: A_COMMIT_NO_REF_REACHES_CAUSE,
+        state: installed![
+            FAN_OUT[0],
+            FAN_OUT[1],
+            FAN_OUT[2],
+            WORK,
+            WORK_STAGED,
+            A_COMMIT
+        ],
+        acts: &[Act::RunListed(0), Act::Run(0)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-fan-out-worktree-mid-merge-abandoned-by-the-listed-command",
+        site: DIRTY_WORKTREE,
+        cause: A_MERGE_LEFT_OPEN_CAUSE,
+        state: installed![FAN_OUT[0], FAN_OUT[1], FAN_OUT[2], A_MERGE_LEFT_OPEN],
+        acts: &[Act::RunListed(0), Act::Run(0)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+];
 
 /// **A registered path and an unregistered one at once** — the route's arm that says the
 /// second *still blocks the teardown* after the abandon: both moved out, and the consent.
@@ -617,9 +665,10 @@ const A_STRAY_IN_A_TRANSIENT_DIRECTORY: [Case; 1] = foreign_forced!(
     plant: [Step::File(Place::Repo(".jigc/state/mine.txt"), "mine\n")],
 );
 
-/// The one cause whose path the route prints: the parking home, moved out whole.
+/// The one cause whose path the route prints: the parking home, moved out whole, and
+/// deleted whole — *`rm -r` takes them* ([`Act::RemoveDirectory`]) — and the consent.
 const PARKED: &str = "a file is parked under `.jigc/displaced/`";
-const A_PARKED_FILE: [Case; 2] = [
+const A_PARKED_FILE: [Case; 3] = [
     Case {
         name: "uninstall-parked-file-parking-home-moved-out",
         site: FOREIGN_BYTES,
@@ -632,6 +681,25 @@ const A_PARKED_FILE: [Case; 2] = [
         holds: torn_down![Check::RegularFile(Place::Moved(
             ".jigc/displaced/write-a-note/kept.md"
         ))],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-parked-file-parking-home-deleted",
+        site: FOREIGN_BYTES,
+        cause: PARKED,
+        state: installed![Step::File(
+            Place::Repo(".jigc/displaced/write-a-note/kept.md"),
+            "mine\n"
+        )],
+        acts: &[Act::RemoveDirectory(Operand::Span(1)), Act::Run(2)],
+        holds: torn_down![],
+        doubt: Some(
+            "*delete the ones you do not (`rm -r` takes them …)*: *them* are the paths above, \
+             which the refusal's listing prints, and the one path the route itself prints, \
+             in the clause beside it, is the parking home. The case takes the parking home \
+             whole, by the printed span, as the case that moves it out does. The other \
+             reading: `rm -r` on each listed path, which only the listing gives",
+        ),
         ..UNINSTALL
     },
     Case {
@@ -781,6 +849,84 @@ const AN_OPEN_TASKS_STAGED_DOC: [Case; 3] = [
         site: STAGED_PROSE,
         cause: A_STAGED_DOC,
         state: installed![A_TASK],
+        acts: &[Act::Run(4)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+];
+
+/// **A milestone's sub-task stages a doc** — composed in the sub-task's own worktree, the
+/// one place the product re-enters a sub-task from ([`Step::JigcAt`]), and authored through
+/// the binary under test. The route gains a note for it, and the sub-task's row of the
+/// listing its own two exits: the case reads and throws the task away by the route's two
+/// lines, lands it by the row's `jigc milestone finalize` ([`Act::RunListed`]) — the work
+/// staged in the worktree, since a sub-task with none lands nothing — and consents.
+const A_SUB_TASKS_STAGED_DOC: &str = "a milestone's sub-task stages a doc that no commit has a \
+                                      copy of";
+macro_rules! a_sub_tasks_doc {
+    ($($plant:expr),* $(,)?) => {
+        installed![
+            FAN_OUT[0],
+            FAN_OUT[1],
+            FAN_OUT[2],
+            Step::JigcAt(Place::Repo(SUB_TASK), &["workflow", "sub-task", "--task", "do-a-thing"]),
+            Step::Jigc(&[
+                "doc",
+                "set-field",
+                "commit:do-a-thing#header/type",
+                "--task",
+                "do-a-thing",
+                "--value",
+                "docs",
+            ]),
+            Step::File(Place::Outside("summary"), "do a thing\n"),
+            Step::Jigc(&[
+                "doc",
+                "set-slot",
+                "commit:do-a-thing#summary",
+                "--task",
+                "do-a-thing",
+                "--from-file",
+                "../outside/summary",
+            ]),
+            $($plant,)*
+        ]
+    };
+}
+const A_SUB_TASKS_DOC: [Case; 3] = [
+    Case {
+        name: "uninstall-sub-tasks-staged-doc-read-and-discarded-as-printed",
+        site: STAGED_PROSE,
+        cause: A_SUB_TASKS_STAGED_DOC,
+        state: a_sub_tasks_doc![],
+        acts: &[
+            Act::RunFilled(Filled {
+                line: 0,
+                with: &[1, 0],
+            }),
+            Act::RunFilled(Filled {
+                line: 1,
+                with: &[0],
+            }),
+            Act::Run(3),
+        ],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-sub-tasks-staged-doc-landed-by-the-listed-command",
+        site: STAGED_PROSE,
+        cause: A_SUB_TASKS_STAGED_DOC,
+        state: a_sub_tasks_doc![],
+        acts: &[Act::RunListed(2), Act::Run(3)],
+        holds: torn_down![],
+        ..UNINSTALL
+    },
+    Case {
+        name: "uninstall-sub-tasks-staged-doc-forced",
+        site: STAGED_PROSE,
+        cause: A_SUB_TASKS_STAGED_DOC,
+        state: a_sub_tasks_doc![],
         acts: &[Act::Run(4)],
         holds: torn_down![],
         ..UNINSTALL
@@ -1522,12 +1668,14 @@ pub const CASES: &[&[Case]] = &[
     &PROFILE_NOT_TEXT,
     &PROFILE_MALFORMED,
     &A_DIRECTORY_NOTHING_VOUCHES_FOR,
+    &GIT_CANNOT_LIST_THE_WORKTREES,
     &A_FILE_WHERE_A_WORKTREE_GOES,
     &A_PATH_NOTHING_CAN_BE_READ_AT,
     &A_LIVE_FAN_OUT_WORKTREE,
     &A_REGISTRATION_WITH_NO_DIRECTORY,
     &A_COMMIT_NO_REF_REACHES,
     &AN_OPERATION_LEFT_OPEN,
+    &BY_THE_LISTED_COMMAND,
     &A_REGISTERED_AND_AN_UNREGISTERED_PATH,
     &THE_WORKTREES_ROOT_UNREADABLE,
     &A_STRAY_IN_A_TASKS_AREA,
@@ -1538,6 +1686,7 @@ pub const CASES: &[&[Case]] = &[
     &A_DIRECTORY_OF_THE_WALK_UNLISTABLE,
     &THE_WORKBENCH_UNSEARCHABLE,
     &AN_OPEN_TASKS_STAGED_DOC,
+    &A_SUB_TASKS_DOC,
     &A_STAGED_ENTRY_THAT_CANNOT_BE_ASKED_ABOUT,
     &A_FILE_NO_INDEX_HAS,
     &A_TRACKED_FILE_EDITED,
@@ -1585,14 +1734,6 @@ pub const CASES: &[&[Case]] = &[
 /// The sites of `jigc uninstall` that have no case, each with why: none — every blocking
 /// site of the command is reached by a state the runner can plant.
 pub const REASONS: &[Reason] = &[];
-
-/// Why the consent is the one way a case follows where a route defers to the refusal's
-/// listing.
-const ON_ITS_LINE: Why = Why::NotConstructible(
-    "the command is printed on the path's line of the refusal's listing, above the route, \
-     and an act's operand is a span of the printed route: the frame runs no line of the \
-     message",
-);
 
 /// Why a path the refusal lists cannot be named where the route prints another.
 const PRINTS_ANOTHER_PATH: Why = Why::NotConstructible(
@@ -1711,17 +1852,7 @@ pub const READINGS: &[Reading] = &[
                      on whether this repository registered the held paths: all of them, none \
                      of them, some of them — the eighth cause is the two kinds at once — or \
                      git could not say, the ninth",
-        without_case: &[(
-            "git cannot list this repository's worktrees, so whether a held path is \
-             registered is unknown",
-            Why::NotConstructible(
-                "reached — driven by hand, with a `.git/config` git cannot read — only \
-                 where git itself fails in the main checkout, and there neither way out of \
-                 the route can be followed to an end that is about this route: the re-run's \
-                 fourth guard and the consent's hook step both ask git, and each refuses \
-                 under a code of its own",
-            ),
-        )],
+        without_case: &[],
         not_followed: &[
             (
                 "the work committed or stashed inside a live worktree",
@@ -1733,9 +1864,16 @@ pub const READINGS: &[Reading] = &[
                 ),
             ),
             (
-                "the command that keeps a commit, brings a checkout back, or abandons an \
-                 operation",
-                ON_ITS_LINE,
+                "the command that brings a checkout back, on the listed line of a \
+                 registration whose directory is gone",
+                Why::NotConstructible(
+                    "the line is a recipe of several commands joined by a shell's \
+                     operators — `mkdir -p …` and a `printf … > …/.git` before the \
+                     `git -C … restore` — and the frame runs a listed line only where it \
+                     is one command of `git` or `jigc` (`Act::RunListed`). The command \
+                     that keeps a commit and the one that abandons an operation are \
+                     followed",
+                ),
             ),
             (
                 "the milestone abandoned, at the three causes that are about a registration",
@@ -1793,21 +1931,11 @@ pub const READINGS: &[Reading] = &[
                      The route is one for all of them, and several at once is a longer \
                      listing under the same words",
         without_case: &[],
-        not_followed: &[
-            (
-                "what is needed moved out of a listed path, or a listed path deleted, at \
+        not_followed: &[(
+            "what is needed moved out of a listed path, or a listed path deleted, at \
                  the four causes whose path is not the parking home",
-                PRINTS_ANOTHER_PATH,
-            ),
-            (
-                "the parking home deleted — *`rm -r` takes them*",
-                Why::NotConstructible(
-                    "`rm -r` is printed with no path, and it is no line of `jigc` or of \
-                     `git`: the frame runs those two, and removes a file or a link, never \
-                     a directory. The parking home is moved out whole instead",
-                ),
-            ),
-        ],
+            PRINTS_ANOTHER_PATH,
+        )],
     },
     Reading {
         site: UNVERIFIED_FOREIGN,
@@ -1838,16 +1966,7 @@ pub const READINGS: &[Reading] = &[
                      has two wordings: with no listed task a milestone's sub-task, and with \
                      one — where the route gains a note and the sub-task's row its own two \
                      exits",
-        without_case: &[(
-            "a milestone's sub-task stages a doc",
-            Why::NotConstructible(
-                "a sub-task's doc is staged by a `jigc doc` write run inside the \
-                 sub-task's own worktree — the task is pinned there — and a state's step \
-                 runs the binary under test at the repository's root: no state the runner \
-                 can plant holds one. Not reached by hand either: `jigc start --task` in \
-                 the worktree stages none",
-            ),
-        )],
+        without_case: &[],
         not_followed: &[],
     },
     Reading {

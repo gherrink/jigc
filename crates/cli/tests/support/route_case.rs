@@ -233,6 +233,10 @@
 //! be started is a failure of that line**, with why in the record ([`Ran::unstarted`]),
 //! and never a panic that ends the arm.
 //!
+//! **And where a route says `rm -r` takes a directory, the runner removes it whole**
+//! ([`Act::RemoveDirectory`]): the directory the printed span names, with everything in
+//! it — a link is not followed, and an entry that is no directory is not removed.
+//!
 //! **A state step may run the binary under test** ([`Step::Jigc`]). Where a case's state is
 //! one an earlier run of the product left — an install that stands — the product makes it,
 //! on the binary handed in: the state is that release's own, and no case copies the
@@ -526,6 +530,11 @@ pub enum Act {
     /// other command's. A cited line with no promise is a fault of the case: a witness any
     /// output satisfies is none.
     RunCited(Cited),
+    /// **Remove the directory the operand names, with everything in it** — what `rm -r` on
+    /// a printed directory asks for. The directory itself, never what a link leads to: an
+    /// entry that is no directory — a link to one included — is not removed, and the act is
+    /// not done.
+    RemoveDirectory(Operand),
     /// Move the directory the operand names out of the way: out of the repository, to the
     /// sandbox's `moved/` under the path it had ([`Place::Moved`]), with everything in it.
     /// A link to a directory is not one.
@@ -654,6 +663,7 @@ impl Act {
     fn operand(self) -> Option<Operand> {
         match self {
             Act::Remove(operand)
+            | Act::RemoveDirectory(operand)
             | Act::MoveAway(operand)
             | Act::MoveOut(operand)
             | Act::MoveLinkOut(operand)
@@ -1865,6 +1875,9 @@ impl Sandbox {
             let path = stand.join(named);
             let what = match act {
                 Act::Remove(_) => format!("remove `{named}` ({how})"),
+                Act::RemoveDirectory(_) => {
+                    format!("remove the directory `{named}` with what it holds ({how})")
+                }
                 Act::MoveAway(_) => format!("move `{named}` out of the way ({how})"),
                 Act::MoveOut(_) => format!("move the file `{named}` out of its path ({how})"),
                 Act::MoveLinkOut(_) => format!("move the link `{named}` out of its path ({how})"),
@@ -1924,6 +1937,15 @@ impl Sandbox {
                 Act::Remove(_) => fs::remove_file(&path)
                     .map(|()| "removed".to_string())
                     .map_err(|e| e.to_string()),
+                Act::RemoveDirectory(_) => {
+                    if fs::symlink_metadata(&path).is_ok_and(|entry| entry.is_dir()) {
+                        fs::remove_dir_all(&path)
+                            .map(|()| "removed".to_string())
+                            .map_err(|e| e.to_string())
+                    } else {
+                        Err("not done — no directory stands there".to_string())
+                    }
+                }
                 Act::MoveAway(_) => self.move_away(&path),
                 Act::MoveOut(_) => self.move_out(&path),
                 Act::MoveLinkOut(_) => self.a_link(&path).and_then(|()| self.to_moved(&path)),

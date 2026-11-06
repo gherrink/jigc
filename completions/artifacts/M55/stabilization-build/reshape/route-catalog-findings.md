@@ -876,3 +876,19 @@ The human's ruling F-C → A of 2026-10-28 makes a route that leaves an act or a
 - **beside them:** T114, a way no act can follow, whose route names no act either.
 
 Each such row gets a case once `P-F1`'s commit 2 has the class, and is then listed red under a key per route, as `P-F1` says. Until then these rows stay reasons, and this key is what holds them.
+
+## 15. Keys left by the cases `P-F0` wrote for the reason table — no fix here
+
+*2026-11-06, the plan before the opening's task `P-F0`, commit 3: the cases written for rows of the reason table ([route-catalog-reason-classes.md](route-catalog-reason-classes.md)) that came out red. Each case is listed under its key in `route_catalog.rs`'s expected-red list. Not fixed in the catalog's lane; for the run's opening ledger.*
+
+### `r1-uninstall-worktrees-unknown-route-leads-to-git-failing-again` — a permission bit, a declared bound
+
+`uninstall.dirty-worktree` where git cannot list the repository's worktrees — the state is a `.git/config` git may not read, beside a directory under `.jigc/worktrees/` with content. The route says *get the work out of those paths first (commit, stash, or copy it), then re-run `jigc uninstall`*; the work moved out, the printed re-run is refused under `uninstall.untracked-workbench-file`, git failing again over the same file. The route's words name nothing of git's failure. Case: `uninstall-worktree-path-git-cannot-list-the-worktrees-moved-out`, *followed, another failure*. Bounded, so it does not block.
+
+### `r1-uninstall-force-over-an-unreadable-git-config-tears-down-part-way` — a permission bit, a declared bound
+
+The same state, by the route's consent: `jigc uninstall --force` warns that it discards the held path, removes it, and is then refused at the hook step (`uninstall.remove-precommit`, git unable to resolve the hooks directory), part-way through the teardown. Case: `uninstall-worktree-path-git-cannot-list-the-worktrees-forced`, *followed, another failure*. The sibling of `r1-uninstall-force-over-unreadable-workbench-fails-part-way`, over git's configuration and not the workbench. Bounded.
+
+### `r1-uninstall-sub-task-row-land-exit-lands-nothing-without-work` — can block
+
+`uninstall.staged-prose` over a milestone's sub-task that stages its commit doc (composed in its worktree, authored through the binary). The sub-task's row of the listing names its own two exits, *land it with `jigc milestone finalize fan-out`, or drop it with `jigc task discard do-a-thing --force`*. Landed, the milestone's finalize is refused under `milestone.zero-contribution` — a commit doc promotes nothing, and no worktree holds staged code — and the printed re-run of `jigc uninstall` is the same refusal again. With work staged in the sub-task's worktree, the dirty-worktree guard refuses before this one (driven), so in neither state tried does the row's *land it* exit end the refusal; a sub-task whose doc promotes — an ADR of its own — was not tried. Case: `uninstall-sub-tasks-staged-doc-landed-by-the-listed-command`, *followed, the same refusal again*. The drop exit, and the route's own read-and-discard lines, hold.

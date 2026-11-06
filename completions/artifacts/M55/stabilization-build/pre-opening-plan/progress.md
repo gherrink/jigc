@@ -369,6 +369,13 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### p-f0-3-uninstalls-reasons-get  {#p-f0-3-uninstalls-reasons-get}
+
+<!-- fields -->
+- intent: P-F0 commit 3 — jigc uninstall's not-built rows get their cases: Act::RemoveDirectory with the parked file's rm -r case; two listed commands run at the worktree guard; the could-not-list state's two ways; a sub-task's staged doc planted by JigcAt; three red cases under three keys in route-catalog-findings.md section 15
+- workflow: builder
+- status: joined
+
 ### t-nr-build-build  {#t-nr-build-build}
 
 <!-- fields -->

@@ -2,6 +2,27 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-11-06 — `jigc uninstall`'s reasons get their cases: `rm -r` removes a directory whole, two listed commands are run, a sub-task's staged doc is planted, and three cases are red under three keys (the plan before the opening's task `P-F0`, commit 3)
+
+**What landed.** The reason table's rows for `jigc uninstall`, the family that has no C-task, and the one piece only it needs.
+- **`remove-a-directory`, built as `Act::RemoveDirectory(Operand)`.** It removes the directory the operand names, with everything in it. A link is not followed, an entry that is no directory is not removed, and the act is then not done. It is in the arms for the marked form and the sandbox's bound.
+  - **Red first:** `route_catalog::a_directory_rm_r_takes_is_removed_with_everything_in_it_and_nothing_else_is` failed on its three planted cases against a runner that declared the act and did nothing.
+  - **Its case (T140):** `uninstall-parked-file-parking-home-deleted`, *followed, holds*. It removes the parking home by the span the route prints. The case is marked with its doubt: *`rm -r` takes them* names the listed paths, and the route prints only the parking home.
+- **T131, by `Act::RunListed`.** The worktree guard sends its reader to the held path's line. Two of the three commands there are now run: the commit kept, and the merge abandoned. Both cases are *followed, holds*. The third, which brings a checkout back, is a recipe of several commands, and its reason now says so; it waits on fork R2.
+- **T135.** A `.git/config` git may not read, beside a held directory. Both ways come out *followed, another failure*:
+  - the re-run meets git failing again;
+  - the consent tears down part-way.
+
+  The state is a permission bit, so both cases are bound and listed red under two new keys.
+- **T141.** A sub-task's doc is staged by `Step::JigcAt`, as the milestone family does it. The route's read-and-discard lines and the consent hold. The sub-task row's own *land it with `jigc milestone finalize`* comes out *the same refusal again*: a commit doc promotes nothing, and staged work would trip the dirty-worktree guard first. It is listed under a key, and it can block.
+- **The keys** are [route-catalog-findings.md](completions/artifacts/M55/stabilization-build/reshape/route-catalog-findings.md) → §15:
+  - `r1-uninstall-worktrees-unknown-route-leads-to-git-failing-again`;
+  - `r1-uninstall-force-over-an-unreadable-git-config-tears-down-part-way`;
+  - `r1-uninstall-sub-task-row-land-exit-lands-nothing-without-work`.
+- **The projection is regenerated:** `RemoveDirectory` is counted per family, and two reasons and one way are gone.
+
+**Not a fork.** The red cases go to the opening ledger by key, as the lane's ruling (a) says; nothing here is fixed. None is a new route: each is a case of a route the catalog already held.
+
 ## 2026-11-06 — A program a route puts on `PATH`: `Act::PutOnPath` gives the commands after it the runner's `PATH`, a printed line whose program cannot start is a failure of the line, and *git cannot be run* has its two cases (the plan before the opening's task `P-F0`, commit 2)
 
 **What landed.** P-F0's first piece, the one its spec names: *the per-command environment for "no git on `PATH`"*.

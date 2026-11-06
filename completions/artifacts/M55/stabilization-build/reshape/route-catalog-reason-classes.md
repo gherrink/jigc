@@ -90,6 +90,11 @@ Each is a heading of [route-catalog-findings.md](route-catalog-findings.md) → 
 ## Since the table was read
 
 - **Commit 2** built the first piece as `Act::PutOnPath` — the case's environment sets `PATH` to a place no program stands in, and the act gives every command after it the runner's `PATH` — and wrote T91's and T147's cases, `setup-git-not-on-path-put-on-path` and `uninstall-git-not-on-path-put-on-path`, both *followed, holds*; their two reasons are gone. It also made a printed line whose program cannot be started a failure of the line instead of a panic of the runner. The owner column names it.
+- **Commit 3** wrote `jigc uninstall`'s rows, the family that has no C-task:
+  - T131 by `Act::RunListed` for two of the three listed commands (the commit kept, the merge abandoned), both *followed, holds*; the third, which brings a checkout back, is a recipe of several commands and stays a reason, under fork R2;
+  - T135's two ways, both *followed, another failure*, a permission bit and so a declared bound, listed under two keys;
+  - T140 with the piece `remove-a-directory`, built as `Act::RemoveDirectory` — *`rm -r` takes them*, over the parking home the route prints, the case marked with its doubt;
+  - T141's three ways, by `Step::JigcAt`: read and thrown away, and the consent, both *holds*; the sub-task row's own *land it*, *followed, the same refusal again*, listed under a key.
 
 ## What this does not establish
 

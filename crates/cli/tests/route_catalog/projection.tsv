@@ -74,6 +74,7 @@ acts	config	RunFilled	0
 acts	config	RunChosen	0
 acts	config	RunNamed	4
 acts	config	RunCited	14
+acts	config	RemoveDirectory	0
 acts	config	MoveAway	1
 acts	config	MoveOut	2
 acts	config	MoveLinkOut	1
@@ -132,6 +133,7 @@ acts	doc read	RunFilled	0
 acts	doc read	RunChosen	4
 acts	doc read	RunNamed	0
 acts	doc read	RunCited	3
+acts	doc read	RemoveDirectory	0
 acts	doc read	MoveAway	3
 acts	doc read	MoveOut	0
 acts	doc read	MoveLinkOut	10
@@ -206,6 +208,7 @@ acts	doc write	RunFilled	0
 acts	doc write	RunChosen	9
 acts	doc write	RunNamed	6
 acts	doc write	RunCited	0
+acts	doc write	RemoveDirectory	0
 acts	doc write	MoveAway	0
 acts	doc write	MoveOut	0
 acts	doc write	MoveLinkOut	0
@@ -240,6 +243,7 @@ acts	ingest	RunFilled	0
 acts	ingest	RunChosen	0
 acts	ingest	RunNamed	0
 acts	ingest	RunCited	0
+acts	ingest	RemoveDirectory	0
 acts	ingest	MoveAway	0
 acts	ingest	MoveOut	0
 acts	ingest	MoveLinkOut	0
@@ -273,6 +277,7 @@ acts	migrate	RunFilled	0
 acts	migrate	RunChosen	0
 acts	migrate	RunNamed	0
 acts	migrate	RunCited	0
+acts	migrate	RemoveDirectory	0
 acts	migrate	MoveAway	0
 acts	migrate	MoveOut	0
 acts	migrate	MoveLinkOut	0
@@ -308,6 +313,7 @@ acts	migrate-corpus	RunFilled	0
 acts	migrate-corpus	RunChosen	0
 acts	migrate-corpus	RunNamed	0
 acts	migrate-corpus	RunCited	0
+acts	migrate-corpus	RemoveDirectory	0
 acts	migrate-corpus	MoveAway	0
 acts	migrate-corpus	MoveOut	0
 acts	migrate-corpus	MoveLinkOut	0
@@ -383,6 +389,7 @@ acts	milestone	RunFilled	0
 acts	milestone	RunChosen	0
 acts	milestone	RunNamed	1
 acts	milestone	RunCited	6
+acts	milestone	RemoveDirectory	0
 acts	milestone	MoveAway	1
 acts	milestone	MoveOut	9
 acts	milestone	MoveLinkOut	0
@@ -454,6 +461,7 @@ acts	setup	RunFilled	2
 acts	setup	RunChosen	0
 acts	setup	RunNamed	0
 acts	setup	RunCited	2
+acts	setup	RemoveDirectory	0
 acts	setup	MoveAway	10
 acts	setup	MoveOut	5
 acts	setup	MoveLinkOut	0
@@ -499,6 +507,7 @@ acts	start	RunFilled	0
 acts	start	RunChosen	0
 acts	start	RunNamed	0
 acts	start	RunCited	0
+acts	start	RemoveDirectory	0
 acts	start	MoveAway	0
 acts	start	MoveOut	0
 acts	start	MoveLinkOut	0
@@ -532,6 +541,7 @@ acts	task bind	RunFilled	0
 acts	task bind	RunChosen	0
 acts	task bind	RunNamed	0
 acts	task bind	RunCited	0
+acts	task bind	RemoveDirectory	0
 acts	task bind	MoveAway	0
 acts	task bind	MoveOut	0
 acts	task bind	MoveLinkOut	0
@@ -567,6 +577,7 @@ acts	task discard	RunFilled	0
 acts	task discard	RunChosen	0
 acts	task discard	RunNamed	0
 acts	task discard	RunCited	0
+acts	task discard	RemoveDirectory	0
 acts	task discard	MoveAway	0
 acts	task discard	MoveOut	0
 acts	task discard	MoveLinkOut	0
@@ -676,6 +687,7 @@ acts	task finalize	RunFilled	0
 acts	task finalize	RunChosen	3
 acts	task finalize	RunNamed	5
 acts	task finalize	RunCited	4
+acts	task finalize	RemoveDirectory	0
 acts	task finalize	MoveAway	0
 acts	task finalize	MoveOut	2
 acts	task finalize	MoveLinkOut	0
@@ -726,12 +738,13 @@ site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	
 site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	prose	backticked span	case
 site	uninstall	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	prose	backticked span	case
 acts	uninstall	Remove	1
-acts	uninstall	Run	88
-acts	uninstall	RunFilled	5
+acts	uninstall	Run	96
+acts	uninstall	RunFilled	7
 acts	uninstall	RunChosen	0
 acts	uninstall	RunNamed	0
 acts	uninstall	RunCited	0
-acts	uninstall	MoveAway	6
+acts	uninstall	RemoveDirectory	1
+acts	uninstall	MoveAway	7
 acts	uninstall	MoveOut	2
 acts	uninstall	MoveLinkOut	0
 acts	uninstall	PutTheFileItself	3
@@ -750,7 +763,7 @@ acts	uninstall	Rerun	5
 acts	uninstall	RerunInTheRepository	2
 acts	uninstall	Cd	0
 acts	uninstall	RerunWith	0
-acts	uninstall	RunListed	0
+acts	uninstall	RunListed	3
 acts	uninstall	Unstage	0
 acts	uninstall	PutOnPath	1
 family	validate	2	2
@@ -765,6 +778,7 @@ acts	validate	RunFilled	0
 acts	validate	RunChosen	0
 acts	validate	RunNamed	0
 acts	validate	RunCited	0
+acts	validate	RemoveDirectory	0
 acts	validate	MoveAway	0
 acts	validate	MoveOut	0
 acts	validate	MoveLinkOut	0
@@ -1015,6 +1029,8 @@ case	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	rename-de
 case	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	rename-destination-taken-by-a-file-in-no-commit-that-doc-read-as-printed	followed, another failure	-	a file somebody wrote, in no commit and no doc, stands at the home of the id the doc is renamed to
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-registration-without-a-directory-forced	followed, holds	-	a fan-out worktree's directory is gone, and git's registration of the path still holds a staged path in no commit
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-commit-no-ref-reaches-forced	followed, holds	-	a fan-out worktree is clean, and its `HEAD` holds a commit no ref reaches
+case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-commit-no-ref-reaches-kept-by-the-listed-command	followed, holds	-	a fan-out worktree is clean, and its `HEAD` holds a commit no ref reaches
+case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-mid-merge-abandoned-by-the-listed-command	followed, holds	-	a fan-out worktree is clean, and git has left a merge un-concluded in it
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-mid-merge-forced	followed, holds	-	a fan-out worktree is clean, and git has left a merge un-concluded in it
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-uncommitted-work-forced	followed, holds	-	a fan-out sub-task's worktree, registered with this repository, holds a file in no commit
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-fan-out-worktree-uncommitted-work-milestone-abandoned-as-printed	followed, a printed line no shell can split	-	a fan-out sub-task's worktree, registered with this repository, holds a file in no commit
@@ -1023,6 +1039,8 @@ case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-a-directory-nothing-vouches-for-moved-out	followed, holds, operand implied	marked	a directory under `.jigc/worktrees/` holds content, and git reports no worktree of its own there: registered nowhere in this repository
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-a-file-forced	followed, holds	-	a plain file stands under `.jigc/worktrees/`
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-a-file-moved-out	followed, holds, operand implied	marked	a plain file stands under `.jigc/worktrees/`
+case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-git-cannot-list-the-worktrees-forced	followed, another failure	-	a directory under `.jigc/worktrees/` holds content, and git cannot list this repository's worktrees — its `.git/config` may not be read — so whether the path is registered is unknown
+case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-git-cannot-list-the-worktrees-moved-out	followed, another failure	marked	a directory under `.jigc/worktrees/` holds content, and git cannot list this repository's worktrees — its `.git/config` may not be read — so whether the path is registered is unknown
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-unreadable-forced	followed, another failure	-	a directory under `.jigc/worktrees/` may be neither read nor searched, so nothing could be read there
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-path-unreadable-moved-out	followed, the same refusal again	marked	a directory under `.jigc/worktrees/` may be neither read nor searched, so nothing could be read there
 case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	uninstall-worktree-paths-of-both-kinds-forced	followed, holds	-	a fan-out worktree registered here holds a file in no commit, and beside it stands a directory registered nowhere
@@ -1038,6 +1056,7 @@ case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	u
 case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	uninstall-foreign-file-in-a-task-area-forced	followed, holds	-	a file jigc did not write stands inside an open task's working area
 case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	uninstall-foreign-file-in-the-state-directory-forced	followed, holds	-	a file that is none of jigc's own stands in a transient directory no working area lives in — `.jigc/state/`
 case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	uninstall-parked-file-forced	followed, holds	-	a file is parked under `.jigc/displaced/`
+case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	uninstall-parked-file-parking-home-deleted	followed, holds	-	a file is parked under `.jigc/displaced/`
 case	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	uninstall-parked-file-parking-home-moved-out	followed, holds	-	a file is parked under `.jigc/displaced/`
 case	crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1	setup-hook-link-out-to-a-directory-pointed-at-a-committed-script	followed, holds	-	the `pre-commit` hook is a link to a directory outside the repository
 case	crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1	setup-hook-link-out-to-a-directory-pointed-at-a-new-script	followed, another failure	-	the `pre-commit` hook is a link to a directory outside the repository
@@ -1199,6 +1218,9 @@ case	crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1	uninstall-
 case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-staged-doc-finalized-as-printed	followed, holds	-	an open task stages a doc that no commit has a copy of
 case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-staged-doc-forced	followed, holds	-	an open task stages a doc that no commit has a copy of
 case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-staged-doc-read-and-discarded-as-printed	followed, holds	-	an open task stages a doc that no commit has a copy of
+case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-sub-tasks-staged-doc-forced	followed, holds	-	a milestone's sub-task stages a doc that no commit has a copy of
+case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-sub-tasks-staged-doc-landed-by-the-listed-command	followed, the same refusal again	-	a milestone's sub-task stages a doc that no commit has a copy of
+case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	uninstall-sub-tasks-staged-doc-read-and-discarded-as-printed	followed, holds	-	a milestone's sub-task stages a doc that no commit has a copy of
 case	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	uninstall-settings-a-directory	followed, the same refusal again	-	a directory stands at the settings file's path
 case	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	uninstall-settings-a-special-file	the command did not end	-	a special file stands at the settings file's path
 case	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	uninstall-settings-not-json	followed, the same refusal again	-	the settings file is no JSON
@@ -1680,7 +1702,6 @@ without-case	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynam
 without-case	crates/cli/src/milestone.rs::provision_failed_finding::milestone.provision-failed#1	not-constructible	the leftover at the path cannot be cleared	the removal of a directory or a file the probe has read fails only where an entry may not be written — a permission bit changed by hand, a declared bound of the catalog
 without-case	crates/cli/src/milestone.rs::provision_failed_finding::milestone.provision-failed#1	platform	the worktree's path is no UTF-8	the path is the repository's own and a sub-task's id, which is a slug: only a repository under a directory whose name is no UTF-8 reaches it, and this platform's file system makes no such name
 without-case	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1	not-constructible	the repository was moved, and git lists the worktree's registration at the path it had before	a case's repository stands where the sandbox made it and every step runs there: no step moves the repository itself. A copy beside it — followed — has the registration at the original's path with the original still there
-without-case	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	git cannot list this repository's worktrees, so whether a held path is registered is unknown	reached — driven by hand, with a `.git/config` git cannot read — only where git itself fails in the main checkout, and there neither way out of the route can be followed to an end that is about this route: the re-run's fourth guard and the consent's hook step both ask git, and each refuses under a code of its own
 without-case	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1	not-constructible	a link into git's own directory	one route for every end, and one constructor: the end is a clause of the message (`link_end`, the same function `jigc setup` asks, whose ends its own cases follow). The way out — the file itself put in the link's place — is the same act over each, and the case over a link out of the repository follows it; over a link to nothing it has no bytes to copy
 without-case	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1	not-constructible	a link to an entry inside the repository that is no regular file	one route for every end, and one constructor: the end is a clause of the message (`link_end`, the same function `jigc setup` asks, whose ends its own cases follow). The way out — the file itself put in the link's place — is the same act over each, and the case over a link out of the repository follows it; over a link to nothing it has no bytes to copy
 without-case	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1	not-constructible	a link to nothing	one route for every end, and one constructor: the end is a clause of the message (`link_end`, the same function `jigc setup` asks, whose ends its own cases follow). The way out — the file itself put in the link's place — is the same act over each, and the case over a link out of the repository follows it; over a link to nothing it has no bytes to copy
@@ -1692,7 +1713,6 @@ without-case	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-guide#d
 without-case	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-guide#dynamic-1	not-constructible	the guide's own path is a link	`guide_ownership` asks the entry first and reads a link as a copy that is not jigc's: the guide leaves the member table, `jigc setup` exits 0 and says so under the advisory `adapter-guide.user-modified` — driven, the link's end untouched
 without-case	crates/cli/src/setup.rs::run::setup.profile-load#1	not-constructible	no profile of the assistant's name is embedded in the binary	the name is a constant of `setup.rs` and the binary embeds the profile of that name: no state of a repository or of the environment takes it out
 without-case	crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1	not-constructible	no profile of the assistant's name is embedded in the binary	the name is a constant of `setup.rs` and the binary embeds the profile of that name: no state of a repository or of the environment takes it out
-without-case	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	not-constructible	a milestone's sub-task stages a doc	a sub-task's doc is staged by a `jigc doc` write run inside the sub-task's own worktree — the task is pinned there — and a state's step runs the binary under test at the repository's root: no state the runner can plant holds one. Not reached by hand either: `jigc start --task` in the worktree stages none
 without-case	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	not-constructible	the file is opened and its bytes cannot be written	a write that fails on an open file is a full disk or a failing one: no state of a sandbox
 without-case	crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1	not-constructible	the settings file cannot be read, or is no JSON	the allowlist step reads the same file first, through the same reader, and refuses under `uninstall.remove-allowlist` — the cases `uninstall-settings-…`. Nothing writes the file between the steps but a step that has just read it
 without-case	crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1	not-constructible	the settings file cannot be read, or is no JSON	the allowlist step reads the same file first, through the same reader, and refuses under `uninstall.remove-allowlist` — the cases `uninstall-settings-…`. Nothing writes the file between the steps but a step that has just read it
@@ -1796,7 +1816,7 @@ not-followed	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlan
 not-followed	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	not-constructible	*execute the sub-tasks* — the work itself, between the provision and the `git add`	the sub-tasks' work is the reader's own: the way is followed from the one state in which it is already written and only the staging is left
 not-followed	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	not-constructible	*check the id you typed against it* — the refused command with another id	the id is the reader's own, an argument of the refused command, which the frame runs again only as it was typed and only where the route prints no command line
 not-followed	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	not-constructible	*and rename that one instead*	the route names the act and prints no line for it: the title to give the other doc is the reader's own
-not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the command that keeps a commit, brings a checkout back, or abandons an operation	the command is printed on the path's line of the refusal's listing, above the route, and an act's operand is a span of the printed route: the frame runs no line of the message
+not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the command that brings a checkout back, on the listed line of a registration whose directory is gone	the line is a recipe of several commands joined by a shell's operators — `mkdir -p …` and a `printf … > …/.git` before the `git -C … restore` — and the frame runs a listed line only where it is one command of `git` or `jigc` (`Act::RunListed`). The command that keeps a commit and the one that abandons an operation are followed
 not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the milestone abandoned, at the three causes that are about a registration	one arm, one line — `jigc milestone discard <milestone-id> --force` — whatever the registered path is held for: followed at the live worktree, where the refusal lists no milestone to fill it with and no shell splits it as printed
 not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the work committed or stashed inside a live worktree	the route says *commit, stash, or copy it* and prints no line for any of the three; the frame's commit is one in the sandbox's own repository, where `.jigc/worktrees/` is ignored. The work is moved out — *copy it*
 not-followed	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	not-constructible	the work moved out of a path whose directory is gone, or whose checkout holds nothing in no commit	the route says of those paths that there is *nothing to move out*
@@ -1804,7 +1824,6 @@ not-followed	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-all
 not-followed	crates/cli/src/setup.rs::edited_through_links::uninstall.unwire-reference#dynamic-1	not-constructible	*or point it at a regular file inside this repository*	the teardown then edits the file the link leads to, which holds no reference of jigc's unless it is a copy of the host: the case would plant the answer it is held to
 not-followed	crates/cli/src/setup.rs::finding::setup.install-commit#1	not-constructible	a refused `git add` over another refusal than a locked index — a path a sparse checkout excludes, a submodule that is registered and absent	one arm, followed over one refusal: `finding` words the route the same whatever git said, and what resolves the refusal is in git's words, never in the route — a second state would follow the same route by another act of the case's own
 not-followed	crates/cli/src/setup.rs::finding::setup.install-commit#1	not-constructible	a refused `git commit` whose cause is a setting and no file — a signing key git cannot use	the route says *resolve the refusal* and prints no command for it; the frame has no act that changes a setting, and a `git config` line of the case's own would be a command the route did not print
-not-followed	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	not-constructible	the parking home deleted — *`rm -r` takes them*	`rm -r` is printed with no path, and it is no line of `jigc` or of `git`: the frame runs those two, and removes a file or a link, never a directory. The parking home is moved out whole instead
 not-followed	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	not-constructible	what is needed moved out of a listed path, or a listed path deleted, at the four causes whose path is not the parking home	the route says *the paths above* of the listed file and prints the path of the parking home, `.jigc/displaced/`. The frame refuses the marked form wherever the printed route holds a path, so a case may not name the listed file there, and no act on it can be written
 not-followed	crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1	not-constructible	the link committed, at any hooks directory but one inside the repository	git tracks nothing under its own directory, where the default hooks directory is, and nothing outside the repository
 not-followed	crates/cli/src/setup.rs::hook_written_through_a_link::uninstall.remove-precommit#1	not-constructible	*or point it at a script inside this repository*	the teardown then edits the script the link leads to, which holds jigc's block only where it is a copy of the hook: the case would plant the answer it is held to
