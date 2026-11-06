@@ -2,10 +2,12 @@
 #
 # dev/gate — run this project's dev-workflow gate and report it honestly.
 #
-# The gate is four commands (implementation/dev-workflow.md -> Gate) -- the test one
-# run as `cargo nextest run` and then `cargo test --doc`, or as `cargo test` when
-# nextest is not installed. Running them by hand is where the two standing shell rules
-# get broken:
+# The gate is four commands (implementation/dev-workflow.md -> Gate) -- fmt, clippy,
+# build, test -- and this script runs them as STEPS: fmt, clippy and build one step
+# each, then the test command as the suite in two `cargo nextest run` tiers (`tier1`,
+# `tier2`; under --keep-going a `test-build` step and ONE `test` step) and the doctests
+# (`doctest`, `cargo test --doc`) -- or as `cargo test` when nextest is not installed.
+# Running them by hand is where the two standing shell rules get broken:
 #
 #   * `cargo test 2>&1 | tail -5` reports *tail's* exit status, so a red gate reads
 #     as green. A scan of 139 subagent transcripts in one session recorded 215
@@ -41,7 +43,7 @@
 #                                #   Runs no cargo: the report layer is pure text over
 #                                #   a log, so this is also how it is TESTED
 #                                #   (tooling-tests/dev_gate_report.rs), in
-#                                #   milliseconds instead of a five-minute gate run.
+#                                #   milliseconds instead of a full gate run.
 #
 # A run stops at the first red stage, so a red costs what it takes to see it: a red fmt,
 # clippy or build step launches no test, and a red fast tier launches neither the second
@@ -479,7 +481,7 @@ fi
 # someone flips back, and the slow ordinary growth of the directory itself.
 #
 # It is an advisory and never a step: the count is printed, never judged, so nothing
-# here can redden a gate whose four commands passed. `find` without -delete/-exec/-mtime
+# here can redden a gate whose steps all passed. `find` without -delete/-exec/-mtime
 # is one readdir -- ~3s over 530 k entries, and imperceptible under 100 k.
 #
 # The threshold is overridable so the warning branch is reachable by a fixture the

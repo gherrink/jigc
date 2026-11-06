@@ -1,6 +1,6 @@
 # gitleaks configuration (implementation/public-hygiene.md -> The guard).
 #
-# The default ruleset, plus one allowlist entry for the one known false positive. An
+# The default ruleset, plus one allowlist entry for each known false positive. An
 # entry here is a claim that a finding is NOT a secret, so each one names the exact
 # file AND the exact line shape, never a path alone -- a path-only entry would also
 # silence a real secret that later lands in the same file.
@@ -13,3 +13,32 @@ condition = "AND"
 paths = ['''^crates/engine/src/file_state\.rs$''']
 regexTarget = "line"
 regexes = ['''^\s*"decisions/auth\.md": "[0-9a-f]{64}",?\s*$''']
+
+# DECISIONS.md: a `dev/regression-set` JSON report, pasted as one line (commit 85661425,
+# then line 99). generic-api-key fires on the member `"key": "<sha256>"` of its
+# `baseline` object -- the hash that keys the previous release's kept baseline, the one
+# member of that report whose name holds a trigger word. Every value of the report is a
+# commit id, a sha256, a count, a path or a reason; none is a credential. Ruled H2 (A) by
+# the human on 2026-11-06 -- an entry, never a fingerprint (it drifts) or a history
+# rewrite (the history is public). Narrow on three axes, all required (AND):
+#   - the one file, DECISIONS.md;
+#   - the line's shape: a whole report line of that tool, opening `{"tool":
+#     "regression-set", "status": ` and closing `}`, whose `baseline` holds `detail`,
+#     `dir`, then a `key` of exactly 64 lowercase hex -- so a hex string anywhere else, the
+#     same shape in another file, or a non-hex `key` still fires;
+#   - the one rule, generic-api-key -- every other rule (a provider token's own shape, a
+#     private key) still fires on that same line.
+# What it cannot tell apart: a second generic-api-key match on such a line is silenced
+# with the first, because gitleaks matches the whole line. The line is a tool's
+# machine-written report, so that would take a secret typed into one by hand.
+# The `\n?` after `^` is gitleaks' and not the line's: scanning git history (8.30.1),
+# the "line" it matches opens with the newline that ends the line before it -- except
+# on a hunk's first line -- so a bare `^\{` never matches there (the entry above has
+# `^\s*` for the same reason).
+[[allowlists]]
+description = "DECISIONS.md: a dev/regression-set report line; generic-api-key fires on its baseline's `\"key\": \"<sha256>\"`, a hash and no credential (H2, ruled A on 2026-11-06)."
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = ['''^DECISIONS\.md$''']
+regexTarget = "line"
+regexes = ['''^\n?\{"tool": "regression-set", "status": "[a-z]+", .*"baseline": \{"detail": (?:null|"[^"]*"), "dir": "[^"]*", "key": "[0-9a-f]{64}", .*\}\s*$''']
