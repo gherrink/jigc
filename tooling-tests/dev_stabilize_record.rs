@@ -19223,6 +19223,508 @@ fn a_triage_entry_says_not_comparable_and_the_state_reads_it_back() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// The regression base, the record script's half (the plan before the opening's `RB1`; the
+// human's ruling (c) of 2026-10-27, sharpened: every earlier candidate of the run, newest
+// first — green on any of them is a regression)
+// ---------------------------------------------------------------------------
+
+/// The hash of the one binary round `n`'s candidate is driven as: round 1's is
+/// [`driven`]'s, and each later round's a digit of its own.
+fn driven_in(n: usize) -> String {
+    if n == 1 {
+        return driven();
+    }
+    let digit = u32::try_from(n).expect("a round's number");
+    sha256(char::from_digit(digit, 10).expect("a round below ten"))
+}
+
+/// A run WITH A QUEUE that stands in round `rounds`: every round before it tested, found
+/// nothing and named the binary its candidate was driven as — each through the script's
+/// own writers — and the latest round tested too, its hunt's `keys` each sent on by its one
+/// triage, and its attempt 1 begun on record.
+fn a_later_round(label: &str, rounds: usize, keys: &[&str]) -> Rig {
+    let rig = a_filing_run(label, Some(9), Some(2));
+    for n in 2..=rounds {
+        tested_round(&rig, n, true, &BOTH_GREEN, json!({"binary": driven_in(n)}));
+    }
+    let round = rounds.to_string();
+    let found: Vec<Value> = keys
+        .iter()
+        .map(|key| {
+            let mut row = evident(key, "route", "hunt");
+            row["round"] = json!(rounds);
+            row
+        })
+        .collect();
+    rig.run(&ledger_add(RUN), &json!(found).to_string())
+        .must(OK, "what the latest round's hunt found");
+    let sent: Vec<Value> = keys.iter().map(|key| sent_on(key)).collect();
+    rig.run(&triage_set(RUN, &round), &json!(sent).to_string())
+        .must(OK, "the latest round's one triage");
+    rig.run(&report(RUN, &round, "attempt", "1"), BODY)
+        .must(OK, "the attempt's marker");
+    rig
+}
+
+/// The report the verifier of `key` writes in round `n` before it files.
+fn reported_in(rig: &Rig, n: usize, key: &str) {
+    let body = format!("# verify-real of {key}\n\nDriven on every binary it was handed.\n{ENDS}\n");
+    rig.run(
+        &report(RUN, &n.to_string(), &format!("verify-{key}"), "1"),
+        &body,
+    )
+    .must(OK, "the verifier's report");
+}
+
+/// The call that files `given` in round `n`, under the verifier of the key it names.
+fn file_in(rig: &Rig, n: usize, given: &Value) -> Seen {
+    let reporter = format!("verify-{}", given["key"].as_str().expect("a key"));
+    rig.run(
+        &verdict_args(RUN, &n.to_string(), &reporter, "1"),
+        &given.to_string(),
+    )
+}
+
+/// A confirmed filing of round `n`, with the previous release's binary behind it: its
+/// regression fact there where one is given, and the earlier candidates' where `earlier` is.
+fn confirmed_in(n: usize, key: &str, regression: Value, earlier: Option<Value>) -> Value {
+    let mut given = json!({"key": key, "verdict": "confirmed", "candidate": driven_in(n), "previous": sha256('d')});
+    if !regression.is_null() {
+        given["regression"] = regression;
+    }
+    if let Some(earlier) = earlier {
+        given["earlier"] = earlier;
+    }
+    given
+}
+
+/// One entry of `earlier`: what the repro did on round `round`'s candidate, by that round's
+/// recorded binary.
+fn on(round: usize, regression: Value) -> Value {
+    json!({"round": round, "binary": driven_in(round), "regression": regression})
+}
+
+/// A verifier's whole act in round `n`: its report, then its filing, which is taken — and
+/// what the call printed of the regression: `[regression, unknown]`.
+fn said_in(rig: &Rig, n: usize, given: &Value) -> Value {
+    reported_in(rig, n, given["key"].as_str().expect("a key"));
+    let seen = file_in(rig, n, given);
+    seen.must(OK, &format!("the filing of {}", given["key"]));
+    let printed = seen.json();
+    json!([printed["regression"], printed["unknown"]])
+}
+
+/// A record of round `n`'s `test` stage that takes what was filed, as [`recorded`] is of
+/// round 1's.
+fn recorded_in(rig: &Rig, n: usize, keys: &[&str]) -> Seen {
+    rig.run(
+        &apply(RUN, Some(&n.to_string())),
+        &json!([call(check_ledger(RUN, keys), "")]).to_string(),
+    )
+}
+
+/// `[key, verdict, regression]` of each row of round `n`'s triage record.
+fn regression_cells(rig: &Rig, n: usize) -> Vec<Value> {
+    table(&rig.read(&triage_path(&n.to_string())), &TRIAGE_COLUMNS)
+        .into_iter()
+        .map(|row| json!([row[0], row[3], row[4]]))
+        .collect()
+}
+
+/// `[grade, graded_by]` of the ledger's row `key`.
+fn ledger_grade(rig: &Rig, key: &str) -> Value {
+    table(&rig.read(&ledger_path()), &LEDGER_COLUMNS)
+        .into_iter()
+        .find(|row| row[0] == format!("`{key}`"))
+        .map(|row| json!([row[6], row[7]]))
+        .unwrap_or_else(|| panic!("the ledger's row {key}"))
+}
+
+/// **A finding green on an earlier candidate of the run is a regression of the run**
+/// (ruling (c) of 2026-10-27, sharpened: *every earlier candidate of the run, newest first —
+/// green on any of them is a regression*). In round 2 a verifier that drove the repro on
+/// round 1's binary, held to that round's recorded `binary`, files `earlier`; green there
+/// grades the finding `regression` and routes it to a fixer — whether the previous release
+/// was red (`false`) or had no such door (`not-comparable`) — from the filing to the state,
+/// the round's triage record and the ledger.
+#[test]
+fn a_finding_green_on_an_earlier_candidate_is_a_regression_of_the_run() {
+    let rig = a_later_round("earlier-green", 2, &["r-1", "r-2"]);
+    assert_eq!(
+        said_in(
+            &rig,
+            2,
+            &confirmed_in(2, "r-1", json!(false), Some(json!([on(1, json!(true))])))
+        ),
+        json!([true, null]),
+        "red on the previous release, green on round 1's candidate"
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            2,
+            &confirmed_in(
+                2,
+                "r-2",
+                json!("not-comparable"),
+                Some(json!([on(1, json!(true))]))
+            )
+        ),
+        json!([true, null]),
+        "a door the previous release lacks, green on round 1's candidate"
+    );
+    let filed_text = rig.read("completions/artifacts/rc24/r2/verdicts/verify-r-1.a1.json");
+    assert!(
+        filed_text.contains(r#""earlier": ["#) && filed_text.contains(&driven()),
+        "the filed file holds the earlier candidates, by their binaries: {filed_text}"
+    );
+    let said_of = |read: &Value| {
+        json!([
+            finding(read, "r-1")["grade"],
+            routed(read, "r-1"),
+            finding(read, "r-1")["triage"]["regression"],
+            finding(read, "r-2")["grade"],
+            routed(read, "r-2"),
+            read["regression_unknown"]
+        ])
+    };
+    let expected = json!([
+        "regression",
+        at("fix", "regression"),
+        true,
+        "regression",
+        at("fix", "regression"),
+        []
+    ]);
+    assert_eq!(
+        said_of(&rig.state()),
+        expected,
+        "before any record holds it"
+    );
+    recorded_in(&rig, 2, &["r-1", "r-2"]).must(OK, "the record that takes the two filings");
+    assert_eq!(
+        regression_cells(&rig, 2),
+        [
+            json!(["`r-1`", "confirmed", "yes"]),
+            json!(["`r-2`", "confirmed", "yes"])
+        ]
+    );
+    assert_eq!(
+        ledger_grade(&rig, "r-1"),
+        json!(["regression", "verify-real"])
+    );
+    assert_eq!(said_of(&rig.state()), expected, "read back from the record");
+}
+
+/// **A filed earlier candidate is held to its round's binary by every read too**, as the
+/// round's own candidate is (the header: verdict, (iv); `filing_of`): a round record whose
+/// binary is no longer the one the filing names makes the file no verdict — `another-binary`
+/// — and the finding awaits its verdict again.
+#[test]
+fn a_filed_earlier_candidate_whose_rounds_binary_changed_since_is_no_verdict() {
+    let rig = a_later_round("earlier-changed", 2, &["r-1"]);
+    said_in(
+        &rig,
+        2,
+        &confirmed_in(2, "r-1", json!(false), Some(json!([on(1, json!(true))]))),
+    );
+    assert_eq!(filed(&rig.state()), [json!(["r-1", true, null])]);
+    let round_one = round_path("1");
+    let text = rig.read(&round_one);
+    assert!(
+        text.contains(&driven()),
+        "round 1's record names its binary: {text}"
+    );
+    fs::write(
+        rig.root.join(&round_one),
+        text.replace(&driven(), &sha256('e')),
+    )
+    .expect("a round record whose binary changed");
+    let read = rig.state();
+    assert_eq!(
+        json!([filed(&read), finding(&read, "r-1")["grade"]]),
+        json!([[["r-1", false, "another-binary"]], "breaks"]),
+        "{read}"
+    );
+}
+
+/// **In round 2 or later a confirmed filing without `earlier` is unknown** (the review of
+/// plan v2, `S6`: the regression base fails loud). A fact that is not `true` on the previous
+/// release says nothing of the earlier candidates, so without them it is no fact: the call
+/// prints why (`no-earlier`), the round's record writes `-`, and the state names the finding
+/// (`regression_unknown`) — never `no`. What is not touched: a regression on the previous
+/// release is one whatever the earlier candidates did; a refutation has no regression
+/// fact; and a complete list keeps the fact.
+#[test]
+fn in_round_two_a_confirmed_filing_without_earlier_is_unknown() {
+    let rig = a_later_round("earlier-missing", 2, &["r-1", "r-2", "r-3", "r-4", "r-5"]);
+    assert_eq!(
+        said_in(&rig, 2, &confirmed_in(2, "r-1", json!(false), None)),
+        json!([null, "no-earlier"])
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            2,
+            &confirmed_in(2, "r-2", json!("not-comparable"), None)
+        ),
+        json!([null, "no-earlier"])
+    );
+    assert_eq!(
+        said_in(&rig, 2, &confirmed_in(2, "r-3", json!(true), None)),
+        json!([true, null]),
+        "green on the previous release is a regression, whatever came after"
+    );
+    let mut refuted = json!({"key": "r-4", "verdict": "refuted", "refutation": "intended", "candidate": driven_in(2)});
+    assert_eq!(said_in(&rig, 2, &refuted), json!([null, null]));
+    assert_eq!(
+        said_in(
+            &rig,
+            2,
+            &confirmed_in(2, "r-5", json!(false), Some(json!([on(1, json!(false))])))
+        ),
+        json!([false, null]),
+        "red on every binary it was handed: no regression, and known"
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["regression_unknown"],
+            finding(&read, "r-1")["grade"],
+            routed(&read, "r-1"),
+            finding(&read, "r-3")["grade"],
+            routed(&read, "r-3"),
+            finding(&read, "r-5")["triage"]["regression"]
+        ]),
+        json!([
+            ["r-1", "r-2"],
+            "confirmed",
+            at("fix", "inside"),
+            "regression",
+            at("fix", "regression"),
+            false
+        ]),
+        "{read}"
+    );
+    recorded_in(&rig, 2, &["r-1", "r-2", "r-3", "r-4", "r-5"]).must(OK, "the record");
+    assert_eq!(
+        regression_cells(&rig, 2),
+        [
+            json!(["`r-1`", "confirmed", "-"]),
+            json!(["`r-2`", "confirmed", "-"]),
+            json!(["`r-3`", "confirmed", "yes"]),
+            json!(["`r-4`", "refuted: intended", "-"]),
+            json!(["`r-5`", "confirmed", "no"])
+        ]
+    );
+    assert_eq!(rig.state()["regression_unknown"], json!(["r-1", "r-2"]));
+    // A refutation carries no earlier candidates, as it carries no regression.
+    refuted["key"] = json!("r-9");
+    refuted["earlier"] = json!([on(1, json!(true))]);
+    let before = rig.snapshot();
+    file_in(&rig, 2, &refuted).refused(BAD_VALUE, "earlier candidates beside a refutation");
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+}
+
+/// **An `earlier` list out of order, with a wrong hash, or of another shape is refused, and
+/// nothing is written.** Newest first, one entry per earlier candidate, each `{round,
+/// binary, regression}`: the round one before the filing's, its binary the one that round's
+/// record names, its regression a fact — true, false or `not-comparable`.
+#[test]
+fn an_earlier_list_out_of_order_or_with_a_wrong_hash_is_refused() {
+    let rig = a_later_round("earlier-refused", 3, &["r-1"]);
+    reported_in(&rig, 3, "r-1");
+    let before = rig.snapshot();
+    let mut wrong_hash = on(2, json!(false));
+    wrong_hash["binary"] = json!(sha256('c'));
+    let mut no_fact = on(2, json!(false));
+    no_fact["regression"] = Value::Null;
+    let mut more = on(2, json!(false));
+    more["note"] = json!("driven twice");
+    let mut no_binary = on(2, json!(false));
+    no_binary
+        .as_object_mut()
+        .expect("an entry")
+        .remove("binary");
+    let mut round_as_text = on(2, json!(false));
+    round_as_text["round"] = json!("2");
+    let mut round_as_flag = on(1, json!(false));
+    round_as_flag["round"] = json!(true);
+    for (earlier, what) in [
+        (
+            json!([wrong_hash, on(1, json!(false))]),
+            "a hash that is not the round's binary",
+        ),
+        (
+            json!([on(1, json!(false)), on(2, json!(false))]),
+            "oldest first",
+        ),
+        (
+            json!([on(2, json!(false)), on(2, json!(false))]),
+            "one round twice",
+        ),
+        (
+            json!([on(3, json!(false)), on(2, json!(false))]),
+            "the filing's own round",
+        ),
+        (json!([on(4, json!(false))]), "a round after it"),
+        (
+            json!([{"round": 0, "binary": driven(), "regression": false}]),
+            "round 0",
+        ),
+        (json!([no_fact]), "an entry that says no fact"),
+        (
+            json!([on(2, json!("comparable"))]),
+            "a word that is no fact",
+        ),
+        (json!([more]), "an entry with a member of its own"),
+        (json!([no_binary]), "an entry without its binary"),
+        (json!([round_as_text]), "a round that is text"),
+        (json!([round_as_flag]), "a round that is a flag"),
+        (on(2, json!(false)), "one entry that is no list"),
+        (json!("r2"), "a word"),
+        (json!([["r2", false]]), "an entry that is no object"),
+    ] {
+        file_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-1", json!(false), Some(earlier)),
+        )
+        .refused(BAD_VALUE, what);
+    }
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+    file_in(
+        &rig,
+        3,
+        &confirmed_in(
+            3,
+            "r-1",
+            json!(false),
+            Some(json!([on(2, json!(false)), on(1, json!(false))])),
+        ),
+    )
+    .must(
+        OK,
+        "newest first, every earlier candidate, each by its binary",
+    );
+}
+
+/// **A partial `earlier` list is unknown, and a complete one is the fact.** In round 3 the
+/// earlier candidates are rounds 2 and 1: a list that leaves one out says nothing of it, so
+/// a fact that is not `true` is unknown (`earlier-incomplete`) — an empty list too — while
+/// one green entry is a regression however many are given. Complete and green on none, the
+/// fact is the previous release's.
+#[test]
+fn a_partial_earlier_list_is_unknown_and_a_complete_one_is_the_fact() {
+    let rig = a_later_round("earlier-partial", 3, &["r-1", "r-2", "r-3", "r-4"]);
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-1", json!(false), Some(json!([on(2, json!(false))])))
+        ),
+        json!([null, "earlier-incomplete"])
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-2", json!(false), Some(json!([on(1, json!(true))])))
+        ),
+        json!([true, null]),
+        "green on one earlier candidate is enough"
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(
+                3,
+                "r-3",
+                json!(false),
+                Some(json!([on(2, json!(false)), on(1, json!("not-comparable"))]))
+            )
+        ),
+        json!([false, null])
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-4", json!(false), Some(json!([])))
+        ),
+        json!([null, "earlier-incomplete"])
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            read["regression_unknown"],
+            finding(&read, "r-2")["grade"],
+            finding(&read, "r-3")["triage"]["regression"]
+        ]),
+        json!([["r-1", "r-4"], "regression", false]),
+        "{read}"
+    );
+}
+
+/// **Round 1 has no earlier candidate** — the context the field is composed into that
+/// omits its target. An entry of round 1 is refused there, as any round that is not an
+/// earlier one is; an empty list is complete; and A FILING WITHOUT THE FIELD IS WRITTEN AS IT
+/// WAS: the file holds no `earlier` member, and the fact is the previous release's.
+#[test]
+fn round_one_has_no_earlier_candidate() {
+    let rig = a_filing_run("earlier-round-one", Some(9), Some(2));
+    hunted(&rig, &[("r-1", "route"), ("r-2", "route")]);
+    begun_attempt(&rig, "1");
+    reported(&rig, "r-1", "1");
+    let before = rig.snapshot();
+    file(
+        &rig,
+        "1",
+        &confirmed_in(1, "r-1", json!(false), Some(json!([on(1, json!(true))]))),
+    )
+    .refused(BAD_VALUE, "round 1 is not earlier than itself");
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+    let printed = file(
+        &rig,
+        "1",
+        &confirmed_in(1, "r-1", json!(false), Some(json!([]))),
+    );
+    printed.must(OK, "an empty list, which is complete in round 1");
+    assert_eq!(
+        json!([printed.json()["regression"], printed.json()["unknown"]]),
+        json!([false, null])
+    );
+    reported(&rig, "r-2", "1");
+    let printed = file(&rig, "1", &confirmed_in(1, "r-2", json!(false), None));
+    printed.must(OK, "a filing without the field");
+    assert_eq!(
+        json!([printed.json()["regression"], printed.json()["unknown"]]),
+        json!([false, null])
+    );
+    let members = |reporter: &str| -> Vec<String> {
+        let text = rig.read(&filed_path(reporter, "1"));
+        let record: Value = serde_json::from_str(&text).expect("a filed verdict is JSON");
+        record
+            .as_object()
+            .expect("an object")
+            .keys()
+            .cloned()
+            .collect()
+    };
+    let without = members("verify-r-2");
+    assert!(
+        !without.iter().any(|name| name == "earlier"),
+        "a filing without the field writes no `earlier` member: {without:?}"
+    );
+    assert!(
+        members("verify-r-1").iter().any(|name| name == "earlier"),
+        "and one that says it keeps what it said"
+    );
+    assert_eq!(rig.state()["regression_unknown"], json!([]));
+}
+
 /// **A filed verdict counts before any record holds it** (`T3a`; ruling 4 of 2026-10-10: *a
 /// verdict is recorded when it returns, never only at the stage's end*; the ruling of
 /// 2026-10-11, 1). Between a stage's two records a verifier files its verdict, and the

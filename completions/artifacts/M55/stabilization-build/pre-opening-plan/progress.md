@@ -72,6 +72,7 @@ schema-version: 3
 <!-- fields -->
 - intent: RB1 — judge a regression against every earlier candidate of the run, in the record script
 - workflow: builder
+- status: joined
 
 ### u0-give-cis-slowest-legs  {#u0-give-cis-slowest-legs}
 

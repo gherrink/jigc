@@ -198,7 +198,9 @@
 #                                  needs-bound (out of scope as triage reads it, under
 #                                  no declared bound: the finding goes to the human)
 #                      verify-real gives confirmed, regression (confirmed, and green on
-#                                  the previous release), refuted
+#                                  the previous release — or, by a filed verdict, on
+#                                  an earlier candidate of the run: verdict,
+#                                  `earlier`), refuted
 #                      human       gives any of them; ungraded has no grader
 #         bound        with out-of-scope and only with it: the declared bound it cites.
 #                      It is a row of bounds.md, or the whole batch is refused
@@ -471,6 +473,33 @@
 #         regression   beside confirmed: true | false | "not-comparable" (triage-set:
 #                      regression), or not said where the verifier does not know
 #         previous     the sha256 of the previous release's binary, where it drove one
+#         earlier      beside confirmed only, and optional: THE REGRESSION BASE (the plan
+#                      before the opening's RB1; the human's ruling (c) of 2026-10-27,
+#                      sharpened: every earlier candidate of the run, newest first — green
+#                      on any of them is a regression). What the verifier found on the
+#                      run's earlier candidates: a list, NEWEST FIRST, one entry per
+#                      earlier candidate, each {round, binary, regression} — the round one
+#                      before this filing's, each once and in falling order; binary the
+#                      sha256 of the binary THAT ROUND'S RECORD NAMES (round-set: binary),
+#                      held at the filing and by every read, as `candidate` is (iv); and
+#                      regression true (green there), false (red there too) or
+#                      "not-comparable" (the door is not on that candidate) — a fact, never
+#                      null: an entry the verifier does not know is left out. Anything else
+#                      is refused (bad-value). THE REGRESSION OF THE RUN follows from the
+#                      filing, and it is what the state grades, routes and records by: TRUE
+#                      where the repro is green on the previous release or on ANY earlier
+#                      candidate the list names; else the previous release's fact as kept
+#                      below — but only where the list names EVERY earlier candidate of the
+#                      run. A list that leaves one out says nothing of it, and so does no
+#                      list: in round 2 or later a confirmed filing without the field, or
+#                      with a partial one, is UNKNOWN unless a regression is shown — the
+#                      call prints why (`unknown`: no-earlier, earlier-incomplete), the
+#                      round's record writes `-`, and `state` names it (regression_unknown).
+#                      Round 1 has no earlier candidate: an entry is refused there, and
+#                      without the field the fact is the previous release's, as it always
+#                      was. Only the record script's half is built: NOTHING HANDS A
+#                      VERIFIER AN EARLIER CANDIDATE'S BINARY YET (decisions-pending.md:
+#                      wf-regression-base, due with the `fix` half's repair).
 #         contested    ONLY WHERE THE VERIFIER FOUND THE FINDING TO CONTEST A SETTLED
 #                      DECISION — beside whichever verdict it reached: THE BASIS, what is
 #                      contested and why, in the verifier's own words. The member IS the
@@ -504,7 +533,9 @@
 #               an attempt is launched (bad-value). A verifier's own report begins none.
 #         (iv)  THE BINARY IS THE ROUND'S: `candidate` is the hash the round's record names
 #               (round-set: binary), or the filing is refused (bad-value) — a verdict on
-#               another binary is no verdict. AND A REGRESSION IS A FACT ONLY WITH THE
+#               another binary is no verdict — AND EACH EARLIER CANDIDATE'S IS ITS ROUND'S:
+#               an entry of `earlier` whose binary is not the one its round's record names
+#               is refused the same way. AND A REGRESSION IS A FACT ONLY WITH THE
 #               PREVIOUS RELEASE'S BINARY BEHIND IT — and so is "not-comparable", which
 #               says what that binary lacks: without `previous`, or with the candidate's
 #               own hash there, the filing is taken and the fact is UNKNOWN — filed as not
@@ -578,16 +609,20 @@
 #       row's `handed_on`); it is what a stop's view counts the verifier of such a row from
 #       (state: view, `named`), and nothing is ranked, promoted or merged on it.
 #       THE FILE is JSON, its members in one order — key, reporter, round, attempt,
-#       verdict, refutation, reason, regression, contested: the basis as a cell would hold
-#       it, or null, candidate, previous, report: {file,
+#       verdict, refutation, reason, regression: the previous release's fact as kept,
+#       contested: the basis as a cell would hold it, or null, candidate, previous —
+#       then, ONLY WHERE THE FILING SAID IT, earlier: [{round, binary, regression}], so that
+#       a filing without it is the text it always was — report: {file,
 #       sha256}, hand_on: the opening's number as the filing found it, handed_on: [{key,
 #       proposed, place, beyond, doctype, source, door, clause, repro, kind, given, origin,
 #       code, site, evidence}] — and, last, sha256: THE SEAL, the hash of the text without
 #       it. A file that is not that text to the byte, under its own seal, is no filed
 #       verdict (vet; state: filed).
 #       Prints {"verdict": the path, "sha256": the hash of the file's bytes, "key", "word":
-#       the verdict, "regression": true | false | "not-comparable" | null, "unknown":
-#       why a regression that was said is not kept, or null, "contested": whether the
+#       the verdict, "regression": THE REGRESSION OF THE RUN (`earlier`, above) — true |
+#       false | "not-comparable" | null, "unknown": why a regression that was said is not
+#       known — no-previous-hash, previous-is-the-candidate, no-earlier,
+#       earlier-incomplete — or null where it is known or nothing was said, "contested": whether the
 #       filing says a basis,
 #       "handed_on": [{key, proposed, kind, origin, beyond}], "leads": the keys of the
 #       items entered as a lead}.
@@ -998,7 +1033,9 @@
 #         blockers     the keys routed fix
 #         regression_unknown  the keys of the findings a verifier CONFIRMED WITHOUT
 #                      KNOWING WHETHER EACH IS A REGRESSION (triage-set: regression absent
-#                      or null), for as long as the finding is not routed recorded. Such
+#                      or null; and a filed verdict of round 2 or later that shows no
+#                      regression and does not name every earlier candidate — verdict:
+#                      `earlier`), for as long as the finding is not routed recorded. Such
 #                      a finding is routed by its grade and its door exactly as a
 #                      confirmed non-regression is — fix inside the test set, the human's
 #                      outside it — and is never fixed unasked as "a regression", which
@@ -1052,7 +1089,9 @@
 #                        not-a-filing      not the text the writer left under that name,
 #                                          or not under its own seal
 #                        report-gone, report-changed   the report it was filed beside
-#                        another-binary    not the binary the round's record names
+#                        another-binary    not the binary the round's record names —
+#                                          of its own round, or of an earlier
+#                                          candidate it names (verdict: earlier)
 #                        no-such-row       its key is no row — of the ledger, or handed
 #                                          on by a filing that counts
 #                        second-filing     the round holds an earlier filing for the key
@@ -2387,6 +2426,14 @@ HELD = "held-"
 # the byte, or it is none.
 VERDICT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
 FILED_FIELDS = ("key", "reporter", "round", "attempt", "verdict", "refutation", "reason", "regression", "contested", "candidate", "previous", "report", "hand_on", "handed_on")
+# THE REGRESSION BASE (the plan before the opening's RB1; the human's ruling (c) of
+# 2026-10-27, sharpened: every earlier candidate of the run, newest first — green on any of
+# them is a regression): what a filing says of the earlier candidates, where it says it. A
+# file holds the member after `previous` ONLY WHERE ITS FILING SAID IT, so a filing without
+# it is the text it always was; and each entry's members in their order.
+EARLIER = "earlier"
+FILED_WITH_EARLIER = FILED_FIELDS[: FILED_FIELDS.index("previous") + 1] + (EARLIER,) + FILED_FIELDS[FILED_FIELDS.index("previous") + 1 :]
+EARLIER_FIELDS = ("round", "binary", "regression")
 HANDED_FIELDS = ("key", "proposed", "place", "beyond", "doctype", "source", "door", "clause", "repro", "kind", "given", "origin", "code", "site", "evidence")
 # What a verifier says of an item it hands on: what its ledger row needs, and its kind —
 # with the kind's evidence, the refusal's code and the site, as a row's class has them.
@@ -4659,6 +4706,40 @@ def a_regression_fact(value):
     return isinstance(value, bool) or value == NOT_COMPARABLE
 
 
+def an_earlier_list(value, round_number):
+    """Whether `value` is what a filing of round `round_number` may say of the run's earlier
+    candidates (the header: verdict, `earlier`): a list, NEWEST FIRST, of {round, binary,
+    regression}, in any order of its members — each round one before the filing's, each once, in falling order; the
+    binary a sha256; the regression a fact (a_regression_fact). A list may leave a round out:
+    it is then partial, and the fact it says nothing of is unknown (regression_of_the_run)."""
+    if not isinstance(value, list) or not all(isinstance(entry, dict) and sorted(entry) == sorted(EARLIER_FIELDS) for entry in value):
+        return False
+    rounds = [entry["round"] for entry in value]
+    return (
+        all(type(n) is int and 1 <= n < round_number for n in rounds)
+        and all(a > b for a, b in zip(rounds, rounds[1:]))
+        and all(isinstance(entry["binary"], str) and bool(SHA256.fullmatch(entry["binary"])) and a_regression_fact(entry["regression"]) for entry in value)
+    )
+
+
+def regression_of_the_run(record):
+    """A FILED VERDICT'S REGRESSION OF THE RUN — ITS ONE DEFINITION, which the call that files
+    it prints and every read of the state grades and routes by (the header: verdict,
+    `earlier`): None beside any verdict but `confirmed`; TRUE where the repro is green on the
+    previous release's binary, or on ANY earlier candidate's the filing names; else the
+    previous release's fact as the file keeps it — false, not comparable, or unknown — but
+    only where the filing names EVERY earlier candidate of the run: a list that leaves one
+    out, or none at all in round 2 or later, says nothing of it, and the fact is unknown."""
+    if record["verdict"] != "confirmed":
+        return None
+    earlier = record.get(EARLIER) or []
+    if record["regression"] is True or any(entry["regression"] is True for entry in earlier):
+        return True
+    if len(earlier) < record["round"] - 1:
+        return None
+    return record["regression"]
+
+
 def graded_by_the_row(row):
     """THE LEDGER'S GRADE AND ITS GRADER, AS THEY FOLLOW FROM A ROW OF A ROUND'S TRIAGE RECORD
     — ITS ONE DEFINITION for an entry's writer (the header: triage-set): the verdict where the
@@ -4810,7 +4891,7 @@ def verdict(args):
     given = json_stdin()
     if not isinstance(given, dict):
         refuse("bad-value", "stdin must be one filing as a JSON object: the finding's key, the verifier's verdict, the hash of the binary it drove, and what it hands on")
-    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", CONTESTED, "previous", "hands_on"), "a filing")
+    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", CONTESTED, "previous", EARLIER, "hands_on"), "a filing")
     key = slug(given["key"], "key")
     what = "the filing of %s" % key
     word = one_of(given["verdict"], VERDICTS + (UNDRIVABLE,), what + ": verdict")
@@ -4823,6 +4904,13 @@ def verdict(args):
     regression = given.get("regression")
     if regression is not None and (word != "confirmed" or not a_regression_fact(regression)):
         refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, `%s`, or not said — not %s beside `%s`" % (what, NOT_COMPARABLE, shown(regression), word))
+    # THE EARLIER CANDIDATES (the regression base): beside `confirmed` only, newest first,
+    # each round one before this one; each binary is held to its round's record below.
+    earlier = given.get(EARLIER)
+    if earlier is not None and (word != "confirmed" or not an_earlier_list(earlier, int(round_number))):
+        refuse("bad-value", "%s: `%s` is what the verifier found on the run's earlier candidates, beside `confirmed` only — a list, newest first, of {round, binary, regression}: each round one before round %s, once, in falling order, the sha256 of the binary that round's record names, and true (green there), false (red there too) or `%s` — not %s beside `%s`; nothing was written" % (what, EARLIER, round_number, NOT_COMPARABLE, shown(earlier), word))
+    if earlier is not None:
+        earlier = [{name: entry[name] for name in EARLIER_FIELDS} for entry in earlier]
     # CONTESTED, WITH ITS BASIS (the header: verdict): what the finding contests, and why, in
     # the verifier's own words — beside whichever verdict it reached. The member IS the
     # basis: `true` says that a finding is contested and not what or why, and is refused.
@@ -4907,6 +4995,12 @@ def verdict(args):
     # previous release's binary behind it: else it is UNKNOWN, and never `no`.
     if candidate != binary:
         refuse("bad-value", "%s: it asserts the candidate's binary %s, and round %s's record names %s — a verdict on another binary is no verdict of this round; nothing was written" % (what, candidate, round_number, binary))
+    # … AND EVERY EARLIER CANDIDATE IT NAMES IS THAT ROUND'S BINARY: a fact of another binary
+    # is no fact of the run's earlier candidate.
+    binaries = {held["round"]: held["facts"].get("binary") for held in read["rounds"]}
+    for entry in earlier or []:
+        if entry["binary"] != binaries.get(entry["round"]):
+            refuse("bad-value", "%s: it says of round %d's candidate that it drove the binary %s, and round %d's record names %s — an earlier candidate is the binary its round's record names; nothing was written" % (what, entry["round"], entry["binary"], entry["round"], binaries.get(entry["round"]) or "none"))
     unknown = None
     if regression is not None and previous in (None, candidate):
         regression, unknown = None, "no-previous-hash" if previous is None else "previous-is-the-candidate"
@@ -4926,10 +5020,17 @@ def verdict(args):
         places += item["kind"] != "lead"
         item.update(place=n, beyond=item["kind"] != "lead" and places > (allowed or 0), source=as_data(cell("handed on by `%s`, the verifier of `%s`, in round %s (attempt %s)" % (reporter, key, round_number, attempt))))
         handed.append({name: item[name] for name in HANDED_FIELDS})
-    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, basis, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)))
+    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, basis, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)), **{EARLIER: earlier})
+    # THE REGRESSION OF THE RUN, as every read will grade it — and, where it is unknown and
+    # the previous release's fact was kept, why: the earlier candidates are not all named.
+    fact = regression_of_the_run(record)
+    if fact is not None:
+        unknown = None
+    elif regression is not None:
+        unknown = "no-earlier" if earlier is None else "earlier-incomplete"
     text = filed_text(record)
     rel = publish(run_dir, filed_parts + ["%s.a%s.json" % (reporter, attempt)], text, replace=False, taken="a verdict is filed once per finding and round")
-    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, CONTESTED: basis is not None, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
+    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": fact, "unknown": unknown, CONTESTED: basis is not None, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
 
 
 # --- the entries a triage hands over ------------------------------------------------------
@@ -5606,7 +5707,7 @@ def filed_text(record):
     """A filed verdict as it is written: its members in their order (FILED_FIELDS), and —
     the last one — the sha256 of the text without it. A file a hand changed does not bear
     its own seal, and is no filed verdict."""
-    body = {name: record[name] for name in FILED_FIELDS}
+    body = {name: record[name] for name in (FILED_FIELDS if record.get(EARLIER) is None else FILED_WITH_EARLIER)}
     seal = hashlib.sha256(json.dumps(body, indent=1, ensure_ascii=False).encode("utf-8")).hexdigest()
     return json.dumps(dict(body, sha256=seal), indent=1, ensure_ascii=False) + "\n"
 
@@ -5616,7 +5717,7 @@ def sealed(text):
     wrote: not that JSON to the byte, not under its own seal, or of another shape."""
     try:
         record = json.loads(text)
-        if not isinstance(record, dict) or tuple(record) != FILED_FIELDS + ("sha256",) or filed_text(record) != text:
+        if not isinstance(record, dict) or tuple(record) not in (FILED_FIELDS + ("sha256",), FILED_WITH_EARLIER + ("sha256",)) or filed_text(record) != text:
             return None
         report, items = record["report"], record["handed_on"]
         shaped = (
@@ -5629,6 +5730,7 @@ def sealed(text):
             and (record["verdict"] == "refuted") == (isinstance(record["refutation"], str) and record["refutation"] in REFUTATIONS)
             and (record["verdict"] == UNDRIVABLE) == isinstance(record["reason"], str)
             and (record["regression"] is None or (a_regression_fact(record["regression"]) and record["verdict"] == "confirmed"))
+            and (record.get(EARLIER) is None or (record["verdict"] == "confirmed" and an_earlier_list(record[EARLIER], record["round"]) and all(tuple(entry) == EARLIER_FIELDS for entry in record[EARLIER])))
             and (record[CONTESTED] is None or (isinstance(record[CONTESTED], str) and bool(record[CONTESTED].strip())))
             and isinstance(record["candidate"], str)
             and bool(SHA256.fullmatch(record["candidate"]))
@@ -5690,6 +5792,9 @@ def filing_of(run_dir, number_, name):
             return record, digest, "report-changed"
     if record["candidate"] != round_facts(*read_round(run_dir, number_)[::2])["binary"]:
         return record, digest, "another-binary"
+    for entry in record.get(EARLIER) or []:
+        if entry["binary"] != round_facts(*read_round(run_dir, entry["round"])[::2])["binary"]:
+            return record, digest, "another-binary"
     return record, digest, None
 
 
@@ -6672,7 +6777,7 @@ def read_state(run_dir, run):
             "grade": base and base["grade"],
             "bound": base and base["bound"],
             "verdict": record["verdict"],
-            "regression": record["regression"],
+            "regression": regression_of_the_run(record),
             "found_with": base["found_with"] if base else as_data(rows[key][8]),
             "fork": None,
             **({"refutation": record["refutation"]} if record["refutation"] else {}),
@@ -6710,7 +6815,7 @@ def read_state(run_dir, run):
             # A FILED VERDICT GRADES ITS ROW as a recorded one does: the verifier's word —
             # and nothing, where nobody could drive the finding: the grade it had stands.
             said_ = verified[key]["record"]
-            grade, bound, grader = ("regression" if said_["regression"] is True else said_["verdict"]), None, "verify-real"
+            grade, bound, grader = ("regression" if regression_of_the_run(said_) is True else said_["verdict"]), None, "verify-real"
         finding = {
             "key": key,
             "doctype": untick(row[1]),
