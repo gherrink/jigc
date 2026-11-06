@@ -151,7 +151,7 @@ macro_rules! retitle {
                 ],
                 acts: &[Act::RunNamed(Named {
                     name: 0,
-                    on: &[Word::Named("fan-out"), Word::Named("another name")],
+                    on: &[Word::Named("fan-out"), Word::Own("another name")],
                     within: None,
                     means: "*the milestone verbs* of *the record*: the milestone whose \
                             record the refused retitle addressed — its id is the head of \

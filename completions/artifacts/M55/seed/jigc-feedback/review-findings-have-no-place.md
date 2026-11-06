@@ -1,0 +1,27 @@
+---
+kind: feedback
+found-in: doctype-misfits:pre-opening-plan/M9
+about: milestone-record doctype
+jigc-version: 1.0.0-rc.24
+status: open
+date: 2026-11-06
+schema-version: 1
+---
+
+# Review findings have no place in a milestone record
+
+## Description
+
+A `milestone-record` is a base, a status and its ordered tasks, each with an id, an intent, a workflow and a status. A review of the milestone's work returns findings — each with its own id (`S1`, `N-a`), what it found and where, and what became of it: fixed in a commit, or recorded as work another task owes — and the record has no place for them. The pre-opening plan's progress record writes each finding of its reviews as a task item (`p0-review-s1-act-implies`, `p1-review-q3-a-heading`): the finding's id and its disposition folded into the intent's prose, `fixer` as its workflow, and a finding only recorded for a later task marked `joined` with an intent that says the work is not done. Nothing tells a reader or a tool which items are findings, which review they came from, or that one finding's work is owed elsewhere. Row M9 of the doctype-misfits register (`completions/artifacts/M55/doctype-misfits.md`); a finding for the port's triage, never a requirement.
+
+Re-driven on this build (`jigc 1.0.0-rc.24`, the debug binary built from `5e249674`): **open**. `jigc doc schema milestone-record` lists `base`, `status` and `schema-version` in its meta, and one repeatable section, `tasks`, whose items are `task-id`, `intent`, `workflow` and `status`, and nothing else.
+
+## Repro
+
+```sh
+src=$PWD                                              # the jigc checkout
+rig=$("$src"/dev/jigc-rig fresh) || exit; eval "$rig"
+$JIGC doc schema milestone-record   # meta: base · status; tasks: task-id · intent · workflow · status — no place for a finding
+```
+
+## Resolution

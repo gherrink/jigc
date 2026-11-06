@@ -56,8 +56,16 @@
 //!   * **Nesting.** The reader's `enclosing_fn` is the last `fn` declared before the site,
 //!     so a site after a nested `fn` reports the inner name.
 //!
-//! The three constructors' own bodies in `engine/src/finding.rs` are literals that set
-//! `severity`, so they are rows too — dynamic, like every site whose code is a parameter.
+//! **One thing is left out, by rule:** the literals in the bodies of the three
+//! constructors `block`, `blocking` and `graded` of `impl Finding` in [`FINDING_HOME`],
+//! `engine/src/finding.rs`, whose code is handed in. Each is the constructor every call
+//! of it reaches, so its code is a parameter and the call is the site (fork 3 → A:
+//! *`Finding`'s own constructors are no sites*). The exclusion reaches no further: a
+//! literal outside that block is a site; inside it, a literal in any other function is
+//! one, and so is a constructor's literal that spells its code; a `Self { … }` in another
+//! file's `impl Finding` is one, another file named `finding.rs` included; and a
+//! constructor *call* inside the block is one too
+//! (`refusal_site_list::a_finding_literal_outside_impl_finding_is_still_a_site`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -78,12 +86,11 @@ pub const UNASSIGNED: &str = "unassigned";
 /// and `refusal_site_list.rs` refuses a row whose prefix no call spells.
 ///
 /// A command is in the CLI's own words. Where a family is not one verb's, the word stands
-/// for a group, and nothing here establishes which door prints which code: `start` is
-/// composition, by `start` and `workflow`; `task finalize` is the gate, whose families
-/// `task validate`, `task finalize` and `milestone finalize` print alike; `doc write` and
-/// `doc read` are the `doc` verbs that write and that read, the second with every other
-/// door that takes an address; `config` and `milestone` are those verbs' sub-commands;
-/// `validate` is the store-scope sweep.
+/// for a group — composition, the gate, the `doc` verbs that write or that read, a verb's
+/// sub-commands — and nothing here establishes which door prints which code. **Which
+/// doors each word is read to stand for is stated once**, by `route_catalog.rs` → `doors`,
+/// a person's reading the route catalog's projection prints as its `door` lines and holds
+/// to the product's registry of leaves; it is not restated here.
 pub const FAMILIES: &[(&str, &str)] = &[
     ("adapter-guide", "setup"),
     ("amend", "task finalize"),
@@ -481,6 +488,31 @@ fn calls(
     out
 }
 
+/// `Finding`'s home: the one file whose `impl Finding` block holds the constructors' own
+/// bodies — the literals every constructor call reaches ([`a_constructors_own_body`]).
+pub const FINDING_HOME: &str = "crates/engine/src/finding.rs";
+
+/// **Whether a literal is a constructor's own body, and so no site** — in `Finding`'s home
+/// ([`FINDING_HOME`], the path whole), inside its `impl Finding`, in the body of one of
+/// the three constructors a call is found by ([`CONSTRUCTORS`]), with a code that is handed
+/// in ([`DYNAMIC`]). Every call of such a constructor reaches that literal with the code
+/// the call spells, so the call is the site. A literal there that spells its code is where
+/// every call's refusal is worded, and a literal in any other function of the block — a
+/// helper, whatever its code — is a refusal constructed there: both are sites.
+fn a_constructors_own_body(file: &File, at: usize, inside_impl: bool, code: &str) -> bool {
+    let named = |function: &str| {
+        CONSTRUCTORS.iter().any(|call| {
+            call.strip_prefix("Finding::")
+                .and_then(|name| name.strip_suffix('('))
+                == Some(function)
+        })
+    };
+    file.path == FINDING_HOME
+        && inside_impl
+        && code == DYNAMIC
+        && rust_source::enclosing_fn(&file.code, at).is_some_and(named)
+}
+
 /// The byte ranges of every `impl Finding { … }` body — where `Self { … }` is a
 /// `Finding` literal.
 fn impl_finding_bodies(code: &str) -> Vec<(usize, usize)> {
@@ -508,7 +540,9 @@ fn literals(
             if file.is_test(at) || at > 0 && is_ident(code.as_bytes()[at - 1]) {
                 continue;
             }
-            if head == "Self {" && !in_impl.iter().any(|(lo, hi)| at > *lo && at < *hi) {
+            let inside_impl = in_impl.iter().any(|(lo, hi)| at > *lo && at < *hi);
+            // `Self { … }` constructs a `Finding` only inside `impl Finding`.
+            if head == "Self {" && !inside_impl {
                 continue;
             }
             // The declaration of a struct of that name sets no field.
@@ -547,16 +581,20 @@ fn literals(
                 .iter()
                 .copied()
                 .find(|(lo, hi)| code[*lo..*hi].trim().starts_with(".."));
+            // A shorthand field (`code`, `route`) reads as the variable it is.
+            let code = match (named("code"), base) {
+                (Some(span), _) => read_code(files, index, span, constants),
+                (None, Some(base)) => (DYNAMIC.to_string(), file.written(base)),
+                (None, None) => (DYNAMIC.to_string(), String::new()),
+            };
+            if a_constructors_own_body(file, at, inside_impl, &code.0) {
+                continue;
+            }
             out.push(Found {
                 at,
                 form: "literal",
                 severity: read_severity(&file.shape(severity)),
-                // A shorthand field (`code`, `route`) reads as the variable it is.
-                code: match (named("code"), base) {
-                    (Some(span), _) => read_code(files, index, span, constants),
-                    (None, Some(base)) => (DYNAMIC.to_string(), file.written(base)),
-                    (None, None) => (DYNAMIC.to_string(), String::new()),
-                },
+                code,
                 route: match named("route") {
                     Some(span) => read_route(file, span, true),
                     None => ("variable", String::new()),
@@ -690,6 +728,16 @@ pub fn scan_tree() -> Vec<Site> {
 /// Where the committed list lives.
 pub fn list_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/route_catalog/sites.tsv")
+}
+
+/// **Write a regenerated file of the route catalog's directory** — `name` under
+/// `crates/cli/tests/route_catalog/`. The catalog's own source names no filesystem API
+/// (`route_catalog::no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed`),
+/// so the regeneration of a file it holds equal to what it generates — its projection —
+/// is done here, beside the committed list's own path.
+pub fn regenerate(name: &str, text: &str) {
+    let path = list_path().with_file_name(name);
+    std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
 /// A field as a row holds it: one line, no tab, and `-` where there is nothing.

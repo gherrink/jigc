@@ -202,9 +202,6 @@ unassigned	crates/engine/src/finalize.rs	setup_dirty_install_finding	dynamic	1	b
 setup	crates/engine/src/finalize.rs	setup_unasked_install_finding	setup.unverified-install-path	1	block	blocking	SETUP_UNVERIFIED_INSTALL_CODE	human	run `{asked}` to see what git reports, resolve that (or put `git` on `PATH`), then re-run `jigc setup`. `--force` does not change this: it consents to the paths git names, and git named none
 task finalize	crates/engine/src/finalize.rs	source_path_io_finding	finalize.source-path-io	1	graded	blocking	literal	prose	resolve the read fault on the recorded migration source path under `{}` (a disk or permissions problem), then re-run the finalize
 task finalize	crates/engine/src/finalize.rs	task_missing_finding	finalize.no-task	1	graded	blocking	literal	prose	start a task with `jigc start "<intent>"`
-unassigned	crates/engine/src/finding.rs	block	dynamic	1	literal	blocking	code	variable	-
-unassigned	crates/engine/src/finding.rs	blocking	dynamic	1	literal	blocking	code	none	-
-unassigned	crates/engine/src/finding.rs	graded	dynamic	1	literal	dynamic	code	variable	-
 validate	crates/engine/src/index.rs	below_inverse_minimum	schema-completeness.inverse-cardinality	1	graded	advisory	literal	prose	author a `{relation}` referrer of `{target}`
 task finalize	crates/engine/src/index.rs	dangling	schema-conformance.ref-resolves	1	graded	blocking	literal	prose	fix the reference, create the target in this task, or drop the field
 task finalize	crates/engine/src/index.rs	dangling_mention	schema-conformance.mention-resolves	1	graded	advisory	literal	prose	correct or drop the `#{mention}` mention in `{from}`

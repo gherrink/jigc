@@ -1,7 +1,7 @@
 //! The fence over `dev/gate`'s **report layer** — the part of the gate tool that is
 //! pure text over a log file, and therefore testable in milliseconds.
 //!
-//! `dev/gate` runs four commands and then *reports* what it measured: the aggregate
+//! `dev/gate` runs the gate's steps and then *reports* what it measured: the aggregate
 //! `passed=`/`failed=` totals, the number of test binaries those totals came from, and
 //! on failure the named failing tests. The report is the whole reason to prefer the
 //! tool over retyping the gate, and it is also the half that had never been checked —
@@ -768,7 +768,7 @@ fn a_red_lint_or_build_step_launches_no_test() {
         assert_eq!(
             run.argvs, LINT_AND_BUILD,
             "a red `{red}` ends the run after the three cheap steps: nothing is probed and \
-             no test is launched — the suite is ten minutes spent to report what three \
+             no test is launched — the suite is most of a full gate spent to report what three \
              seconds already said.\n{text}",
         );
         assert!(
@@ -1935,7 +1935,7 @@ fn a_deps_directory_over_the_threshold_warns_and_names_the_cleanup() {
          own product applies to its tooling.\n{text}",
     );
     // The advisory is an advisory: it is never a step, so it can never redden a gate
-    // whose four commands all passed. With cargo absent all three quick steps exit 127,
+    // whose steps all passed. With cargo absent all three quick steps exit 127,
     // and the verdict must name exactly those three.
     assert!(
         text.lines()

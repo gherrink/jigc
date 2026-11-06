@@ -9,7 +9,7 @@
 //! targets from **`cargo metadata`**, never from `tests/groups/` on disk or from a parse
 //! of `Cargo.toml`, because what cargo reports is what `cargo test` compiles.
 //!
-//! Nine properties, one arm each: **(a)** the `test` matrix's rows name exactly the
+//! Ten properties, one arm each: **(a)** the `test` matrix's rows name exactly the
 //! metadata's `test`-kind targets; **(b)** every other tested target is covered by the
 //! `unit` job; **(c)** every job S8 names exists and runs its pinned command; **(d)**
 //! every job carries `timeout-minutes`, and every leg a full-history checkout and the
@@ -19,7 +19,11 @@
 //! `ci-ok`, `needs` exactly every other job and runs `if: always()`; **(h)** its body is
 //! green only when every needed job's result is `success`, driven over each result GitHub
 //! reports; **(i)** a group that runs in parts runs whole — every part but one names the
-//! suites it runs, and the one that is left skips exactly those. The design is
+//! suites it runs, the one that is left skips exactly those, and no suite a part names is
+//! held in the name of any other module the group compiles; **(j)** a part's bound is the
+//! header's rule over the proxy its row records, and the rule is the one the header states.
+//! (h), (i) and (j) each drive their checks over seeded inputs that break them before they
+//! read the live file, so a check deleted reddens even while the file is clean. The design is
 //! [dev-workflow.md](../implementation/dev-workflow.md) → Gate, the required check
 //! [release.md](../implementation/release.md) → The main branch; the measurement behind
 //! each `timeout-minutes` is `completions/artifacts/M54/ci-runtime.md`, and behind a
@@ -36,9 +40,12 @@
 
 use crate::support::ci_workflow::{CI_STEP_NAME, CI_STEP_RUN, CI_WORKFLOW, repo_root};
 use crate::support::run_then_parse::stdout_json;
+use crate::support::rust_source::code_only;
+use crate::support::scratch::ScratchDir;
 use serde_yaml_ng::Value;
 use std::collections::BTreeSet;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The package the matrix row's command addresses with `-p`.
@@ -216,6 +223,8 @@ struct Part {
     skips: Vec<String>,
     /// Its own bound, where it names one.
     minutes: Option<Value>,
+    /// Its four-CPU proxy in seconds, where it names one — what its bound is set from.
+    proxy: Option<Value>,
 }
 
 /// Every part the matrix names. A part's `tests` is read whole: `--`, then filters and
@@ -265,6 +274,7 @@ fn parts(workflow: &Value) -> Vec<Part> {
                 filters,
                 skips,
                 minutes: row.get("minutes").cloned(),
+                proxy: row.get("proxy").cloned(),
             }
         })
         .collect()
@@ -526,37 +536,110 @@ fn no_leg_stops_another() {
     );
 }
 
-/// The suites a group root registers: the `<name>` of each `#[path = "../<name>.rs"]`.
-fn registered_suites(root: &str) -> BTreeSet<String> {
-    let body = fs::read_to_string(root).unwrap_or_else(|e| panic!("read `{root}`: {e}"));
-    body.lines()
-        .filter_map(|line| {
-            line.trim()
-                .strip_prefix("#[path = \"../")?
-                .strip_suffix(".rs\"]")
-        })
-        .filter(|name| !name.contains('/'))
-        .map(str::to_string)
-        .collect()
+/// What a group's sources declare, as arm (i) reads them.
+#[derive(Debug, Default, PartialEq)]
+struct GroupSources {
+    /// The suites its root registers: the `<name>` of each `#[path = "../<name>.rs"]`.
+    suites: BTreeSet<String>,
+    /// Every module its root declares — the suites, and the shared `support` beside them.
+    /// A test's name opens with one of these and `::`.
+    top: BTreeSet<String>,
+    /// Every `mod` declared inside the files the group compiles, each with the top module
+    /// whose files declare it. A test's name holds each module it is nested in, and `::`.
+    inner: BTreeSet<(String, String)>,
 }
 
-/// **(i)** A group that runs in parts runs whole. Its parts are read off the matrix's
-/// `include`: every part but one names the suites it runs (`<suite>::`, each a suite the
-/// group's root registers, none named twice), and the one part left skips exactly the
-/// suites the others name — so a test is in a named part where its name holds a named
-/// suite's, and in the last one where it holds none, and a suite added to the root runs
-/// in the last part without a line here. What reddens: a part dropped or a suite renamed
-/// while the last part still skips it (those tests would run nowhere), a suite named and
-/// not skipped (they would run twice), two parts under one name, and a group with one
-/// part, which is a group to run whole.
-///
-/// **Its bound.** It holds which suites a part names, never how long the part runs: a
-/// part that outgrows its minutes is cancelled, and `ci-ok` is red for it.
-#[test]
-fn i_a_group_that_runs_in_parts_runs_whole() {
-    let workflow = workflow();
-    let targets = targets();
-    let parts = parts(&workflow);
+/// The modules declared in `code` — every `mod <name>`, read in the code view, so a
+/// `mod` in a comment or a string literal is not one.
+fn declared_modules(code: &str) -> Vec<String> {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut found = Vec::new();
+    for (at, _) in code.match_indices("mod") {
+        let opens_a_word = code[..at].chars().next_back().is_none_or(|c| !ident(c));
+        let after = &code[at + "mod".len()..];
+        let name_at = after.trim_start();
+        let name: String = name_at.chars().take_while(|c| ident(*c)).collect();
+        if opens_a_word && name_at.len() < after.len() && !name.is_empty() {
+            found.push(name);
+        }
+    }
+    found
+}
+
+/// Every `.rs` file under `dir`, recursively; none where `dir` is not a directory.
+fn rust_files_under(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    for entry in entries {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            files.extend(rust_files_under(&path));
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+    files
+}
+
+/// A group root's sources, read off its file: each `#[path = "…"]` and the `mod` it
+/// names, and inside each such file — with the directory beside it, where its own `mod`s
+/// live, or the directory of a `mod.rs` — every `mod` declared.
+fn group_sources(root: &Path) -> GroupSources {
+    let body =
+        fs::read_to_string(root).unwrap_or_else(|e| panic!("read `{}`: {e}", root.display()));
+    let dir = root.parent().expect("a group root lies in a directory");
+    let mut sources = GroupSources::default();
+    let mut path: Option<&str> = None;
+    for line in body.lines().map(str::trim) {
+        if let Some(declared) = line
+            .strip_prefix("#[path = \"")
+            .and_then(|rest| rest.strip_suffix("\"]"))
+        {
+            path = Some(declared);
+            continue;
+        }
+        let Some(name) = declared_modules(&code_only(line)).into_iter().next() else {
+            continue;
+        };
+        sources.top.insert(name.clone());
+        let Some(declared) = path.take() else {
+            continue;
+        };
+        if let Some(suite) = declared
+            .strip_prefix("../")
+            .and_then(|rest| rest.strip_suffix(".rs"))
+            .filter(|suite| !suite.contains('/'))
+        {
+            sources.suites.insert(suite.to_string());
+        }
+        let file = dir.join(declared);
+        let mut files = vec![file.clone()];
+        if file.file_name().is_some_and(|f| f == "mod.rs") {
+            files = rust_files_under(file.parent().expect("a `mod.rs` lies in a directory"));
+        } else {
+            files.extend(rust_files_under(&file.with_extension("")));
+        }
+        for file in files {
+            let text = fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("read `{}`: {e}", file.display()));
+            for module in declared_modules(&code_only(&text)) {
+                sources.inner.insert((name.clone(), module));
+            }
+        }
+    }
+    sources
+}
+
+/// **(i)**, the check: what is wrong with the parts of `workflow`'s `test` matrix, each
+/// group's sources read through `sources_of` — `None` for a group with no target, which
+/// arm (a) names.
+fn parts_run_whole(
+    workflow: &Value,
+    sources_of: &dyn Fn(&str) -> Option<GroupSources>,
+) -> Vec<String> {
+    let parts = parts(workflow);
     let groups: BTreeSet<&str> = parts.iter().map(|part| part.group.as_str()).collect();
     let mut wrong = Vec::new();
     for group in groups {
@@ -600,27 +683,525 @@ fn i_a_group_that_runs_in_parts_runs_whole() {
                 left.name, left.name, left.skips
             ));
         }
-        let Some(target) = targets.iter().find(|t| t.is("test") && t.name == group) else {
-            // Arm (a) names a row for a target that does not exist.
+        let Some(sources) = sources_of(group) else {
             continue;
         };
-        let suites = registered_suites(&target.src_path);
         for filter in ran_once.iter().chain(&skipped) {
             if filter
                 .strip_suffix("::")
-                .is_none_or(|suite| !suites.contains(suite))
+                .is_none_or(|suite| !sources.suites.contains(suite))
             {
                 wrong.push(format!(
-                    "`{group}`: `{filter}` is not `<suite>::` for a suite `{}` registers",
-                    target.src_path
+                    "`{group}`: `{filter}` is not `<suite>::` for a suite its root registers"
                 ));
             }
+        }
+        // libtest takes a filter, and a `--skip`, as a substring of a test's whole name: a
+        // filter held in any other module's `<name>::` runs that module's tests in its part
+        // too — once more, or instead of in the part that skips.
+        for part in &named {
+            for filter in &part.filters {
+                let own = filter.strip_suffix("::").unwrap_or(filter);
+                for top in sources.top.iter().filter(|top| *top != own) {
+                    if format!("{top}::").contains(filter.as_str()) {
+                        wrong.push(format!(
+                            "`{group}` part `{}`: `{filter}` is held in `{top}::` too, and \
+                             libtest matches a filter anywhere in a test's name, so \
+                             `{top}`'s tests run in this part as well",
+                            part.name
+                        ));
+                    }
+                }
+                for (owner, module) in sources.inner.iter().filter(|(owner, _)| owner != own) {
+                    if format!("{module}::").contains(filter.as_str()) {
+                        wrong.push(format!(
+                            "`{group}` part `{}`: `{owner}` declares a `mod {module}`, which \
+                             holds `{filter}`, so the tests in it run in this part as well",
+                            part.name
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    wrong
+}
+
+/// **(i)** A group that runs in parts runs whole. Its parts are read off the matrix's
+/// `include`: every part but one names the suites it runs (`<suite>::`, each a suite the
+/// group's root registers, none named twice), and the one part left skips exactly the
+/// suites the others name — so a test is in a named part where its name holds a named
+/// suite's, and in the last one where it holds none, and a suite added to the root runs
+/// in the last part without a line here. What reddens: a part dropped or a suite renamed
+/// while the last part still skips it (those tests would run nowhere), a suite named and
+/// not skipped (they would run twice), two parts under one name, a group with one part,
+/// which is a group to run whole — and a filter held in another module's name. libtest
+/// matches a filter, and a `--skip`, as a substring of a test's whole name, so a suite
+/// whose name ends in another part's suite (`x_alpha` beside `alpha`), a second part whose
+/// filter holds another's, and a `mod` named like a filter inside any other module the
+/// group compiles each put tests in a part they were not meant for.
+///
+/// Every check is first driven over a seeded matrix that breaks it, as arm (h) is, so a
+/// check deleted from [`parts_run_whole`] reddens here even while the live file is clean.
+///
+/// **Its bound.** It holds which suites a part names, never how long the part runs: a
+/// part that outgrows its minutes is cancelled, and `ci-ok` is red for it. The modules it
+/// reads are the `mod` declarations of the files the group compiles, read in the code
+/// view; a module a macro declares is not read.
+#[test]
+fn i_a_group_that_runs_in_parts_runs_whole() {
+    const RUN: &str = "\
+      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: beta, tests: '-- beta::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha:: --skip beta::'}";
+    /// A seeded matrix: what it breaks, its `include` rows, the suites and the inner
+    /// modules it adds to the seeded group's sources, and what a finding must say.
+    type Seed = (
+        &'static str,
+        &'static str,
+        &'static [&'static str],
+        &'static [(&'static str, &'static str)],
+        &'static str,
+    );
+    let seeds: [Seed; 15] = [
+        (
+            "a group with one part",
+            "      - {group: g_seed, part: rest, tests: '-- --skip alpha::'}",
+            &[],
+            &[],
+            "two or more",
+        ),
+        (
+            "two parts under one name",
+            "      - {group: g_seed, part: x, tests: '-- alpha::'}
+      - {group: g_seed, part: x, tests: '-- --skip alpha::'}",
+            &[],
+            &[],
+            "a name of its own",
+        ),
+        (
+            "no part that skips",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: beta, tests: '-- beta::'}",
+            &[],
+            &[],
+            "exactly one part runs what the others leave",
+        ),
+        (
+            "two parts that skip",
+            "      - {group: g_seed, part: alpha, tests: '-- --skip beta::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha::'}",
+            &[],
+            &[],
+            "exactly one part runs what the others leave",
+        ),
+        (
+            "the part that skips names a suite too",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: rest, tests: '-- gamma:: --skip alpha::'}",
+            &[],
+            &[],
+            "names no suite of its own",
+        ),
+        (
+            "a filter not skipped",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: beta, tests: '-- beta::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha::'}",
+            &[],
+            &[],
+            "must skip exactly",
+        ),
+        (
+            "a filter named by two parts",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: beta, tests: '-- beta:: alpha::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha:: --skip beta::'}",
+            &[],
+            &[],
+            "must skip exactly",
+        ),
+        (
+            "a suite skipped twice",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha:: --skip alpha::'}",
+            &[],
+            &[],
+            "must skip exactly",
+        ),
+        (
+            "a part that names nothing",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: empty, tests: '--'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha::'}",
+            &[],
+            &[],
+            "must skip exactly",
+        ),
+        (
+            "a filter for no registered suite",
+            "      - {group: g_seed, part: delta, tests: '-- delta::'}
+      - {group: g_seed, part: rest, tests: '-- --skip delta::'}",
+            &[],
+            &[],
+            "`delta::` is not `<suite>::`",
+        ),
+        (
+            "a filter without its `::`",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha'}",
+            &[],
+            &[],
+            "`alpha` is not `<suite>::`",
+        ),
+        (
+            "a suite whose name extends a part's suite",
+            RUN,
+            &["x_alpha"],
+            &[],
+            "`alpha::` is held in `x_alpha::` too",
+        ),
+        (
+            "a second part whose filter holds another's",
+            "      - {group: g_seed, part: alpha, tests: '-- alpha::'}
+      - {group: g_seed, part: x_alpha, tests: '-- x_alpha::'}
+      - {group: g_seed, part: rest, tests: '-- --skip alpha:: --skip x_alpha::'}",
+            &["x_alpha"],
+            &[],
+            "`alpha::` is held in `x_alpha::` too",
+        ),
+        (
+            "an inner module named like a filter",
+            RUN,
+            &[],
+            &[("beta", "alpha")],
+            "`beta` declares a `mod alpha`",
+        ),
+        (
+            "an inner module whose name ends in a filter's suite",
+            RUN,
+            &[],
+            &[("gamma", "old_beta")],
+            "`gamma` declares a `mod old_beta`",
+        ),
+    ];
+    let seed_sources = |suites: &[&str], inner: &[(&str, &str)]| {
+        let mut sources = GroupSources::default();
+        for suite in ["alpha", "beta", "gamma"].iter().chain(suites) {
+            sources.suites.insert(suite.to_string());
+            sources.top.insert(suite.to_string());
+        }
+        sources.top.insert("support".to_string());
+        // A module named for its own suite is that suite's alone: a control.
+        for (owner, module) in [("alpha", "alpha"), ("alpha", "cases")].iter().chain(inner) {
+            sources
+                .inner
+                .insert((owner.to_string(), module.to_string()));
+        }
+        sources
+    };
+    let seeded = |include: &str| -> Value {
+        let rows: Vec<String> = include
+            .lines()
+            .map(|row| format!("          {}", row.trim()))
+            .collect();
+        let yaml = format!(
+            "jobs:\n  test:\n    strategy:\n      matrix:\n        include:\n{}\n",
+            rows.join("\n")
+        );
+        serde_yaml_ng::from_str(&yaml).expect("a seeded workflow parses")
+    };
+    let mut wrong = Vec::new();
+    let control = parts_run_whole(&seeded(RUN), &|_| Some(seed_sources(&[], &[])));
+    if !control.is_empty() {
+        wrong.push(format!("the seeded control reddened: {control:?}"));
+    }
+    for (what, include, suites, inner, expect) in seeds {
+        let found = parts_run_whole(&seeded(include), &|_| Some(seed_sources(suites, inner)));
+        if !found.iter().any(|line| line.contains(expect)) {
+            wrong.push(format!(
+                "seeded with {what}, no finding says {expect:?}; found {found:?}"
+            ));
         }
     }
     assert!(
         wrong.is_empty(),
-        "a group the `test` matrix runs in parts must run whole:\n{}",
+        "arm (i)'s checks must each redden on the matrix that breaks them:\n{}",
         wrong.join("\n"),
+    );
+
+    let targets = targets();
+    let live = parts_run_whole(&workflow(), &|group| {
+        let target = targets.iter().find(|t| t.is("test") && t.name == group)?;
+        Some(group_sources(Path::new(&target.src_path)))
+    });
+    assert!(
+        live.is_empty(),
+        "a group the `test` matrix runs in parts must run whole:\n{}",
+        live.join("\n"),
+    );
+}
+
+/// **(i)**, its reading of the sources: a group root's suites and top modules, and every
+/// `mod` the files it compiles declare — a suite's own file, the directory beside it, and
+/// the directory of a `mod.rs` — with a `mod` in a comment or a string literal not one.
+/// Driven over a seeded root, so a reading that misses a file, or takes prose for a
+/// declaration, reddens.
+#[test]
+fn i_a_group_s_sources_are_every_mod_its_files_declare() {
+    let scratch = ScratchDir::new("ci-matrix-group-sources");
+    let at = scratch.path();
+    for (path, text) in [
+        (
+            "groups/g_seed.rs",
+            "// mod in_a_comment;\n#[path = \"../support/mod.rs\"]\nmod support;\n\
+             #[path = \"../alpha.rs\"]\nmod alpha;\n#[path = \"../beta.rs\"]\nmod beta;\n",
+        ),
+        (
+            "alpha.rs",
+            "mod cases {}\n#[path = \"alpha/inner.rs\"]\nmod inner;\n",
+        ),
+        (
+            "alpha/inner.rs",
+            "pub(crate) mod deep {\n    mod deeper {}\n}\n",
+        ),
+        (
+            "beta.rs",
+            "const S: &str = \"mod in_a_string {\";\n// mod in_a_comment\nfn model() {}\n",
+        ),
+        ("support/mod.rs", "pub mod helpers;\n"),
+        ("support/helpers.rs", "mod helper_cases {}\n"),
+    ] {
+        let file = at.join(path);
+        fs::create_dir_all(file.parent().expect("a parent")).expect("create a seed directory");
+        fs::write(&file, text).expect("write a seed file");
+    }
+    let owned = |pairs: &[(&str, &str)]| -> BTreeSet<(String, String)> {
+        pairs
+            .iter()
+            .map(|(owner, module)| (owner.to_string(), module.to_string()))
+            .collect()
+    };
+    let want = GroupSources {
+        suites: ["alpha", "beta"].map(String::from).into(),
+        top: ["alpha", "beta", "support"].map(String::from).into(),
+        inner: owned(&[
+            ("alpha", "cases"),
+            ("alpha", "inner"),
+            ("alpha", "deep"),
+            ("alpha", "deeper"),
+            ("support", "helpers"),
+            ("support", "helper_cases"),
+        ]),
+    };
+    assert_eq!(group_sources(&at.join("groups/g_seed.rs")), want);
+}
+
+/// The factor of the workflow header's rule: 3 since the human's ruling of 2026-11-06,
+/// where M54 had set 2 — the hosted runner had come to take 1.5 to 2.5 times a part's
+/// proxy, and at 2 no part above the floor stays under 80 % of its bound.
+const PROXY_FACTOR: u64 = 3;
+
+/// A leg's bound by the workflow header's rule, in whole minutes: `max(10, 3 x its
+/// four-CPU proxy)`, the tripled proxy rounded up to the next minute — `None` for a proxy
+/// the rule overflows on.
+fn bound_by_the_rule(proxy_seconds: u64) -> Option<u64> {
+    let seconds = PROXY_FACTOR.checked_mul(proxy_seconds)?;
+    Some(TIMEOUT_FLOOR.max(seconds.div_ceil(60)))
+}
+
+/// **(j)**, the check: every part of `workflow`'s `test` matrix whose `minutes` is not the
+/// rule over a positive `proxy` it records.
+fn parts_bound_by_the_rule(workflow: &Value) -> Vec<String> {
+    let mut wrong = Vec::new();
+    for part in parts(workflow) {
+        let at = format!("`{}` part `{}`", part.group, part.name);
+        let Some(proxy) = part
+            .proxy
+            .as_ref()
+            .and_then(Value::as_u64)
+            .filter(|p| *p > 0)
+        else {
+            wrong.push(format!(
+                "{at}: no `proxy`, a positive number of seconds, to set its bound from ({:?})",
+                part.proxy
+            ));
+            continue;
+        };
+        let Some(want) = bound_by_the_rule(proxy) else {
+            wrong.push(format!(
+                "{at}: a `proxy` of {proxy} s overflows the rule; it is no measured proxy"
+            ));
+            continue;
+        };
+        if part.minutes.as_ref().and_then(Value::as_u64) != Some(want) {
+            wrong.push(format!(
+                "{at}: `minutes` is {:?}, and the rule over its proxy of {proxy} s gives {want}",
+                part.minutes
+            ));
+        }
+    }
+    wrong
+}
+
+/// **(j)**, the header's copy: what is wrong with the rule the workflow's header states —
+/// every `max(<floor>, <factor> x` in its comment block, read with its lines joined, must
+/// be the floor and factor this fence holds, and there must be one.
+fn header_rule(body: &str) -> Vec<String> {
+    let header: Vec<&str> = body
+        .lines()
+        .take_while(|line| !line.starts_with("on:"))
+        .filter_map(|line| line.trim().strip_prefix('#'))
+        .map(str::trim)
+        .collect();
+    let header = header.join(" ");
+    let number = |text: &str| -> (Option<u64>, usize) {
+        let digits: String = text.chars().take_while(char::is_ascii_digit).collect();
+        (digits.parse().ok(), digits.len())
+    };
+    let mut wrong = Vec::new();
+    let mut stated = 0;
+    for (at, _) in header.match_indices("max(") {
+        stated += 1;
+        let rest = &header[at + "max(".len()..];
+        let (floor, used) = number(rest);
+        let rest = rest[used..].strip_prefix(',').unwrap_or("").trim_start();
+        let (factor, used) = number(rest);
+        let states_a_rule = rest[used..].trim_start().starts_with("x ");
+        if !states_a_rule || floor != Some(TIMEOUT_FLOOR) || factor != Some(PROXY_FACTOR) {
+            let shown: String = header[at..].chars().take(24).collect();
+            wrong.push(format!(
+                "the header states `{shown}…`, where the rule this fence holds is \
+                 max({TIMEOUT_FLOOR}, {PROXY_FACTOR} x"
+            ));
+        }
+    }
+    if stated == 0 {
+        wrong.push(format!(
+            "the header states no `max({TIMEOUT_FLOOR}, {PROXY_FACTOR} x` rule for a part's bound"
+        ));
+    }
+    wrong
+}
+
+/// **(j)** A part's bound is the rule's over its own measured proxy. Every part names
+/// `proxy`, the seconds its exact argv took cold in `dev/runner-faithful --cpus 4`, and its
+/// `minutes` is `max(10, 3 x proxy)` rounded up to a whole minute — so a bound is never set
+/// by hand, and a part re-measured is re-bounded in the same line. And the rule this arm
+/// holds is the one the workflow's header states: its floor and factor are read off the
+/// header and held to [`TIMEOUT_FLOOR`] and [`PROXY_FACTOR`], so neither copy moves alone.
+/// The rule's arithmetic is checked first: the floor, a proxy exactly on a minute and one a
+/// second past it, and a proxy it overflows on; then every check over a seeded row or
+/// header that breaks it, as arm (h) is, so a check deleted reddens here.
+///
+/// **Its bound.** It holds the bound to the proxy the row records, never the proxy to a
+/// measurement: what the proxy is, and on which commit it was taken, is the `DECISIONS.md`
+/// entry the workflow's header names. And a group that runs whole names no proxy; its row
+/// takes the floor.
+#[test]
+fn j_a_parts_bound_is_the_rule_over_its_recorded_proxy() {
+    for (proxy, minutes) in [
+        (1, Some(10)),
+        (200, Some(10)),
+        (201, Some(11)),
+        (240, Some(12)),
+        (365, Some(19)),
+        (u64::MAX, None),
+    ] {
+        assert_eq!(
+            bound_by_the_rule(proxy),
+            minutes,
+            "the rule over a proxy of {proxy} s"
+        );
+    }
+
+    let row = |fields: &str| -> Value {
+        let yaml = format!(
+            "jobs:\n  test:\n    strategy:\n      matrix:\n        include:\n          - \
+             {{group: g_seed, part: alpha, tests: '-- alpha::'{fields}}}\n"
+        );
+        serde_yaml_ng::from_str(&yaml).expect("a seeded workflow parses")
+    };
+    let mut wrong = Vec::new();
+    let control = parts_bound_by_the_rule(&row(", proxy: 240, minutes: 12"));
+    if !control.is_empty() {
+        wrong.push(format!("the seeded control row reddened: {control:?}"));
+    }
+    for (what, fields, expect) in [
+        (
+            "a wrong `minutes`",
+            ", proxy: 240, minutes: 13",
+            "`minutes` is",
+        ),
+        ("no `minutes`", ", proxy: 240", "`minutes` is None"),
+        ("no `proxy`", ", minutes: 12", "no `proxy`"),
+        ("a `proxy` of zero", ", proxy: 0, minutes: 10", "no `proxy`"),
+        (
+            "a `proxy` in a string",
+            ", proxy: '240', minutes: 12",
+            "no `proxy`",
+        ),
+        (
+            "a fractional `proxy`",
+            ", proxy: 240.5, minutes: 12",
+            "no `proxy`",
+        ),
+        (
+            "a `proxy` the rule overflows on",
+            ", proxy: 18446744073709551615, minutes: 10",
+            "overflows the rule",
+        ),
+    ] {
+        let found = parts_bound_by_the_rule(&row(fields));
+        if !found.iter().any(|line| line.contains(expect)) {
+            wrong.push(format!(
+                "seeded with {what}, no finding says {expect:?}; found {found:?}"
+            ));
+        }
+    }
+    let control = header_rule("name: CI\n# bounded at max(10,\n# 3 x its proxy)\non:\n");
+    if !control.is_empty() {
+        wrong.push(format!(
+            "the seeded header, its rule across two lines, reddened: {control:?}"
+        ));
+    }
+    for (what, body) in [
+        (
+            "another factor",
+            "name: CI\n# bounded at max(10, 4 x its proxy)\non:\n",
+        ),
+        (
+            "another floor",
+            "name: CI\n# bounded at max(12, 3 x its proxy)\non:\n",
+        ),
+        (
+            "no rule",
+            "name: CI\n# bounded by its proxy\non:\n# max(10, 3 x p)\n",
+        ),
+        (
+            "a second copy that differs",
+            "name: CI\n# max(10, 3 x its proxy), and max(10, 2 x before)\non:\n",
+        ),
+    ] {
+        if header_rule(body).is_empty() {
+            wrong.push(format!("a header with {what} passed"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "arm (j)'s checks must each redden on the row or header that breaks them:\n{}",
+        wrong.join("\n"),
+    );
+
+    let body =
+        fs::read_to_string(repo_root().join(CI_WORKFLOW)).expect("the CI workflow is readable");
+    let mut live = header_rule(&body);
+    live.extend(parts_bound_by_the_rule(&workflow()));
+    assert!(
+        live.is_empty(),
+        "a part's bound is max({TIMEOUT_FLOOR}, {PROXY_FACTOR} x its four-CPU proxy), in minutes \
+         up, and the header states that rule:\n{}",
+        live.join("\n"),
     );
 }
 

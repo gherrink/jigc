@@ -30,7 +30,7 @@ cargo install cargo-nextest --locked
 
 ## Sanity check
 
-A full gate from a warm build should take **~10 minutes** (measured 598–601 s on a 10-core M1 Max over 4635–4644 tests, 2026-10-05; it was 532–546 s over 4222 tests on 2026-10-02 — [gate-speed-measurement.md](../completions/artifacts/M55/gate-speed-measurement.md)):
+A full gate from a warm build runs **far past the agent tool's 10-minute ceiling**, and its length grows with the suite, so it is measured rather than quoted: 1,633–1,714 s of steps (27–29 min) on a 10-core M1 Max over 5394 tests, 2026-11-05/06, on a loaded machine — the second test tier alone 1,540–1,624 s; it was 598–601 s over 4635–4644 tests on 2026-10-05, and 532–546 s over 4222 tests on 2026-10-02 ([gate-speed-measurement.md](../completions/artifacts/M55/gate-speed-measurement.md)). Each step's seconds are in the gate's log, on its `step-seconds` lines:
 
 ```sh
 dev/gate

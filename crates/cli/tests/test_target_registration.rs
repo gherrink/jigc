@@ -1,8 +1,9 @@
 //! The registration guard for the consolidated test targets.
 //!
-//! `crates/cli/Cargo.toml` sets `autotests = false` so the ~250 suite files under
-//! `crates/cli/tests/` — and, since 2026-10-06, the repository's own tooling suites
-//! outside `crates/` — are compiled into 13 group targets instead of one cargo
+//! `crates/cli/Cargo.toml` sets `autotests = false` so the suite files under
+//! `crates/cli/tests/` (about 250 at the consolidation, 473 on 2026-11-06) — and, since
+//! 2026-10-06, the repository's own tooling suites outside `crates/` (26 on 2026-11-06)
+//! — are compiled into 13 group targets instead of one cargo
 //! target each (a source change relinked 256 binaries — a measured 7.7-minute link
 //! wave — before the consolidation). The cost of turning auto-discovery off is that
 //! a **newly added suite file is silently never run** unless a group root pulls it

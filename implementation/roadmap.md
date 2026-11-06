@@ -3095,7 +3095,7 @@ Beside them run the reviews of everything no review has read yet. Putting two la
   - If it is cut, its marker stays.
   - The write guard then refuses every command except the probe's own — so no gate and no commit — until the main session removes the marker.
 
-**Hours.** The hours are machine time, estimated from the plan's pricing, not measured. A step's figure is its longest lane. The whole is 112 to 218 hours, about one to three weeks with breaks *(redone 2026-11-06 after step 1's code count: the dynamic sites owe 139 tests, more than priced, so the low end, which is the catalog lane's, rose from 102 hours; the high end did not move — the plan's §4)*. That total is not the sum of the steps, because the lanes overlap and the review's fixes run past step 14. The time estimate is redone after step 1 and after the catalog's second family.
+**Hours.** The hours are machine time, estimated from the plan's pricing, not measured. A step's figure is its longest lane. The whole is 115 to 218 hours, about one to three weeks with breaks *(redone 2026-11-06 after step 1's code count: the dynamic sites owe 139 tests, more than priced, so the low end, which is the catalog lane's, rose from 102 hours to 112; redone again the same day for the gate's measured length, 27 to 29 minutes where the catalog's measured minutes a test carried gates of about ten, which raised it to 115; the high end did not move — the plan's §4)*. That total is not the sum of the steps, because the lanes overlap and the review's fixes run past step 14. The time estimate is redone after step 1 and after the catalog's second family.
 
 **Step 1 — The records, and four branches.** About 4–6 hours.
 - What it gives: the human's rulings of the last three days written down; the pending decisions due before the opening brought up to date; the four lanes' branches cut from one commit.
@@ -3147,7 +3147,7 @@ Beside them run the reviews of everything no review has read yet. Putting two la
   - hunter lane: a hunt names its family and part, and the test stage will not go on while a family has a part nobody hunts;
   - the fixes from the reviews of the shared test code land in the lanes that own the files.
 - Asked, first, only if the count is more than twice the pilot's rate: whether to carry on.
-  - In the pilot, 32 of the 183 tests whose route worked needed an operand the route did not print, about one in six.
+  - In the pilot, 32 of the 188 tests whose route worked needed an operand the route did not print, about one in six (17.0 %; asked over 34.0 %). The catalog's overview, built before this step, counted 108 of the 430 tests that hold across the catalog, 25.1 %: not over it.
   - It will likely fire, because the "run it again" acts leave their operand to be guessed by design.
   - Recommended: carry on, each such route recorded as a finding for the run to fix.
 - Asked, second, after the table's review: the nine standing reasons why a site has no test, and the act table. Accept as worded, or name the entries you challenge? Recommended: accept, except any the reviewer flags. Told with it:
@@ -3184,11 +3184,11 @@ Beside the families, step by step:
 - **Step 9** — families 9–11, about 8–13 hours. The scripted trial arm is run by the step tool the same way, and the canary's setup is brought up to the new test stage.
 - **Step 10** — families 12–13, about 6–12 hours. The test simulation of the harness moves its last scenarios to the new way of running a stage.
 - **Step 11** — families 14–15, about 7–11 hours. The old way is deleted, the main session makes its last definition edits, and the hunter lane is merged into the loop branch. Asked: new reasons, as in step 8.
-- **Step 12** — the first two dynamic families, about 12–23 hours. On the loop branch:
+- **Step 12** — the first two dynamic families, about 18–26 hours. On the loop branch:
   - the workflow doc is brought up to what the test stage does as built, the probe's verdict included;
   - the review range is split into what is covered and what is not;
   - nine reviewers read the areas that moved, then one reads across all of them.
-- **Step 13** — the last two dynamic families, about 12–23 hours. The review's fixes start, 9–35 hours, and run on past step 14. Asked: new reasons, as in step 8.
+- **Step 13** — the last two dynamic families, about 18–26 hours. The review's fixes start, 9–35 hours, and run on past step 14. Asked: new reasons, as in step 8.
 
 **Step 14 — The catalog closed.** About 7–11 hours.
 - What it gives: a catalog with nothing left scheduled. Every site has a test or a ruled reason, every code its test, and no test is missing.
