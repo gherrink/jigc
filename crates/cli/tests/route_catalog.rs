@@ -224,7 +224,22 @@
 //! the two printed the same route, which a classification alone does not say. It asserts
 //! that it ran. What a difference between two releases is, it does not say, and neither
 //! does this suite ([`the_table_follows_each_binary_with_the_state_that_binary_built`]
-//! holds the table to its binaries).
+//! holds the table to its binaries). **Named a family** (`JIGC_ROUTE_CATALOG_FAMILY`, a
+//! family as the projection names it), it follows that family's cases and no others
+//! ([`the_named_arm_runs_one_family_when_one_is_named`]).
+//!
+//! **And the catalog's answers, as one committed file** — the projection
+//! (`route_catalog/projection.tsv`; the pre-opening plan's task `P0`): per family its doors,
+//! its parts — its sites by file, at most twelve a part — and every site in it, the codes a
+//! claim makes sites and the dynamic sites answered in part or said to mint a family's code
+//! included; per site what answers it — each case with its cause and its classification as
+//! the expected-red list holds it, the reason, or the scheduled row — with whether its
+//! route prints a span; per family the uses of each of [`Act`]'s variants; the codes each
+//! dynamic site is given; and the residue, the dynamic sites no row names a code of. It is
+//! what a route hunter is handed, read at a commit without running a case, and it is held
+//! equal to the catalog ([`the_committed_projection_is_the_catalogs_answers`]) and
+//! placed by ids, never by where a table holds a row
+//! ([`the_projection_is_the_same_whatever_order_its_tables_are_in`]).
 //!
 //! **Which red cases can block is a ruling's, and this suite does its arithmetic**
 //! (`DECISIONS.md` → 2026-10-11, *Which states a route must work in*). A case's bound is
@@ -290,6 +305,7 @@ use crate::support::route_case::{
     Step, Var, Word,
 };
 use crate::support::rust_source;
+use cli::cli::{DOCTYPE_DOORS, DoctypeArg, VERB_KINDS, VerbKind};
 
 /// One command's file under `route_catalog/`, as the suite reads it.
 struct Table {
@@ -7824,6 +7840,1042 @@ fn the_keys_say_what_can_block_and_an_admitted_key_is_a_listed_one() {
 }
 
 // ---------------------------------------------------------------------------
+// The projection — the catalog's answers, one committed file
+// ---------------------------------------------------------------------------
+
+/// **The projection**, from this file's directory: one generated file that says, per
+/// family, its doors, its parts and every site in it, and per site what answers it — what
+/// a route hunter is handed and the record script holds a hunt to, read at a commit
+/// without running a case. Generated, never edited
+/// ([`the_committed_projection_is_the_catalogs_answers`]).
+const PROJECTION: &str = "route_catalog/projection.tsv";
+
+/// [`PROJECTION`] as committed, read when this suite was built.
+const COMMITTED_PROJECTION: &str = include_str!("route_catalog/projection.tsv");
+
+/// The command that regenerates [`PROJECTION`].
+const REGENERATE: &str = "UPDATE_GOLDENS=1 cargo test -p jigc --test g_migration \
+    route_catalog::the_committed_projection_is_the_catalogs_answers";
+
+/// **The most sites a part holds.** A family's parts are its sites by file, a file of more
+/// than this split in id order, so a hunt is handed no more than this many sites.
+const PART: usize = 12;
+
+/// What the projection reads beside what the fence reads: every case, every reading, and
+/// the expected-red list a case's classification is read from.
+struct Answers<'a> {
+    cases: &'a [&'a Case],
+    readings: &'a [Reading],
+    expected: &'a [ExpectedRed],
+}
+
+/// Every reading of every command's file.
+fn readings() -> Vec<Reading> {
+    TABLES
+        .iter()
+        .flat_map(|table| table.readings)
+        .copied()
+        .collect()
+}
+
+/// Every `Why`, its text empty — the vocabulary [`word`] gives each a word of, held to the
+/// enum as written by [`the_vocabulary_header_is_the_frames`].
+const WHYS: [Why; 4] = [
+    Why::NotConstructible(""),
+    Why::NotBuilt(""),
+    Why::Platform(""),
+    Why::NoRoutePrinted,
+];
+
+/// One part of a family: the file its sites stand in, and its sites in id order. Its key
+/// is the file and its first site's id.
+#[derive(Debug, PartialEq, Eq)]
+struct Part {
+    file: String,
+    sites: Vec<String>,
+}
+
+/// **The parts of a family's sites** — each `(file, id)` — by file, and a file of more
+/// than [`PART`] sites split in id order.
+fn parts(sites: &[(String, String)]) -> Vec<Part> {
+    let mut by_file: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    for (file, id) in sites {
+        by_file.entry(file).or_default().insert(id);
+    }
+    let mut out = Vec::new();
+    for (file, ids) in by_file {
+        let ids: Vec<&str> = ids.into_iter().collect();
+        for chunk in ids.chunks(PART) {
+            out.push(Part {
+                file: file.to_string(),
+                sites: chunk.iter().map(|id| id.to_string()).collect(),
+            });
+        }
+    }
+    out
+}
+
+/// **One site that owes an answer, as the projection places it**: its id, the file it
+/// stands in, its route as the list reads it at its call, and the families it is a row of
+/// — none for a site of the residue.
+struct Member {
+    id: String,
+    file: String,
+    route: &'static str,
+    text: String,
+    families: BTreeSet<&'static str>,
+}
+
+/// The family the prefix of `code` is assigned to ([`FAMILIES`]).
+fn family_of(code: &str) -> Option<&'static str> {
+    let (prefix, _) = code.split_once('.')?;
+    FAMILIES
+        .iter()
+        .find(|(of, _)| *of == prefix)
+        .map(|(_, family)| *family)
+}
+
+/// **Every site that owes an answer** ([`owing`]), each with the families it is a row of:
+/// a listed site its command's; a code a claim makes a site the family of its prefix; and
+/// a dynamic site that answers under its own id the families of the codes claimed for it
+/// ([`IN_PART`]) or said to be minted there ([`MINTED_AT`]) — and none, the residue, where
+/// no row names a code of it.
+fn members(read: &Read, rows: &Rows) -> Vec<Member> {
+    owing(read, &rows.claims, &rows.in_part)
+        .into_iter()
+        .map(|owed| {
+            let (site, families) = match read.sites.iter().find(|site| site.id() == owed.id) {
+                Some(site) if site.code == DYNAMIC => {
+                    let codes = rows
+                        .claims
+                        .iter()
+                        .filter(|claim| claim.minted_at == owed.id)
+                        .map(|claim| claim.code)
+                        .chain(
+                            rows.minted_at
+                                .iter()
+                                .filter(|row| row.site == owed.id)
+                                .map(|row| row.code),
+                        );
+                    (site, codes.filter_map(family_of).collect())
+                }
+                Some(site) => (site, BTreeSet::from([site.command])),
+                None => {
+                    let claim = rows
+                        .claims
+                        .iter()
+                        .find(|claim| claim.id().as_deref() == Some(owed.id.as_str()))
+                        .expect("an id that owes and is no listed site's is a claim's");
+                    let site = read
+                        .sites
+                        .iter()
+                        .find(|site| site.id() == claim.minted_at)
+                        .expect("a claim that owes names a listed site");
+                    (site, family_of(claim.code).into_iter().collect())
+                }
+            };
+            Member {
+                id: owed.id,
+                file: site.file.clone(),
+                route: owed.route,
+                text: site.route_text.clone(),
+                families,
+            }
+        })
+        .collect()
+}
+
+/// **Whether a site's route prints a span**, read off the list's route at its call: `span`
+/// where its literals hold a backticked one; `no span` where the route is written at the
+/// call, whole, and holds none; `not read` where it is built elsewhere, no literal stands
+/// in it, or a template leaves a place the literals do not fill; `no route` where it
+/// prints none.
+fn prints(route: &str, text: &str) -> &'static str {
+    if route == "none" {
+        "no route"
+    } else if text.matches('`').count() >= 2 {
+        "span"
+    } else if route == "variable" || text.is_empty() || text == "-" || text.contains('{') {
+        "not read"
+    } else {
+        "no span"
+    }
+}
+
+/// **The doors that print a family's codes** — a person's reading, as [`FAMILIES`] is,
+/// and no reachability fact — each a leaf of the product's registry
+/// (`cli::cli::VERB_KINDS`): every sub-command of `config` and of `milestone`; the `doc`
+/// verbs that write; the `doc` verbs that read and every door that takes a doc address
+/// (`cli::cli::DOCTYPE_DOORS`); the three doors of the gate; composition's two; and for
+/// every other family, the one verb it is named for.
+fn doors(family: &str) -> BTreeSet<String> {
+    let under = |group: &str, kind: Option<VerbKind>| -> Vec<String> {
+        VERB_KINDS
+            .iter()
+            .filter(|(path, of)| {
+                path.len() == 2 && path[0] == group && kind.is_none_or(|kind| *of == kind)
+            })
+            .map(|(path, _)| path.join(" "))
+            .collect()
+    };
+    match family {
+        "config" | "milestone" => under(family, None),
+        "doc write" => under("doc", Some(VerbKind::Write)),
+        "doc read" => under("doc", Some(VerbKind::Read))
+            .into_iter()
+            .chain(
+                DOCTYPE_DOORS
+                    .iter()
+                    .filter(|(_, arg)| *arg == DoctypeArg::Address)
+                    .map(|(path, _)| path.join(" ")),
+            )
+            .collect(),
+        "task finalize" => vec![
+            "task finalize".to_string(),
+            "task validate".to_string(),
+            "milestone finalize".to_string(),
+        ],
+        "start" => vec!["start".to_string(), "workflow".to_string()],
+        other => vec![other.to_string()],
+    }
+    .into_iter()
+    .collect()
+}
+
+/// The doors of `doors` that are no leaf of the product's registry.
+fn misdoored<'a>(doors: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    doors
+        .into_iter()
+        .filter(|door| !VERB_KINDS.iter().any(|(path, _)| path.join(" ") == *door))
+        .map(|door| format!("`jigc {door}` is a door of no leaf of `cli::cli::VERB_KINDS`"))
+        .collect()
+}
+
+/// The name of every variant of [`Act`], in the enum's order, read off the frame as
+/// written — so a variant added to it is counted here without a list of acts.
+fn act_kinds() -> Vec<String> {
+    let frame = rust_source::code_only(include_str!("support/route_case.rs"));
+    variants(body_of(&frame, "pub enum Act {"))
+        .into_iter()
+        .map(|variant| variant.split('(').next().unwrap_or_default().to_string())
+        .collect()
+}
+
+/// The classification a case comes to, as the expected-red list holds it: the listed one;
+/// and for a case the list does not hold, which is green, *followed, holds, operand
+/// implied* where an act leaves its operand to the case ([`Act::implies`]) — what the
+/// runner reads for it — and *followed, holds* otherwise.
+fn listed_or_green(case: &Case, expected: &[ExpectedRed]) -> Classification {
+    expected
+        .iter()
+        .find(|entry| entry.case == case.name)
+        .map_or_else(
+            || {
+                if case.acts.iter().any(|act| act.implies()) {
+                    Classification::HoldsOperandImplied
+                } else {
+                    Classification::Holds
+                }
+            },
+            |entry| entry.classification,
+        )
+}
+
+/// One line of the projection: its cells, tab-separated. A cell holds no tab and no line
+/// break, or the line could not be read back.
+fn push(out: &mut String, cells: &[&str]) {
+    for cell in cells {
+        assert!(
+            !cell.contains(['\t', '\n']),
+            "a cell of the projection holds a tab or a line break: {cell:?}",
+        );
+    }
+    out.push_str(&cells.join("\t"));
+    out.push('\n');
+}
+
+/// What the projection's lines are, before them.
+const HEADER: &str = "\
+# The route catalog's projection: per family its doors, its parts and every site in it, and
+# per site what answers it. Generated from the catalog by `crates/cli/tests/route_catalog.rs`,
+# which says what each line holds. Never edited by hand:
+#   UPDATE_GOLDENS=1 cargo test -p jigc --test g_migration route_catalog::the_committed_projection_is_the_catalogs_answers
+# A site is one that owes an answer: a blocking site of `sites.tsv`, or a code a claim makes a site.
+# A line a fact, tab-separated, its kind first:
+#   vocabulary classification <words> <red|green> | why <word>
+#   family <family> <sites> <parts>
+#   door <family> <leaf verb that prints it>
+#   part <family> <file> <first site> <sites> (a part: one file's sites, at most 12, in id order)
+#   site <family> <its part's first site> <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none>
+#   acts <family> <variant of enum Act> <uses by the family's cases>
+#   residue <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
+#   code <dynamic site> <code> <claim|minted-at>
+#   case <site> <case> <classification as the expected-red list holds it> <marked|-> <cause>
+#   reason <site> <why> <text>
+#   scheduled <site> <class> <note>
+#   without-case <site> <why> <cause> <text>
+#   not-followed <site> <why> <way out> <text>
+";
+
+/// **The projection of the catalog's answers**, as [`PROJECTION`] holds it.
+fn projection(read: &Read, rows: &Rows, answers: &Answers) -> String {
+    let mut out = String::from(HEADER);
+    for classification in Classification::ALL {
+        let red = if classification.is_red() {
+            "red"
+        } else {
+            "green"
+        };
+        push(
+            &mut out,
+            &["vocabulary", "classification", classification.as_str(), red],
+        );
+    }
+    for why in &WHYS {
+        push(&mut out, &["vocabulary", "why", word(why)]);
+    }
+
+    let members = members(read, rows);
+    let answer = |id: &str| {
+        if answers.cases.iter().any(|case| case.site == id) {
+            "case"
+        } else if rows.reasons.iter().any(|reason| reason.site == id) {
+            "reason"
+        } else if rows.scheduled.iter().any(|row| row.site == id) {
+            "scheduled"
+        } else {
+            "none"
+        }
+    };
+    let kinds = act_kinds();
+    let families: BTreeSet<&str> = FAMILIES.iter().map(|(_, family)| *family).collect();
+    for family in families {
+        let of_family: Vec<&Member> = members
+            .iter()
+            .filter(|member| member.families.contains(family))
+            .collect();
+        let split = parts(
+            &of_family
+                .iter()
+                .map(|member| (member.file.clone(), member.id.clone()))
+                .collect::<Vec<_>>(),
+        );
+        push(
+            &mut out,
+            &[
+                "family",
+                family,
+                &of_family.len().to_string(),
+                &split.len().to_string(),
+            ],
+        );
+        for door in doors(family) {
+            push(&mut out, &["door", family, &door]);
+        }
+        for part in &split {
+            push(
+                &mut out,
+                &[
+                    "part",
+                    family,
+                    &part.file,
+                    &part.sites[0],
+                    &part.sites.len().to_string(),
+                ],
+            );
+        }
+        for part in &split {
+            for id in &part.sites {
+                let member = of_family
+                    .iter()
+                    .find(|member| member.id == *id)
+                    .expect("a part's site is the family's");
+                push(
+                    &mut out,
+                    &[
+                        "site",
+                        family,
+                        &part.sites[0],
+                        id,
+                        member.route,
+                        prints(member.route, &member.text),
+                        answer(id),
+                    ],
+                );
+            }
+        }
+        let mut uses: BTreeMap<String, usize> = BTreeMap::new();
+        for case in answers.cases {
+            if of_family.iter().any(|member| member.id == case.site) {
+                for act in case.acts {
+                    let kind = format!("{act:?}");
+                    let kind = kind.split('(').next().unwrap_or_default();
+                    assert!(
+                        kinds.iter().any(|known| known == kind),
+                        "`{kind}` is no variant of `enum Act` as the frame declares it",
+                    );
+                    *uses.entry(kind.to_string()).or_default() += 1;
+                }
+            }
+        }
+        for kind in &kinds {
+            let used = uses.get(kind).copied().unwrap_or_default();
+            push(&mut out, &["acts", family, kind, &used.to_string()]);
+        }
+    }
+
+    let mut residue: Vec<&Member> = members
+        .iter()
+        .filter(|member| member.families.is_empty())
+        .collect();
+    residue.sort_by(|a, b| a.id.cmp(&b.id));
+    for member in residue {
+        push(
+            &mut out,
+            &[
+                "residue",
+                &member.id,
+                member.route,
+                prints(member.route, &member.text),
+                answer(&member.id),
+            ],
+        );
+    }
+
+    let mut lines: Vec<Vec<String>> = Vec::new();
+    for claim in &rows.claims {
+        lines.push(vec![
+            "code".into(),
+            claim.minted_at.into(),
+            claim.code.into(),
+            "claim".into(),
+        ]);
+    }
+    for row in &rows.minted_at {
+        lines.push(vec![
+            "code".into(),
+            row.site.into(),
+            row.code.into(),
+            "minted-at".into(),
+        ]);
+    }
+    for case in answers.cases {
+        let marked = if case.acts.iter().any(|act| act.marked()) {
+            "marked"
+        } else {
+            "-"
+        };
+        lines.push(vec![
+            "case".into(),
+            case.site.into(),
+            case.name.into(),
+            listed_or_green(case, answers.expected).as_str().into(),
+            marked.into(),
+            case.cause.into(),
+        ]);
+    }
+    let text = |why: &Why| -> String {
+        match why {
+            Why::NotConstructible(text) | Why::NotBuilt(text) | Why::Platform(text) => {
+                (*text).to_string()
+            }
+            Why::NoRoutePrinted => "-".to_string(),
+        }
+    };
+    for reason in &rows.reasons {
+        lines.push(vec![
+            "reason".into(),
+            reason.site.into(),
+            word(&reason.why).into(),
+            text(&reason.why),
+        ]);
+    }
+    for row in &rows.scheduled {
+        lines.push(vec![
+            "scheduled".into(),
+            row.site.into(),
+            row.class.into(),
+            row.note.into(),
+        ]);
+    }
+    for reading in answers.readings {
+        for (cause, why) in reading.without_case {
+            lines.push(vec![
+                "without-case".into(),
+                reading.site.into(),
+                word(why).into(),
+                (*cause).into(),
+                text(why),
+            ]);
+        }
+        for (way, why) in reading.not_followed {
+            lines.push(vec![
+                "not-followed".into(),
+                reading.site.into(),
+                word(why).into(),
+                (*way).into(),
+                text(why),
+            ]);
+        }
+    }
+    // The kinds in the header's order, and within a kind by site, then by the rest.
+    let order = [
+        "code",
+        "case",
+        "reason",
+        "scheduled",
+        "without-case",
+        "not-followed",
+    ];
+    lines.sort_by(|a, b| {
+        let rank = |line: &[String]| order.iter().position(|kind| *kind == line[0]);
+        rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
+    });
+    for line in &lines {
+        push(
+            &mut out,
+            &line.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+    }
+    out
+}
+
+/// **The cases of one family** — the cases whose site is a row of that family — or every
+/// case where none is named. A family the projection does not have is named, with the
+/// ones it has.
+fn of_family<'a>(
+    cases: &[&'a Case],
+    family: Option<&str>,
+    read: &Read,
+    rows: &Rows,
+) -> Result<Vec<&'a Case>, String> {
+    let Some(family) = family else {
+        return Ok(cases.to_vec());
+    };
+    let families: BTreeSet<&str> = FAMILIES.iter().map(|(_, family)| *family).collect();
+    if !families.contains(family) {
+        return Err(format!(
+            "`{family}` is no family of the projection; its families are {}",
+            families
+                .iter()
+                .map(|family| format!("`{family}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let sites: BTreeSet<String> = members(read, rows)
+        .into_iter()
+        .filter(|member| member.families.contains(family))
+        .map(|member| member.id)
+        .collect();
+    Ok(cases
+        .iter()
+        .copied()
+        .filter(|case| sites.contains(case.site))
+        .collect())
+}
+
+/// The planted cases the projection's arms hand the fixture's tables: one at the site that
+/// spells its code, one at the code a claim makes a site, one the expected-red list holds,
+/// and one in the marked form.
+fn planted_answers() -> [Case; 4] {
+    [
+        Case {
+            name: "planted-at-the-spelled-site",
+            site: SPELLED,
+            cause: "the spelled cause",
+            acts: &[Act::Run(0)],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-at-the-claimed-site",
+            site: CLAIMED,
+            cause: "the claimed cause",
+            acts: &[Act::Rerun],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-and-listed-red",
+            site: SPELLED,
+            cause: "the listed cause",
+            acts: &[Act::Remove(Operand::Span(0)), Act::Run(1)],
+            ..PLANTED
+        },
+        Case {
+            name: "planted-in-the-marked-form",
+            site: ANOTHER,
+            cause: "the marked cause",
+            acts: &[Act::MoveOut(Operand::Unprinted("there")), Act::Run(0)],
+            ..PLANTED
+        },
+    ]
+}
+
+/// The fixture's projection over [`planted_answers`] and `rows`.
+fn planted_projection(rows: &Rows) -> String {
+    let planted = planted_answers();
+    let cases: Vec<&Case> = planted.iter().collect();
+    let expected = [ExpectedRed {
+        case: "planted-and-listed-red",
+        key: "r1-a-key",
+        classification: Classification::SameRefusalAgain,
+    }];
+    projection(
+        &fixture(),
+        rows,
+        &Answers {
+            cases: &cases,
+            readings: &[],
+            expected: &expected,
+        },
+    )
+}
+
+/// The lines of `projection` of one kind, without the kind.
+fn of_kind<'a>(projection: &'a str, kind: &str) -> Vec<&'a str> {
+    projection
+        .lines()
+        .filter_map(|line| line.strip_prefix(kind)?.strip_prefix('\t'))
+        .collect()
+}
+
+/// This tree's projection.
+fn tree_projection(read: &Read) -> String {
+    let cases = cases();
+    projection(
+        read,
+        &rows(),
+        &Answers {
+            cases: &cases,
+            readings: &readings(),
+            expected: &expected_red(),
+        },
+    )
+}
+
+/// **The committed projection is the catalog's answers** — byte for byte the projection
+/// of this tree's sites, cases, reasons, readings, claims, minted codes, in-part sites,
+/// scheduled rows and expected-red list. A case, a reason or a row added, moved or
+/// dropped reddens here with the lines named. **Regenerate, never edit:** [`REGENERATE`],
+/// the goldens' switch, refused under `CI` the way theirs is
+/// ([`goldens::update_mode`](crate::support::goldens::update_mode)), so a regenerated
+/// projection can never green CI.
+#[test]
+fn the_committed_projection_is_the_catalogs_answers() {
+    let made = tree_projection(&tree());
+    if crate::support::goldens::update_mode(
+        std::env::var("UPDATE_GOLDENS").ok().as_deref(),
+        std::env::var("CI").ok().as_deref(),
+    ) {
+        refusal_sites::regenerate("projection.tsv", &made);
+        return;
+    }
+    let committed = COMMITTED_PROJECTION;
+    let wrong = misdoored(
+        FAMILIES
+            .iter()
+            .flat_map(|(_, family)| doors(family))
+            .collect::<BTreeSet<_>>()
+            .iter()
+            .map(String::as_str),
+    );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    says(
+        &misdoored(["setup", "no such verb"]),
+        &[("`jigc no such verb`", "no leaf")],
+    );
+    if committed == made {
+        return;
+    }
+    let (in_made, in_file): (BTreeSet<&str>, BTreeSet<&str>) =
+        (made.lines().collect(), committed.lines().collect());
+    let unlisted: Vec<&str> = in_made.difference(&in_file).copied().collect();
+    let gone: Vec<&str> = in_file.difference(&in_made).copied().collect();
+    panic!(
+        "{PROJECTION} is not the projection of the catalog.\n\
+         {} line(s) the catalog has and the file does not:\n{}\n\
+         {} line(s) the file has and the catalog does not:\n{}\n\
+         {}\
+         The file is generated, never edited: look at what moved, then regenerate with\n  \
+         {REGENERATE}\nand commit the diff with the change that caused it.",
+        unlisted.len(),
+        unlisted.join("\n"),
+        gone.len(),
+        gone.join("\n"),
+        if unlisted.is_empty() && gone.is_empty() {
+            "The lines agree, so their order moved.\n"
+        } else {
+            ""
+        },
+    );
+}
+
+/// **A case dropped from a table makes the file differ** — the mutant of the arm above:
+/// this tree's projection with one case taken out is not the projection, and the line that
+/// is gone names the case.
+#[test]
+fn a_case_dropped_from_a_table_makes_the_file_differ() {
+    let read = tree();
+    let whole = tree_projection(&read);
+    let all = cases();
+    let dropped = all[all.len() / 2];
+    let rest: Vec<&Case> = all
+        .iter()
+        .copied()
+        .filter(|case| case.name != dropped.name)
+        .collect();
+    let without = projection(
+        &read,
+        &rows(),
+        &Answers {
+            cases: &rest,
+            readings: &readings(),
+            expected: &expected_red(),
+        },
+    );
+    assert_ne!(
+        whole, without,
+        "a case dropped leaves the projection as it was"
+    );
+    let (whole, without): (BTreeSet<&str>, BTreeSet<&str>) =
+        (whole.lines().collect(), without.lines().collect());
+    assert!(
+        whole
+            .difference(&without)
+            .any(|line| line.starts_with("case\t") && line.contains(dropped.name)),
+        "the line that is gone names the case `{}`",
+        dropped.name,
+    );
+}
+
+/// **The projection is the same whatever order its tables are in** — this tree's sites,
+/// cases, readings, reasons, claims, minted codes, in-part sites, scheduled rows and
+/// expected-red list, each handed in reverse, project to the same bytes: every line is
+/// placed by a site's id and a family's word, never by where a table holds a row. The
+/// tables overlap where it matters — a site with many cases, a dynamic site in two
+/// families, a code claimed at two sites.
+#[test]
+fn the_projection_is_the_same_whatever_order_its_tables_are_in() {
+    fn reversed<T: Clone>(rows: &[T]) -> Vec<T> {
+        rows.iter().rev().cloned().collect()
+    }
+    let read = tree();
+    let turned = Read {
+        sites: reversed(&read.sites),
+        spelled: read.spelled.clone(),
+    };
+    let rows = rows();
+    let turned_rows = Rows {
+        cases: reversed(&rows.cases),
+        reasons: reversed(&rows.reasons),
+        claims: reversed(&rows.claims),
+        no_code: reversed(&rows.no_code),
+        minted_at: reversed(&rows.minted_at),
+        scheduled: reversed(&rows.scheduled),
+        in_part: reversed(&rows.in_part),
+    };
+    let (cases, readings, expected) = (cases(), readings(), expected_red());
+    assert_eq!(
+        projection(
+            &turned,
+            &turned_rows,
+            &Answers {
+                cases: &reversed(&cases),
+                readings: &reversed(&readings),
+                expected: &reversed(&expected),
+            },
+        ),
+        projection(
+            &read,
+            &rows,
+            &Answers {
+                cases: &cases,
+                readings: &readings,
+                expected: &expected,
+            },
+        ),
+    );
+}
+
+/// **A claimed dynamic site is in its family's rows** — the code a claim makes a site is a
+/// site of the family its prefix is assigned to, and the dynamic site that mints it is
+/// none, nor residue; one answered in part is in that family under its own id as well; one
+/// a row of [`MINTED_AT`] names is in the family of the code it is said to mint; and one
+/// nothing names is residue.
+#[test]
+fn a_claimed_dynamic_site_is_in_its_familys_rows() {
+    let site_of = |projection: &str, family: &str, id: &str| {
+        of_kind(projection, "site").iter().any(|line| {
+            line.starts_with(&format!("{family}\t")) && line.contains(&format!("\t{id}\t"))
+        })
+    };
+    let residue = |projection: &str, id: &str| {
+        of_kind(projection, "residue")
+            .iter()
+            .any(|line| line.starts_with(&format!("{id}\t")))
+    };
+
+    let claimed = planted_projection(&in_order());
+    assert!(
+        site_of(&claimed, "setup", CLAIMED),
+        "the claimed code is a site of `setup`:\n{claimed}"
+    );
+    let a_site = |projection: &str, id: &str| {
+        of_kind(projection, "site")
+            .iter()
+            .any(|line| line.split('\t').nth(2) == Some(id))
+    };
+    assert!(
+        !a_site(&claimed, MINTED) && !residue(&claimed, MINTED),
+        "the dynamic site a claim answers is no site of its own and no residue:\n{claimed}"
+    );
+
+    let in_part = planted_projection(&Rows {
+        in_part: vec![MINTED],
+        scheduled: vec![left(ANOTHER), left(MINTED)],
+        ..in_order()
+    });
+    assert!(
+        site_of(&in_part, "setup", CLAIMED) && site_of(&in_part, "setup", MINTED),
+        "a site answered in part is in its claims' family under its own id too:\n{in_part}"
+    );
+
+    let minted = planted_projection(&Rows {
+        cases: vec![SPELLED],
+        claims: Vec::new(),
+        minted_at: vec![MintedAt {
+            code: "ingest.by-a-match",
+            site: MINTED,
+            why: "planted",
+        }],
+        scheduled: vec![left(ANOTHER), left(MINTED)],
+        ..in_order()
+    });
+    assert!(
+        site_of(&minted, "ingest", MINTED) && !residue(&minted, MINTED),
+        "a site said to mint a code is in that code's family, and no residue:\n{minted}"
+    );
+
+    let nobodys = planted_projection(&Rows {
+        cases: vec![SPELLED],
+        claims: Vec::new(),
+        scheduled: vec![left(ANOTHER), left(MINTED)],
+        ..in_order()
+    });
+    assert!(
+        residue(&nobodys, MINTED) && !a_site(&nobodys, MINTED),
+        "a dynamic site no claim and no row names is residue:\n{nobodys}"
+    );
+}
+
+/// **A dynamic site's minted codes are its rows** — every code a claim or a row of
+/// [`MINTED_AT`] gives a dynamic site is a `code` line of that site, saying which of the
+/// two gives it; on the fixture, and on this tree, a line for every row of the two tables.
+#[test]
+fn a_dynamic_sites_minted_codes_are_its_rows() {
+    let both = planted_projection(&Rows {
+        minted_at: vec![MintedAt {
+            code: "ingest.by-a-match",
+            site: MINTED,
+            why: "planted",
+        }],
+        in_part: vec![MINTED],
+        scheduled: vec![left(ANOTHER), left(MINTED)],
+        ..in_order()
+    });
+    assert_eq!(
+        of_kind(&both, "code"),
+        [
+            format!("{MINTED}\tingest.by-a-match\tminted-at"),
+            format!("{MINTED}\tsetup.by-a-match\tclaim"),
+        ],
+        "{both}"
+    );
+
+    let tree = tree_projection(&tree());
+    let codes = of_kind(&tree, "code");
+    for claim in CLAIMS {
+        let line = format!("{}\t{}\tclaim", claim.minted_at, claim.code);
+        assert!(codes.contains(&line.as_str()), "no line `{line}`");
+    }
+    for row in MINTED_AT {
+        let line = format!("{}\t{}\tminted-at", row.site, row.code);
+        assert!(codes.contains(&line.as_str()), "no line `{line}`");
+    }
+    assert_eq!(codes.len(), CLAIMS.len() + MINTED_AT.len(), "{codes:#?}");
+}
+
+/// **A family's parts are its sites by file, none over twelve** — a file of thirteen sites
+/// is two parts, the first twelve in id order and then the thirteenth, and another file's
+/// sites a part of their own; and on this tree every family's parts hold its sites, each
+/// once, each part one file's and no more than [`PART`].
+#[test]
+fn a_familys_parts_are_its_sites_by_file_none_over_twelve() {
+    let site = |file: &str, n: usize| (file.to_string(), format!("{file}::f::setup.x#{n:02}"));
+    let mut planted: Vec<(String, String)> = (1..=13).map(|n| site("crates/a.rs", n)).collect();
+    planted.extend([site("crates/b.rs", 2), site("crates/b.rs", 1)]);
+    let split = parts(&planted);
+    let shape: Vec<(&str, &str, usize)> = split
+        .iter()
+        .map(|part| (part.file.as_str(), part.sites[0].as_str(), part.sites.len()))
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            ("crates/a.rs", "crates/a.rs::f::setup.x#01", 12),
+            ("crates/a.rs", "crates/a.rs::f::setup.x#13", 1),
+            ("crates/b.rs", "crates/b.rs::f::setup.x#01", 2),
+        ],
+        "{split:#?}"
+    );
+
+    let tree = tree_projection(&tree());
+    let families: BTreeSet<&str> = FAMILIES.iter().map(|(_, family)| *family).collect();
+    for family in families {
+        let sites: Vec<&str> = of_kind(&tree, "site")
+            .into_iter()
+            .filter(|line| line.starts_with(&format!("{family}\t")))
+            .collect();
+        let parts: Vec<&str> = of_kind(&tree, "part")
+            .into_iter()
+            .filter(|line| line.starts_with(&format!("{family}\t")))
+            .collect();
+        let mut held = 0;
+        for part in &parts {
+            let cells: Vec<&str> = part.split('\t').collect();
+            let (file, first, many) = (cells[1], cells[2], cells[3]);
+            let of_part: Vec<&&str> = sites
+                .iter()
+                .filter(|line| line.split('\t').nth(1) == Some(first))
+                .collect();
+            assert!(
+                of_part.len().to_string() == many && of_part.len() <= PART,
+                "`{family}`'s part `{first}` holds {} site(s) and says {many}",
+                of_part.len(),
+            );
+            assert!(
+                of_part.iter().all(|line| line
+                    .split('\t')
+                    .nth(2)
+                    .is_some_and(|id| id.starts_with(&format!("{file}::")))),
+                "`{family}`'s part `{first}` holds a site of another file than `{file}`",
+            );
+            held += of_part.len();
+        }
+        assert_eq!(
+            held,
+            sites.len(),
+            "`{family}`'s parts hold each of its sites once"
+        );
+    }
+}
+
+/// **A part's key survives a site added to another file** — the parts of one file, keyed
+/// by the file and their first site's id, are the same whatever another file gains.
+#[test]
+fn a_parts_key_survives_a_site_added_to_another_file() {
+    let site = |file: &str, n: usize| (file.to_string(), format!("{file}::f::setup.x#{n:02}"));
+    let before: Vec<(String, String)> = (1..=14)
+        .map(|n| site("crates/a.rs", n))
+        .chain((1..=3).map(|n| site("crates/c.rs", n)))
+        .collect();
+    let mut after = before.clone();
+    after.push(site("crates/b.rs", 1));
+    after.push(site("crates/c.rs", 4));
+    let keys = |sites: &[(String, String)]| -> Vec<(String, String)> {
+        parts(sites)
+            .into_iter()
+            .filter(|part| part.file == "crates/a.rs")
+            .map(|part| (part.file, part.sites[0].clone()))
+            .collect()
+    };
+    assert_eq!(keys(&before).len(), 2, "{:#?}", parts(&before));
+    assert_eq!(keys(&before), keys(&after));
+}
+
+/// **The vocabulary header is the frame's** — the projection's `vocabulary` lines are the
+/// words of every [`Classification`] and of every [`Why`], in the order the enums declare
+/// them, each classification with whether it is red; and the lists the words are read from
+/// are the enums as written, so a variant added to either is a word here.
+#[test]
+fn the_vocabulary_header_is_the_frames() {
+    let name = |debug: String| debug.split('(').next().unwrap_or_default().to_string();
+    let declared = |code: &str, opening: &str| -> Vec<String> {
+        variants(body_of(code, opening))
+            .into_iter()
+            .map(|variant| variant.split('(').next().unwrap_or_default().to_string())
+            .collect()
+    };
+    let frame = rust_source::code_only(include_str!("support/route_case.rs"));
+    let suite = rust_source::code_only(include_str!("route_catalog.rs"));
+    assert_eq!(
+        Classification::ALL.map(|c| name(format!("{c:?}"))).to_vec(),
+        declared(&frame, "pub enum Classification {"),
+    );
+    assert_eq!(
+        WHYS.map(|why| name(format!("{why:?}"))).to_vec(),
+        declared(&suite, "pub enum Why {"),
+    );
+
+    let expected: Vec<String> = Classification::ALL
+        .iter()
+        .map(|c| {
+            format!(
+                "classification\t{c}\t{}",
+                if c.is_red() { "red" } else { "green" }
+            )
+        })
+        .chain(WHYS.iter().map(|why| format!("why\t{}", word(why))))
+        .collect();
+    let planted = planted_projection(&in_order());
+    assert_eq!(of_kind(&planted, "vocabulary"), expected, "{planted}");
+}
+
+/// **The ignored arm follows one family when one is named** ([`NAMED_FAMILY`]): the cases
+/// whose site is a row of that family and no other; every case where none is named; and a
+/// family the projection does not have is refused with the ones it has. The source half:
+/// the arm reads the variable and hands it to [`of_family`].
+#[test]
+fn the_named_arm_runs_one_family_when_one_is_named() {
+    let planted = planted_answers();
+    let cases: Vec<&Case> = planted.iter().collect();
+    let names = |picked: Result<Vec<&Case>, String>| -> Vec<&str> {
+        picked
+            .expect("a family the fixture has")
+            .iter()
+            .map(|case| case.name)
+            .collect()
+    };
+    let (read, rows) = (fixture(), in_order());
+    assert_eq!(
+        names(of_family(&cases, Some("ingest"), &read, &rows)),
+        ["planted-in-the-marked-form"],
+    );
+    assert_eq!(
+        names(of_family(&cases, Some("setup"), &read, &rows)),
+        [
+            "planted-at-the-spelled-site",
+            "planted-at-the-claimed-site",
+            "planted-and-listed-red"
+        ],
+    );
+    assert_eq!(names(of_family(&cases, None, &read, &rows)).len(), 4);
+    let refused = of_family(&cases, Some("no such family"), &read, &rows)
+        .expect_err("a family nobody has is refused");
+    assert!(
+        refused.contains("`no such family`") && refused.contains("`setup`"),
+        "{refused}"
+    );
+
+    let suite = rust_source::code_only(include_str!("route_catalog.rs"));
+    let arm = body_of(&suite, &format!("fn {ON_A_NAMED_BINARY}() {{"));
+    assert!(
+        arm.contains("std::env::var(NAMED_FAMILY)") && arm.contains("of_family("),
+        "the ignored arm reads `{NAMED_FAMILY}` and follows the cases of that family",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // The cases on a binary a variable names
 // ---------------------------------------------------------------------------
 
@@ -7833,6 +8885,10 @@ const NAMED_BINARY: &str = "JIGC_ROUTE_CATALOG_BINARY";
 
 /// That arm, as the harness names it inside this suite.
 const ON_A_NAMED_BINARY: &str = "the_cases_are_followed_on_the_binary_a_variable_names";
+
+/// The variable that names the one family that arm follows the cases of, as the projection
+/// names its families; unset, it follows every case.
+const NAMED_FAMILY: &str = "JIGC_ROUTE_CATALOG_FAMILY";
 
 /// What one case came to on one binary: a classification — or, where the frame could not
 /// follow it there, why.
@@ -8359,6 +9415,10 @@ fn the_table_follows_each_binary_with_the_state_that_binary_built() {
 ///     cargo test -p jigc --test g_migration route_catalog::the_cases_are_followed_on_the_binary_a_variable_names -- --ignored --exact --nocapture
 /// ```
 ///
+/// With `JIGC_ROUTE_CATALOG_FAMILY` set to a family as the projection names it, only that
+/// family's cases are followed ([`of_family`]); the blocks `sites` and `reasons` stay the
+/// whole catalog's.
+///
 /// Every case is followed twice, once on each binary, **the state built by the binary that
 /// is then asked** ([`the_table_follows_each_binary_with_the_state_that_binary_built`]). A
 /// case the frame cannot follow on the named binary — a state it cannot build there, a
@@ -8387,7 +9447,10 @@ fn the_cases_are_followed_on_the_binary_a_variable_names() {
          directory of its own",
         named.display(),
     );
-    let (cases, expected) = (cases(), expected_red());
+    let family = std::env::var(NAMED_FAMILY).ok();
+    let cases = of_family(&cases(), family.as_deref(), &tree(), &rows())
+        .unwrap_or_else(|refused| panic!("`{NAMED_FAMILY}`: {refused}"));
+    let expected = expected_red();
     let rows = on_two_binaries(named, binary(), &cases, &expected);
 
     println!("== cases ==\n{}", table(&rows, &expected));

@@ -692,6 +692,16 @@ pub fn list_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/route_catalog/sites.tsv")
 }
 
+/// **Write a regenerated file of the route catalog's directory** — `name` under
+/// `crates/cli/tests/route_catalog/`. The catalog's own source names no filesystem API
+/// (`route_catalog::no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed`),
+/// so the regeneration of a file it holds equal to what it generates — its projection —
+/// is done here, beside the committed list's own path.
+pub fn regenerate(name: &str, text: &str) {
+    let path = list_path().with_file_name(name);
+    std::fs::write(&path, text).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
+}
+
 /// A field as a row holds it: one line, no tab, and `-` where there is nothing.
 fn field(text: &str) -> String {
     if text.is_empty() {

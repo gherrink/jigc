@@ -47,6 +47,7 @@ schema-version: 3
 <!-- fields -->
 - intent: P0 — generate the catalog's overview of families, parts, sites and answers
 - workflow: builder
+- status: joined
 
 ### p1-stop-counting-the-finding  {#p1-stop-counting-the-finding}
 

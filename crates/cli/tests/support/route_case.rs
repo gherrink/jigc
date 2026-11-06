@@ -648,6 +648,24 @@ impl Act {
             | Act::RerunWith(_) => None,
         }
     }
+
+    /// **Whether the act takes the marked form** — an object the route does not print,
+    /// named by the case ([`Operand::Unprinted`]).
+    pub fn marked(self) -> bool {
+        matches!(self.operand(), Some(Operand::Unprinted(_)))
+    }
+
+    /// **Whether the act leaves its operand to the case** — the marked form, or the
+    /// refusing command run again where the route prints no command line. A case with such
+    /// an act comes out no better than [`Classification::HoldsOperandImplied`]: the runner
+    /// reads this and nothing else for it ([`follow`]).
+    pub fn implies(self) -> bool {
+        self.marked()
+            || matches!(
+                self,
+                Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
+            )
+    }
 }
 
 /// One thing that must hold once the route is followed.
@@ -890,6 +908,22 @@ pub enum Classification {
 }
 
 impl Classification {
+    /// Every classification, in the enum's order — what the route catalog's projection
+    /// prints as its vocabulary, held to the enum as written by
+    /// `route_catalog::the_vocabulary_header_is_the_frames`.
+    pub const ALL: [Classification; 10] = [
+        Classification::NotProvoked,
+        Classification::NoRoutePrinted,
+        Classification::Holds,
+        Classification::HoldsOperandImplied,
+        Classification::SameRefusalAgain,
+        Classification::WitnessChanged,
+        Classification::AnotherFailure,
+        Classification::DidNotEnd,
+        Classification::UnsplittableLine,
+        Classification::CitedLineUnsaid,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Classification::NotProvoked => "not provoked",
@@ -3023,17 +3057,17 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
         if case.acts.is_empty() {
             return Err("a route is printed and the case follows it with no act".to_string());
         }
+        seen.implied = case.acts.iter().any(|act| act.implies());
         for act in case.acts {
-            if let Some(Operand::Unprinted(named)) = act.operand() {
-                seen.implied = true;
-                if let Some(at) = path_spans(&spans, &stand).first() {
-                    return Err(sandbox.shown(&format!(
-                        "an act names `{named}` by the marked form, and the printed route \
-                         holds a path — span {at}, `{}`. Where a route prints a path, the \
-                         operand is the route's to give: nothing was done",
-                        spans[*at]
-                    )));
-                }
+            if let Some(Operand::Unprinted(named)) = act.operand()
+                && let Some(at) = path_spans(&spans, &stand).first()
+            {
+                return Err(sandbox.shown(&format!(
+                    "an act names `{named}` by the marked form, and the printed route \
+                     holds a path — span {at}, `{}`. Where a route prints a path, the \
+                     operand is the route's to give: nothing was done",
+                    spans[*at]
+                )));
             }
         }
         for act in case.acts {
@@ -3041,7 +3075,6 @@ fn followed(binary: &Path, case: &Case, under_test: Duration) -> Result<Followed
                 act,
                 Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
             ) {
-                seen.implied = true;
                 // The command is the route's to give wherever the route prints a line to
                 // run that the case does not run: a line the case runs as printed is
                 // passed over by nobody, and a span that names a command is no line.
