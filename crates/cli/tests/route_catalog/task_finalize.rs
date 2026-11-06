@@ -1781,7 +1781,7 @@ const A_MIGRATIONS_DOC_OVER_A_FILE: [Case; 2] = [
 const WHERE_THE_FILE_WAS_MOVED_TO: &str = "kept.md";
 const THE_STAGED_FILE_MOVED_WITH_GIT_MV: Act = Act::RunNamed(Named {
     name: 1,
-    on: &[Word::Span(0), Word::Named(WHERE_THE_FILE_WAS_MOVED_TO)],
+    on: &[Word::Span(0), Word::Own(WHERE_THE_FILE_WAS_MOVED_TO)],
     within: None,
     means: "*the file* at the doc's home, by the path the route prints one clause before \
             the verb; and where it goes, which the route leaves to its reader: a path that \

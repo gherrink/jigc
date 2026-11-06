@@ -6,11 +6,14 @@
 # A line a fact, tab-separated, its kind first:
 #   vocabulary classification <words> <red|green> | why <word>
 #   family <family> <sites> <parts>
-#   door <family> <leaf verb that prints it>
+#   door <family> <a leaf its word is read to stand for> (a reading, not where its codes print: a code is printed at doors
+#     no line names, as store.link-on-the-way of doc read is by every writing leaf — so no door list bounds a hunt)
 #   part <family> <file> <first site> <sites> (a part: one file's sites, at most 12, in id order)
-#   site <family> <its part's first site> <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none>
-#   acts <family> <variant of enum Act> <uses by the family's cases>
-#   residue <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
+#   site <family> <its part's first site> <site> <route kind> <backticked span|no backticked span|not read|no route> <case|reason|scheduled|none>
+#     (a backticked span of any kind, command, flag or operand: whether an operand span is printed, the text cannot tell)
+#   acts <family> <variant of enum Act> <uses by the family's cases> (every act of every case at a site of the family, the cases
+#     counted as the macros expand them: a case counts in every family its site is a row of, so a sum over families counts it more than once)
+#   residue <site> <route kind> <backticked span|no backticked span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
 #   code <dynamic site> <code> <claim|minted-at>
 #   case <site> <case> <classification as the expected-red list holds it> <marked|-> <cause>
 #   reason <site> <why> <the heading of its ruling's entry in DECISIONS.md|owed> <text>
@@ -45,26 +48,26 @@ part	config	crates/cli/src/config.rs	crates/cli/src/config.rs::run_set::config.v
 part	config	crates/cli/src/relocate.rs	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	2
 part	config	crates/cli/src/rollback.rs	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	1
 part	config	crates/cli/src/start.rs	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	2
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	human	span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#1	prose	no span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#2	prose	no span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_basename_collision::config.step-id-collision#1	prose	no span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_content_no_nested::config.nested-fill#1	prose	span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#1	prose	span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#2	prose	span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_not_already_forked::config.step-id-collision#1	prose	no span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	human	span	case
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::resolve_fork_bytes::config.anchor-absent#1	prose	no span	scheduled
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.untrackable-root#1	prose	span	case
-site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.unusable-root#1	prose	span	case
-site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.value-rejected#1	prose	no span	reason
-site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.workbench-root#1	prose	span	case
-site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::undeclared_key_finding::config.undeclared-key#1	prose	span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	human	backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#1	prose	no backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_anchor_present::config.anchor-absent#2	prose	no backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_basename_collision::config.step-id-collision#1	prose	no backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_content_no_nested::config.nested-fill#1	prose	backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#1	prose	backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_fill_point_present::config.fill-point-absent#2	prose	backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::check_not_already_forked::config.step-id-collision#1	prose	no backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::repoint_failed::config.repoint-failed#1	human	backticked span	case
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::resolve_fork_bytes::config.anchor-absent#1	prose	no backticked span	scheduled
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.untrackable-root#1	prose	backticked span	case
+site	config	crates/cli/src/config.rs::adjudicate_step_source::config.step-source-untrackable#1	crates/cli/src/config.rs::run_set::config.unusable-root#1	prose	backticked span	case
+site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.value-rejected#1	prose	no backticked span	reason
+site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::run_set::config.workbench-root#1	prose	backticked span	case
+site	config	crates/cli/src/config.rs::run_set::config.value-rejected#1	crates/cli/src/config.rs::undeclared_key_finding::config.undeclared-key#1	prose	backticked span	scheduled
 site	config	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	variable	not read	scheduled
 site	config	crates/cli/src/relocate.rs::installed_root_refusal::config.unusable-root#1	crates/cli/src/relocate.rs::installed_root_refusal::config.workbench-root#1	variable	not read	scheduled
 site	config	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	human	not read	scheduled
-site	config	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	human	span	scheduled
-site	config	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	crates/cli/src/start.rs::shadowed_definition_ids::config.shadow-id-collision#1	prose	span	scheduled
+site	config	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	human	backticked span	scheduled
+site	config	crates/cli/src/start.rs::project_step::overrides.project-step-missing#1	crates/cli/src/start.rs::shadowed_definition_ids::config.shadow-id-collision#1	prose	backticked span	scheduled
 acts	config	Remove	2
 acts	config	Run	11
 acts	config	RunFilled	0
@@ -115,8 +118,8 @@ site	doc read	crates/cli/src/link_way.rs::finding::store.link-on-the-way#1	crate
 site	doc read	crates/cli/src/relocate.rs::refuse::dynamic#1	crates/cli/src/relocate.rs::refuse::dynamic#1	variable	not read	scheduled
 site	doc read	crates/cli/src/rename.rs::refuse::dynamic#1	crates/cli/src/rename.rs::refuse::dynamic#1	variable	not read	scheduled
 site	doc read	crates/cli/src/rename.rs::refuse::dynamic#1	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	variable	not read	case
-site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	mechanical	no span	scheduled
-site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1	mechanical	no span	scheduled
+site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	mechanical	no backticked span	scheduled
+site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::reject_fixed_identity_slug::store.fixed-identity#1	mechanical	no backticked span	scheduled
 site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::reject_malformed_slug_head::store.malformed-slug#1	mechanical	not read	scheduled
 site	doc read	crates/cli/src/task.rs::no_committed_doc::store.not-found#1	crates/cli/src/task.rs::reject_malformed_work_unit_id::work-unit.malformed-id#1	human	not read	scheduled
 site	doc read	crates/engine/src/milestone.rs::store_block::dynamic#1	crates/engine/src/milestone.rs::store_block::dynamic#1	variable	not read	scheduled
@@ -167,34 +170,34 @@ part	doc write	crates/cli/src/task.rs	crates/cli/src/task.rs::reject_slug_head_o
 part	doc write	crates/engine/src/state.rs	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	6
 part	doc write	crates/engine/src/write.rs	crates/engine/src/write.rs::blocking_write::dynamic#1	3
 site	doc write	crates/cli/src/author.rs::reject::dynamic#1	crates/cli/src/author.rs::reject::dynamic#1	none	no route	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	prose	span	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1	mechanical	no span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	prose	backticked span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::committed_reslug_refusal::write.identity-change#1	mechanical	no backticked span	scheduled
 site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::fixed_identity_refusal::write.identity-change#1	variable	not read	scheduled
 site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::fixed_title_refusal::write.title-ignored#1	variable	not read	scheduled
 site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::id_from_field_guard::write.id-from-field#1	variable	not read	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1	mechanical	no span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::identity_divergence_refusal::write.identity-change#1	mechanical	no backticked span	scheduled
 site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::machine_maintained_field_guard::write.machine-maintained-field#1	variable	not read	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1	prose	span	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1	prose	span	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1	variable	span	scheduled
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	prose	span	case
-site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::slug_override_enum_refusal::write.identity-change#1	mechanical	no span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::machine_maintained_guard::write.machine-maintained#1	prose	backticked span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::occupied_destination_refusal::write.already-present#1	prose	backticked span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::retitle_id_from_refusal::write.identity-change#1	variable	backticked span	scheduled
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	prose	backticked span	case
+site	doc write	crates/cli/src/doc.rs::barrier_block::write.area-barrier#1	crates/cli/src/doc.rs::slug_override_enum_refusal::write.identity-change#1	mechanical	no backticked span	scheduled
 site	doc write	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	variable	not read	case
 site	doc write	crates/cli/src/relocate.rs::refuse::dynamic#1	crates/cli/src/relocate.rs::refuse::dynamic#1	variable	not read	scheduled
 site	doc write	crates/cli/src/relocate.rs::refuse::dynamic#1	crates/cli/src/relocate.rs::refuse::write.already-present#dynamic-1	variable	not read	reason
 site	doc write	crates/cli/src/rename.rs::refuse::dynamic#1	crates/cli/src/rename.rs::refuse::dynamic#1	variable	not read	scheduled
 site	doc write	crates/cli/src/rename.rs::refuse::dynamic#1	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	variable	not read	case
 site	doc write	crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	mechanical	not read	scheduled
-site	doc write	crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1	human	span	scheduled
+site	doc write	crates/cli/src/task.rs::reject_slug_head_over_name_ceiling::write.slug-name-ceiling#1	crates/cli/src/task.rs::reject_slug_over_name_ceiling::write.slug-name-ceiling#1	human	backticked span	scheduled
 site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	variable	not read	case
-site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::empty_title_finding::create.empty-title#1	prose	span	scheduled
-site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::gate_blocked_finding::create.gate-blocked#1	prose	span	scheduled
-site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1	prose	span	scheduled
-site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1	prose	span	scheduled
+site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::empty_title_finding::create.empty-title#1	prose	backticked span	scheduled
+site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::gate_blocked_finding::create.gate-blocked#1	prose	backticked span	scheduled
+site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::instance_collision_finding::create.serial-collision#1	prose	backticked span	scheduled
+site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::unknown_doctype_finding::create.unknown-doctype#1	prose	backticked span	scheduled
 site	doc write	crates/engine/src/state.rs::already_exists_finding::create.already-exists#1	crates/engine/src/state.rs::unslugable_title_finding::write.unslugable-title#1	variable	not read	scheduled
 site	doc write	crates/engine/src/write.rs::blocking_write::dynamic#1	crates/engine/src/write.rs::blocking_write::dynamic#1	variable	not read	scheduled
-site	doc write	crates/engine/src/write.rs::blocking_write::dynamic#1	crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#1	prose	no span	scheduled
-site	doc write	crates/engine/src/write.rs::blocking_write::dynamic#1	crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#2	prose	span	scheduled
+site	doc write	crates/engine/src/write.rs::blocking_write::dynamic#1	crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#1	prose	no backticked span	scheduled
+site	doc write	crates/engine/src/write.rs::blocking_write::dynamic#1	crates/engine/src/write.rs::unset_eligibility_finding::write.unset-ineligible#2	prose	backticked span	scheduled
 acts	doc write	Remove	0
 acts	doc write	Run	15
 acts	doc write	RunFilled	0
@@ -226,8 +229,8 @@ family	ingest	3	1
 door	ingest	ingest
 part	ingest	crates/cli/src/ingest.rs	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	3
 site	ingest	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	variable	not read	scheduled
-site	ingest	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	crates/cli/src/ingest.rs::unaddressable_identity_finding::ingest.unaddressable-identity#1	human	span	scheduled
-site	ingest	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	crates/cli/src/ingest.rs::wrong_location_finding::ingest.wrong-location#1	prose	span	scheduled
+site	ingest	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	crates/cli/src/ingest.rs::unaddressable_identity_finding::ingest.unaddressable-identity#1	human	backticked span	scheduled
+site	ingest	crates/cli/src/ingest.rs::near_miss_finding::ingest.needs-reconcile#1	crates/cli/src/ingest.rs::wrong_location_finding::ingest.wrong-location#1	prose	backticked span	scheduled
 acts	ingest	Remove	0
 acts	ingest	Run	0
 acts	ingest	RunFilled	0
@@ -258,8 +261,8 @@ acts	ingest	Unstage	0
 family	migrate	2	1
 door	migrate	migrate
 part	migrate	crates/cli/src/migrate.rs	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	2
-site	migrate	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	human	span	scheduled
-site	migrate	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1	human	span	scheduled
+site	migrate	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	human	backticked span	scheduled
+site	migrate	crates/cli/src/migrate.rs::adjudicate_source_path::migrate.source-untrackable#1	crates/cli/src/migrate.rs::adjudicate_source_tracked::migrate.source-untracked#1	human	backticked span	scheduled
 acts	migrate	Remove	0
 acts	migrate	Run	0
 acts	migrate	RunFilled	0
@@ -336,37 +339,37 @@ part	milestone	crates/cli/src/milestone.rs	crates/cli/src/milestone.rs::dirty_wo
 part	milestone	crates/cli/src/rollback.rs	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	1
 part	milestone	crates/engine/src/milestone.rs	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	12
 part	milestone	crates/engine/src/milestone.rs	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	7
-site	milestone	crates/cli/src/combine.rs::collision_finding::combine.code-collision#1	crates/cli/src/combine.rs::collision_finding::combine.code-collision#1	prose	no span	case
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	prose	span	case
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::foreign_bytes_finding::milestone.foreign-bytes#1	prose	span	scheduled
+site	milestone	crates/cli/src/combine.rs::collision_finding::combine.code-collision#1	crates/cli/src/combine.rs::collision_finding::combine.code-collision#1	prose	no backticked span	case
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	prose	backticked span	case
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::foreign_bytes_finding::milestone.foreign-bytes#1	prose	backticked span	scheduled
 site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::leftover_finding::milestone.leftover-holds-work#1	variable	not read	case
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::mint_foreign_bytes_finding::milestone.foreign-bytes#1	human	span	scheduled
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::mint_foreign_bytes_finding::milestone.foreign-bytes#1	human	backticked span	scheduled
 site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::provision_failed_finding::milestone.provision-failed#1	variable	not read	case
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::subtask_staged_prose_finding::milestone.staged-prose#1	prose	span	scheduled
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1	prose	span	case
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unverified_foreign_finding::milestone.foreign-bytes#1	prose	span	scheduled
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unverified_subtask_prose_finding::milestone.staged-prose#1	prose	span	scheduled
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::subtask_staged_prose_finding::milestone.staged-prose#1	prose	backticked span	scheduled
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unlanded_work_finding::milestone.unlanded-work#1	prose	backticked span	case
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unverified_foreign_finding::milestone.foreign-bytes#1	prose	backticked span	scheduled
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unverified_subtask_prose_finding::milestone.staged-prose#1	prose	backticked span	scheduled
 site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::unwind_failed_finding::milestone.unwind-failed#1	human	not read	scheduled
-site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	mechanical	span	case
+site	milestone	crates/cli/src/milestone.rs::dirty_worktree_finding::milestone.dirty-worktree#1	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	mechanical	backticked span	case
 site	milestone	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	human	not read	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	prose	span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::cross_group_collision_finding::join.same-doc-clash#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	prose	span	case
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::isolation_finding::join.area-isolation#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::missing_provenance_finding::join.missing-provenance#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::missing_schema_finding::join.unknown-type#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::no_criteria_finding::milestone.no-criteria#1	prose	span	scheduled
-site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::read_back_finding::milestone.record-read-back#1	prose	no span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	prose	backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::cross_group_collision_finding::join.same-doc-clash#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::io_finding::milestone.area-io#1	prose	backticked span	case
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::isolation_finding::join.area-isolation#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::missing_provenance_finding::join.missing-provenance#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::missing_schema_finding::join.unknown-type#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::no_criteria_finding::milestone.no-criteria#1	prose	backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::read_back_finding::milestone.record-read-back#1	prose	no backticked span	scheduled
 site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::record_flip_finding::milestone.record-flip#1	prose	not read	scheduled
 site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::record_home_refusal::milestone.record-exists#1	variable	not read	case
 site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::residual_collision_finding::milestone.serial-collision#1	variable	not read	scheduled
 site	milestone	crates/engine/src/milestone.rs::collision_finding::milestone.serial-collision#1	crates/engine/src/milestone.rs::residual_milestone_area_finding::milestone.unknown#1	variable	not read	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::settled_sub_task_finding::milestone.terminal#1	human	span	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::splice_finding::join.self-ref-rewrite#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::stale_base_finding::milestone.stale-base#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::sub_task_collision_finding::milestone.sub-task-collision#1	prose	no span	scheduled
-site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::terminal_milestone_finding::milestone.terminal#1	prose	span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::settled_sub_task_finding::milestone.terminal#1	human	backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::splice_finding::join.self-ref-rewrite#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::stale_base_finding::milestone.stale-base#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::sub_task_collision_finding::milestone.sub-task-collision#1	prose	no backticked span	scheduled
+site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::terminal_milestone_finding::milestone.terminal#1	prose	backticked span	scheduled
 site	milestone	crates/engine/src/milestone.rs::same_doc_clash_finding::join.same-doc-clash#1	crates/engine/src/milestone.rs::unknown_milestone_finding::milestone.unknown#1	variable	not read	scheduled
 acts	milestone	Remove	1
 acts	milestone	Run	56
@@ -404,40 +407,40 @@ part	setup	crates/cli/src/setup.rs	crates/cli/src/setup.rs::write_install_span::
 part	setup	crates/engine/src/finalize.rs	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	2
 site	setup	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1	variable	not read	case
 site	setup	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-1	crates/cli/src/locate.rs::locate_finding::setup.repo-root#dynamic-2	variable	not read	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	prose	span	reason
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	prose	backticked span	reason
 site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::finding::setup.install-commit#1	variable	not read	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1	prose	span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::hook_link_refusal::setup.install-hook#1	prose	backticked span	case
 site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::install::setup.guide-target#1	variable	not read	case
 site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::install::setup.inject-allowlist#1	variable	not read	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::install::setup.profile-incomplete#1	prose	no span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::install::setup.profile-incomplete#1	prose	no backticked span	case
 site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::install::setup.spawn-template#1	variable	not read	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.init-project-layer#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.inject-allowlist#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.inject-reference#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.secrets-gitignore#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::replaced_path_refusal::setup.compose-marker#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.inject-allowlist#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.version-stamp#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-bootstrap#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-guide#dynamic-1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::run::setup.profile-load#1	prose	no span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3	prose	span	case
-site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1	prose	span	reason
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	prose	span	reason
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.inject-reference#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.install-hook#1	prose	span	reason
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.install-hook#2	prose	span	case
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.version-stamp#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.write-bootstrap#1	prose	span	case
-site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.write-guide#1	prose	span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.init-project-layer#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.inject-allowlist#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.inject-reference#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::merged_through_links::setup.secrets-gitignore#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::commit_install::setup.install-commit#1	crates/cli/src/setup.rs::replaced_path_refusal::setup.compose-marker#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.inject-allowlist#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.version-stamp#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-bootstrap#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::replaced_path_refusal::setup.write-guide#dynamic-1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::run::setup.profile-load#1	prose	no backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.compose-marker#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.init-project-layer#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#2	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-allowlist#3	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::replaced_path_refusal::setup.init-project-layer#dynamic-1	crates/cli/src/setup.rs::write_install_span::setup.inject-deny#1	prose	backticked span	reason
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	prose	backticked span	reason
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.inject-reference#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.install-hook#1	prose	backticked span	reason
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.install-hook#2	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.secrets-gitignore#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.version-stamp#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.write-bootstrap#1	prose	backticked span	case
+site	setup	crates/cli/src/setup.rs::write_install_span::setup.inject-hook#1	crates/cli/src/setup.rs::write_install_span::setup.write-guide#1	prose	backticked span	case
 site	setup	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	human	not read	case
-site	setup	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	human	span	case
+site	setup	crates/engine/src/finalize.rs::setup_dirty_install_finding::setup.dirty-install-path#dynamic-1	crates/engine/src/finalize.rs::setup_unasked_install_finding::setup.unverified-install-path#1	human	backticked span	case
 acts	setup	Remove	62
 acts	setup	Run	249
 acts	setup	RunFilled	2
@@ -471,17 +474,17 @@ door	start	workflow
 part	start	crates/cli/src/milestone.rs	crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	1
 part	start	crates/cli/src/start.rs	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	5
 part	start	crates/engine/src/compose.rs	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	5
-site	start	crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	mechanical	no span	scheduled
-site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	human	span	scheduled
-site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::read_named_workflow::workflow-refs.suppressed-malformed#1	prose	span	scheduled
+site	start	crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	crates/cli/src/milestone.rs::ensure_workflow_provided::workflow-refs.unknown-workflow#1	mechanical	no backticked span	scheduled
+site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	human	backticked span	scheduled
+site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::read_named_workflow::workflow-refs.suppressed-malformed#1	prose	backticked span	scheduled
 site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::read_named_workflow::workflow.verb-routed#1	mechanical	not read	scheduled
-site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1	prose	span	scheduled
-site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::reenter_in_repo::workflow-refs.workflow-mismatch#1	prose	span	case
-site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	prose	span	scheduled
-site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::blocking_workflow_refs::dynamic#1	human	no span	scheduled
-site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#1	prose	span	scheduled
-site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#2	prose	span	scheduled
-site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1	prose	span	scheduled
+site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::read_workflow::workflow-refs.unknown-workflow#1	prose	backticked span	scheduled
+site	start	crates/cli/src/start.rs::pack_resource_missing::pack.resource-missing#1	crates/cli/src/start.rs::reenter_in_repo::workflow-refs.workflow-mismatch#1	prose	backticked span	case
+site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	prose	backticked span	scheduled
+site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::blocking_workflow_refs::dynamic#1	human	no backticked span	scheduled
+site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#1	prose	backticked span	scheduled
+site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::find_fan_out_join_pairing::workflow-refs.fan-out-join-paired#2	prose	backticked span	scheduled
+site	start	crates/engine/src/compose.rs::anchor_position::workflow-refs.structural-anchor-resolves#1	crates/engine/src/compose.rs::workflow_refs_with_fills::workflow-refs.slot-fill-orphan#1	prose	backticked span	scheduled
 acts	start	Remove	0
 acts	start	Run	3
 acts	start	RunFilled	0
@@ -512,7 +515,7 @@ acts	start	Unstage	0
 family	task bind	2	1
 door	task bind	task bind
 part	task bind	crates/cli/src/task.rs	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	2
-site	task bind	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	mechanical	no span	scheduled
+site	task bind	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	mechanical	no backticked span	scheduled
 site	task bind	crates/cli/src/task.rs::bind::task-bind.role-type-mismatch#1	crates/cli/src/task.rs::bind::task-bind.undeclared-role#1	variable	not read	scheduled
 acts	task bind	Remove	0
 acts	task bind	Run	0
@@ -544,10 +547,10 @@ acts	task bind	Unstage	0
 family	task discard	4	1
 door	task discard	task discard
 part	task discard	crates/cli/src/task.rs	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	4
-site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	prose	span	scheduled
-site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_staged_prose_finding::task-discard.staged-prose#1	prose	span	scheduled
-site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_unverified_foreign_finding::task-discard.foreign-bytes#1	prose	span	scheduled
-site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_unverified_prose_finding::task-discard.staged-prose#1	prose	span	scheduled
+site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	prose	backticked span	scheduled
+site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_staged_prose_finding::task-discard.staged-prose#1	prose	backticked span	scheduled
+site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_unverified_foreign_finding::task-discard.foreign-bytes#1	prose	backticked span	scheduled
+site	task discard	crates/cli/src/task.rs::discard_foreign_bytes_finding::task-discard.foreign-bytes#1	crates/cli/src/task.rs::discard_unverified_prose_finding::task-discard.staged-prose#1	prose	backticked span	scheduled
 acts	task discard	Remove	0
 acts	task discard	Run	0
 acts	task discard	RunFilled	0
@@ -596,44 +599,44 @@ part	task finalize	crates/engine/src/state.rs	crates/engine/src/state.rs::collis
 part	task finalize	crates/engine/src/target_surface.rs	crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	1
 part	task finalize	crates/engine/src/validate.rs	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	4
 site	task finalize	crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	variable	not read	scheduled
-site	task finalize	crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	crates/cli/src/doc.rs::trailer_key_refusal::schema-conformance.field-value-conformant#1	human	span	scheduled
-site	task finalize	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	human	span	scheduled
-site	task finalize	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	crates/cli/src/orphan.rs::orphaned_instance_finding::schema-conformance.orphaned-instance#1	human	span	scheduled
+site	task finalize	crates/cli/src/doc.rs::id_from_enum_block::schema-conformance.field-value-conformant#1	crates/cli/src/doc.rs::trailer_key_refusal::schema-conformance.field-value-conformant#1	human	backticked span	scheduled
+site	task finalize	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	human	backticked span	scheduled
+site	task finalize	crates/cli/src/orphan.rs::home_vacated_finding::schema-conformance.home-vacated#1	crates/cli/src/orphan.rs::orphaned_instance_finding::schema-conformance.orphaned-instance#1	human	backticked span	scheduled
 site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	human	not read	scheduled
-site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::reconciliation.rename#1	human	span	scheduled
-site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-ahead#1	human	no span	scheduled
-site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-current#1	human	span	scheduled
+site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::reconciliation.rename#1	human	backticked span	scheduled
+site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-ahead#1	human	no backticked span	scheduled
+site	task finalize	crates/cli/src/render.rs::commit_rejection_finding::dynamic#1	crates/cli/src/render.rs::validation_store::schema-conformance.schema-version-current#1	human	backticked span	scheduled
 site	task finalize	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	crates/cli/src/rollback.rs::rollback_conflict_finding::dynamic#1	human	not read	scheduled
 site	task finalize	crates/cli/src/start.rs::head_shape_refusal::amend.head-shape#1	crates/cli/src/start.rs::head_shape_refusal::amend.head-shape#1	variable	not read	scheduled
-site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	human	span	scheduled
+site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	human	backticked span	scheduled
 site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::amend_staged_doc_finding::finalize.amend-staged-doc#1	variable	not read	case
 site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::linked_worktree_doc_finding::finalize.linked-worktree-doc#1	human	not read	case
-site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::linked_worktree_mint_finding::finalize.linked-worktree-doc#1	human	span	case
-site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::nothing_staged_finding::finalize.nothing-staged#1	prose	span	case
-site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::retire_untrackable_finding::finalize.retire-untrackable#1	human	span	scheduled
-site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::stage_failed_finding::finalize.stage-failed#1	mechanical	span	case
+site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::linked_worktree_mint_finding::finalize.linked-worktree-doc#1	human	backticked span	case
+site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::nothing_staged_finding::finalize.nothing-staged#1	prose	backticked span	case
+site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::retire_untrackable_finding::finalize.retire-untrackable#1	human	backticked span	scheduled
+site	task finalize	crates/cli/src/task.rs::amend_index_dirty_finding::finalize.amend-index-dirty#1	crates/cli/src/task.rs::stage_failed_finding::finalize.stage-failed#1	mechanical	backticked span	case
 site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	variable	not read	case
 site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::conformance_block_finding::reconciliation.conformance-block#1	variable	not read	case
-site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1	prose	span	reason
-site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::rename_strong_finding::reconciliation.rename#1	prose	span	scheduled
-site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::rename_weak_finding::reconciliation.rename#1	prose	span	scheduled
-site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1	human	no span	case
-site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	human	span	case
+site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::drift_store_finding::file-state.hash-matches#1	prose	backticked span	reason
+site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::rename_strong_finding::reconciliation.rename#1	prose	backticked span	scheduled
+site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::rename_weak_finding::reconciliation.rename#1	prose	backticked span	scheduled
+site	task finalize	crates/engine/src/file_state.rs::conflict_block_finding::reconciliation.conflict-block#1	crates/engine/src/file_state.rs::unanswered_pin_finding::reconciliation.conflict-block#1	human	no backticked span	case
+site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	human	backticked span	case
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::base_mismatch_finding::finalize.base-mismatch#1	variable	not read	scheduled
-site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::base_overlap_finding::finalize.base-mismatch#1	prose	span	scheduled
+site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::base_overlap_finding::finalize.base-mismatch#1	prose	backticked span	scheduled
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::carried_staged_finding::finalize.carried-staged#1	human	not read	case
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::clobber_finding::finalize.promote-clobber#1	variable	not read	case
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::empty_commit_finding::finalize.empty-commit#1	variable	not read	case
-site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::migration_no_replacement_finding::finalize.migration-no-replacement#1	prose	span	scheduled
+site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::migration_no_replacement_finding::finalize.migration-no-replacement#1	prose	backticked span	scheduled
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::no_such_task_finding::finalize.no-task#1	variable	not read	scheduled
-site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::promote_io_finding::finalize.promote-io#1	prose	span	scheduled
-site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1	prose	span	case
+site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::promote_io_finding::finalize.promote-io#1	prose	backticked span	scheduled
+site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::provenance_io_finding::finalize.provenance-io#1	prose	backticked span	case
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::render_io_finding::finalize.render-io#1	variable	not read	scheduled
 site	task finalize	crates/engine/src/finalize.rs::amend_base_mismatch_finding::finalize.base-mismatch#1	crates/engine/src/finalize.rs::residual_task_area_finding::finalize.no-task#1	variable	not read	scheduled
-site	task finalize	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	prose	span	reason
-site	task finalize	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	crates/engine/src/finalize.rs::task_missing_finding::finalize.no-task#1	prose	span	scheduled
-site	task finalize	crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	prose	no span	scheduled
-site	task finalize	crates/engine/src/milestone.rs::sub_task_finalize_finding::finalize.milestone-sub-task#1	crates/engine/src/milestone.rs::sub_task_finalize_finding::finalize.milestone-sub-task#1	mechanical	no span	scheduled
+site	task finalize	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	prose	backticked span	reason
+site	task finalize	crates/engine/src/finalize.rs::source_path_io_finding::finalize.source-path-io#1	crates/engine/src/finalize.rs::task_missing_finding::finalize.no-task#1	prose	backticked span	scheduled
+site	task finalize	crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	crates/engine/src/index.rs::dangling::schema-conformance.ref-resolves#1	prose	no backticked span	scheduled
+site	task finalize	crates/engine/src/milestone.rs::sub_task_finalize_finding::finalize.milestone-sub-task#1	crates/engine/src/milestone.rs::sub_task_finalize_finding::finalize.milestone-sub-task#1	mechanical	no backticked span	scheduled
 site	task finalize	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	none	no route	scheduled
 site	task finalize	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-setext-heading#1	none	no route	scheduled
 site	task finalize	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	crates/engine/src/parse.rs::parse_item_slots::conformance.item-slot-delimiter-shadowed#1	none	no route	scheduled
@@ -648,12 +651,12 @@ site	task finalize	crates/engine/src/parse.rs::ceiling_violations::conformance.s
 site	task finalize	crates/engine/src/parse.rs::ceiling_violations::conformance.slot-heading-depth#1	crates/engine/src/parse.rs::read_field_block_str::conformance.malformed-field-block#1	none	no route	scheduled
 site	task finalize	crates/engine/src/parse.rs::read_field_block_str::conformance.unknown-field#1	crates/engine/src/parse.rs::read_field_block_str::conformance.unknown-field#1	none	no route	scheduled
 site	task finalize	crates/engine/src/parse.rs::read_field_block_str::conformance.unknown-field#1	crates/engine/src/parse.rs::read_marked_field_group::conformance.orphaned-sentinel#1	none	no route	scheduled
-site	task finalize	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	prose	span	scheduled
-site	task finalize	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	crates/engine/src/state.rs::io_finding::task.working-area-io#1	prose	span	case
+site	task finalize	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	prose	backticked span	scheduled
+site	task finalize	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	crates/engine/src/state.rs::io_finding::task.working-area-io#1	prose	backticked span	case
 site	task finalize	crates/engine/src/state.rs::collision_finding::task.serial-collision#1	crates/engine/src/state.rs::residual_collision_finding::task.serial-collision#1	variable	not read	scheduled
-site	task finalize	crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	prose	span	scheduled
+site	task finalize	crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	crates/engine/src/target_surface.rs::scalar::doc-code.multi-valued-anchor#1	prose	backticked span	scheduled
 site	task finalize	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	variable	not read	scheduled
-site	task finalize	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	crates/engine/src/validate.rs::owner_artifact_present::owner-artifact.present#1	human	span	scheduled
+site	task finalize	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	crates/engine/src/validate.rs::owner_artifact_present::owner-artifact.present#1	human	backticked span	scheduled
 site	task finalize	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	crates/engine/src/validate.rs::version_ahead_break::schema-conformance.schema-version-ahead#1	variable	not read	scheduled
 site	task finalize	crates/engine/src/validate.rs::blocking_conformance::dynamic#1	crates/engine/src/validate.rs::version_currency_break::schema-conformance.schema-version-current#1	variable	not read	scheduled
 acts	task finalize	Remove	3
@@ -692,24 +695,24 @@ part	uninstall	crates/cli/src/task.rs	crates/cli/src/task.rs::unverified_prose_f
 site	uninstall	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1	variable	not read	case
 site	uninstall	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-1	crates/cli/src/locate.rs::locate_finding::uninstall.repo-root#dynamic-2	variable	not read	case
 site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	variable	not read	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::edited_through_links::uninstall.unwire-reference#dynamic-1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::hook_written_through_a_link::uninstall.remove-precommit#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1	prose	no span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1	prose	span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::edited_through_links::uninstall.remove-allowlist#dynamic-1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::edited_through_links::uninstall.unwire-reference#dynamic-1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::foreign_bytes_finding::uninstall.foreign-bytes#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::hook_written_through_a_link::uninstall.remove-precommit#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::run_uninstall::uninstall.profile-load#1	prose	no backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::staged_prose_finding::uninstall.staged-prose#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-allowlist#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-deny#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-guide#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-hook#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::dirty_worktree_finding::uninstall.dirty-worktree#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-jigc#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::uninstall::uninstall.unwire-reference#1	prose	backticked span	case
 site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::untracked_workbench_finding::uninstall.untracked-workbench-file#1	variable	not read	case
-site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	prose	span	case
-site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	prose	span	case
-site	uninstall	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	prose	span	case
+site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_foreign_finding::uninstall.foreign-bytes#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_workbench_finding::uninstall.untracked-workbench-file#1	prose	backticked span	case
+site	uninstall	crates/cli/src/setup.rs::uninstall::uninstall.remove-precommit#1	crates/cli/src/setup.rs::unverified_worktrees_finding::uninstall.dirty-worktree#1	prose	backticked span	case
+site	uninstall	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	crates/cli/src/task.rs::unverified_prose_finding::uninstall.staged-prose#1	prose	backticked span	case
 acts	uninstall	Remove	1
 acts	uninstall	Run	87
 acts	uninstall	RunFilled	5
@@ -741,8 +744,8 @@ family	validate	2	2
 door	validate	validate
 part	validate	crates/cli/src/render.rs	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	1
 part	validate	crates/engine/src/probe.rs	crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	1
-site	validate	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	human	no span	scheduled
-site	validate	crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	human	span	scheduled
+site	validate	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	crates/cli/src/render.rs::validation_store::pack-probe-integrity.probe-failure#1	human	no backticked span	scheduled
+site	validate	crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	crates/engine/src/probe.rs::meta_finding::pack-probe-integrity.probe-failure#1	human	backticked span	scheduled
 acts	validate	Remove	0
 acts	validate	Run	0
 acts	validate	RunFilled	0
@@ -773,8 +776,8 @@ acts	validate	Unstage	0
 residue	crates/cli/src/doc_code_probe/mod.rs::dangling::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/ingest.rs::near_miss_finding::dynamic#1	variable	not read	scheduled
 residue	crates/cli/src/repo.rs::finding_at::dynamic#1	human	not read	scheduled
-residue	crates/engine/src/cascade.rs::into_finding::dynamic#1	human	span	scheduled
-residue	crates/engine/src/cascade.rs::into_finding::dynamic#2	human	span	scheduled
+residue	crates/engine/src/cascade.rs::into_finding::dynamic#1	human	backticked span	scheduled
+residue	crates/engine/src/cascade.rs::into_finding::dynamic#2	human	backticked span	scheduled
 residue	crates/engine/src/override_default.rs::delta_block::dynamic#1	variable	not read	scheduled
 code	crates/cli/src/author.rs::reject::dynamic#1	write.malformed-value	minted-at
 code	crates/cli/src/author.rs::reject::dynamic#1	write.wrong-shape	minted-at
@@ -901,12 +904,12 @@ case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-pad
 case	crates/cli/src/config.rs::run_set::config.unusable-root#1	unusable-root-under-the-installs-own-artifacts-config-list-read-as-printed	followed, holds	-	the root lies where jigc's own install writes the assistant adapter's artifacts
 case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-reached-by-a-hop-config-list-read-as-printed	followed, holds	-	the root reaches jigc's own workbench only once its `..` hop is applied
 case	crates/cli/src/config.rs::run_set::config.workbench-root#1	workbench-root-typed-config-list-read-as-printed	followed, holds	-	the root is typed inside jigc's own workbench
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-a-sub-task-appended-by-the-named-verb	followed, holds	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-the-milestone-finalized-by-the-named-verb	followed, holds	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-an-ordinary-task-a-sub-task-appended-by-the-named-verb	followed, holds	-	an ordinary task, no part of the milestone, retitles an item of the milestone's record
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-an-ordinary-task-the-milestone-finalized-by-the-named-verb	followed, holds	-	an ordinary task, no part of the milestone, retitles an item of the milestone's record
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-the-sub-task-a-sub-task-appended-by-the-named-verb	followed, holds	-	a sub-task of the milestone retitles its own item of the milestone's record
-case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-the-sub-task-the-milestone-finalized-by-the-named-verb	followed, holds	-	a sub-task of the milestone retitles its own item of the milestone's record
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-a-sub-task-appended-by-the-named-verb	followed, holds, operand implied	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-an-item-the-record-does-not-hold-the-milestone-finalized-by-the-named-verb	followed, holds, operand implied	-	the addressed item is one the milestone's record does not hold: the refusal is by doctype, ahead of the question whether the item is there
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-an-ordinary-task-a-sub-task-appended-by-the-named-verb	followed, holds, operand implied	-	an ordinary task, no part of the milestone, retitles an item of the milestone's record
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-an-ordinary-task-the-milestone-finalized-by-the-named-verb	followed, holds, operand implied	-	an ordinary task, no part of the milestone, retitles an item of the milestone's record
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-the-sub-task-a-sub-task-appended-by-the-named-verb	followed, holds, operand implied	-	a sub-task of the milestone retitles its own item of the milestone's record
+case	crates/cli/src/doc.rs::run_retitle_item::write.machine-maintained#1	record-retitle-from-the-sub-task-the-milestone-finalized-by-the-named-verb	followed, holds, operand implied	-	a sub-task of the milestone retitles its own item of the milestone's record
 case	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	title-ignored-committed-author-line-run-as-printed	followed, holds	-	a committed doc answers to the id a `jigc doc author` mints from its payload's title, and the title differs from the doc's
 case	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	title-ignored-committed-create-line-run-as-printed	followed, holds	-	a committed doc answers to the id a `jigc doc create` mints from its title, and the title differs from the doc's
 case	crates/cli/src/doc.rs::title_ignored_refusal::write.title-ignored#1	title-ignored-committed-create-under-a-slug-line-run-as-printed	followed, holds	-	a committed doc answers to the id a `jigc doc create --slug` names, and the title differs from the doc's
@@ -989,7 +992,7 @@ case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-cont
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-only-a-commit-doc-milestone-discarded-as-printed	followed, another failure	-	the one thing a sub-task holds is its commit doc, which is merged and promotes nowhere: no doc lands in the store and no worktree holds staged code
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-provisioned-and-nothing-staged-milestone-discarded-as-printed	followed, holds	-	the sub-task's worktree is provisioned and holds nothing: no staged code, no doc
 case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-work-unstaged-milestone-discarded-as-printed	followed, another failure	-	the sub-task's work is written in its worktree and not staged, and no doc of a sub-task's promotes
-case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed	followed, holds	-	the sub-task's work is written in its worktree and not staged, and no doc of a sub-task's promotes
+case	crates/cli/src/milestone.rs::zero_contribution_finding::milestone.zero-contribution#1	zero-contribution-work-unstaged-provisioned-added-and-finalized-as-printed	followed, holds, operand implied	-	the sub-task's work is written in its worktree and not staged, and no doc of a sub-task's promotes
 case	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	rename-not-found-no-doc-of-that-id-surface-read-as-printed	followed, holds	-	the id names a doc the store does not hold: nothing stands at its home
 case	crates/cli/src/rename.rs::refuse::store.not-found#dynamic-1	rename-not-found-the-doc-gone-from-the-working-tree-surface-read-as-printed	followed, holds	-	the id is a committed doc's, and the doc is gone from the working tree — deleted, the deletion in no commit
 case	crates/cli/src/rename.rs::refuse::write.already-present#dynamic-1	rename-destination-taken-by-a-committed-doc-another-slug-line-run-as-printed	followed, holds	-	the id the doc is renamed to is another committed doc's

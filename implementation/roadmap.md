@@ -3147,7 +3147,7 @@ Beside them run the reviews of everything no review has read yet. Putting two la
   - hunter lane: a hunt names its family and part, and the test stage will not go on while a family has a part nobody hunts;
   - the fixes from the reviews of the shared test code land in the lanes that own the files.
 - Asked, first, only if the count is more than twice the pilot's rate: whether to carry on.
-  - In the pilot, 32 of the 183 tests whose route worked needed an operand the route did not print, about one in six.
+  - In the pilot, 32 of the 188 tests whose route worked needed an operand the route did not print, about one in six (17.0 %; asked over 34.0 %). The catalog's overview, built before this step, counted 108 of the 430 tests that hold across the catalog, 25.1 %: not over it.
   - It will likely fire, because the "run it again" acts leave their operand to be guessed by design.
   - Recommended: carry on, each such route recorded as a finding for the run to fix.
 - Asked, second, after the table's review: the nine standing reasons why a site has no test, and the act table. Accept as worded, or name the entries you challenge? Recommended: accept, except any the reviewer flags. Told with it:

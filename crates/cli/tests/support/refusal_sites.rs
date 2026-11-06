@@ -83,12 +83,11 @@ pub const UNASSIGNED: &str = "unassigned";
 /// and `refusal_site_list.rs` refuses a row whose prefix no call spells.
 ///
 /// A command is in the CLI's own words. Where a family is not one verb's, the word stands
-/// for a group, and nothing here establishes which door prints which code: `start` is
-/// composition, by `start` and `workflow`; `task finalize` is the gate, whose families
-/// `task validate`, `task finalize` and `milestone finalize` print alike; `doc write` and
-/// `doc read` are the `doc` verbs that write and that read, the second with every other
-/// door that takes an address; `config` and `milestone` are those verbs' sub-commands;
-/// `validate` is the store-scope sweep.
+/// for a group — composition, the gate, the `doc` verbs that write or that read, a verb's
+/// sub-commands — and nothing here establishes which door prints which code. **Which
+/// doors each word is read to stand for is stated once**, by `route_catalog.rs` → `doors`,
+/// a person's reading the route catalog's projection prints as its `door` lines and holds
+/// to the product's registry of leaves; it is not restated here.
 pub const FAMILIES: &[(&str, &str)] = &[
     ("adapter-guide", "setup"),
     ("amend", "task finalize"),

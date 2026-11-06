@@ -233,13 +233,14 @@
 //! ([`the_named_arm_runs_one_family_when_one_is_named`]).
 //!
 //! **And the catalog's answers, as one committed file** — the projection
-//! (`route_catalog/projection.tsv`; the pre-opening plan's task `P0`): per family its doors,
+//! (`route_catalog/projection.tsv`; the pre-opening plan's task `P0`): per family the doors
+//! its word is read to stand for — a reading, never where its codes print ([`doors`]) —
 //! its parts — its sites by file, at most twelve a part — and every site in it, the codes a
 //! claim makes sites and the dynamic sites answered in part or said to mint a family's code
 //! included; per site what answers it — each case with its cause and its classification as
 //! the expected-red list holds it, the reason with who ruled it or `owed`, or the
-//! scheduled row — with whether its
-//! route prints a span; per family the uses of each of [`Act`]'s variants; the codes each
+//! scheduled row — with whether its route prints a backticked span, of any kind
+//! ([`prints`]); per family the uses of each of [`Act`]'s variants; the codes each
 //! dynamic site is given; and the residue, the dynamic sites no row names a code of. It is
 //! what a route hunter is handed, read at a commit without running a case, and it is held
 //! equal to the catalog ([`the_committed_projection_is_the_catalogs_answers`]) and
@@ -3779,12 +3780,13 @@ fn no_act_takes_a_path_and_the_marked_form_is_refused_where_a_path_is_printed() 
                 "Span(usize)".to_string(),
                 "Listed(usize)".to_string(),
                 "Named(&'static str)".to_string(),
+                "Own(&'static str)".to_string(),
             ],
         ),
         "a named command is a span of the route by index, and what it carries beside is its \
-         operands, a word each — a span of the route, a value the refusal lists, or a word \
-         of the case's for the operand the route speaks of — with where the route says it \
-         belongs and what the route means, in words",
+         operands, a word each — a span of the route, a value the refusal lists, a word of \
+         the case's for the operand the route speaks of, or a value the route leaves to its \
+         reader — with where the route says it belongs and what the route means, in words",
     );
     assert_eq!(
         (
@@ -6994,7 +6996,7 @@ fn a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of(
                 "planted-a-named-git-verb-run-on-the-path-the-route-speaks-of",
                 OVER_NAMES,
                 &[
-                    named!(1, &[Word::Span(0), Word::Named("kept here")]),
+                    named!(1, &[Word::Span(0), Word::Own("kept here")]),
                     Act::Rerun,
                 ],
             )
@@ -7207,6 +7209,117 @@ fn a_span_that_names_a_command_is_followed_with_the_operand_the_route_speaks_of(
     assert!(
         wrong.is_empty(),
         "{} of the 18 planted cases did not come out as planted:\n\n{}",
+        wrong.len(),
+        wrong.join("\n\n"),
+    );
+}
+
+/// **An operand the case supplies is an operand implied, by whichever act it is
+/// supplied** — the review of the projection's commit (`08c396f6`), its S1. A named
+/// command handed a word of the case's own for the operand its route prints nowhere
+/// ([`Word::Named`]) — among its operands, or as where it is started — leaves the case no
+/// better than *operand implied*, as the marked form does; and the directory
+/// [`Act::MoveDirectoryIn`] moves, named in the marked form, takes the marked form. A value
+/// the route leaves to its reader ([`Word::Own`]) is the reader's own, as a filled
+/// placeholder's value is (the human's ruling of 2026-10-12), and implies nothing. What
+/// the runner comes to, the projection's classification and its column `marked` say
+/// alike: they read [`Act::implies`] and [`Act::marked`].
+#[test]
+fn an_operand_the_case_supplies_leaves_it_implied_and_a_value_of_the_readers_own_does_not() {
+    const MEANS: &str = "planted: the operand the route speaks of";
+    const AND_ITS_PLACE: &[&str] = &["-c", NAMES_A_COMMAND_AND_ITS_PLACE];
+    const OVER_NAMES: &[&str] = &["-c", NAMES_COMMANDS];
+    let planted =
+        |name: &'static str, refusing: &'static [&'static str], acts: &'static [Act]| Case {
+            name,
+            state: WHAT_THE_NAMED_COMMANDS_DO,
+            refusing,
+            acts,
+            ..PLANTED
+        };
+    let followed: [(Case, Classification); 3] = [
+        // The work the route speaks of and prints nowhere, named by the case.
+        (
+            planted(
+                "planted-a-named-command-on-a-word-of-the-cases-own",
+                AND_ITS_PLACE,
+                &[Act::RunNamed(Named {
+                    name: 0,
+                    on: &[Word::Named("work.txt")],
+                    within: Some(Word::Span(1)),
+                    means: MEANS,
+                })],
+            ),
+            Classification::HoldsOperandImplied,
+        ),
+        // Where the command belongs, named by the case.
+        (
+            planted(
+                "planted-a-named-command-started-where-the-case-says",
+                AND_ITS_PLACE,
+                &[Act::RunNamed(Named {
+                    name: 0,
+                    on: &[Word::Own("work.txt")],
+                    within: Some(Word::Named("sub")),
+                    means: MEANS,
+                })],
+            ),
+            Classification::HoldsOperandImplied,
+        ),
+        // The path the route prints, and where it goes, which the route leaves its reader.
+        (
+            Case {
+                holds: &[Check::RegularFile(Place::Repo("kept here"))],
+                ..planted(
+                    "planted-a-named-command-on-a-printed-span-and-a-value-of-the-readers-own",
+                    OVER_NAMES,
+                    &[Act::RunNamed(Named {
+                        name: 1,
+                        on: &[Word::Span(0), Word::Own("kept here")],
+                        within: None,
+                        means: MEANS,
+                    })],
+                )
+            },
+            Classification::Holds,
+        ),
+    ];
+    let sh = Path::new("/bin/sh");
+    let mut wrong: Vec<String> = Vec::new();
+    for (case, expected) in &followed {
+        let projected = listed_or_green(case, &[]);
+        match route_case::follow(sh, case) {
+            Ok(came) if came.classification == *expected && projected == *expected => {}
+            Ok(came) => wrong.push(format!(
+                "`{}` — the runner {}, the projection {projected}, where `{expected}` was \
+                 planted\n{}",
+                case.name, came.classification, came.detail
+            )),
+            Err(fault) => wrong.push(format!("`{}` cannot be followed: {fault}", case.name)),
+        }
+    }
+
+    let a_marked_directory = Act::MoveDirectoryIn(LinkAndDirectory {
+        link: Operand::Span(0),
+        directory: Operand::Unprinted("there"),
+    });
+    let a_printed_directory = Act::MoveDirectoryIn(LinkAndDirectory {
+        link: Operand::Span(0),
+        directory: Operand::Span(1),
+    });
+    for (act, marked) in [(a_marked_directory, true), (a_printed_directory, false)] {
+        if act.marked() != marked || act.implies() != marked {
+            wrong.push(format!(
+                "{act:?} — marked {}, implies {}, where both are {marked}",
+                act.marked(),
+                act.implies()
+            ));
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "{} of the 5 planted acts did not come out as planted:\n\n{}",
         wrong.len(),
         wrong.join("\n\n"),
     );
@@ -8086,29 +8199,41 @@ fn members(read: &Read, rows: &Rows) -> Vec<Member> {
         .collect()
 }
 
-/// **Whether a site's route prints a span**, read off the list's route at its call: `span`
-/// where its literals hold a backticked one; `no span` where the route is written at the
-/// call, whole, and holds none; `not read` where it is built elsewhere, no literal stands
-/// in it, or a template leaves a place the literals do not fill; `no route` where it
-/// prints none.
+/// **Whether a site's route prints a backticked span**, read off the list's route at its
+/// call: `backticked span` where its literals hold one; `no backticked span` where the
+/// route is written at the call, whole, and holds none; `not read` where it is built
+/// elsewhere, no literal stands in it, or a template leaves a place the literals do not
+/// fill; `no route` where it prints none.
+///
+/// **A backticked span, of any kind — not an operand span**, which is the fact the plan's
+/// spec names (`detail.md` → P0, *for F-C*). A span is a command line, a flag or an
+/// operand, and the route's text cannot tell which: `jigc doc show <address>` carries its
+/// operand inside a command line, `CLAUDE.md` names an entry with no `/` in it, and what
+/// the frame calls a path span ([`route_case::path_spans`]) is asked of the sandbox the
+/// case planted, which a site's text has none of. So the column says what can be read.
 fn prints(route: &str, text: &str) -> &'static str {
     if route == "none" {
         "no route"
     } else if text.matches('`').count() >= 2 {
-        "span"
+        "backticked span"
     } else if route == "variable" || text.is_empty() || text == "-" || text.contains('{') {
         "not read"
     } else {
-        "no span"
+        "no backticked span"
     }
 }
 
-/// **The doors that print a family's codes** — a person's reading, as [`FAMILIES`] is,
-/// and no reachability fact — each a leaf of the product's registry
-/// (`cli::cli::VERB_KINDS`): every sub-command of `config` and of `milestone`; the `doc`
-/// verbs that write; the `doc` verbs that read and every door that takes a doc address
-/// (`cli::cli::DOCTYPE_DOORS`); the three doors of the gate; composition's two; and for
-/// every other family, the one verb it is named for.
+/// **The doors a family's word is read to stand for** — a person's reading of the word
+/// [`FAMILIES`] gives the family, and no reachability fact: **a code of a family is
+/// printed at doors this list does not hold.** `store.link-on-the-way`, a code of `doc
+/// read`, is printed by every writing leaf through `Command::link_guard` (`cli.rs`) and
+/// called by `config`, `setup` and `migrate-corpus` besides, none of them a door of `doc
+/// read` here (the review of `08c396f6`, S3). Each door is a leaf of the product's
+/// registry (`cli::cli::VERB_KINDS`): every sub-command of `config` and of `milestone`;
+/// the `doc` verbs that write; the `doc` verbs that read and every door that takes a doc
+/// address (`cli::cli::DOCTYPE_DOORS`); the three doors of the gate; composition's two;
+/// and for every other family, the one verb it is named for. **This is the one statement
+/// of which doors a family's word stands for**: [`FAMILIES`]' own comment points here.
 fn doors(family: &str) -> BTreeSet<String> {
     let under = |group: &str, kind: Option<VerbKind>| -> Vec<String> {
         VERB_KINDS
@@ -8205,11 +8330,14 @@ const HEADER: &str = "\
 # A line a fact, tab-separated, its kind first:
 #   vocabulary classification <words> <red|green> | why <word>
 #   family <family> <sites> <parts>
-#   door <family> <leaf verb that prints it>
+#   door <family> <a leaf its word is read to stand for> (a reading, not where its codes print: a code is printed at doors
+#     no line names, as store.link-on-the-way of doc read is by every writing leaf — so no door list bounds a hunt)
 #   part <family> <file> <first site> <sites> (a part: one file's sites, at most 12, in id order)
-#   site <family> <its part's first site> <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none>
-#   acts <family> <variant of enum Act> <uses by the family's cases>
-#   residue <site> <route kind> <span|no span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
+#   site <family> <its part's first site> <site> <route kind> <backticked span|no backticked span|not read|no route> <case|reason|scheduled|none>
+#     (a backticked span of any kind, command, flag or operand: whether an operand span is printed, the text cannot tell)
+#   acts <family> <variant of enum Act> <uses by the family's cases> (every act of every case at a site of the family, the cases
+#     counted as the macros expand them: a case counts in every family its site is a row of, so a sum over families counts it more than once)
+#   residue <site> <route kind> <backticked span|no backticked span|not read|no route> <case|reason|scheduled|none> (a dynamic site no row names a code of)
 #   code <dynamic site> <code> <claim|minted-at>
 #   case <site> <case> <classification as the expected-red list holds it> <marked|-> <cause>
 #   reason <site> <why> <the heading of its ruling's entry in DECISIONS.md|owed> <text>
@@ -9123,18 +9251,20 @@ fn on_two_binaries<'a>(
     })
 }
 
-/// **Where a case's acts take what they act on, in one word.** `implied`: an object or a
-/// command the route does not print — the marked form, or the refusing command run again.
-/// `chosen`: the route prints a placeholder for a value of the reader's own, and the value
-/// is the case's ([`Act::RunChosen`]) — or names a command without its operand, and a word
-/// of the operand is the case's ([`Word::Named`]). `printed`: every operand is the route's. A case
-/// that does both of the first two is `implied`. Read off the acts as they print
-/// themselves, so an act added to the frame later is read without a list of acts here.
+/// **Where a case's acts take what they act on, in one word.** `implied`: an act leaves
+/// its operand to the case ([`Act::implies`], the predicate the runner reads) — the marked
+/// form, a word of the case's own for an operand the route prints nowhere, or the refusing
+/// command run again. `chosen`: the route prints a placeholder for a value of the reader's
+/// own, and the value is the case's ([`Act::RunChosen`]) — or names a command without its
+/// operand, and the route leaves a word of it to its reader ([`Word::Own`]). `printed`:
+/// every operand is the route's. A case that does both of the first two is `implied`. The
+/// second is read off the acts as they print themselves, so an act added to the frame
+/// later is read without a list of acts here.
 fn operand(case: &Case) -> &'static str {
     let acts = format!("{:?}", case.acts);
-    if acts.contains("Unprinted(") || acts.contains("Rerun") {
+    if case.acts.iter().any(|act| act.implies()) {
         "implied"
-    } else if acts.contains("RunChosen(") || acts.contains("Named(\"") {
+    } else if acts.contains("RunChosen(") || acts.contains("Own(\"") {
         "chosen"
     } else {
         "printed"

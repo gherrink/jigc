@@ -154,8 +154,11 @@
 //! naming required arguments that were not provided; git's usage at exit 129, or `git
 //! add`'s *Nothing specified, nothing added*. The runner asks the command; it holds no
 //! copy of an argument grammar. A case hands a name its operand, a word each: a span the
-//! route prints, a value the refusal lists, or a word of the case's own for the operand the
-//! route speaks of and prints nowhere — with, in words, which operand the route means. The
+//! route prints, a value the refusal lists, a word of the case's own for the operand the
+//! route speaks of and prints nowhere — which leaves the case no better than
+//! [`Classification::HoldsOperandImplied`], as the marked form does — or a value the route
+//! leaves to its reader, which is the reader's own, as a filled placeholder's is, and
+//! implies nothing — with, in words, which operand the route means. The
 //! command is started where the route says it belongs, is held to exit 0 like any line,
 //! and the command that was run is in the record. **A name is run by nobody as printed**:
 //! an act that does is a fault of the case, and so is one that names operands for a line
@@ -406,9 +409,18 @@ pub enum Word {
     /// A value the refusal's own output lists, by index ([`listed_in`]) — where the
     /// refusal lists the path the route speaks of, it is taken from there.
     Listed(usize),
-    /// A word of the case's own: the operand the route speaks of and prints nowhere, or
-    /// one it leaves to its reader — *the other*, *a free identity*.
+    /// **A word of the case's own for the operand the route speaks of and prints
+    /// nowhere** — the milestone a record's retitle addressed, the work inside a worktree.
+    /// The case infers the object, as the marked form ([`Operand::Unprinted`]) does, so
+    /// an act that hands one leaves the case no better than
+    /// [`Classification::HoldsOperandImplied`] ([`Act::implies`]).
     Named(&'static str),
+    /// **A value the route leaves to its reader** — *a free identity*, *an intent*, where
+    /// a moved file goes: the reader's own, as a filled placeholder's value is ([`Own`]),
+    /// which by the human's ruling of 2026-10-12 (`DECISIONS.md` → *A printed line that
+    /// carries a placeholder for a value of the reader's own is followed with the
+    /// placeholder filled*) leaves the case *followed, holds*. It implies nothing.
+    Own(&'static str),
 }
 
 /// **A span that names a command without its operand, followed with the operand the route
@@ -650,21 +662,43 @@ impl Act {
     }
 
     /// **Whether the act takes the marked form** — an object the route does not print,
-    /// named by the case ([`Operand::Unprinted`]).
+    /// named by the case ([`Operand::Unprinted`]): as the act's operand, or as the
+    /// directory [`Act::MoveDirectoryIn`] moves, which [`Act::operand`] does not answer.
     pub fn marked(self) -> bool {
         matches!(self.operand(), Some(Operand::Unprinted(_)))
+            || matches!(
+                self,
+                Act::MoveDirectoryIn(LinkAndDirectory {
+                    directory: Operand::Unprinted(_),
+                    ..
+                })
+            )
     }
 
-    /// **Whether the act leaves its operand to the case** — the marked form, or the
-    /// refusing command run again where the route prints no command line. A case with such
-    /// an act comes out no better than [`Classification::HoldsOperandImplied`]: the runner
-    /// reads this and nothing else for it ([`follow`]).
+    /// **Whether the act leaves its operand to the case** — the marked form ([`marked`]);
+    /// a named command handed a word of the case's own for the operand the route prints
+    /// nowhere ([`Word::Named`]), among its operands or as where it is started; or the
+    /// refusing command run again ([`Act::Rerun`] and its two siblings). A value the route
+    /// leaves to its reader ([`Word::Own`], and [`Act::RunChosen`]'s values) is the
+    /// reader's own and implies nothing. A case with such an act comes out no better than
+    /// [`Classification::HoldsOperandImplied`]: the runner reads this and nothing else for
+    /// it ([`follow`]), and the route catalog's projection reads the same.
+    ///
+    /// [`marked`]: Act::marked
     pub fn implies(self) -> bool {
         self.marked()
             || matches!(
                 self,
                 Act::Rerun | Act::RerunInTheRepository | Act::RerunWith(_)
             )
+            || match self {
+                Act::RunNamed(named) => named
+                    .on
+                    .iter()
+                    .chain(&named.within)
+                    .any(|word| matches!(word, Word::Named(_))),
+                _ => false,
+            }
     }
 }
 
@@ -972,7 +1006,9 @@ pub struct Seen {
     /// An act could not be done, a command of the route failed any other way, or a
     /// check did not hold.
     pub failed: bool,
-    /// An act took the marked form.
+    /// An act leaves its operand to the case ([`Act::implies`]): the marked form, a word of
+    /// the case's own for an operand the route prints nowhere, or the refusing command run
+    /// again.
     pub implied: bool,
     /// A command under test — the refusing command, or one the route prints — had not
     /// ended at its limit and was ended by the runner.
@@ -2134,10 +2170,12 @@ impl Sandbox {
                                 listed.len()
                             )
                         }),
-                    Word::Named("") => {
+                    Word::Named("") | Word::Own("") => {
                         Err("an act hands a named command a word of no bytes".to_string())
                     }
-                    Word::Named(bytes) => Ok((bytes.to_string(), "the case's".to_string())),
+                    Word::Named(bytes) | Word::Own(bytes) => {
+                        Ok((bytes.to_string(), "the case's".to_string()))
+                    }
                 };
                 let on: Vec<(String, String)> =
                     named.on.iter().map(&word).collect::<Result<_, _>>()?;

@@ -597,7 +597,7 @@ macro_rules! over_a_stale_key {
                         on: &[
                             Word::Named("decisions-log:decisions-log"),
                             Word::Named("--to"),
-                            Word::Named("Decisions Log Two"),
+                            Word::Own("Decisions Log Two"),
                         ],
                         within: None,
                         means: "*the other*, renamed *onto a free identity*: the one doc \
