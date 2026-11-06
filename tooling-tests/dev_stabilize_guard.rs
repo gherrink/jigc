@@ -26,6 +26,13 @@
 //! - what the guard cannot read, and the tools it cannot fence
 //!   ([`an_unknown_type_is_fenced_and_what_the_guard_cannot_read_is_refused`],
 //!   [`a_shell_the_guard_cannot_fence_and_a_writer_launched_by_a_fenced_agent_are_refused`]);
+//! - while a runtime probe is active — its marker standing in the repository's common git
+//!   directory (the plan before the opening's task T-NR) — every subagent, the writers
+//!   too, runs only one plain call of the probe tool or the record script and writes only
+//!   under the probe's scratch root, inside a run or outside one; a stale or unreadable
+//!   marker binds and says so
+//!   ([`while_a_probe_is_active_every_subagent_runs_only_the_probe_tools_and_writes_only_under_its_scratch_root`],
+//!   [`a_stale_or_unreadable_probe_marker_binds_and_says_so`]);
 //! - the fence, on this host: macOS's sandbox where there is one, a refusal where there is
 //!   none — the hosted runner's tooling legs are Linux, and there the arm holds the refusal
 //!   ([`the_fence_refuses_every_write_under_the_repository_or_runs_nothing`]);
@@ -739,28 +746,60 @@ fn a_shell_the_guard_cannot_fence_and_a_writer_launched_by_a_fenced_agent_are_re
         )
         .refused("shell", tool);
     }
-    for writer in ["build-fixer", "build-git"] {
+    // `Task` launches an agent as `Agent` does: a writer named by either is refused.
+    for tool in ["Agent", "Task"] {
+        for writer in ["build-fixer", "build-git"] {
+            rig.hook(
+                &event(
+                    agent,
+                    tool,
+                    json!({ "subagent_type": writer, "prompt": "p", "description": "d" }),
+                    &rig.repo,
+                ),
+                &[],
+            )
+            .refused("writer", &format!("{tool}: {writer}"));
+        }
         rig.hook(
             &event(
                 agent,
-                "Agent",
-                json!({ "subagent_type": writer, "prompt": "p", "description": "d" }),
+                tool,
+                json!({ "subagent_type": "Explore", "prompt": "p", "description": "d" }),
                 &rig.repo,
             ),
             &[],
         )
-        .refused("writer", writer);
+        .silent(&format!("{tool}: a subagent that is fenced in its turn"));
     }
-    rig.hook(
-        &event(
-            agent,
-            "Agent",
-            json!({ "subagent_type": "Explore", "prompt": "p", "description": "d" }),
-            &rig.repo,
-        ),
-        &[],
-    )
-    .silent("a subagent that is fenced in its turn");
+    // A workflow can launch anything, a writer among it: a fenced agent starts none.
+    let reason = rig
+        .hook(
+            &event(
+                agent,
+                "Workflow",
+                json!({ "scriptPath": rig.repo.join(".claude/workflows/x.js"), "args": {} }),
+                &rig.repo,
+            ),
+            &[],
+        )
+        .refused("writer", "a workflow");
+    assert!(
+        reason.contains("Workflow") && reason.contains("robust-advocate"),
+        "the refusal names the tool and the agent: {reason}"
+    );
+    // The writers and the session itself start workflows as they always did.
+    for who in [None, Some("build-git"), Some("build-fixer")] {
+        rig.hook(
+            &event(
+                who,
+                "Workflow",
+                json!({ "scriptPath": "/tmp/s/w.js", "args": {} }),
+                &rig.repo,
+            ),
+            &[],
+        )
+        .silent(&format!("a workflow started by {who:?}"));
+    }
     // A tool that writes nothing is none of the guard's business.
     rig.hook(
         &event(
@@ -772,6 +811,298 @@ fn a_shell_the_guard_cannot_fence_and_a_writer_launched_by_a_fenced_agent_are_re
         &[],
     )
     .silent("a read");
+}
+
+// ---------------------------------------------------------------------------
+// While a runtime probe is active (the plan before the opening's task T-NR)
+// ---------------------------------------------------------------------------
+
+/// The marker `dev/stabilize-probe begin --probe neutralized` writes: a file of this name in
+/// the repository's COMMON git directory, naming the probe and its scratch root.
+const PROBE_MARKER: &str = "stabilize-probe-active";
+
+/// The types the guard is driven for while a probe is active: a writer, the role no run
+/// classifies, and the executor that writes a record's batch — and the other writer.
+const UNDER_A_PROBE: &[&str] = &[
+    "build-git",
+    "general-purpose",
+    "build-executor",
+    "build-fixer",
+];
+
+impl Rig {
+    /// The repository's common git directory, which every worktree of it shares.
+    fn common_git_dir(&self) -> PathBuf {
+        PathBuf::from(git(
+            &self.repo,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ))
+    }
+
+    /// The probe's marker, with `text` in it.
+    fn mark_probe(&self, text: &str) -> PathBuf {
+        let marker = self.common_git_dir().join(PROBE_MARKER);
+        fs::write(&marker, text).expect("the probe's marker");
+        marker
+    }
+}
+
+fn marker_naming(scratch: &Path) -> String {
+    json!({ "probe": "neutralized", "scratch": scratch }).to_string()
+}
+
+#[test]
+fn while_a_probe_is_active_every_subagent_runs_only_the_probe_tools_and_writes_only_under_its_scratch_root()
+ {
+    // A branch with no run: what binds here is the marker alone.
+    let rig = Rig::on("fix/rc24-tier1", false);
+    let scratch = real(&rig.outside());
+    let elsewhere = rig.scratch.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).expect("a directory beside the scratch root");
+    // Without the marker the guard says nothing outside a run, as before.
+    for agent in UNDER_A_PROBE {
+        rig.hook(
+            &bash_event(Some(agent), "git push origin fix/rc24-tier1", &rig.repo),
+            &[],
+        )
+        .silent(&format!("{agent}: no probe, no run"));
+        rig.hook(
+            &write_event(Some(agent), &rig.repo.join("x"), &rig.repo),
+            &[],
+        )
+        .silent(&format!("{agent}: no probe, no run"));
+    }
+
+    let marker = rig.mark_probe(&marker_naming(&scratch));
+    let script = scratch.join("evade.sh");
+    let refused_commands = [
+        "git push origin fix/rc24-tier1".to_owned(),
+        "git commit --allow-empty -m stray".to_owned(),
+        "git -c x=y push".to_owned(),
+        "env git push".to_owned(),
+        "echo x > x".to_owned(),
+        format!("sh {}", script.display()),
+        script.display().to_string(),
+        "dev/stabilize-step state --run rig-run --scratch /tmp/s".to_owned(),
+        "dev/stabilize-record kit --run rig-run; git push".to_owned(),
+        "cd /tmp && dev/stabilize-probe hash --scratch /tmp/s --file /tmp/s/f".to_owned(),
+    ];
+    for agent in UNDER_A_PROBE {
+        for command in &refused_commands {
+            let reason = rig
+                .hook(&bash_event(Some(agent), command, &rig.repo), &[])
+                .refused("probe", &format!("{agent}: {command}"));
+            assert!(
+                reason.contains(agent)
+                    && reason.contains(&marker.display().to_string())
+                    && reason.contains(&scratch.display().to_string())
+                    && reason.contains("dev/stabilize-probe")
+                    && reason.contains("dev/stabilize-record")
+                    && !reason.contains("stale"),
+                "{agent}: {command}: the refusal names the agent, the marker, the scratch root and the two calls let through: {reason}"
+            );
+        }
+        // The script that was to be run is written under the root — and running it is
+        // refused above: what binds is the shell, not the file.
+        rig.hook(&write_event(Some(agent), &script, &rig.repo), &[])
+            .silent(&format!("{agent}: a write under the probe's scratch root"));
+        rig.hook(
+            &write_event(Some(agent), &scratch.join("new/dir/report.md"), &rig.repo),
+            &[],
+        )
+        .silent(&format!("{agent}: a new file deep under the root"));
+        // A write anywhere else: the repository, its git directory, beside the root.
+        for path in [
+            rig.repo.join("x"),
+            rig.repo.join(".git/config"),
+            marker.clone(),
+            elsewhere.join("x"),
+        ] {
+            let reason = rig
+                .hook(&write_event(Some(agent), &path, &rig.repo), &[])
+                .refused("probe", &format!("{agent}: a write of {}", path.display()));
+            assert!(
+                reason.contains(&path.display().to_string()),
+                "{agent}: the refusal names the file: {reason}"
+            );
+        }
+        // ONE plain call of the probe tool or the record script, from the root, runs.
+        for command in [
+            "dev/stabilize-probe verdict --scratch /tmp/s --probe neutralized --sum 0000 -- a:r:absent b:0:none",
+            "dev/stabilize-probe record --scratch /tmp/s --from /tmp/s/probe/neutralized/batch.json",
+            "dev/stabilize-record kit --run rig-run --role verify",
+        ] {
+            rig.hook(&bash_event(Some(agent), command, &rig.repo), &[])
+                .silent(&format!("{agent}: {command}"));
+        }
+        // The same call from another directory names another file.
+        rig.hook(
+            &bash_event(
+                Some(agent),
+                "dev/stabilize-probe held --scratch /tmp/s --name b",
+                &elsewhere,
+            ),
+            &[],
+        )
+        .refused("directory", &format!("{agent}: from elsewhere"));
+        // A shell the guard cannot hold to the list is refused.
+        for tool in ["Monitor", "PowerShell"] {
+            rig.hook(
+                &event(
+                    Some(agent),
+                    tool,
+                    json!({ "command": "true", "description": "x" }),
+                    &rig.repo,
+                ),
+                &[],
+            )
+            .refused("probe", &format!("{agent}: {tool}"));
+        }
+    }
+    // THE COUNTED SET IS FIXED: no subagent launches an agent or a workflow while the marker
+    // stands — an explorer as much as a writer, by every tool that launches one.
+    for agent in UNDER_A_PROBE {
+        for (tool, input) in [
+            (
+                "Agent",
+                json!({ "subagent_type": "Explore", "prompt": "p", "description": "d" }),
+            ),
+            (
+                "Agent",
+                json!({ "subagent_type": "build-git", "prompt": "p", "description": "d" }),
+            ),
+            (
+                "Task",
+                json!({ "subagent_type": "general-purpose", "prompt": "p", "description": "d" }),
+            ),
+            (
+                "Workflow",
+                json!({ "scriptPath": "/tmp/s/w.js", "args": {} }),
+            ),
+        ] {
+            let reason = rig
+                .hook(&event(Some(agent), tool, input, &rig.repo), &[])
+                .refused("probe", &format!("{agent}: {tool}"));
+            assert!(
+                reason.contains(&format!("launch an agent or a workflow by {tool}")),
+                "{agent}: the refusal says what is refused: {reason}"
+            );
+        }
+    }
+    // The session's own calls are never fenced: it is the main session that removes the
+    // marker of a probe that was cut — and the harness's own launches are the runtime's
+    // `agent()` calls, under the session's `Workflow` call, never a subagent's tool call.
+    rig.hook(&bash_event(None, "git push", &rig.repo), &[])
+        .silent("the session's own call");
+    for tool in ["Agent", "Task", "Workflow"] {
+        rig.hook(
+            &event(
+                None,
+                tool,
+                json!({ "subagent_type": "build-git", "scriptPath": "/tmp/s/w.js", "prompt": "p" }),
+                &rig.repo,
+            ),
+            &[],
+        )
+        .silent(&format!("the session's own {tool}"));
+    }
+    // The marker lies in the COMMON git directory: a session of a linked worktree of the
+    // same repository is bound by it too.
+    let linked = rig.scratch.path().join("linked");
+    git(
+        &rig.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "linked",
+            &linked.display().to_string(),
+        ],
+    );
+    rig.hook_in(
+        Some(&linked),
+        &bash_event(Some("build-git"), "git push", &linked),
+        &[],
+    )
+    .refused("probe", "a linked worktree's session");
+    // Inside a run, too, the marker binds a writer: no commit and no push while it stands.
+    let run = Rig::run();
+    let run_scratch = real(&run.outside());
+    run.mark_probe(&marker_naming(&run_scratch));
+    run.hook(
+        &bash_event(Some("build-fixer"), "git commit -qm fix", &run.repo),
+        &[],
+    )
+    .refused("probe", "a fixer inside a run, while a probe is active");
+    // Removed: the guard is silent outside a run again.
+    fs::remove_file(&marker).expect("remove the marker");
+    for agent in UNDER_A_PROBE {
+        rig.hook(&bash_event(Some(agent), "git push", &rig.repo), &[])
+            .silent(&format!("{agent}: the marker removed"));
+        for tool in ["Task", "Workflow"] {
+            rig.hook(
+                &event(
+                    Some(agent),
+                    tool,
+                    json!({ "subagent_type": "Explore", "scriptPath": "/tmp/s/w.js", "prompt": "p" }),
+                    &rig.repo,
+                ),
+                &[],
+            )
+            .silent(&format!("{agent}: {tool}, the marker removed"));
+        }
+    }
+}
+
+#[test]
+fn a_stale_or_unreadable_probe_marker_binds_and_says_so() {
+    let rig = Rig::on("main", false);
+    // Stale: the scratch root it names is gone.
+    let gone = rig.scratch.path().join("gone");
+    let marker = rig.mark_probe(&marker_naming(&gone));
+    for agent in UNDER_A_PROBE {
+        let reason = rig
+            .hook(&bash_event(Some(agent), "git push", &rig.repo), &[])
+            .refused("probe", &format!("{agent}: a push under a stale marker"));
+        assert!(
+            reason.contains("stale")
+                && reason.contains(&gone.display().to_string())
+                && reason.contains(&marker.display().to_string()),
+            "{agent}: the refusal says the marker is stale, and names it and the root it names: {reason}"
+        );
+        // Nothing may be written at all: the root is gone.
+        let reason = rig
+            .hook(&write_event(Some(agent), &gone.join("x"), &rig.repo), &[])
+            .refused("probe", &format!("{agent}: a write under a gone root"));
+        assert!(reason.contains("stale"), "{reason}");
+        // It binds as a list still: the probe tool's plain call runs.
+        rig.hook(
+            &bash_event(
+                Some(agent),
+                "dev/stabilize-probe held --scratch /tmp/s --name b",
+                &rig.repo,
+            ),
+            &[],
+        )
+        .silent(&format!("{agent}: a plain call under a stale marker"));
+    }
+    // Unreadable: no JSON, or no scratch root in it — it binds, and says it cannot be read.
+    for text in ["not json", "{\"probe\": \"neutralized\"}", "[]"] {
+        rig.mark_probe(text);
+        let reason = rig
+            .hook(&bash_event(Some("build-git"), "git push", &rig.repo), &[])
+            .refused("probe", text);
+        assert!(
+            reason.contains("cannot be read"),
+            "{text}: the refusal says the marker cannot be read: {reason}"
+        );
+        rig.hook(
+            &write_event(Some("build-executor"), &rig.outside().join("x"), &rig.repo),
+            &[],
+        )
+        .refused("probe", text);
+    }
 }
 
 /// The fence, run as the guard's rewrite runs it: what it printed, and how it exited.
@@ -1057,7 +1388,7 @@ fn the_settings_run_the_guard_as_its_header_gives_it() {
     assert!(
         help.status.success()
             && header
-                .contains("\"matcher\": \"Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent\""),
+                .contains("\"matcher\": \"Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent|Task|Workflow\""),
         "the header gives the entry: {header}"
     );
     let settings: Value = serde_json::from_str(
@@ -1074,7 +1405,7 @@ fn the_settings_run_the_guard_as_its_header_gives_it() {
         .unwrap_or_default();
     for entry in &entries {
         assert_eq!(
-            entry["matcher"], "Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent",
+            entry["matcher"], "Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent|Task|Workflow",
             "{entry}"
         );
         let hook = &entry["hooks"][0];

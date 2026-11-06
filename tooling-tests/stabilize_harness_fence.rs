@@ -89,7 +89,10 @@
 //!   step of a probe is a command of `dev/stabilize-probe` — each act that tool has is asked
 //!   for, and no other — on the roles a stage launches; no code of a probe names a run, a
 //!   round, a branch, the record script, the step tool or a gate; the harness and the tool
-//!   have the same cases; and the one schema that requires the hash is the probe's.
+//!   have the same cases; and the one schema that requires the hash is the probe's. And
+//!   the `neutralized` probe (the plan before the opening's task T-NR) launches exactly
+//!   four agents — begin, ONE subject, the record writer, the verdict — each `once`, while
+//!   every other probe keeps its retries, and it plants the tool's text.
 //!
 //! - **(r)** what a stage reads is a digest, and no text of the record passes through the
 //!   script (the second repair plan's task `K3`): every step's composer asks for the digest
@@ -1596,10 +1599,15 @@ fn n_a_record_is_accepted_on_its_commit_steps_own_line_and_the_executor_commits_
         source.matches("roleStep('record', ").count()
             - function(&full, "runProbe")
                 .matches("roleStep('record', 'probe:payload:e' + n, 'Probe', probePayloadPrompt(")
+                .count()
+            - function(&full, "runProbe")
+                .matches(
+                    "roleStep('record', 'probe:neutralized:record', 'Probe', probeRecordPrompt("
+                )
                 .count(),
         1,
-        "the record's executor is launched in one place — and by the `payload` probe, whose \
-         prompt applies nothing (arm (q))"
+        "the record's executor is launched in one place — and by the `payload` and the \
+         `neutralized` probes, whose prompts apply nothing (arm (q))"
     );
     assert_eq!(
         source.matches("recordCommitPrompt(").count()
@@ -2259,7 +2267,7 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
             {
                 "toolStep"
             } else if line.contains(
-                "const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA)",
+                "const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA, null, null, once)",
             ) {
                 "a probe's step"
             } else {
@@ -2271,6 +2279,130 @@ fn l_every_git_step_is_one_command_of_the_tool_but_the_recut_of_a_part() {
         direct,
         ["toolStep", "a probe's step", "the part's re-cut"],
         "who calls `gitStep`"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (q) the `neutralized` probe: four launches, each once (the plan before the opening's
+// task T-NR; the human's ruling B of 2026-10-29)
+// ---------------------------------------------------------------------------
+
+/// The block of `runProbe` that runs one probe's own cases: `if (v.probe === '<probe>') {`
+/// to the `}` that closes it.
+fn probe_block<'a>(run: &'a str, probe: &str) -> &'a str {
+    let open = format!("\n  if (v.probe === '{probe}') {{\n");
+    let at = run
+        .find(&open)
+        .unwrap_or_else(|| panic!("`runProbe` has a block of the `{probe}` probe"));
+    let body = &run[at + open.len()..];
+    &body[..body.find("\n  }\n").expect("the block closes")]
+}
+
+#[test]
+fn q_the_neutralized_probe_launches_four_agents_each_once_and_the_other_probes_keep_their_retries()
+{
+    let full = harness();
+    let run = code(function(&full, "runProbe"));
+    // THE COUNTED SET. The human's "one agent" is built as ONE subject agent and three step
+    // agents — begin, the record writer, the verdict — EVERY LAUNCH ONCE: no retry under
+    // `TRANSIENT_RETRIES`, by the `once` of `agentR`.
+    assert!(
+        run.contains("\n  const once = v.probe === 'neutralized'\n"),
+        "`once` is the `neutralized` probe's alone: {run}"
+    );
+    let with_once: Vec<&str> = run
+        .lines()
+        .filter(|line| line.contains("probeAct(") && line.contains(", once)"))
+        .collect();
+    assert_eq!(
+        with_once.len(),
+        2,
+        "the two step agents of `probeAct` that take `once`: {with_once:?}"
+    );
+    assert!(
+        with_once[0].contains("probeAct('begin', 'begin', ")
+            && with_once[1].contains("probeAct('verdict', 'verdict', "),
+        "they are begin and the verdict: {with_once:?}"
+    );
+    // Its own block launches exactly two more: the subject, a reviewer, and the record
+    // writer, the executor that writes a record's batch — each `once`, each watched.
+    let block = probe_block(&run, "neutralized");
+    let launches: Vec<&str> = block
+        .lines()
+        .filter(|line| {
+            ["roleStep(", "probeAct(", "toolStep(", "gitStep(", "agentR("]
+                .iter()
+                .any(|call| line.contains(call))
+        })
+        .collect();
+    assert_eq!(
+        launches.len(),
+        2,
+        "the block launches the subject and the record writer, and nothing else: {launches:?}"
+    );
+    assert!(
+        launches[0].contains(
+            "await watched(() => roleStep('review', 'probe:neutralized:subject', 'Probe', probeSubjectPrompt(), UNIT_SCHEMA, true))"
+        ),
+        "the subject: one reviewer, under a unit's own schema, once: {}",
+        launches[0]
+    );
+    assert!(
+        launches[1].contains(
+            "await watched(() => roleStep('record', 'probe:neutralized:record', 'Probe', probeRecordPrompt(s, "
+        ) && launches[1].ends_with("STEP_SCHEMA, true))"),
+        "the record writer: the executor of a record, once: {}",
+        launches[1]
+    );
+    // `once` reaches `agentR`: through `probeAct` and `gitStep`, and through `roleStep`.
+    assert!(
+        function(&full, "probeAct").contains(
+            "const raw = await gitStep('probe:' + label, 'Probe', probeStep(what, act, flags), STEP_SCHEMA, null, null, once)"
+        ) && function(&full, "gitStep")
+            .contains("return agentR(prompt, { label: 'git:' + label, phase: phaseTitle, agentType: 'build-git', schema, model: GIT_MODEL }, again, seen, once)")
+            && function(&full, "roleStep").contains(", null, null, once)")
+            && function(&full, "agentR").contains("const tries = once ? 1 : TRANSIENT_RETRIES + 1"),
+        "`once` is handed down to the one call that tries an agent"
+    );
+    // THE OTHER PROBES KEEP THEIR RETRIES: no other launch of `runProbe` passes `once`.
+    let others: Vec<&str> = run
+        .lines()
+        .filter(|line| {
+            ["roleStep(", "probeAct(", "toolStep("]
+                .iter()
+                .any(|call| line.contains(call))
+                && !block.contains(line.trim())
+                && !with_once.contains(line)
+        })
+        .collect();
+    assert!(
+        others.len() >= 6,
+        "the scan found the other probes' launches: {others:?}"
+    );
+    for line in others {
+        assert!(
+            !line.contains(", once)") && !line.contains(", true)"),
+            "a launch of another probe is tried as it was, retries and all: {line}"
+        );
+    }
+    // THE PLANTED TEXT IS THE TOOL'S, byte for byte: what the subject is told to return is
+    // what the verdict judges the cell, the report and the hash against.
+    let tool = fs::read_to_string(repo_root().join(PROBE_TOOL)).expect("read the probe tool");
+    let planted: String = serde_json::from_str(
+        tool.lines()
+            .find(|line| line.starts_with("PLANTED = \""))
+            .expect("the tool's planted text")
+            .trim_start_matches("PLANTED = "),
+    )
+    .expect("one string literal");
+    assert_eq!(
+        quoted_in(&full, "const PROBE_PLANTED = "),
+        [planted],
+        "the harness plants the tool's text"
+    );
+    assert!(
+        function(&full, "probeSubjectPrompt").contains("PROBE_PLANTED"),
+        "and hands it to the subject"
     );
 }
 
@@ -2461,7 +2593,11 @@ fn q_a_runtime_probe_works_on_no_run_and_its_steps_are_the_probe_tools() {
         .skip(1)
         .map(|rest| &rest[..rest.find('\'').expect("a role")])
         .collect();
-    assert_eq!(launched, ["review", "record"], "the roles a probe launches");
+    assert_eq!(
+        launched,
+        ["review", "record", "review", "record"],
+        "the roles a probe launches"
+    );
     for (role, prompt) in [
         ("review", "probeReviewPrompt("),
         ("record", "probePayloadPrompt("),
@@ -2954,8 +3090,8 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
     );
     assert_eq!(
         ours.matches("readStep(").count(),
-        3,
-        "`readStep` is declared once and called by a probe's step and by the probe that relays a line of its own, each EXACT — a stage's step never goes around `readDigest`"
+        4,
+        "`readStep` is declared once and called by a probe's step, by the probe that relays a line of its own and by the `neutralized` probe's record writer, each EXACT — a stage's step never goes around `readDigest`"
     );
     assert_eq!(
         ours.matches("stepRead(").count(),
@@ -3584,15 +3720,16 @@ fn r_a_stage_reads_digests_and_no_prompt_and_no_return_holds_text_of_the_record(
                 .expect("an exhausted call is counted"),
         "a verifier call that returned nothing feeds no breaker: its wave counts it"
     );
+    let stage = without(&full, &["selfTest", "runProbe"]);
     assert!(
         function(&full, "roleStep").contains("schema }, null, null, once)")
-            && without(&full, &["selfTest"])
+            && stage
                 .lines()
                 .filter(|line| line.contains("_SCHEMA, true)"))
                 .count()
                 == 1
             && source.contains("\nconst SILENT_LAST = 2\n"),
-        "one call of the script is never tried twice — a verifier's, in a run with a queue — and no other role's retry changed"
+        "one call of a stage is never tried twice — a verifier's, in a run with a queue — and no other role's retry changed (the `neutralized` probe's launches, each once, are arm (q)'s)"
     );
     let counted = waves
         .find("const silent = back.filter((r) => r == null).length")
@@ -4558,6 +4695,12 @@ const PROMPTS: &[(&str, &str, &str)] = &[
         "probePayloadPrompt",
         "",
         "probePayloadPrompt('/s', 20, probeBatch('/s', 20))",
+    ),
+    ("probeSubjectPrompt", "", "probeSubjectPrompt()"),
+    (
+        "probeRecordPrompt",
+        "",
+        "probeRecordPrompt('/s', payload('/s/probe/neutralized', 'batch.json', { text: PROBE_PLANTED }))",
     ),
     (
         "composePrompt",
@@ -5730,11 +5873,12 @@ fn a_door_the_previous_release_does_not_have_is_not_comparable_in_the_definition
 // The lookup kit, named first by the prompt of every role it has a row for
 // ---------------------------------------------------------------------------
 
-/// The one composer launched under a role the kit has a row for whose prompt names no kit:
-/// a runtime probe's reviewer, launched as `review`. A probe works on no run (arm (q)), and
-/// the kit is a read of one.
-const KIT_ON_NO_RUN: (&str, &str) = (
-    "probeReviewPrompt",
+/// The composers launched under a role the kit has a row for whose prompt names no kit: a
+/// runtime probe's reviewers, launched as `review` — the `required` probe's, and the
+/// `neutralized` probe's subject. A probe works on no run (arm (q)), and the kit is a read of
+/// one.
+const KIT_ON_NO_RUN: (&[&str], &str) = (
+    &["probeReviewPrompt", "probeSubjectPrompt"],
     "a runtime probe works on no run (arm (q)), and the kit is a read of a run",
 );
 
@@ -5859,7 +6003,7 @@ fn first_call(prompt: &str) -> Option<String> {
 /// here), and every role the kit has a row for is one the harness launches. Then, under
 /// `node`, every prompt the script composes ([`PROMPTS`]) is read: a prompt launched under
 /// such a role spells the kit's call FIRST, with its own role's word, once, as one plain
-/// invocation; every other prompt spells none. The one exception is [`KIT_ON_NO_RUN`].
+/// invocation; every other prompt spells none. The exceptions are [`KIT_ON_NO_RUN`].
 #[test]
 fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
     let full = harness();
@@ -5900,14 +6044,15 @@ fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
         under.get("").is_none_or(|roles| roles.is_disjoint(&kit)),
         "a prompt launched under a role the kit has a row for is a composer's: {under:?}"
     );
-    assert!(
-        under
-            .get(KIT_ON_NO_RUN.0)
-            .is_some_and(|roles| roles.iter().all(|role| kit.contains(role))),
-        "the exception `{}` is launched under a role the kit has a row for — {}; else it is stale",
-        KIT_ON_NO_RUN.0,
-        KIT_ON_NO_RUN.1
-    );
+    for exception in KIT_ON_NO_RUN.0 {
+        assert!(
+            under
+                .get(*exception)
+                .is_some_and(|roles| roles.iter().all(|role| kit.contains(role))),
+            "the exception `{exception}` is launched under a role the kit has a row for — {}; else it is stale",
+            KIT_ON_NO_RUN.1
+        );
+    }
 
     if !node_or_skip(&format!(
         "no prompt of {HARNESS} was composed and held to the kit's call"
@@ -5916,7 +6061,7 @@ fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
     }
     let mut faults: Vec<String> = Vec::new();
     let mut held: BTreeMap<String, usize> = BTreeMap::new();
-    let mut exception = false;
+    let mut excepted = BTreeSet::new();
     for ((name, what, text), (_, _, row)) in composed(None).into_iter().zip(PROMPTS) {
         let at = if what.is_empty() {
             name.clone()
@@ -5931,8 +6076,8 @@ fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
             }
         };
         let kits = text.matches("`dev/stabilize-record kit ").count();
-        if name == KIT_ON_NO_RUN.0 {
-            exception = true;
+        if KIT_ON_NO_RUN.0.contains(&name.as_str()) {
+            excepted.insert(name.to_string());
             if kits != 0 {
                 faults.push(format!(
                     "{at}: it spells the kit's call, and {}",
@@ -5980,10 +6125,14 @@ fn every_driving_roles_prompt_names_the_kit_as_its_first_call() {
             }
         }
     }
-    assert!(
-        exception,
-        "the prompts' table composes `{}`",
-        KIT_ON_NO_RUN.0
+    assert_eq!(
+        excepted,
+        KIT_ON_NO_RUN
+            .0
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<BTreeSet<_>>(),
+        "the prompts' table composes every exception"
     );
     assert_eq!(
         faults,

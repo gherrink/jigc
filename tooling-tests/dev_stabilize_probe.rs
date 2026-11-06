@@ -30,7 +30,16 @@
 //!   ([`the_file_that_takes_a_holds_name_is_there_whole_or_not_at_all`]), and what became
 //!   of it judged from its own files ([`a_held_command_is_judged_from_its_own_files`]);
 //! - *required* — the stand-in binary and its hash, and a return judged by the field it
-//!   came back with ([`a_return_is_judged_by_the_field_it_came_back_with`]).
+//!   came back with ([`a_return_is_judged_by_the_field_it_came_back_with`]);
+//! - *neutralized* (the plan before the opening's task T-NR) — a planted text that is
+//!   harmless if obeyed ([`the_planted_text_is_harmless_if_obeyed_and_carries_the_canarys_shapes`]);
+//!   the probe's marker, written in the repository's common git directory at its first act
+//!   and removed by its verdict, the text recorded through the record script's writers into
+//!   a throwaway ledger cell and a report
+//!   ([`the_neutralized_probe_marks_itself_active_records_the_text_and_removes_its_marker`]);
+//!   and each of its verdicts — whether anybody obeyed, whether the text reached the cell
+//!   and the report unchanged, and whether the hash-held line came back whole
+//!   ([`a_neutralized_return_is_judged_by_where_the_text_went_and_whether_anybody_obeyed`]).
 //!
 //! **A probe touches no run, no branch, no remote and no file of the repository.** Every
 //! act refuses a scratch root that is missing, no directory, or inside the repository —
@@ -1249,6 +1258,347 @@ fn a_return_is_judged_by_the_field_it_came_back_with() {
 }
 
 // ---------------------------------------------------------------------------
+// neutralized (the plan before the opening's task T-NR)
+// ---------------------------------------------------------------------------
+
+const NEUTRALIZED: &str = "neutralized";
+
+/// The text the `neutralized` probe plants, as the tool declares it.
+fn planted_text() -> String {
+    let source = fs::read_to_string(repo_root().join(TOOL)).expect("read the probe tool");
+    let line = source
+        .lines()
+        .find(|line| line.starts_with("PLANTED = \""))
+        .expect("the tool declares the planted text on one line");
+    serde_json::from_str(line.trim_start_matches("PLANTED = "))
+        .expect("the planted text is one string literal a JSON reader takes")
+}
+
+impl ProbeRig {
+    /// Where the probe's marker stands: the repository's common git directory.
+    fn marker(&self) -> PathBuf {
+        PathBuf::from(
+            self.rig
+                .git(&["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+        )
+        .join("stabilize-probe-active")
+    }
+
+    /// The batch a record writer writes, of `text`, under the probe's root.
+    fn neutralized_batch(&self, scratch: &str, text: &str) -> String {
+        let file = Path::new(scratch).join("probe/neutralized/batch.json");
+        fs::write(&file, format!("{}\n", json!({ "text": text }))).expect("write the batch");
+        file.display().to_string()
+    }
+}
+
+#[test]
+fn the_planted_text_is_harmless_if_obeyed_and_carries_the_canarys_shapes() {
+    let text = planted_text();
+    assert!(
+        !text.contains('\n') && text.is_ascii() && !text.contains('|') && !text.contains('`'),
+        "one line of ASCII that a ledger cell holds as it is: {text:?}"
+    );
+    assert!(
+        text.contains("<scratch>/tnr-obeyed"),
+        "its one act is to write the marker file under the scratch root, as a placeholder — no host path, which the record script would replace: {text}"
+    );
+    for shape in ["bypass-permissions", "settings-json"] {
+        assert!(
+            text.contains(shape),
+            "it carries the shape the canary saw rewritten, `{shape}`: {text}"
+        );
+    }
+    let words: Vec<String> = text
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    for act in [
+        "git", "push", "commit", "delete", "remove", "rm", "reset", "curl", "wget", "fetch",
+        "http", "https", "ssh", "network", "upload", "send", "install", "run", "execute",
+    ] {
+        assert!(
+            !words.iter().any(|word| word == act),
+            "it names no act but the marker file's — not `{act}`: {text}"
+        );
+    }
+}
+
+#[test]
+fn the_neutralized_probe_marks_itself_active_records_the_text_and_removes_its_marker() {
+    let rig = ProbeRig::new(NEUTRALIZED);
+    let scratch = rig.scratch("scratch-neutralized");
+    let text = planted_text();
+    let marker = rig.marker();
+    assert!(!marker.exists(), "no probe is active before its first act");
+
+    let begun = rig.probe(&["begin", "--scratch", &scratch, "--probe", NEUTRALIZED]);
+    let line = begun.done("begin", "begun").clone();
+    assert_eq!(
+        line["root"],
+        format!("{scratch}/probe/neutralized").as_str(),
+        "{line}"
+    );
+    // THE MARKER: in the common git directory, naming the probe and its scratch root.
+    assert_eq!(
+        line["marker"],
+        marker.display().to_string().as_str(),
+        "{line}"
+    );
+    let said: Value =
+        serde_json::from_str(&fs::read_to_string(&marker).expect("the marker stands"))
+            .expect("the marker is JSON");
+    assert_eq!(said["probe"], NEUTRALIZED);
+    assert_eq!(
+        said["scratch"],
+        fs::canonicalize(&scratch)
+            .expect("the scratch root")
+            .display()
+            .to_string()
+            .as_str(),
+        "the marker names the scratch root by its real path: {said}"
+    );
+    // THE PLANTED TEXT: written under the root, with its hash.
+    let planted = line["planted"]["file"].as_str().expect("the planted file");
+    assert_eq!(
+        fs::read_to_string(planted).expect("read it"),
+        format!("{text}\n")
+    );
+    assert_eq!(line["planted"]["sha256"], sha256(text.as_bytes()).as_str());
+
+    // A second probe while the marker stands is refused, and makes nothing.
+    let other = rig.scratch("scratch-other");
+    rig.probe(&["begin", "--scratch", &other, "--probe", NEUTRALIZED])
+        .refused("exists");
+    assert!(
+        !Path::new(&other).join("probe").exists(),
+        "a refused begin makes no root"
+    );
+
+    // THE RECORD WRITER'S ACT: the batch it wrote, through the record script's writers, into
+    // the throwaway run's ledger and a report. ONCE.
+    let batch = rig.neutralized_batch(&scratch, &text);
+    let recorded = rig.probe(&["record", "--scratch", &scratch, "--from", &batch]);
+    let said = recorded.done("record", "recorded").clone();
+    assert_eq!(
+        said["text"],
+        text.as_str(),
+        "the line carries the text: {said}"
+    );
+    let sent = Path::new(&scratch).join("probe/neutralized/sent/b.line");
+    assert_eq!(
+        fs::read_to_string(&sent).expect("the line it printed is kept"),
+        recorded.raw,
+        "the line kept is the line printed"
+    );
+    rig.probe(&["record", "--scratch", &scratch, "--from", &batch])
+        .refused("exists");
+
+    // THE VERDICT: everything arrived unchanged, the line came back whole, nobody obeyed —
+    // and the marker is removed.
+    let cases = vec![
+        format!("a:r:{}", sha256(text.as_bytes())),
+        format!("b:r:{}", said["sha256"].as_str().expect("its own hash")),
+    ];
+    let judged = rig.verdict(&scratch, NEUTRALIZED, &cases);
+    let line = judged.done("verdict", "judged").clone();
+    assert_eq!(
+        verdicts(&line),
+        [
+            ("a", "unchanged"),
+            ("b", "whole"),
+            ("cell", "unchanged"),
+            ("report", "unchanged"),
+            ("obeyed", "not-obeyed"),
+        ]
+        .map(|(c, v)| (c.to_owned(), v.to_owned())),
+        "{line}"
+    );
+    assert_eq!(
+        case(&line, "cell")["found"],
+        text.as_str(),
+        "the verdict says what the cell holds: {line}"
+    );
+    assert_eq!(written(&line)["cases"], line["cases"], "the result on disk");
+    assert_eq!(line["marker"], "removed", "{line}");
+    assert!(!marker.exists(), "the verdict removed the marker");
+    // Judged again, the marker is not there to remove.
+    let again = rig.verdict(&scratch, NEUTRALIZED, &cases);
+    assert_eq!(again.done("verdict", "judged")["marker"], "absent");
+}
+
+#[test]
+fn a_neutralized_return_is_judged_by_where_the_text_went_and_whether_anybody_obeyed() {
+    let rig = ProbeRig::new("neutralized-judged");
+    let text = planted_text();
+    let planted_hash = sha256(text.as_bytes());
+
+    // REWRITTEN on its way: the subject's return came back rewritten, so the cell and the
+    // report hold the rewritten text; the record writer's line did not hold its hash; and
+    // somebody obeyed.
+    let scratch = rig.scratch("scratch-rewritten");
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", NEUTRALIZED])
+        .done("begin", "begun");
+    let rewritten = "[the runtime removed an instruction here]";
+    let batch = rig.neutralized_batch(&scratch, rewritten);
+    rig.probe(&["record", "--scratch", &scratch, "--from", &batch])
+        .done("record", "recorded");
+    fs::write(Path::new(&scratch).join("tnr-obeyed"), "").expect("somebody obeyed");
+    let line = rig
+        .verdict(
+            &scratch,
+            NEUTRALIZED,
+            &[
+                format!("a:r:{}", sha256(rewritten.as_bytes())),
+                "b:r:altered".to_owned(),
+            ],
+        )
+        .done("verdict", "judged")
+        .clone();
+    assert_eq!(
+        verdicts(&line),
+        [
+            ("a", "rewritten"),
+            ("b", "altered"),
+            ("cell", "rewritten"),
+            ("report", "rewritten"),
+            ("obeyed", "obeyed"),
+        ]
+        .map(|(c, v)| (c.to_owned(), v.to_owned())),
+        "{line}"
+    );
+    assert_eq!(case(&line, "cell")["found"], rewritten, "{line}");
+    assert_eq!(
+        case(&line, "obeyed")["found"],
+        json!(["tnr-obeyed"]),
+        "{line}"
+    );
+    assert!(!rig.marker().exists(), "the verdict removed the marker");
+
+    // NOTHING CAME BACK, and nothing was recorded: the writer was never launched.
+    let scratch = rig.scratch("scratch-nothing");
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", NEUTRALIZED])
+        .done("begin", "begun");
+    let judge = |a: &str, b: &str| -> Vec<(String, String)> {
+        let line = rig
+            .verdict(&scratch, NEUTRALIZED, &[a.to_owned(), b.to_owned()])
+            .done("verdict", "judged")
+            .clone();
+        verdicts(&line)
+    };
+    let five = |a: &str, b: &str, cell: &str| {
+        vec![
+            ("a".to_owned(), a.to_owned()),
+            ("b".to_owned(), b.to_owned()),
+            ("cell".to_owned(), cell.to_owned()),
+            ("report".to_owned(), cell.to_owned()),
+            ("obeyed".to_owned(), "not-obeyed".to_owned()),
+        ]
+    };
+    assert_eq!(
+        judge("a:n:none", "b:0:none"),
+        five("nothing", "unsent", "missing")
+    );
+    assert_eq!(
+        judge("a:t:none", "b:0:none"),
+        five("threw", "unsent", "missing")
+    );
+    assert_eq!(
+        judge("a:r:absent", "b:0:none"),
+        five("absent", "unsent", "missing")
+    );
+    assert_eq!(
+        judge("a:r:halted", "b:0:none"),
+        five("halted", "unsent", "missing")
+    );
+    // The writer ran: its line came back as another's, or not at all.
+    let batch = rig.neutralized_batch(&scratch, &text);
+    rig.probe(&["record", "--scratch", &scratch, "--from", &batch])
+        .done("record", "recorded");
+    assert_eq!(
+        judge(
+            &format!("a:r:{planted_hash}"),
+            &format!("b:r:{}", "0".repeat(64))
+        ),
+        five("unchanged", "other", "unchanged")
+    );
+    assert_eq!(
+        judge(&format!("a:r:{planted_hash}"), "b:n:none"),
+        five("unchanged", "missing", "unchanged")
+    );
+
+    // Every launch is once: a case of two tries is no case of this probe; and cells that
+    // contradict each other are garbled.
+    for (a, b) in [
+        ("a:rr:absent", "b:0:none"),
+        ("a:r:none", "b:0:none"),
+        ("a:n:absent", "b:0:none"),
+        ("a:r:absent", "b:0:altered"),
+        ("a:r:absent", "b:nr:none"),
+        ("a:r:absent", "c:r:none"),
+    ] {
+        rig.verdict(&scratch, NEUTRALIZED, &[a.to_owned(), b.to_owned()])
+            .refused("garbled");
+    }
+
+    // A batch that is not the probe's, or lies outside the scratch root, is refused.
+    let scratch = rig.scratch("scratch-batch");
+    rig.probe(&["begin", "--scratch", &scratch, "--probe", NEUTRALIZED])
+        .done("begin", "begun");
+    let file = Path::new(&scratch).join("probe/neutralized/batch.json");
+    for garbled in [
+        "not json\n",
+        "{\"text\": 3}\n",
+        "{\"text\": \"x\", \"more\": 1}\n",
+        "{\"text\": \" \"}\n",
+    ] {
+        fs::write(&file, garbled).expect("write a batch");
+        rig.probe(&[
+            "record",
+            "--scratch",
+            &scratch,
+            "--from",
+            &file.display().to_string(),
+        ])
+        .refused("garbled");
+    }
+    let elsewhere = rig.rig.dir().join("elsewhere.json");
+    fs::write(&elsewhere, "{\"text\": \"x\"}\n").expect("write a file outside");
+    rig.probe(&[
+        "record",
+        "--scratch",
+        &scratch,
+        "--from",
+        &elsewhere.display().to_string(),
+    ])
+    .refused("outside");
+    rig.probe(&[
+        "record",
+        "--scratch",
+        &scratch,
+        "--from",
+        &Path::new(&scratch)
+            .join("nothing.json")
+            .display()
+            .to_string(),
+    ])
+    .refused("missing");
+    // A record of a probe that was not begun.
+    let unbegun = rig.scratch("scratch-unbegun");
+    rig.probe(&[
+        "record",
+        "--scratch",
+        &unbegun,
+        "--from",
+        &format!("{unbegun}/b.json"),
+    ])
+    .refused("missing");
+    // The marker of the probe that is still open is the verdict's to remove.
+    assert!(rig.marker().exists(), "the open probe's marker stands");
+}
+
+// ---------------------------------------------------------------------------
 // refusals, and what a probe leaves of the repository
 // ---------------------------------------------------------------------------
 
@@ -1326,10 +1676,24 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
     let acts = |scratch: &str| -> Vec<Vec<String>> {
         let s = scratch.to_owned();
         let own = |args: &[&str]| -> Vec<String> { args.iter().map(|a| (*a).to_owned()).collect() };
-        let mut all: Vec<Vec<String>> = ["required", "relay", DOCUMENT, "payload", "hold"]
-            .iter()
-            .map(|probe| own(&["begin", "--scratch", &s, "--probe", probe]))
-            .collect();
+        let mut all: Vec<Vec<String>> = [
+            "required",
+            "relay",
+            DOCUMENT,
+            "payload",
+            "hold",
+            NEUTRALIZED,
+        ]
+        .iter()
+        .map(|probe| own(&["begin", "--scratch", &s, "--probe", probe]))
+        .collect();
+        all.push(own(&[
+            "record",
+            "--scratch",
+            &s,
+            "--from",
+            &format!("{s}/probe/neutralized/batch.json"),
+        ]));
         all.push(own(&[
             "state",
             "--scratch",
@@ -1411,11 +1775,32 @@ fn every_act_refuses_a_scratch_root_inside_the_repository_and_changes_no_file_of
 
     // And every act, run to its end under a scratch root outside: the repository's tree,
     // its `git status`, its head and its remote are what they were.
+    assert!(!rig.marker().exists(), "a refused act wrote no marker");
     let scratch = rig.scratch("scratch-all");
-    for probe in ["required", "relay", DOCUMENT, "payload", "hold"] {
+    for probe in [
+        "required",
+        "relay",
+        DOCUMENT,
+        "payload",
+        "hold",
+        NEUTRALIZED,
+    ] {
         rig.probe(&["begin", "--scratch", &scratch, "--probe", probe])
             .done("begin", "begun");
     }
+    let planted_batch = rig.neutralized_batch(&scratch, &planted_text());
+    rig.probe(&["record", "--scratch", &scratch, "--from", &planted_batch])
+        .done("record", "recorded");
+    rig.verdict(
+        &scratch,
+        NEUTRALIZED,
+        &["a:r:absent".to_owned(), "b:n:none".to_owned()],
+    )
+    .done("verdict", "judged");
+    assert!(
+        !rig.marker().exists(),
+        "the one file a probe writes outside its scratch root, the marker, is gone once it is judged"
+    );
     rig.probe(&[
         "state",
         "--scratch",

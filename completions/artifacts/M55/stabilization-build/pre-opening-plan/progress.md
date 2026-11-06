@@ -318,6 +318,7 @@ schema-version: 3
 <!-- fields -->
 - intent: T-NR build — build the probe for rewritten returns, and the guard that binds while it runs
 - workflow: builder
+- status: active
 
 ### m-tnr-merge-the-hunter  {#m-tnr-merge-the-hunter}
 

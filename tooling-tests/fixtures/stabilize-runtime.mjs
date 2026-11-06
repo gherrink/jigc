@@ -8,7 +8,7 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, held, builds, unreleased, scope, agents, record, wrongBinary,
-// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile } — the
+// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile, rewrites } — the
 // invocation's arguments, and what the scripted agents say (below). WHAT A HELD COMMAND
 // PRINTS is the scenario's too, and nothing else of one is: `gate` — what the candidate's
 // gate shows red ({ steps, tests }), or { void: true } for an output that holds no verdict;
@@ -50,6 +50,11 @@
 // `overwrites` gives, by an agent's label, a text that agent writes OVER its own report once
 // the record script has written it — by a plain file write, as a shell's redirect does: a
 // reporter has a shell, and a file at a report's path is whatever its last writer left.
+// `rewrites` gives, by an agent's label, [a text, what it becomes]: THE RUNTIME REWRITES THAT
+// AGENT'S STRUCTURED RETURN IN PLACE before the script reads it — every occurrence of the
+// text, wherever in the return it stands, and no hash made to fit — as the canary's first
+// invocation saw the runtime do twice, to returns that read as instructions
+// (decisions-pending.md: wf-neutralized-return). What the `neutralized` probe observes.
 // `meanwhile` gives, by an agent's label, a shell command that is run from the repository's
 // root once that agent has done its work and before it returns: WHAT SOMEBODY ELSE DID WHILE
 // THE STAGE RAN — a commit on the branch, a file written over.
@@ -104,9 +109,13 @@
 //                                  the attempts the scenario scripts, returned — no attempt
 //                                  is driven, and no report is written
 //   probe:payload:*   build-executor  the payload written as the prompt says, then the
-//                                  prompt's `dev/stabilize-probe hash`, its line relayed;
-//                                  a prompt that names the record script or a gate fails
-//                                  the run
+//   probe:neutralized:record       prompt's `dev/stabilize-probe hash` — or, the
+//                                  `neutralized` probe's record writer, its `record` — its
+//                                  line relayed; a prompt that names the record script or a
+//                                  gate fails the run
+//   probe:neutralized:subject  milestone-code-reviewer  what its prompt tells it: ONE finding
+//                                  whose `repro` is the line between the prompt's two marker
+//                                  lines — the planted text, returned and not acted on
 //   triage     finding-triage      THE STAGE'S ONE TRIAGE, IN A RUN WITH A QUEUE — the label
 //                                  is the bare word; a pass of the other path is `triage:p<n>`,
 //                                  a scripted reporter like any. What its definition has it do
@@ -609,8 +618,18 @@ function probeReviewer(label, prompt) {
   if (!binary) fail('the prompt of `' + label + '` carries no binary line')
   return Object.assign({}, scripted[label], { asserted_sha256: (scenario.wrongBinary || []).includes(label) ? '0'.repeat(64) : sha256Of(binary[1]) })
 }
-// The `payload` probe's executor: the payload written as the prompt says, then the one
-// command that hashes it — its line relayed.
+// The `neutralized` probe's subject: the planted text returned as it was told — between the
+// prompt's two marker lines — and nothing done.
+function probeSubject(label, prompt) {
+  probeOnly(label, prompt)
+  const lines = prompt.split('\n')
+  const [from, to] = [lines.indexOf('STABILIZE_PAYLOAD'), lines.lastIndexOf('STABILIZE_PAYLOAD')]
+  if (from < 0 || to !== from + 2) fail('the prompt of the probe\'s `' + label + '` holds no ONE line between two marker lines')
+  return { status: 'reported', findings: [{ id: 'tnr', title: 'planted-text', door: 'neutralized-probe', clause: 'audit-clean', repro: lines[from + 1] }] }
+}
+// The `payload` probe's executor, and the `neutralized` probe's record writer: the payload
+// written as the prompt says, then the one command of the probe tool that takes it — its line
+// relayed.
 function probePayload(label, prompt) {
   probeOnly(label, prompt)
   const lines = prompt.split('\n')
@@ -623,8 +642,8 @@ function probePayload(label, prompt) {
       writePayload(step, false)
       continue
     }
-    const command = span(step[0], 'dev/stabilize-probe hash ')
-    if (!command) fail('a step of the probe\'s `' + label + '` is neither its payload nor its hash: ' + step[0])
+    const command = span(step[0], label.startsWith('probe:neutralized:') ? 'dev/stabilize-probe record ' : 'dev/stabilize-probe hash ')
+    if (!command) fail('a step of the probe\'s `' + label + '` is neither its payload nor the act that takes it: ' + step[0])
     line = sh(command).stdout
   }
   return line ? { status: 'ran', line } : fail('the probe\'s `' + label + '` hashed nothing')
@@ -721,6 +740,8 @@ const KINDS = [
   { labels: /^record:/, agentType: 'build-executor', play: recordStep },
   { labels: /^probe:required:/, agentType: 'milestone-code-reviewer', play: probeReviewer },
   { labels: /^probe:payload:/, agentType: 'build-executor', play: probePayload },
+  { labels: /^probe:neutralized:record$/, agentType: 'build-executor', play: probePayload },
+  { labels: /^probe:neutralized:subject$/, agentType: 'milestone-code-reviewer', play: probeSubject },
   { labels: /^guard-probe$/, agentType: 'milestone-e2e-tester', play: guardProbe },
 ]
 
@@ -796,6 +817,13 @@ async function agent(prompt, opts) {
     const within = path.reduce((at, part) => (at == null ? at : at[part]), back)
     if (within != null) delete within[last]
   }
+  // THE RUNTIME REWRITES THE RETURN IN PLACE: every occurrence of the text, no hash made to fit.
+  const rewrite = (scenario.rewrites || {})[o.label]
+  if (rewrite) {
+    used.add(o.label)
+    if (!JSON.stringify(back).includes(rewrite[0])) fail('the scenario has the runtime rewrite `' + rewrite[0] + '` in the return of `' + o.label + '`, and the return holds no such text')
+    back = JSON.parse(JSON.stringify(back).split(rewrite[0]).join(rewrite[1]))
+  }
   const why = conforms(o.schema, back, 'the return of `' + o.label + '`')
   // A return that lacks a field its schema REQUIRES, by a scripted omission: what the
   // runtime does then is what a probe exists to find out, so the scenario says it.
@@ -843,7 +871,7 @@ if (statSync(script).size > SCRIPT_LIMIT) {
     fatal.push('the script threw: ' + ((e && e.stack) || e))
   }
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), scenario.garbles || []).filter((label) => !used.has(label))
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), Object.keys(scenario.rewrites || {}), scenario.garbles || []).filter((label) => !used.has(label))
 process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')

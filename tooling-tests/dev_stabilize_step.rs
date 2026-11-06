@@ -5867,6 +5867,7 @@ const REACH: &[(&str, &str, &str)] = &[
     (RECORD, "set-aside", "no-ref"),
     (PROBE_TOOL, "begin", "no-ref"),
     (PROBE_TOOL, "state", "no-ref"),
+    (PROBE_TOOL, "record", "no-ref"),
     (PROBE_TOOL, "hash", "no-ref"),
     (PROBE_TOOL, "hold", "no-ref"),
     (PROBE_TOOL, "held", "no-ref"),
@@ -5923,7 +5924,8 @@ fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
     }
     // THE RECORD SCRIPT AND THE PROBE TOOL move no ref of this repository: the record script
     // asks git five reads of it and commits only into the throwaway repository of a scan,
-    // and the probe tool runs git in its own throwaway repository and nowhere else.
+    // and the probe tool runs git in its own throwaway repository — and in this one only to
+    // ask where its common git directory is, the `neutralized` probe's marker's place.
     let code = python_code(&read(RECORD));
     let reads: BTreeSet<&str> = code
         .split("asked_of_git([\"")
@@ -5955,7 +5957,7 @@ fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
     );
     let code = python_code(&read(PROBE_TOOL));
     let run: BTreeSet<&str> = code
-        .split("[\"git\", \"")
+        .split("in_rig(repo, [\"git\", \"")
         .skip(1)
         .map(|rest| &rest[..rest.find('"').expect("a subcommand")])
         .collect();
@@ -5964,11 +5966,13 @@ fn no_act_reaches_main_a_release_branch_a_tag_or_a_branch_outside_the_model() {
         BTreeSet::from(["add", "commit", "config", "init", "rev-parse"]),
         "the git commands {PROBE_TOOL} runs, each in its own throwaway repository"
     );
+    let marker_read = "subprocess.run([\"git\", \"-C\", ROOT, \"rev-parse\", \"--path-format=absolute\", \"--git-common-dir\"]";
     assert_eq!(
         code.matches("[\"git\", \"").count(),
-        code.matches("in_rig(repo, [\"git\", \"").count(),
-        "and nowhere else"
+        code.matches("in_rig(repo, [\"git\", \"").count() + code.matches(marker_read).count(),
+        "and nowhere else but ONE read of this repository: where its common git directory is"
     );
+    assert_eq!(code.matches(marker_read).count(), 1, "the one read");
 
     // THE STEP TOOL. An act that can move a ref takes the branch it moves as an argument.
     let acts = acts();
