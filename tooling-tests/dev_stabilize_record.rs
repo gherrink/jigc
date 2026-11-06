@@ -2397,6 +2397,9 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
     // A session's scratch area lies under the system temp directory; it is the more
     // specific of the two and must win.
     let scratch = format!("{tmp}/agent/session-1/scratchpad");
+    // A real macOS temp root's shape — two characters, then a segment with `_` and digits —
+    // put together here, because a line that holds it whole is one the hygiene scan holds.
+    let mac_tmp = format!("{}/nj/z9r_8k0000gn/T", "/var/folders");
 
     let lines: Vec<(String, &str)> = vec![
         // A path into this repository: its repository-relative form.
@@ -2447,6 +2450,20 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
             "macOS: /var/folders/xx/yy/T/jigc-gate and /private/var/folders/xx/yy/T".to_owned(),
             "macOS: <tmp>/jigc-gate and <tmp>",
         ),
+        (
+            format!("a real one: {mac_tmp}/jigc-gate and /private{mac_tmp}"),
+            "a real one: <tmp>/jigc-gate and <tmp>",
+        ),
+        // Straight after a `>` that closes no placeholder: a redirect, an element's text
+        // (the review of `0c7c77f4`, S1).
+        (
+            format!("cmd >/Users/somebody/out 2>/home/runner/err &>{mac_tmp}/log"),
+            "cmd >~/out 2>~/err &><tmp>/log",
+        ),
+        (
+            "<string>/Users/somebody/Library/x</string> and >>/tmp/log".to_owned(),
+            "<string>~/Library/x</string> and >><tmp>/log",
+        ),
         // The session's scratch area.
         (
             format!("scripts in {scratch}/fin1/routes.sh, under {scratch}"),
@@ -2457,6 +2474,10 @@ fn a_report_carries_no_host_path_only_the_public_placeholders() {
             "kept: /tmpfile /tmp.bak crates/tmp/x ~/tmp/y docs/home/z <scratch>/tmp/q /usr/bin/git"
                 .to_owned(),
             "kept: /tmpfile /tmp.bak crates/tmp/x ~/tmp/y docs/home/z <scratch>/tmp/q /usr/bin/git",
+        ),
+        (
+            "kept: <tmp>/home/q <repo>/tmp/q <scratch>/Users/q".to_owned(),
+            "kept: <tmp>/home/q <repo>/tmp/q <scratch>/Users/q",
         ),
     ];
     let body: String = lines.iter().map(|(raw, _)| format!("{raw}\n")).collect();
@@ -2572,6 +2593,64 @@ fn every_writer_stops_hard_on_a_denylist_hit_and_never_says_what_matched() {
         );
         assert_eq!(rig.snapshot(), before, "{}: nothing written", writer.name);
     });
+}
+
+/// **No writer lets a session or agent id through** (the review of `0c7c77f4`, S5): the
+/// hand-over's scan runs the id rule, which no writer holds a text to — until it did, an id
+/// was written, committed by the record step and refused only at the push's vet. The id is
+/// put together here, never written whole: this file is a line the scan reads.
+#[test]
+fn every_writer_stops_hard_on_an_id_and_never_says_which() {
+    let hex = "4f0e9b1c27d3a865";
+    for_every_writer("writer-id", |writer, rig| {
+        if !writer.free_text {
+            return;
+        }
+        let before = rig.snapshot();
+        let (seen, _) = (writer.call)(rig, &format!("found by {}a{hex}", "agent-"), &[]);
+        seen.refused(HYGIENE, writer.name);
+        assert!(
+            seen.stderr.contains("session or agent id") && !seen.stderr.contains(hex),
+            "{}: an id is refused by where it is, never by what it is: {}",
+            writer.name,
+            seen.stderr
+        );
+        assert_eq!(rig.snapshot(), before, "{}: nothing written", writer.name);
+    });
+}
+
+/// **The writers and the scan read one boundary**: the placeholders a `>` closes are the
+/// list `dev/hygiene-scan`'s header writes, and the writers' `PLACEHOLDER_ROOTS` is that
+/// list — read off each script's own text, so neither moves alone.
+#[test]
+fn the_writers_placeholders_are_the_scans() {
+    let scan = fs::read_to_string(repo_root().join(SCANNER)).expect("read the scan");
+    let listed: Vec<String> = scan
+        .lines()
+        .filter_map(|line| line.strip_prefix("#   placeholder  "))
+        .map(|rest| {
+            rest.split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    assert!(
+        !listed.is_empty(),
+        "the scan's header lists its placeholders"
+    );
+    let record = fs::read_to_string(repo_root().join(SCRIPT)).expect("read the script");
+    let line = record
+        .lines()
+        .find(|line| line.starts_with("PLACEHOLDER_ROOTS = ("))
+        .expect("the writers name their placeholders in one line");
+    let roots: Vec<String> = line
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(roots, listed, "the writers' placeholders are the scan's");
 }
 
 #[test]

@@ -3619,7 +3619,9 @@ fn the_secret_scan_of_a_range_is_asked_for_a_merges_own_lines() {
     rig.step(&["push", "--branch", LOOP]).done("push", "ready");
     let asked = fs::read_to_string(&asked).expect("what the range's secret scan was asked");
     assert!(
-        asked.contains(&format!("--log-opts --remerge-diff {note} --not {held} ")),
+        asked.contains(&format!(
+            "--log-opts --remerge-diff --text --no-textconv --no-ext-diff {note} --not {held} "
+        )),
         "the range, and a merge's own lines with it: {asked}"
     );
 }

@@ -15,18 +15,42 @@
 #     message, a removed line or the tree (the human's ruling of 2026-11-06). A host
 #     path is a home under /Users/<name>/… or /home/<name>/…, or a macOS temp root,
 #     /var/folders/<a>/<b>/… or /private/var/folders/<a>/<b>/…, standing where no path
-#     is already running (docs/home/x is none) and read to the end of its name.
-#   - A SESSION OR AGENT ID, on every line the range adds and in every commit message:
-#     an agent id, agent-a<16 hex> standing whole (a run of hex alone is a hash, and is
-#     not read as an id); a session id, session_<20 or more letters and digits, of both
-#     cases and with a digit>; and a session's scratch path, /tmp/claude-<n>/… or
-#     /private/tmp/claude-<n>/…. A message's `Claude-Session:` trailer line -- exactly
-#     `Claude-Session: https://claude.ai/code/session_<id>`, required on every commit
-#     and kept by the M54 audit -- is exempt, in a message only, never in a file.
+#     is already running (docs/home/x is none) and read to the end of its name. A `>`
+#     ends a path only where it closes one of the placeholders listed below (<tmp>/x
+#     runs on); anywhere else it opens one -- a redirect (`>/x`, `2>/x`, `&>/x`) and an
+#     element's text (`<string>/x`) alike. A JSON-escaped path (`\/Users\/…`) is read
+#     as the path it stands for.
+#   - A SESSION OR AGENT ID, on every line the range adds, in every path it adds and in
+#     every commit message: an agent id, agent-a<16 hex> standing whole (a run of hex
+#     alone is a hash, and is not read as an id); a session id, session_<20 or more
+#     letters and digits, with a digit and a capital among them>; and a session's
+#     scratch path, /tmp/claude-<n>/… or /private/tmp/claude-<n>/…, opening as a host
+#     path does. A message's `Claude-Session:` trailer line -- exactly
+#     `Claude-Session: https://claude.ai/code/session_<id>` and nothing after it,
+#     required on every commit and kept by the M54 audit -- is exempt, in a message
+#     only, never in a file.
+#
+# Every line is read as text: a binary file's too, a NUL byte included, whatever
+# attribute (`binary`, `-diff`, a `textconv` driver) or core.bigFileThreshold the
+# checkout or the config sets. The denylist reads every path the range adds as well,
+# an empty file's included.
+#
+# Shapes the built-in rules do NOT read, named so that nobody takes them for held: a
+# Windows home (C:\Users\…); a lower-case /users/… (an API path takes that shape); a
+# path reached through `..` (/Users/x/../../Users/…, a relative path's text); a name
+# whose bytes run past [A-Za-z0-9_.-] after an exempted one (/Users/x@host,
+# /home/u$/x), or that opens with a byte outside it; and an agent- id of any other
+# length than sixteen hex characters, which is read as a hash.
 #
 # A line or a message some commit before the rules added is history and stays (the
 # records that carry one): a commit the rules' base commit holds is not held to them,
-# in a repository that has that commit at all.
+# in a repository that has that commit at all. AND A RECORD MOVED IS HISTORY STILL: a
+# file a range adds whose bytes are a blob the base commit's history holds -- a pure
+# rename, a copy, a file restored whole by a revert -- is not read for a host path or an
+# id, and nor is an id in an added path that a path of the base commit's tree already
+# names. A line of such a record edited, or a record moved and changed in the same
+# commit, is new and held, and a revert that restores only part of a file is held for
+# each line it restores: rewrite those lines with ~ and a relative path.
 #
 # The exemptions -- a narrow, written list, each with its reason. A root or an id is
 # exempt only whole: a name that merely begins with an exempted one is its own.
@@ -39,6 +63,13 @@
 #   exempt  /home/u             a synthetic name an example uses (crates/engine, crates/cli)
 #   exempt  /var/folders/xx/yy  a synthetic macOS temp root a test fixture uses (tooling-tests)
 #   exempt  agent-a0123456789abcdef  a synthetic agent id a test fixture uses (completions/trial-driver)
+#
+# The placeholders a `>` closes, after which a path runs on rather than opens -- the
+# same list dev/stabilize-record's writers read their boundary by (PLACEHOLDER_ROOTS):
+#
+#   placeholder  <tmp>      the writers' token for the temp directory
+#   placeholder  <scratch>  the writers' token for a session's scratch area
+#   placeholder  <repo>     the repository root, as the M51 records and crates/cli write it
 #
 # A test that needs a host-shaped or id-shaped fixture uses a shape this list exempts,
 # or puts it together at run time so that no added line holds it whole.
@@ -58,17 +89,18 @@
 # very term the scan exists to keep out, and a host path holds a name, an id a session.
 #
 # Usage:
-#   dev/hygiene-scan [--tree] [--denylist-only] <denylist-file> <rev-list args...>
-#   dev/hygiene-scan --no-denylist <rev-list args...>    # the built-in rules alone
+#   dev/hygiene-scan [--tree] [--denylist-only | --no-hostpath] <denylist-file> <rev-list args...>
+#   dev/hygiene-scan [--no-hostpath] --no-denylist <rev-list args...>    # the built-in rules alone
 #   dev/hygiene-scan ~/.config/jigc/denylist origin/main..HEAD
 #   dev/hygiene-scan --tree ~/.config/jigc/denylist HEAD --not --remotes
 #   dev/hygiene-scan <file> HEAD           # the whole history reachable from HEAD
 #
 # --no-denylist is for where the private list is absent (a fresh clone, a fork's pull
-# request); --denylist-only for a caller that holds its text to rules of its own
-# (dev/stabilize-record's writers, whose host-path rule is stricter; a run's pushes are
-# held to the built-in rules by its range vet). --tree is the denylist's, so it takes no
-# --no-denylist, and neither half may be left out with the other.
+# request); --no-hostpath for a caller that holds its text to a host-path rule of its own
+# and to nothing else (dev/stabilize-record's writers, whose host-path rule is stricter;
+# the id rule and the denylist still run); --denylist-only leaves both built-in rules out.
+# --tree is the denylist's, so it takes no --no-denylist, and neither half may be left
+# out with the other.
 #
 # Exit status: 0 no hit · 1 at least one hit · 2 usage or setup error -- a denylist
 # pattern a matcher rejects is a setup error, never a clean scan, and is named by its
@@ -77,25 +109,27 @@
 set -u
 
 usage() {
-    printf 'dev/hygiene-scan: %s -- usage: dev/hygiene-scan [--tree] [--denylist-only] <denylist-file> <rev-list args...>, or dev/hygiene-scan --no-denylist <rev-list args...>\n' "$1" >&2
+    printf 'dev/hygiene-scan: %s -- usage: dev/hygiene-scan [--tree] [--denylist-only | --no-hostpath] <denylist-file> <rev-list args...>, or dev/hygiene-scan [--no-hostpath] --no-denylist <rev-list args...>\n' "$1" >&2
     exit 2
 }
 
 tree=0
 builtin=1
+hostpath=1
+use_denylist=1
 while :; do
     case "${1:-}" in
         --tree) tree=1; shift ;;
         --denylist-only) builtin=0; shift ;;
+        --no-hostpath) hostpath=0; shift ;;
+        --no-denylist) use_denylist=0; shift ;;
         -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
         *) break ;;
     esac
 done
-use_denylist=1
+[ "$builtin" -eq 1 ] || [ "$hostpath" -eq 1 ] || usage "--denylist-only leaves the host-path rule out already, and --no-hostpath with it says so twice"
 denylist=''
-if [ "${1:-}" = "--no-denylist" ]; then
-    use_denylist=0
-    shift
+if [ "$use_denylist" -eq 0 ]; then
     [ "$tree" -eq 0 ] || usage "--tree scans with the denylist, and --no-denylist leaves it out"
     [ "$builtin" -eq 1 ] || usage "--denylist-only and --no-denylist leave nothing to scan"
     [ $# -ge 1 ] || usage "no range"
@@ -200,7 +234,7 @@ hits="$work/hits"
 # opened with that byte was taken for a commit, and the twelve characters after it were
 # printed as its id -- a hit named by WHAT it held.
 marked() {
-    tr '\001\000' '?\001' <"$1" >"$2"
+    LC_ALL=C tr '\001\000' '?\001' <"$1" >"$2"
     rc=$?
     if [ "$rc" -ne 0 ]; then
         printf 'dev/hygiene-scan: the %s scan could not read what git printed (tr exited %s) -- the scan did not complete\n' "$3" "$rc" >&2
@@ -218,7 +252,25 @@ marked() {
 # With it, the denylist reads it all, and the rules only the commits after.
 host_path_base=e5d804c6909e1ed1f5193bf5a59187f4348b27ae
 since=0
+# A RECORD MOVED IS HISTORY STILL (the header): every blob the base commit's history holds,
+# and every path of its tree -- read for the ids they name.
+: >"$work/old-blobs"
+: >"$work/old-paths"
 if [ "$builtin" -eq 1 ] && git cat-file -e "$host_path_base^{commit}" 2>/dev/null; then
+    git rev-list --objects --filter=object:type=blob --no-object-names "$host_path_base" >"$work/old-blobs" 2>"$work/git.err"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: git rev-list --objects failed (%s):\n' "$rc" >&2
+        cat "$work/git.err" >&2
+        exit 2
+    fi
+    git -c core.quotePath=false ls-tree -r --name-only "$host_path_base" >"$work/old-paths" 2>"$work/git.err"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: git ls-tree failed (%s):\n' "$rc" >&2
+        cat "$work/git.err" >&2
+        exit 2
+    fi
     if [ "$use_denylist" -eq 0 ]; then
         set -- "^$host_path_base" "$@"
     else
@@ -239,16 +291,27 @@ fi
 # line holds is read; a hit is named by where it is, and what it held is never printed.
 #
 # A host path opens where no path is running -- after a character that is neither part
-# of a name nor a `~` or a placeholder's `>`, as dev/stabilize-record's writers read one
-# (PATH_OPENS) -- and its name runs to its end. An agent id is `agent-a` and sixteen hex
-# characters with no letter or digit after them; a session id is `session_` and a run
-# of twenty or more letters and digits that holds a digit and a capital; a scratch path
-# is a `/tmp/claude-<n>` root, opening as a host path does. No interval expression is
-# used (`{16}`), because not every awk a runner has reads one.
+# of a name nor a `~`, or after a `>` that closes no placeholder the header lists, as
+# dev/stabilize-record's writers read one (PATH_OPENS) -- and its name runs to its end;
+# a JSON-escaped `\/` is read as the `/` it stands for. An agent id is `agent-a` and
+# sixteen hex characters with no letter or digit after them; a session id is `session_`
+# and a run of twenty or more letters and digits that holds a digit and a capital; a
+# scratch path is a `/tmp/claude-<n>` root, opening as a host path does. Every one on a
+# line is read, not the first alone. No interval expression is used (`{16}`), because
+# not every awk a runner has reads one.
+#
+# A line of a file whose blob the base's history holds is skipped (`blobs` maps each
+# added file to its blob, `oldblobs` lists the history's), and an id in an added path is
+# held only where no path of the base's tree names it (`oldpaths`).
 if [ "$builtin" -eq 1 ]; then
     awk '/^#   exempt  / { print $3 }' "$self" >"$work/exempt"
     if [ ! -s "$work/exempt" ]; then
         printf 'dev/hygiene-scan: no exemption could be read from %s -- the built-in rules did not run\n' "$self" >&2
+        exit 2
+    fi
+    awk '/^#   placeholder  / { print $3 }' "$self" >"$work/placeholders"
+    if [ ! -s "$work/placeholders" ]; then
+        printf 'dev/hygiene-scan: no placeholder could be read from %s -- the built-in rules did not run\n' "$self" >&2
         exit 2
     fi
 fi
@@ -256,22 +319,49 @@ rules='
     BEGIN {
         FS = "\t"
         while ((getline entry < exempt) > 0) ok[entry] = 1
+        nph = 0
+        while ((getline entry < placeholders) > 0) ph[++nph] = entry
         if (since) while ((getline sha < commits) > 0) held[sha] = 1
+        if (oldblobs != "") while ((getline sha < oldblobs) > 0) oldblob[sha] = 1
+        if (blobs != "") while ((getline entry < blobs) > 0) {
+            split(entry, field, "\t")
+            blob[field[1] "\t" field[2]] = field[3]
+        }
         name = "[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"
-        host = "[^A-Za-z0-9_.~>-]((/private)?/var/folders/" name "/" name "|/(Users|home)/" name ")"
+        host = "[^A-Za-z0-9_.~-]((/private)?/var/folders/" name "/" name "|/(Users|home)/" name ")"
         hex = ""
         for (i = 0; i < 16; i++) hex = hex "[0-9a-f]"
         agent = "agent-a" hex "[^0-9A-Za-z]"
         run = ""
         for (i = 0; i < 20; i++) run = run "[A-Za-z0-9]"
         session = "session_" run
-        scratch = "[^A-Za-z0-9_.~>-](/private)?/tmp/claude-[0-9]+[^A-Za-z0-9_-]"
+        scratch = "[^A-Za-z0-9_.~-](/private)?/tmp/claude-[0-9]+[^A-Za-z0-9_-]"
         trailer = "^Claude-Session: https://claude\\.ai/code/session_[A-Za-z0-9]+$"
+        if (oldpaths != "") while ((getline entry < oldpaths) > 0)
+            if (ids_in(entry)) for (id in idset) oldid[id] = 1
     }
-    function host_in(text,    rest, root) {
+    # Whether the character at `at` of `text` opens a path: anything but a `>` does, as the
+    # patterns read it; a `>` does unless it closes a placeholder of the header list.
+    function opens(text, at,    i, p, n) {
+        if (substr(text, at, 1) != ">") return 1
+        for (i = 1; i <= nph; i++) {
+            p = ph[i]
+            n = length(p)
+            if (at >= n && substr(text, at - n + 1, n) == p) return 0
+        }
+        return 1
+    }
+    function host_in(text,    rest, root, at) {
+        gsub(/\\\//, "/", text)
         rest = " " text
         while (match(rest, host)) {
+            at = RSTART
             root = substr(rest, RSTART + 1, RLENGTH - 1)
+            if (!opens(rest, at)) {
+                # A placeholder path runs on: past the `>`, where the root opens nothing.
+                rest = substr(rest, at + 1)
+                continue
+            }
             sub(/^\/private/, "", root)
             if (!(root in ok)) return 1
             # On from the last character of the exempted name, which opens no path.
@@ -279,11 +369,14 @@ rules='
         }
         return 0
     }
-    function id_in(text,    rest, at, id) {
+    # Every id in `text` (an exempted one is none), into `idset`; how many.
+    function ids_in(text,    rest, at, id, n) {
+        split("", idset)
+        n = 0
         rest = " " text " "
         while (match(rest, agent)) {
             id = substr(rest, RSTART, RLENGTH - 1)
-            if (!(id in ok)) return 1
+            if (!(id in ok)) { idset[id] = 1; n++ }
             rest = substr(rest, RSTART + RLENGTH - 1)
         }
         rest = text
@@ -292,10 +385,28 @@ rules='
             id = substr(rest, at)
             match(id, /^[A-Za-z0-9]*/)
             id = substr(id, 1, RLENGTH)
-            if (id ~ /[0-9]/ && id ~ /[A-Z]/) return 1
+            if (id ~ /[0-9]/ && id ~ /[A-Z]/) { idset["session_" id] = 1; n++ }
             rest = substr(rest, at + length(id))
         }
-        return match(" " text " ", scratch) > 0
+        return n
+    }
+    function scratch_in(text,    rest) {
+        gsub(/\\\//, "/", text)
+        rest = " " text " "
+        while (match(rest, scratch)) {
+            if (opens(rest, RSTART)) return 1
+            rest = substr(rest, RSTART + 1)
+        }
+        return 0
+    }
+    function id_in(text) {
+        return ids_in(text) > 0 || scratch_in(text)
+    }
+    # An id in an added path is held where no path of the base tree names it already.
+    function path_id_in(path,    id) {
+        if (!ids_in(path)) return 0
+        for (id in idset) if (!(id in oldid)) return 1
+        return 0
     }
     since && !($1 in held) { next }
 '
@@ -314,12 +425,13 @@ fi
 marked "$work/msgs.raw" "$work/msgs" "commit-message"
 awk '/^\001/ { sha = substr($0, 2); next } { print sha "\t" $0 }' "$work/msgs" >"$work/msg-lines"
 if [ "$use_denylist" -eq 1 ]; then
-    grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
+    grep -a -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
     matched "$?" "commit-message"
     awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u >>"$hits"
 fi
 if [ "$builtin" -eq 1 ]; then
-    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" "$rules"'
+    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" \
+        -v placeholders="$work/placeholders" "$rules"'
         {
             line = substr($0, index($0, "\t") + 1)
             if (line !~ trailer && id_in(line)) print "idmsg    " substr($1, 1, 12)
@@ -345,10 +457,20 @@ fi
 # parent's lines again (those are scanned at their own commits, or were already
 # pushed). It needs git 2.36; an older git fails `git log` and the scan exits 2.
 #
+# --text --no-textconv --no-ext-diff: NO FILE HIDES ITS LINES. Without --text a file
+# git takes for binary -- a NUL byte in it, a `binary` or `-diff` attribute (read from
+# the checkout, so in CI from the commit pushed), past core.bigFileThreshold -- prints
+# `Binary files differ` and no line at all, and a textconv driver prints what it likes.
+# A NUL byte in a line is no commit's marker: a line of a hunk opens with `+` or `-`,
+# and the marker opens a line of its own.
+#
+# --full-index: each file's `index <old>..<new>` names its new blob whole, so a file
+# whose blob the base's history already holds -- a record moved -- is known (the header).
+#
 # `commit <sha>` / `+++ b/<path>` / `@@ … +<start>[,<n>] @@` / `+<line>`, flattened to
 # `<sha> TAB <path> TAB <lineno> TAB <line>`. The path is part of the scanned record,
 # because a path can leak a name as surely as a line can.
-git log --no-color --no-ext-diff --no-renames --remerge-diff --unified=0 --format='%x00%H' -p "$@" >"$work/diff.raw" 2>"$work/git.err"
+git log --no-color --no-ext-diff --no-textconv --text --full-index --no-renames --remerge-diff --unified=0 --format='%x00%H' -p "$@" >"$work/diff.raw" 2>"$work/git.err"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     printf 'dev/hygiene-scan: git log -p failed (%s):\n' "$rc" >&2
@@ -362,8 +484,8 @@ marked "$work/diff.raw" "$work/diff" "added-line"
 # whose own text opens `++ ` (a shell trace does), `@@ ` or anything else included. Read by
 # its opening alone, such a line is `+++ …` and was taken for a file header: it was
 # scanned by nothing, and the lines after it were filed under a path that does not exist.
-awk '
-    /^\001/                { sha = substr($0, 2); path = ""; minus = 0; plus = 0; next }
+LC_ALL=C awk -v blobs="$work/added-blobs" '
+    /^\001/                { sha = substr($0, 2); path = ""; blob = ""; minus = 0; plus = 0; next }
     minus + plus > 0 {
         opens = substr($0, 1, 1)
         if (opens == "+") {
@@ -374,7 +496,13 @@ awk '
         }
         next
     }
-    /^\+\+\+ /             { path = substr($0, 5); sub(/^b\//, "", path); next }
+    /^diff /               { blob = ""; next }
+    /^index [0-9a-f]+\.\.[0-9a-f]+/ { blob = $2; sub(/^[0-9a-f]+\.\./, "", blob); next }
+    /^\+\+\+ /             {
+        path = substr($0, 5); sub(/^b\//, "", path)
+        if (blob != "") print sha "\t" path "\t" blob >blobs
+        next
+    }
     /^@@ /                 {
         n = split($2, was, ","); minus = (n > 1) ? was[2] + 0 : 1
         n = split($3, now, ","); plus = (n > 1) ? now[2] + 0 : 1
@@ -384,18 +512,42 @@ awk '
     /^\+/ && path != ""    { print sha "\t" path "\t" ln "\t" substr($0, 2); ln++ }
 ' "$work/diff" >"$work/added"
 if [ "$use_denylist" -eq 1 ]; then
-    grep -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
+    grep -a -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
     matched "$?" "added-line"
     awk -F'\t' '{ print "added    " substr($1, 1, 12) "  " $2 ":" $3 }' "$work/added-hits" | sort -u >>"$hits"
 fi
 
+# --- added paths ---------------------------------------------------------------
+# EVERY PATH THE RANGE ADDS, read whole: a file with no added line -- an empty one --
+# prints none, so its path is in no record above. `--diff-filter=A` with --no-renames
+# is every path that is new where it stands; a merge's own, by its remerge diff.
+# `<sha> TAB <path>`, read by the denylist (`addpath`) and the id rule (`idpath`).
+git -c core.quotePath=false log --no-color --no-renames --remerge-diff --diff-filter=A --name-only --format='%x00%H' "$@" >"$work/paths.raw" 2>"$work/git.err"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    printf 'dev/hygiene-scan: git log --name-only failed (%s):\n' "$rc" >&2
+    cat "$work/git.err" >&2
+    exit 2
+fi
+marked "$work/paths.raw" "$work/paths-marked" "added-path"
+LC_ALL=C awk '/^\001/ { sha = substr($0, 2); next } $0 != "" { print sha "\t" $0 }' "$work/paths-marked" >"$work/added-paths"
+if [ "$use_denylist" -eq 1 ]; then
+    grep -a -i -E -f "$pats" "$work/added-paths" >"$work/addpath-hits" 2>/dev/null
+    matched "$?" "added-path"
+    awk -F'\t' '{ print "addpath  " substr($1, 1, 12) "  " $2 }' "$work/addpath-hits" | sort -u >>"$hits"
+fi
+
 # --- host paths and ids on the added lines -------------------------------------
 if [ "$builtin" -eq 1 ]; then
-    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" "$rules"'
+    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" \
+        -v placeholders="$work/placeholders" -v hostpath="$hostpath" \
+        -v blobs="$work/added-blobs" -v oldblobs="$work/old-blobs" "$rules"'
         {
+            k = $1 "\t" $2
+            if ((k in blob) && (blob[k] in oldblob)) next
             line = $0
             for (i = 0; i < 3; i++) line = substr(line, index(line, "\t") + 1)
-            if (host_in(line)) print "hostpath " substr($1, 1, 12) "  " $2 ":" $3
+            if (hostpath && host_in(line)) print "hostpath " substr($1, 1, 12) "  " $2 ":" $3
             if (id_in(line)) print "id       " substr($1, 1, 12) "  " $2 ":" $3
         }
     ' "$work/added" >"$work/builtin-hits"
@@ -405,11 +557,22 @@ if [ "$builtin" -eq 1 ]; then
         exit 2
     fi
     sort -u "$work/builtin-hits" >>"$hits"
+    LC_ALL=C awk -v since="$since" -v commits="$work/host-commits" -v exempt="$work/exempt" \
+        -v placeholders="$work/placeholders" -v oldpaths="$work/old-paths" "$rules"'
+        { if (path_id_in($2)) print "idpath   " substr($1, 1, 12) "  " $2 }
+    ' "$work/added-paths" >"$work/idpath-hits"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: the id scan of the added paths failed (awk exited %s) -- the scan did not complete\n' "$rc" >&2
+        exit 2
+    fi
+    sort -u "$work/idpath-hits" >>"$hits"
 fi
 
 # --- the working tree ----------------------------------------------------------
 if [ "$tree" -eq 1 ]; then
-    git grep -I -i -n -E -f "$pats" >"$work/tree-hits" 2>/dev/null
+    # --text: a binary file's lines too, whatever attribute marks it (the added lines').
+    git grep --text --no-textconv -i -n -E -f "$pats" >"$work/tree-hits" 2>/dev/null
     matched "$?" "working-tree"
     awk -F: '{ print "tree     " $1 ":" $2 }' "$work/tree-hits" | sort -u >>"$hits"
     git ls-files >"$work/paths" 2>"$work/git.err"
@@ -427,12 +590,17 @@ fi
 count=$(wc -l <"$hits")
 count=$((count))
 if [ "$count" -eq 0 ]; then
+    if [ "$hostpath" -eq 1 ]; then
+        rules_say="no host path added; no id"
+    else
+        rules_say="no id (host paths not read)"
+    fi
     if [ "$use_denylist" -eq 0 ]; then
-        printf 'hygiene: no host path added; no id (no denylist given)\n'
+        printf 'hygiene: %s (no denylist given)\n' "$rules_say"
     elif [ "$builtin" -eq 0 ]; then
         printf 'hygiene: denylist clean (%s pattern(s))\n' "$(wc -l <"$pats" | tr -d ' ')"
     else
-        printf 'hygiene: denylist clean (%s pattern(s)); no host path added; no id\n' "$(wc -l <"$pats" | tr -d ' ')"
+        printf 'hygiene: denylist clean (%s pattern(s)); %s\n' "$(wc -l <"$pats" | tr -d ' ')" "$rules_say"
     fi
     exit 0
 fi

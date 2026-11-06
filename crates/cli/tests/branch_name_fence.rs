@@ -436,3 +436,78 @@ fn d_a_fork_pull_request_still_gets_gitleaks_and_a_clean_denylist_skip() {
         );
     }
 }
+
+/// **(d), the other way round: with the secret unset, a host path added is red** (the
+/// review of `0c7c77f4`, M5). The arm above holds that the step skips the denylist with
+/// its notice and still runs the built-in rules on a clean range; this one holds that
+/// their verdict is the step's — a step that swallowed it (`|| true`, `exit 0`) would let
+/// a fork's pull request add a host path. Driven in a throwaway repository holding a copy
+/// of the scan and one commit that adds a host path, put together here.
+#[test]
+fn d_a_fork_pull_request_that_adds_a_host_path_is_red() {
+    use crate::support::scratch::ScratchDir;
+    let tmp = ScratchDir::new("branch-fence-fork-host");
+    let repo = tmp.path().join("repo");
+    fs::create_dir_all(repo.join("dev")).expect("create the fixture repo");
+    // Copied by a child, never written in this process: an executable this process held
+    // open for writing could meet a fork of another test and fail to run (ETXTBSY).
+    let copied = Command::new("cp")
+        .arg(repo_root().join("dev/hygiene-scan"))
+        .arg(repo.join("dev/hygiene-scan"))
+        .status()
+        .expect("run cp");
+    assert!(copied.success(), "copy the scan");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+    };
+    git(&["init", "-q", "-b", "main", "."]);
+    fs::write(
+        repo.join("f"),
+        format!("built in {}/hostile-login/work\n", "/Users"),
+    )
+    .expect("write the fixture file");
+    git(&["add", "f"]);
+    git(&[
+        "-c",
+        "user.name=fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-q",
+        "-m",
+        "a host path",
+    ]);
+    let body = hygiene_step("denylist")["run"]
+        .as_str()
+        .expect("the denylist step has a body")
+        .to_owned();
+    let out = step_shell(&body)
+        .current_dir(&repo)
+        .env("HYGIENE_RANGE", "HEAD")
+        .env("TMPDIR", tmp.path())
+        .env_remove("JIGC_DENYLIST")
+        .output()
+        .expect("run bash over the denylist body");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("::notice title=denylist skipped::"),
+        "the step says the denylist did not run.\n{stdout}"
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the built-in rules' hit is the step's red.\n{stdout}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        stdout.contains("  hostpath ") && !stdout.contains("hostile-login"),
+        "named by where, never by what.\n{stdout}"
+    );
+}

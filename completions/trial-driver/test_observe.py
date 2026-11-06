@@ -739,7 +739,7 @@ class TheReaderWalksSubagentTranscripts(unittest.TestCase):
         if with_subagents:
             sub = out / ".session-transcript" / "subagents"
             sub.mkdir(parents=True)
-            (sub / "agent-a0b447359ae72c2bd.jsonl").write_text(
+            (sub / "agent-a0123456789abcdef.jsonl").write_text(
                 self._turn("Bash", {"command": "cat .jigc/tasks/t1/docs/adr:a-decision.md"}))
         return out
 
@@ -761,7 +761,7 @@ class TheReaderWalksSubagentTranscripts(unittest.TestCase):
                              "searched in it alone")
             o = observe("probe", out / ".jigc" / "logs" / "invocations.jsonl", transcripts)
             agents = {r.agent for r in o.filesystem_reads}
-            self.assertIn("agent-a0b447359ae72c2bd", agents,
+            self.assertIn("agent-a0123456789abcdef", agents,
                           "the delegated read must be found AND labelled; a count that "
                           "cannot say who read cannot tell a bypass from a delegation")
             self.assertIn("", agents, "the worker's own read keeps an empty label")
@@ -793,7 +793,7 @@ class TheReaderWalksSubagentTranscripts(unittest.TestCase):
     def test_the_seed_marker_is_searched_in_the_main_transcript_only(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             out = self._outdir(pathlib.Path(d), with_subagents=True)
-            sub = out / ".session-transcript" / "subagents" / "agent-a0b447359ae72c2bd.jsonl"
+            sub = out / ".session-transcript" / "subagents" / "agent-a0123456789abcdef.jsonl"
             sub.write_text(sub.read_text() + "SEED-MARKER-TEXT\n")
             import run
             _, transcripts = run._find(out)

@@ -175,6 +175,111 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### hp-review-s1-a-path-after-a-redirect  {#hp-review-s1-a-path-after-a-redirect}
+
+<!-- fields -->
+- intent: HP review, S1 — a host path or a scratch path straight after a `>` is read, unless the `>` closes a placeholder the scan's header lists; the writers' PATH_OPENS reads the same list
+- workflow: builder
+- status: joined
+
+### hp-review-s2-ids-in-added-paths  {#hp-review-s2-ids-in-added-paths}
+
+<!-- fields -->
+- intent: HP review, S2 — every path a range adds is read for an id, and by the denylist, an empty file's included
+- workflow: builder
+- status: joined
+
+### hp-review-s3-no-file-hides-its-lines  {#hp-review-s3-no-file-hides-its-lines}
+
+<!-- fields -->
+- intent: HP review, S3 — a binary file and a binary, -diff or textconv attribute hide no line from the scan, the denylist or gitleaks: every one reads git's output with --text --no-textconv
+- workflow: builder
+- status: joined
+
+### hp-review-s4-a-record-moved  {#hp-review-s4-a-record-moved}
+
+<!-- fields -->
+- intent: HP review, S4 — a record moved, copied or restored whole is history still, by its blob; an edited line is new; test_observe.py's three agent ids made synthetic
+- workflow: builder
+- status: joined
+
+### hp-review-s5-the-id-rule-at-hand-over  {#hp-review-s5-the-id-rule-at-hand-over}
+
+<!-- fields -->
+- intent: HP review, S5 — the writers' hand-over runs the id rule (--no-hostpath), and an id is refused there
+- workflow: builder
+- status: joined
+
+### hp-review-s6-a-real-temp-segment  {#hp-review-s6-a-real-temp-segment}
+
+<!-- fields -->
+- intent: HP review, S6 — the writer suite drives a real macOS temp segment with `_` and digits, put together at run time
+- workflow: builder
+- status: joined
+
+### hp-review-m1-several-hosts-on-a-line  {#hp-review-m1-several-hosts-on-a-line}
+
+<!-- fields -->
+- intent: HP review, M1 — an arm with an exempted root and a real one on one line
+- workflow: builder
+- status: joined
+
+### hp-review-m2-several-ids-on-a-line  {#hp-review-m2-several-ids-on-a-line}
+
+<!-- fields -->
+- intent: HP review, M2 — an arm with the exempted agent id and a real one on one line
+- workflow: builder
+- status: joined
+
+### hp-review-m3-the-trailer-ends-its-line  {#hp-review-m3-the-trailer-ends-its-line}
+
+<!-- fields -->
+- intent: HP review, M3 — an arm with a trailer line that runs on past the session id
+- workflow: builder
+- status: joined
+
+### hp-review-m4-the-cutoff-with-the-denylist  {#hp-review-m4-the-cutoff-with-the-denylist}
+
+<!-- fields -->
+- intent: HP review, M4 — the history-cutoff arm runs with the denylist too
+- workflow: builder
+- status: joined
+
+### hp-review-m5-a-fork-adding-a-host-path  {#hp-review-m5-a-fork-adding-a-host-path}
+
+<!-- fields -->
+- intent: HP review, M5 — the CI step without the secret is driven over a range that adds a host path, and is red
+- workflow: builder
+- status: joined
+
+### hp-review-n3-names-past-the-class  {#hp-review-n3-names-past-the-class}
+
+<!-- fields -->
+- intent: HP review, N3 — a name running past [A-Za-z0-9_.-] after an exempted one is named in rule 6 and the header as outside the pattern
+- workflow: builder
+- status: joined
+
+### hp-review-n5-shapes-not-read  {#hp-review-n5-shapes-not-read}
+
+<!-- fields -->
+- intent: HP review, N5 — a JSON-escaped path is read; a Windows home, a lower-case /users, a `..` path and an agent- id of another length are named as outside the pattern
+- workflow: builder
+- status: joined
+
+### hp-review-n6-docs-against-code  {#hp-review-n6-docs-against-code}
+
+<!-- fields -->
+- intent: HP review, N6 — the header's session-id shape, rule 6's session-id bound, and the guard's first-push sentence brought to the code
+- workflow: builder
+- status: joined
+
+### hp-review-n7-a-fork-approves-its-exemptions  {#hp-review-n7-a-fork-approves-its-exemptions}
+
+<!-- fields -->
+- intent: HP review, N7 — a fork's pull request runs its own exemption list: recorded as a known limit in public-hygiene.md
+- workflow: builder
+- status: joined
+
 ### m-u0-merge-the-small  {#m-u0-merge-the-small}
 
 <!-- fields -->
@@ -185,6 +290,62 @@ schema-version: 3
 
 <!-- fields -->
 - intent: U5 — list the commits no review has read, from a registry of past reviews
+- workflow: builder
+- status: joined
+
+### u5-review-b1-a-range-over-claims  {#u5-review-b1-a-range-over-claims}
+
+<!-- fields -->
+- intent: U5 review, B1 — --check refuses a range whose base is off its tip's line or that holds a merge, and prints each row's commit count
+- workflow: builder
+- status: joined
+
+### u5-review-l1-the-listing-checks-first  {#u5-review-l1-the-listing-checks-first}
+
+<!-- fields -->
+- intent: U5 review, L1 — the listing runs --check on its registry first and lists nothing over a failing one
+- workflow: builder
+- status: joined
+
+### u5-review-s1-row-23  {#u5-review-s1-row-23}
+
+<!-- fields -->
+- intent: U5 review, S1 — the definitions-review row names 177e8727 and 5b6288ff..defb243d
+- workflow: builder
+- status: joined
+
+### u5-review-s2-git-from-the-top  {#u5-review-s2-git-from-the-top}
+
+<!-- fields -->
+- intent: U5 review, S2 — git runs from the repository's top, so a row's paths are root-relative wherever the tool runs
+- workflow: builder
+- status: joined
+
+### u5-review-s3-the-surviving-mutants  {#u5-review-s3-the-surviving-mutants}
+
+<!-- fields -->
+- intent: U5 review, S3 — arms for a merge taking one side, a removal, the octopus refusal, every sha of a row, literal paths and a subdirectory
+- workflow: builder
+- status: joined
+
+### u5-review-n-lines-removed  {#u5-review-n-lines-removed}
+
+<!-- fields -->
+- intent: U5 review, notes — the listing prints the lines removed beside the lines added
+- workflow: builder
+- status: joined
+
+### u5-review-n-the-tooling-row  {#u5-review-n-the-tooling-row}
+
+<!-- fields -->
+- intent: U5 review, notes — the tooling.md row names --registry
+- workflow: builder
+- status: joined
+
+### u5-review-l3-what-crashed  {#u5-review-l3-what-crashed}
+
+<!-- fields -->
+- intent: U5 review, L3 — a non-UTF-8 registry is refused, a log that shows signatures is read, a merge of unrelated histories is judged; the git version a listing depends on is a declared limit
 - workflow: builder
 - status: joined
 

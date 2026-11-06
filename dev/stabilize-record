@@ -2204,9 +2204,11 @@
 #      repository, and the two scanners CI runs over a push run over that commit — once
 #      per batch, however many files it holds: dev/hygiene-scan, unmodified, with the
 #      private denylist ($JIGC_DENYLIST_FILE, else ~/.config/jigc/denylist) and
-#      --denylist-only, because step 1 holds the text to a stricter host-path rule of
-#      its own (a run's pushes are held to the scan's built-in rules by vet --range),
-#      and gitleaks with this repository's .gitleaks.toml. A hit is refused (hygiene), by
+#      --no-hostpath, because step 1 holds the text to a stricter host-path rule of
+#      its own — the scan's id rule runs, which no writer holds a text to (a run's pushes
+#      are held to all the scan's built-in rules by vet --range) — and gitleaks with this
+#      repository's .gitleaks.toml, both reading a binary file's lines as text. A hit is
+#      refused (hygiene), by
 #      where it is and never by what matched. A scanner that could not run — no
 #      denylist, no gitleaks, a pattern no matcher accepts, a scanner error — DID NOT
 #      RUN (did-not-run): that is never a pass, and nothing is written.
@@ -2935,9 +2937,14 @@ NAME = r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*"
 # A root ends where a name does: /tmpfile is not the temp directory.
 ROOT_ENDS = r"(?![A-Za-z0-9_-])(?!\.[A-Za-z0-9_-])"
 # A root any host has — /tmp, a home under /Users — is a host path only where no path is
-# already running: crates/tmp/x and docs/home/z are not. A root of this machine's own is
-# one wherever it stands, so `-I<home>/include` is replaced too.
-PATH_OPENS = r"(?<![A-Za-z0-9_.~>-])"
+# already running: crates/tmp/x and docs/home/z are not, and nor is a path after a
+# placeholder, <tmp>/x — but a `>` that closes no placeholder opens one, a redirect's
+# (`>/x`, `2>/x`) and an element's text (`<string>/x`) alike. The placeholders are the
+# list dev/hygiene-scan's header writes, so the writers and the scan read one boundary
+# (tooling-tests/dev_stabilize_record.rs holds the two lists equal). A root of this
+# machine's own is one wherever it stands, so `-I<home>/include` is replaced too.
+PLACEHOLDER_ROOTS = ("<tmp>", "<scratch>", "<repo>")
+PATH_OPENS = r"(?<![A-Za-z0-9_.~-])" + "".join(r"(?<!%s)" % re.escape(token) for token in PLACEHOLDER_ROOTS)
 ANY_HOSTS_TMP = ("/tmp", "/var/tmp")
 REPOSITORY = ""
 
@@ -3099,22 +3106,30 @@ def hygiene_scan(files):
             if out.returncode != 0:
                 did_not_run("git %s failed in the scan's repository: %s" % (step, last_line(out)))
 
-        # The denylist alone: a text a writer holds is held to its host-path rule already
-        # (public), which is stricter than the scan's — the shared temp directory too —
-        # and a push of it to the scan's built-in rules, by the range's vet.
-        out = ran([os.path.join(repo, "dev", "hygiene-scan"), "--tree", "--denylist-only", denylist, "HEAD"], "dev/hygiene-scan")
+        # The denylist and the id rule: a text a writer holds is held to its host-path rule
+        # already (public), which is stricter than the scan's — the shared temp directory
+        # too — so the scan's is left out (--no-hostpath); and a push of it is held to all
+        # of the scan's rules by the range's vet. The id rule runs here, at the hand-over,
+        # because no writer holds a text to it (the review of 0c7c77f4, S5).
+        out = ran([os.path.join(repo, "dev", "hygiene-scan"), "--tree", "--no-hostpath", denylist, "HEAD"], "dev/hygiene-scan")
         if out.returncode == 1:
-            places = []
+            places, ids = [], []
             for line in out.stdout.decode("utf-8", "replace").split("\n"):
-                found = re.fullmatch(r"  (?:tree|path|added +[0-9a-f]+) +(\S.*)", line)
+                found = re.fullmatch(r"  (?:tree|path|added +[0-9a-f]+|addpath +[0-9a-f]+) +(\S.*)", line)
+                ident = re.fullmatch(r"  (?:id|idpath) +[0-9a-f]+ +(\S.*)", line)
                 if found and found.group(1) not in places:
                     places.append(found.group(1))
-            raise Refusal("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rels), {re.sub(r":[0-9]+$", "", place) for place in places})
+                if ident and ident.group(1) not in ids:
+                    ids.append(ident.group(1))
+            if places or not ids:
+                raise Refusal("hygiene", "the denylist matches at %s — by where, never by what; reword it (implementation/public-hygiene.md)" % (", ".join(places) or rels), {re.sub(r":[0-9]+$", "", place) for place in places})
+            raise Refusal("hygiene", "a session or agent id, or a session's scratch path, stands at %s — by where, never by what; an id is never committed (implementation/public-hygiene.md, rule 6)" % ", ".join(ids), {re.sub(r":[0-9]+$", "", place) for place in ids})
         if out.returncode != 0:
             did_not_run("dev/hygiene-scan exited %d: %s" % (out.returncode, last_line(out)))
 
         report = os.path.join(work, "gitleaks.json")
-        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report]
+        # --text: a file git would take for binary prints its lines (dev/hygiene-scan).
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", "--text --no-textconv --no-ext-diff"]
         config = os.path.join(ROOT, ".gitleaks.toml")
         if os.path.isfile(config):
             argv += ["--config", config]
@@ -7647,6 +7662,10 @@ def range_scan(revs):
             # A SESSION OR AGENT ID on an added line or in a message (rule 6 of the same).
             ident = re.fullmatch(r"  id       ([0-9a-f]+)  (\S.*):([0-9]+)", line)
             ident_message = re.fullmatch(r"  idmsg    ([0-9a-f]+)", line)
+            # A PATH the range adds: a denylisted term in it, or an id (the review of
+            # 0c7c77f4, S2) — an empty file's path included, which holds no line.
+            added_path = re.fullmatch(r"  addpath  ([0-9a-f]+)  (\S.*)", line)
+            ident_path = re.fullmatch(r"  idpath   ([0-9a-f]+)  (\S.*)", line)
             if message:
                 hits.append({"commit": message.group(1), "path": None, "why": "hygiene", "detail": "the denylist matches its message"})
             elif added:
@@ -7657,6 +7676,10 @@ def range_scan(revs):
                 hits.append({"commit": ident.group(1), "path": ident.group(2), "why": "hygiene", "detail": "line %s names a session or agent id, or a session's scratch path (implementation/public-hygiene.md)" % ident.group(3)})
             elif ident_message:
                 hits.append({"commit": ident_message.group(1), "path": None, "why": "hygiene", "detail": "its message names a session or agent id, or a session's scratch path, outside its Claude-Session trailer (implementation/public-hygiene.md)"})
+            elif added_path:
+                hits.append({"commit": added_path.group(1), "path": added_path.group(2), "why": "hygiene", "detail": "the denylist matches its path"})
+            elif ident_path:
+                hits.append({"commit": ident_path.group(1), "path": ident_path.group(2), "why": "hygiene", "detail": "its path names a session or agent id (implementation/public-hygiene.md)"})
         if not hits:
             hits.append({"commit": None, "path": None, "why": "hygiene", "detail": "the denylist matches in the range"})
     elif out.returncode != 0:
@@ -7667,7 +7690,7 @@ def range_scan(revs):
         # no diff for a merge unless it is asked. `--remerge-diff` shows what the merge
         # itself introduced — a line typed while a conflict was resolved — as the denylist
         # scan asks for it (dev/hygiene-scan); CI's own gitleaks step does not ask.
-        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(["--remerge-diff"] + revs)]
+        argv = [tools["gitleaks"], "git", "--redact", "--no-banner", "--no-color", "--exit-code", str(GITLEAKS_FOUND), "--report-format", "json", "--report-path", report, "--log-opts", " ".join(["--remerge-diff", "--text", "--no-textconv", "--no-ext-diff"] + revs)]
         config = os.path.join(ROOT, ".gitleaks.toml")
         if os.path.isfile(config):
             argv += ["--config", config]

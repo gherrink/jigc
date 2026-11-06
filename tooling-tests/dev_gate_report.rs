@@ -2658,6 +2658,19 @@ fn host_paths() -> Vec<String> {
         format!("{USERS}/xavier/x"),
         format!("{HOMES}/runner2/x"),
         format!("{USERS}/somebody.else/x"),
+        // Straight after a redirect, and as an element's text (the review of `0c7c77f4`, S1):
+        // a `>` ends a path only where it closes a placeholder the scan's header lists.
+        format!("cmd >{USERS}/hostile-login/out.txt"),
+        format!("cmd 2>{HOMES}/hostile-login/err.log"),
+        format!("cmd &>{MAC_TMP}/q3/z9r_8k0000gn/T/log"),
+        format!("<string>{USERS}/hostile-login/Library/x</string>"),
+        // JSON-escaped (the same review, N5): read as the path it stands for.
+        format!(
+            "{{\"cwd\": \"{}\\/hostile-login\\/x\"}}",
+            USERS.replace('/', "\\/")
+        ),
+        // Several on one line, the exempted one first (M1): each is read.
+        format!("{HOMES}/runner/work/x, then {USERS}/hostile-login/x"),
     ]
 }
 
@@ -2682,6 +2695,8 @@ fn not_host_paths() -> Vec<String> {
         "/home/$USER/x".to_owned(),
         "/tmp/x /private/tmp/y /var/tmp/z".to_owned(),
         "a root alone: /Users/ and /home/".to_owned(),
+        // A placeholder the scan's header lists ends at its `>`, and the path runs on.
+        format!("<tmp>{HOMES}/q <scratch>{USERS}/q <repo>{MAC_TMP}/a1/b2/T"),
     ]
 }
 
@@ -2796,6 +2811,29 @@ fn hygiene_scan_lets_each_written_exemption_and_every_non_host_path_through() {
             "each exemption is driven by a passing arm: `{root}`"
         );
     }
+
+    // So is the list of placeholders a `>` closes, and each is driven here: a path after
+    // one runs on, and is no host path.
+    let placeholders: Vec<&str> = help
+        .lines()
+        .filter_map(|line| line.strip_prefix("  placeholder  "))
+        .collect();
+    assert!(
+        !placeholders.is_empty(),
+        "the help writes the placeholders.\n{help}"
+    );
+    for entry in &placeholders {
+        let mut words = entry.split_whitespace();
+        let token = words.next().unwrap_or_default();
+        assert!(
+            words.next().is_some(),
+            "a placeholder is written with its reason: `{entry}`",
+        );
+        assert!(
+            body.contains(&format!("{token}/")),
+            "each placeholder is driven by a passing arm: `{token}`"
+        );
+    }
 }
 
 /// **Only an added line is read for a host path** — never a commit message, a removed line
@@ -2869,6 +2907,37 @@ fn hygiene_scan_runs_each_half_alone_and_refuses_what_leaves_nothing_to_scan() {
     assert_eq!(code, 0, "stdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("denylist clean"), "stdout: {stdout}");
 
+    // `--no-hostpath` leaves the host-path rule out and keeps the denylist and the id rule:
+    // the hand-over of a run's writers, whose own host-path rule is stricter (S5).
+    repo.write(
+        "g",
+        &format!("{HOMES}/hostile-login/y and {AGENT}a{HEX16}\n"),
+    );
+    repo.commit_all("an id beside a host path");
+    let next = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+    for (with, args) in [
+        ("with the denylist", vec!["--no-hostpath", "@LIST", "HEAD"]),
+        (
+            "with the denylist and the tree",
+            vec!["--tree", "--no-hostpath", "@LIST", "HEAD"],
+        ),
+        ("without it", vec!["--no-hostpath", "--no-denylist", "HEAD"]),
+    ] {
+        let (code, stdout, stderr) = repo.scan_with(NO_TERM, &args);
+        assert_eq!(code, 1, "{with}: stdout: {stdout}\nstderr: {stderr}");
+        assert_eq!(
+            scan_hits(&stdout),
+            [format!("  id       {next}  g:1")],
+            "{with}: the id, and no host path.\nstdout: {stdout}"
+        );
+    }
+    let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--no-hostpath", "@LIST", "HEAD^"]);
+    assert_eq!(code, 0, "stdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("denylist clean") && stdout.contains("no id"),
+        "stdout: {stdout}"
+    );
+
     for (what, args) in [
         (
             "the tree, without the denylist that scans it",
@@ -2877,6 +2946,10 @@ fn hygiene_scan_runs_each_half_alone_and_refuses_what_leaves_nothing_to_scan() {
         (
             "neither half",
             vec!["--denylist-only", "--no-denylist", "HEAD"],
+        ),
+        (
+            "the host-path rule left out twice",
+            vec!["--denylist-only", "--no-hostpath", "@LIST", "HEAD"],
         ),
         ("no range", vec!["--no-denylist"]),
     ] {
@@ -2896,10 +2969,13 @@ fn hygiene_scan_runs_each_half_alone_and_refuses_what_leaves_nothing_to_scan() {
 /// under `completions/artifacts/` that carry a host path stay as they are (the ruling): the
 /// scan does not hold a commit that the rule's base commit holds, wherever a range reaches
 /// back to, as a branch's first push in CI does. Driven on this repository's own history:
-/// `0313fda4` added two lines with a macOS temp root to an M54 record.
+/// `0313fda4` added two lines with a macOS temp root to an M54 record, and `f534e244` added
+/// four transcripts named by agent id, gone from the tree since — paths no later rule
+/// exempts, so only the cutoff lets them through.
 #[test]
 fn hygiene_scan_holds_no_commit_from_before_the_rule() {
     const BEFORE: &str = "0313fda4bf6eede9cd3c229e1fdab0aaf055bf57";
+    const BEFORE_PATHS: &str = "f534e244d6fd357eeec5cb6a25300fa76493f09e";
     let shown = Command::new("git")
         .args(["show", "--format=", BEFORE])
         .current_dir(repo_root())
@@ -2914,19 +2990,55 @@ fn hygiene_scan_holds_no_commit_from_before_the_rule() {
         "control: {BEFORE} adds a line with a macOS temp root",
     );
     let tmp = ScratchDir::new("hygiene-scan-host-history");
-    let out = Command::new(repo_root().join("dev/hygiene-scan"))
-        .args(["--no-denylist", &format!("{BEFORE}^!")])
+    // With the denylist too (the review of `0c7c77f4`, M4): there the denylist reads the
+    // whole range, and the built-in rules only the commits after the base — CI's path
+    // whenever the secret is set.
+    let list = tmp.path().join("denylist");
+    std::fs::write(&list, NO_TERM).expect("write the fixture denylist");
+    let list = list.to_string_lossy().into_owned();
+    let named = Command::new("git")
+        .args([
+            "show",
+            "--format=",
+            "--name-only",
+            "--diff-filter=A",
+            BEFORE_PATHS,
+        ])
         .current_dir(repo_root())
-        .env("TMPDIR", tmp.path())
         .output()
-        .expect("spawn dev/hygiene-scan");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "a commit from before the rule is not held to it.\nstdout: {stdout}\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr),
+        .expect("spawn git show");
+    assert!(
+        String::from_utf8_lossy(&named.stdout)
+            .lines()
+            .any(|path| path.contains("/subagents/agent-a")),
+        "control: {BEFORE_PATHS} adds a path named by agent id",
     );
+    for commit in [BEFORE, BEFORE_PATHS] {
+        let range = format!("{commit}^!");
+        for args in [
+            vec!["--no-denylist", range.as_str()],
+            vec![list.as_str(), range.as_str()],
+        ] {
+            let out = Command::new(repo_root().join("dev/hygiene-scan"))
+                .args(&args)
+                .current_dir(repo_root())
+                .env("TMPDIR", tmp.path())
+                .output()
+                .expect("spawn dev/hygiene-scan");
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{}: a commit from before the rule is not held to it.\nstdout: {stdout}\nstderr: {}",
+                if args[0] == "--no-denylist" {
+                    "without the denylist"
+                } else {
+                    "with the denylist"
+                },
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3039,6 +3151,13 @@ fn ids() -> Vec<String> {
         format!("a session: {SESSION}{SESSION_ID}."),
         format!("scratch at /private{SCRATCH_ROOT}501/-flat-home/abc/scratchpad/x"),
         format!("scratch at {SCRATCH_ROOT}501/x"),
+        // Straight after a redirect, and as an element's text (S1).
+        format!("cargo test >/private{SCRATCH_ROOT}501/x/out 2>&1"),
+        format!("<output-file>{SCRATCH_ROOT}1000/-w/x</output-file>"),
+        // The exempted id first, then one that is not (M2); a lower-case run first, then a
+        // session id: each is read.
+        format!("the exempt agent-a0123456789abcdef, then {AGENT}a{HEX16}"),
+        format!("session_lowercasealoneabcdefghij, then {SESSION}{SESSION_ID}"),
     ]
 }
 
@@ -3055,6 +3174,7 @@ fn not_ids() -> Vec<String> {
         format!("lower case alone: {SESSION}abcdefghijklmnopqrstuvwxyz"),
         format!("no letter: {SESSION}012345678901234567890123"),
         format!("{SCRATCH_ROOT}code/x and /tmp/claudette-1/x and docs/tmp/claude-1/x"),
+        format!("a placeholder's path runs on: <scratch>{SCRATCH_ROOT}1/x"),
     ]
 }
 
@@ -3159,6 +3279,12 @@ fn hygiene_scan_holds_a_message_to_the_id_rule_but_for_its_session_trailer() {
             "a scratch path",
             format!("fix: a change\n\nRan in {SCRATCH_ROOT}501/x."),
         ),
+        (
+            "a trailer with more after it on its line",
+            format!(
+                "fix: a change\n\nClaude-Session: https://claude.ai/code/{SESSION}{SESSION_ID} ran {AGENT}a{HEX16}"
+            ),
+        ),
     ] {
         repo.write("f", &format!("a\n{what}\n"));
         repo.commit_all(&message);
@@ -3195,4 +3321,400 @@ fn the_gate_names_an_added_id_by_location() {
             "{denylist:?}: never by what.\n{text}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// What a range adds besides its lines' text: its paths, its binary files, and its
+// historic records moved (the review of `0c7c77f4`, S2 to S4).
+// ---------------------------------------------------------------------------
+
+/// **An id in a path a range adds is a hit, and so is a denylisted term** — with content
+/// or without: an empty file prints no line, and a path leaks as surely as a line does
+/// (S2). Named `idpath` and `addpath`, by commit and path.
+#[test]
+fn hygiene_scan_reads_every_path_a_range_adds() {
+    let repo = ScanRepo::new("hygiene-scan-paths");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    std::fs::create_dir_all(repo.dir.join(format!("fx/{SESSION}{SESSION_ID}")))
+        .expect("a directory named for a session");
+    std::fs::create_dir_all(repo.dir.join("fx/subagents")).expect("a directory");
+    let agent_path = format!("fx/subagents/{AGENT}a{HEX16}.jsonl");
+    let session_path = format!("fx/{SESSION}{SESSION_ID}/notes.md");
+    repo.write(&agent_path, "x\n");
+    repo.write(&session_path, "");
+    repo.write("fx/zebrafixture.txt", "");
+    repo.write("fx/agent-a0123456789abcdef.jsonl", "");
+    repo.commit_all("paths");
+    let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+
+    let (code, stdout, stderr) = repo.scan_with(NO_TERM, &["--no-denylist", "HEAD^..HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    let mut hits = scan_hits(&stdout);
+    hits.sort();
+    let mut want = [
+        format!("  idpath   {sha}  {agent_path}"),
+        format!("  idpath   {sha}  {session_path}"),
+    ];
+    want.sort();
+    assert_eq!(
+        hits, want,
+        "each path that holds an id, and not the written exemption.\nstdout: {stdout}",
+    );
+
+    let (code, stdout, stderr) = repo.scan_with(
+        "zebrafixture\n",
+        &["--denylist-only", "@LIST", "HEAD^..HEAD"],
+    );
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    assert_eq!(
+        scan_hits(&stdout),
+        [format!("  addpath  {sha}  fx/zebrafixture.txt")],
+        "an empty file's path is read by the denylist too.\nstdout: {stdout}",
+    );
+}
+
+/// **A binary file hides no line, and neither does a checkout attribute** (S3). A NUL
+/// byte makes git print `Binary files differ` in place of the lines; so do the `binary`
+/// and `-diff` attributes, which CI reads from the checkout, and a file past
+/// `core.bigFileThreshold`; a `textconv` driver prints what it likes. The scan reads
+/// every one as text, a NUL byte included — and a NUL byte where a commit's marker would
+/// stand names no commit.
+#[test]
+fn hygiene_scan_reads_a_binary_file_and_no_attribute_hides_a_line() {
+    let repo = ScanRepo::new("hygiene-scan-binary");
+    repo.write("base", "a\n");
+    repo.commit_all("base");
+    repo.git_ok(&["config", "core.bigFileThreshold", "1k"]);
+    repo.git_ok(&["config", "diff.hide.textconv", "true"]);
+    let host = format!("{USERS}/hostile-login/x");
+    let agent = format!("{AGENT}a{HEX16}");
+    let lines = format!("{host}\n{agent}\nzebrafixture\n");
+    repo.write(
+        ".gitattributes",
+        "*.md -diff\n*.txt binary\n*.cfg diff=hide\n",
+    );
+    repo.write("nul.dat", &format!("x\0y\n{lines}\0{host}\n"));
+    repo.write("notes.md", &lines);
+    repo.write("data.txt", &lines);
+    repo.write("x.cfg", &lines);
+    repo.write("big.log", &format!("{lines}{}\n", "z".repeat(2048)));
+    repo.commit_all("binaries");
+    let sha = repo.git_ok(&["rev-parse", "HEAD"])[..12].to_owned();
+    repo.write("after", "b\n");
+    repo.commit_all("after");
+
+    let mut want = Vec::new();
+    for (file, at) in [
+        ("big.log", 1),
+        ("data.txt", 1),
+        ("notes.md", 1),
+        ("nul.dat", 2),
+        ("x.cfg", 1),
+    ] {
+        want.push(format!("  added    {sha}  {file}:{}", at + 2));
+        want.push(format!("  hostpath {sha}  {file}:{at}"));
+        want.push(format!("  id       {sha}  {file}:{}", at + 1));
+    }
+    want.push(format!("  hostpath {sha}  nul.dat:5"));
+    want.sort();
+    let (code, stdout, stderr) = repo.scan_with("zebrafixture\n", &["@LIST", "HEAD~2..HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    let mut hits = scan_hits(&stdout);
+    hits.sort();
+    assert_eq!(hits, want, "every line, by where.\nstdout: {stdout}");
+    assert!(
+        !stdout.contains("hostile-login") && !stdout.contains(HEX16),
+        "never by what.\nstdout: {stdout}"
+    );
+
+    // The tracked tree, too: `--tree` reads a binary file's lines.
+    let (code, stdout, stderr) =
+        repo.scan_with("zebrafixture\n", &["--tree", "@LIST", "HEAD^..HEAD"]);
+    assert_eq!(code, 1, "stdout: {stdout}\nstderr: {stderr}");
+    for file in [
+        "big.log:3",
+        "data.txt:3",
+        "notes.md:3",
+        "nul.dat:4",
+        "x.cfg:3",
+    ] {
+        assert!(
+            stdout.contains(&format!("  tree     {file}\n")),
+            "the tree's `{file}`.\nstdout: {stdout}"
+        );
+    }
+}
+
+/// A shared clone of this repository — it holds the rules' base commit, so the history
+/// it reaches back to is history — with the scan beside it, untracked, and commits made
+/// on the base by plumbing, without a checkout.
+struct HistoryRepo {
+    dir: PathBuf,
+    _root: ScratchDir,
+    aux: ScratchDir,
+}
+
+/// The rules' base commit (`dev/hygiene-scan`'s header).
+const RULES_BASE: &str = "e5d804c6909e1ed1f5193bf5a59187f4348b27ae";
+
+impl HistoryRepo {
+    fn new(label: &str) -> Self {
+        let root = ScratchDir::new(label);
+        let aux = ScratchDir::new(&format!("{label}-aux"));
+        let dir = root.path().join("clone");
+        let out = Command::new("git")
+            .args(["clone", "-q", "--shared", "--no-checkout"])
+            .arg(repo_root())
+            .arg(&dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .expect("spawn git clone");
+        assert!(out.status.success(), "clone: {out:?}");
+        std::fs::create_dir_all(dir.join("dev")).expect("dev/");
+        placed_executable::copy(
+            &repo_root().join("dev/hygiene-scan"),
+            &dir.join("dev/hygiene-scan"),
+        );
+        HistoryRepo {
+            dir,
+            _root: root,
+            aux,
+        }
+    }
+
+    fn git(&self, args: &[&str], index: &str) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&self.dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_INDEX_FILE", self.aux.path().join(index))
+            .env("GIT_AUTHOR_NAME", "fixture")
+            .env("GIT_AUTHOR_EMAIL", "fixture@example.invalid")
+            .env("GIT_COMMITTER_NAME", "fixture")
+            .env("GIT_COMMITTER_EMAIL", "fixture@example.invalid")
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// A commit on `parent` whose tree is `parent`'s with `edits` applied: each a path and
+    /// the blob it holds, or `None` for a path removed.
+    fn commit(&self, parent: &str, edits: &[(&str, Option<&str>)], msg: &str) -> String {
+        let index = format!("index-{msg}");
+        self.git(&["read-tree", parent], &index);
+        for (path, blob) in edits {
+            match blob {
+                Some(blob) => self.git(
+                    &[
+                        "update-index",
+                        "--add",
+                        "--cacheinfo",
+                        &format!("100644,{blob},{path}"),
+                    ],
+                    &index,
+                ),
+                None => self.git(&["update-index", "--force-remove", path], &index),
+            };
+        }
+        let tree = self.git(&["write-tree"], &index);
+        self.git(&["commit-tree", &tree, "-p", parent, "-m", msg], &index)
+    }
+
+    fn blob_of(&self, rev: &str, path: &str) -> String {
+        self.git(&["rev-parse", &format!("{rev}:{path}")], "index-read")
+    }
+
+    fn new_blob(&self, text: &str) -> String {
+        let file = self.aux.path().join("blob");
+        std::fs::write(&file, text).expect("a blob's text");
+        self.git(
+            &["hash-object", "-w", &file.to_string_lossy()],
+            "index-read",
+        )
+    }
+
+    /// The scan over `range`, without the denylist and with one no line matches.
+    fn scans(&self, range: &str) -> Vec<(i32, String)> {
+        let list = self.aux.path().join("denylist");
+        std::fs::write(&list, NO_TERM).expect("write the fixture denylist");
+        let list = list.to_string_lossy().into_owned();
+        [vec!["--no-denylist", range], vec![list.as_str(), range]]
+            .iter()
+            .map(|args| {
+                let out = Command::new(self.dir.join("dev/hygiene-scan"))
+                    .args(args)
+                    .current_dir(&self.dir)
+                    .env("TMPDIR", self.aux.path())
+                    .env("GIT_CONFIG_NOSYSTEM", "1")
+                    .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                    .output()
+                    .expect("spawn dev/hygiene-scan");
+                (
+                    out.status.code().expect("the scan exits"),
+                    format!(
+                        "{}{}",
+                        String::from_utf8_lossy(&out.stdout),
+                        String::from_utf8_lossy(&out.stderr)
+                    ),
+                )
+            })
+            .collect()
+    }
+}
+
+/// **A historic record moved, renamed or restored whole is history still** (S4): a file a
+/// range adds whose bytes are a blob the rules' base commit already holds, in its tree or
+/// its history, is not new exposure, and its lines are not read for a host path or an id;
+/// nor is a path whose ids a path of the base's tree already names. A line of such a file
+/// edited, or the file moved and changed, is new, and held. Driven on this repository's own
+/// history: `completions/artifacts/M54/publish-proof.md` holds lines with a macOS temp root
+/// from `0313fda4`, and RC-m50's evidence names two transcripts by agent id.
+#[test]
+fn hygiene_scan_lets_a_record_moved_or_restored_whole_through() {
+    const RECORD: &str = "completions/artifacts/M54/publish-proof.md";
+    const EVIDENCE: &str = "completions/artifacts/RC-m50/evidence/B2/subagents";
+    let repo = HistoryRepo::new("hygiene-scan-history-moves");
+    let blob = repo.blob_of(RULES_BASE, RECORD);
+    let text = repo.git(&["cat-file", "-p", &blob], "index-read");
+    assert!(
+        text.contains(&format!("{MAC_TMP}/")),
+        "control: the record holds a macOS temp root"
+    );
+    let transcripts = repo.git(
+        &[
+            "ls-tree",
+            "--name-only",
+            RULES_BASE,
+            &format!("{EVIDENCE}/"),
+        ],
+        "index-read",
+    );
+    let transcript = transcripts
+        .lines()
+        .next()
+        .expect("the evidence holds a transcript")
+        .to_owned();
+    let transcript_blob = repo.blob_of(RULES_BASE, &transcript);
+    let moved_transcript = format!(
+        "archive/{}",
+        transcript.rsplit('/').next().expect("a file name")
+    );
+
+    // Moved, a pure rename; and the transcript moved under a path naming its agent id.
+    let moved = repo.commit(
+        RULES_BASE,
+        &[
+            (RECORD, None),
+            ("archive/publish-proof.md", Some(&blob)),
+            (&transcript, None),
+            (&moved_transcript, Some(&transcript_blob)),
+        ],
+        "moved",
+    );
+    // Removed, then restored by a revert.
+    let removed = repo.commit(RULES_BASE, &[(RECORD, None)], "removed");
+    let restored = repo.commit(&removed, &[(RECORD, Some(&blob))], "restored");
+    // Edited — one line of it new — then that edit reverted.
+    let edited_blob =
+        repo.new_blob(&text.replacen(&format!("{MAC_TMP}/"), &format!("edited {MAC_TMP}/"), 1));
+    let edited = repo.commit(RULES_BASE, &[(RECORD, Some(&edited_blob))], "edited");
+    let reverted = repo.commit(&edited, &[(RECORD, Some(&blob))], "reverted");
+    // Moved and changed: the record's text and one more line.
+    let changed_blob = repo.new_blob(&format!("{text}\nmoved\n"));
+    let changed = repo.commit(
+        RULES_BASE,
+        &[
+            (RECORD, None),
+            ("archive/publish-proof.md", Some(&changed_blob)),
+        ],
+        "moved-and-changed",
+    );
+
+    for (what, range) in [
+        ("a pure rename", format!("{moved}^!")),
+        ("a restore", format!("{restored}^!")),
+        ("a revert", format!("{reverted}^!")),
+    ] {
+        for (code, said) in repo.scans(&range) {
+            assert_eq!(code, 0, "{what} is history still.\n{said}");
+        }
+    }
+    for (what, range) in [
+        ("an edited line", format!("{edited}^!")),
+        ("a record moved and changed", format!("{changed}^!")),
+    ] {
+        for (code, said) in repo.scans(&range) {
+            assert_eq!(code, 1, "{what} is new, and held.\n{said}");
+            assert!(said.contains("  hostpath "), "{what}: {said}");
+        }
+    }
+}
+
+/// **Every gitleaks call reads a binary file's lines as text** (S3, the secret half): git
+/// prints `Binary files differ` for a file with a NUL byte or a `binary`/`-diff`
+/// attribute, and gitleaks reads what git prints, so a secret in such a file went unread —
+/// CI's step, the gate's advisory, and the record script's two scans alike. Each passes
+/// `--text --no-textconv --no-ext-diff` in its `--log-opts`; read off each invocation line.
+#[test]
+fn every_gitleaks_call_reads_a_binary_file_as_text() {
+    let mut calls = 0;
+    for file in [
+        ".github/workflows/ci.yml",
+        "dev/gate",
+        "dev/stabilize-record",
+    ] {
+        let text = std::fs::read_to_string(repo_root().join(file)).expect("read a caller");
+        for (n, line) in text.lines().enumerate() {
+            let comment = line.trim_start().starts_with('#');
+            if !comment && line.contains("gitleaks") && line.contains("--redact") {
+                calls += 1;
+                assert!(
+                    line.contains("--text") && line.contains("--no-textconv"),
+                    "{file}:{}: gitleaks reads a binary file's lines as text",
+                    n + 1
+                );
+            }
+        }
+    }
+    assert_eq!(
+        calls, 4,
+        "the four gitleaks calls: CI's, the gate's, the record script's two"
+    );
+}
+
+/// **The gate names an id in an added path**, under the id heading, by commit and path.
+#[test]
+fn the_gate_names_an_id_in_an_added_path() {
+    let repo = ScanRepo::new("gate-hygiene-idpath");
+    placed_executable::copy(&gate(), &repo.dir.join("dev/gate"));
+    let path = format!("{AGENT}a{HEX16}.jsonl");
+    repo.write(&path, "");
+    repo.commit_all("the change");
+    let out = repo
+        .cmd(&repo.dir.join("dev/gate"))
+        .arg("--quick")
+        .env("PATH", "/usr/bin:/bin")
+        .env("CARGO_TARGET_DIR", repo.aux.path())
+        .env("JIGC_DENYLIST_FILE", repo.aux.path().join("no-denylist"))
+        .env("JIGC_GATE_HYGIENE_RANGE", "HEAD")
+        .output()
+        .expect("spawn dev/gate --quick");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("gate: HYGIENE  session or agent id(s) added"),
+        "an id in a path is reported.\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("gate:  ") && l.ends_with(&format!("  {path}"))),
+        "named by commit and path.\n{text}",
+    );
 }

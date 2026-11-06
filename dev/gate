@@ -554,17 +554,17 @@ else
         # Each kind under its own heading: a denylist hit (a message, an added line, the
         # tree, a path), a host path added, and an id added or in a message; each named
         # by where it is.
-        if grep -q -E '^  (message|added|tree|path) ' "$hygiene_log"; then
+        if grep -q -E '^  (message|added|addpath|tree|path) ' "$hygiene_log"; then
             printf 'gate: HYGIENE  denylist hit(s) -- terms from %s are in this change:\n' "$denylist"
-            sed -n -E 's/^  ((message|added|tree|path) )/gate:            \1/p' "$hygiene_log"
+            sed -n -E 's/^  ((message|added|addpath|tree|path) )/gate:            \1/p' "$hygiene_log"
         fi
         if grep -q '^  hostpath ' "$hygiene_log"; then
             printf 'gate: HYGIENE  host path(s) added -- write a path repository-relative, and a home path with ~:\n'
             sed -n 's/^  hostpath /gate:            /p' "$hygiene_log"
         fi
-        if grep -q -E '^  (id|idmsg) ' "$hygiene_log"; then
+        if grep -q -E '^  (id|idmsg|idpath) ' "$hygiene_log"; then
             printf 'gate: HYGIENE  session or agent id(s) added -- an id is never committed, but in the Claude-Session trailer:\n'
-            sed -n -E 's/^  (id|idmsg) +/gate:            /p' "$hygiene_log"
+            sed -n -E 's/^  (id|idmsg|idpath) +/gate:            /p' "$hygiene_log"
         fi
         printf 'gate:          fix before pushing (implementation/public-hygiene.md)\n'
     else
@@ -574,7 +574,8 @@ else
 
     if command -v gitleaks >/dev/null 2>&1; then
         leaks_log=$(mktemp "$tmp_root/jigc-gate-gitleaks-XXXXXX") || exit 2
-        gitleaks git --redact --no-banner --log-opts="$*" "$repo_root" >"$leaks_log" 2>&1
+        # --text: a binary file's lines too, as dev/hygiene-scan reads them.
+        gitleaks git --redact --no-banner --log-opts="--text --no-textconv --no-ext-diff $*" "$repo_root" >"$leaks_log" 2>&1
         leaks_code=$?
         if [ "$leaks_code" -eq 0 ]; then
             printf 'gate: hygiene  gitleaks clean\n'

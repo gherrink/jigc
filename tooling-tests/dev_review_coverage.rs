@@ -28,6 +28,20 @@
 //! - **(i)** a malformed registry is refused before anything is listed: an abbreviated sha,
 //!   a missing field, a duplicate review, a commit the repository does not have.
 //! - **(j)** the committed registry passes `--check` in this repository.
+//!
+//! And from the review of `c668e4fd` (U5's review — `DECISIONS.md` → the U5 entry):
+//!
+//! - **(k)** `--check` refuses a range that claims what its review can never have read: a
+//!   base off its tip's line, a range across a merge, a range whose base is a merge — and
+//!   names every commit of a row not in `HEAD`'s history, not the first alone; a listing
+//!   over such a registry lists nothing.
+//! - **(l)** a row's paths are repository-relative and literal wherever the tool runs: a
+//!   subdirectory changes nothing, a path is no prefix of a longer name, a `*` is no glob.
+//! - **(m)** a merge resolved by taking one side is judged against the re-merge, never
+//!   against its first parent; a commit that only removes lines is listed; an octopus
+//!   merge is refused.
+//! - **(n)** what used to crash is refused or read: a registry that is not UTF-8, a
+//!   repository whose log shows signatures, a merge of unrelated histories.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -273,8 +287,11 @@ fn short(sha: &str) -> &str {
     &sha[..12]
 }
 
-fn entry(sha: &str, added: u32, state: &str, subject: &str) -> String {
-    format!("\t{}\t+{added}\t{state}\t{subject}\n", short(sha))
+fn entry(sha: &str, added: u32, removed: u32, state: &str, subject: &str) -> String {
+    format!(
+        "\t{}\t+{added}\t-{removed}\t{state}\t{subject}\n",
+        short(sha)
+    )
 }
 
 #[test]
@@ -284,15 +301,15 @@ fn a_the_listing_names_every_uncovered_commit_under_each_file_it_touched() {
     let got = f.listing(&[&f.whole()]);
     let want = [
         "a.txt\n".to_string(),
-        entry(&f.c4, 1, "uncovered", "c4 rewrites a's first line too"),
-        entry(&f.x1, 1, "uncovered", "x1 rewrites a's first line"),
-        entry(&f.m2, 1, "uncovered-merge", "m2 merges x over a conflict"),
+        entry(&f.c4, 1, 1, "uncovered", "c4 rewrites a's first line too"),
+        entry(&f.x1, 1, 1, "uncovered", "x1 rewrites a's first line"),
+        entry(&f.m2, 1, 5, "uncovered-merge", "m2 merges x over a conflict"),
         "b.txt\n".to_string(),
-        entry(&f.c1, 2, "uncovered", "c1 touches a and b"),
+        entry(&f.c1, 2, 0, "uncovered", "c1 touches a and b"),
         "c.txt\n".to_string(),
-        entry(&f.s1, 3, "uncovered", "s1 adds c"),
+        entry(&f.s1, 3, 0, "uncovered", "s1 adds c"),
         "d.txt\n".to_string(),
-        entry(&f.c3, 1, "uncovered", "c3 adds d"),
+        entry(&f.c3, 1, 0, "uncovered", "c3 adds d"),
         "review-coverage: 6 uncovered entries on 4 files; 1 clean merge covered through its parents\n"
             .to_string(),
     ]
@@ -309,7 +326,7 @@ fn b_a_review_scoped_by_path_covers_only_the_files_its_paths_hold() {
         got,
         [
             "b.txt\n".to_string(),
-            entry(&f.c1, 2, "uncovered", "c1 touches a and b"),
+            entry(&f.c1, 2, 0, "uncovered", "c1 touches a and b"),
             "review-coverage: 1 uncovered entry on 1 file; 0 clean merges covered through their parents\n".to_string(),
         ]
         .concat(),
@@ -326,10 +343,10 @@ fn c_overlapping_reviews_each_cover_and_are_named_sorted() {
         got,
         [
             "a.txt\n".to_string(),
-            entry(&f.c1, 1, "covered:overlap,scoped", "c1 touches a and b"),
-            entry(&f.c2, 1, "covered:overlap,wide", "c2 touches a"),
+            entry(&f.c1, 1, 0, "covered:overlap,scoped", "c1 touches a and b"),
+            entry(&f.c2, 1, 0, "covered:overlap,wide", "c2 touches a"),
             "b.txt\n".to_string(),
-            entry(&f.c1, 2, "uncovered", "c1 touches a and b"),
+            entry(&f.c1, 2, 0, "uncovered", "c1 touches a and b"),
             "review-coverage: 1 uncovered entry on 1 file; 0 clean merges covered through their parents\n".to_string(),
         ]
         .concat()
@@ -350,9 +367,9 @@ fn d_a_clean_merge_is_covered_through_its_parents_and_never_listed() {
         got,
         [
             "c.txt\n".to_string(),
-            entry(&f.s1, 3, "uncovered", "s1 adds c"),
+            entry(&f.s1, 3, 0, "uncovered", "s1 adds c"),
             "d.txt\n".to_string(),
-            entry(&f.c3, 1, "uncovered", "c3 adds d"),
+            entry(&f.c3, 1, 0, "uncovered", "c3 adds d"),
             "review-coverage: 2 uncovered entries on 2 files; 1 clean merge covered through its parents\n".to_string(),
         ]
         .concat(),
@@ -370,7 +387,7 @@ fn e_a_merge_with_a_resolved_conflict_is_listed_by_the_files_where_it_differs() 
         got,
         [
             "a.txt\n".to_string(),
-            entry(&f.m2, 1, "uncovered-merge", "m2 merges x over a conflict"),
+            entry(&f.m2, 1, 5, "uncovered-merge", "m2 merges x over a conflict"),
             "review-coverage: 1 uncovered entry on 1 file; 0 clean merges covered through their parents\n".to_string(),
         ]
         .concat(),
@@ -386,7 +403,7 @@ fn e_a_merge_with_a_resolved_conflict_is_listed_by_the_files_where_it_differs() 
         f.listing(&["--covered", &range]),
         [
             "a.txt\n".to_string(),
-            entry(&f.m2, 1, "covered:merge", "m2 merges x over a conflict"),
+            entry(&f.m2, 1, 5, "covered:merge", "m2 merges x over a conflict"),
             "review-coverage: 0 uncovered entries on 0 files; 0 clean merges covered through their parents\n".to_string(),
         ]
         .concat(),
@@ -403,9 +420,9 @@ fn f_the_listings_paths_narrow_it_to_the_files_they_hold() {
         got,
         [
             "c.txt\n".to_string(),
-            entry(&f.s1, 3, "uncovered", "s1 adds c"),
+            entry(&f.s1, 3, 0, "uncovered", "s1 adds c"),
             "d.txt\n".to_string(),
-            entry(&f.c3, 1, "uncovered", "c3 adds d"),
+            entry(&f.c3, 1, 0, "uncovered", "c3 adds d"),
             "review-coverage: 2 uncovered entries on 2 files; 1 clean merge covered through its parents\n".to_string(),
         ]
         .concat()
@@ -528,5 +545,293 @@ fn j_the_committed_registry_passes_check_in_this_repository() {
         "the committed registry: stdout: {} stderr: {}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// A commit of `files` (each a path and its text, `None` to remove it) on what is checked out
+/// — those paths alone: the tool's own runs leave a Python cache under the fixture's `HOME`.
+fn change(repo: &Path, n: u32, files: &[(&str, Option<&str>)], subject: &str) -> String {
+    for (path, text) in files {
+        match text {
+            Some(text) => {
+                write(repo, path, text);
+                git(repo, &["add", "--", path]);
+            }
+            None => {
+                git(repo, &["rm", "-q", path]);
+            }
+        }
+    }
+    commit(repo, n, subject)
+}
+
+#[test]
+fn k_check_refuses_a_range_that_claims_what_its_review_never_read() {
+    let f = fixture("k");
+    let heading = "2026-01-03 — The merge's review";
+    for (range, said) in [
+        // A base on the side the merge brought in: c3, m1 and c4, for a review of c4.
+        (
+            format!("{}..{}", f.s1, f.c4),
+            vec![format!("{}..{}: holds 1 merge", f.s1, f.c4)],
+        ),
+        // A base whose child is a merge: the merge's side comes along.
+        (
+            format!("{}^..{}", f.m1, f.c4),
+            vec![format!("{}^..{}: holds 1 merge", f.m1, f.c4)],
+        ),
+        // A linear-looking range across a merge.
+        (
+            format!("{}..{}", f.c3, f.c4),
+            vec![format!("{}..{}: holds 1 merge", f.c3, f.c4)],
+        ),
+        // A base off the tip's line: x1 was not merged when c4 was made.
+        (
+            format!("{}..{}", f.x1, f.c4),
+            vec![format!(
+                "{}..{}: its base is not an ancestor of its tip",
+                f.x1, f.c4
+            )],
+        ),
+    ] {
+        f.registry(&[format!("wide\t{range}\t.\t{heading}\n")]);
+        let out = f.run(&["--check"]);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(out.status.code(), Some(1), "{range}: refused.\n{stdout}");
+        for want in &said {
+            assert!(
+                stdout
+                    .lines()
+                    .any(|l| l.starts_with(&format!("check: wide: {want}"))),
+                "{range}: names `{want}`.\n{stdout}"
+            );
+        }
+        // And a listing over it lists nothing (L1).
+        let listed = f.run(&[&f.whole()]);
+        assert_eq!(listed.status.code(), Some(2), "{range}: no listing");
+        assert!(listed.stdout.is_empty(), "{range}: nothing is listed");
+        assert!(
+            String::from_utf8_lossy(&listed.stderr).contains("fails --check"),
+            "{range}: {}",
+            String::from_utf8_lossy(&listed.stderr)
+        );
+    }
+
+    // Every commit of a row is held to HEAD's history, not one of them alone.
+    git(&f.repo, &["switch", "-q", "-c", "elsewhere", &f.c2]);
+    write(&f.repo, "e.txt", "e\n");
+    git(&f.repo, &["add", "-A"]);
+    let off = commit(&f.repo, 9, "a commit off main");
+    git(&f.repo, &["switch", "-q", "main"]);
+    f.registry(&[format!("part\t{} {}..{off}\t.\t{heading}\n", f.c1, f.c2)]);
+    let out = f.run(&["--check"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!("check: part: {off} is not in HEAD's history\n")
+    );
+
+    // A sound registry passes, with each row's commit count.
+    f.registry(&f.rows());
+    let out = f.run(&["--check"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in [
+        "check: scoped: 1 commit\n",
+        "check: wide: 1 commit\n",
+        "check: overlap: 2 commits\n",
+    ] {
+        assert!(stdout.contains(line), "`{line}`: {stdout}");
+    }
+}
+
+#[test]
+fn l_a_rows_paths_are_repository_relative_and_literal_wherever_it_runs() {
+    let f = fixture("l");
+    let cn = change(
+        &f.repo,
+        9,
+        &[
+            ("dev/x", Some("x\n")),
+            ("sub/dev/x", Some("x\n")),
+            ("tools/review-coverage", Some("t\n")),
+            ("e.txt", Some("e\n")),
+        ],
+        "cn touches four paths",
+    );
+    f.registry(&[format!(
+        "paths\t{cn}\tdev tools/review *.txt\t2026-01-03 — The merge's review\n"
+    )]);
+    let range = format!("{cn}^!");
+    let want = [
+        "e.txt\n".to_string(),
+        entry(&cn, 1, 0, "uncovered", "cn touches four paths"),
+        "sub/dev/x\n".to_string(),
+        entry(&cn, 1, 0, "uncovered", "cn touches four paths"),
+        "tools/review-coverage\n".to_string(),
+        entry(&cn, 1, 0, "uncovered", "cn touches four paths"),
+        "review-coverage: 3 uncovered entries on 3 files; 0 clean merges covered through their parents\n"
+            .to_string(),
+    ]
+    .concat();
+    assert_eq!(f.listing(&[&range]), want, "from the top");
+    let out = hermetic(&repo_root().join(SCRIPT), &f.repo.join("sub"))
+        .arg("--registry")
+        .arg(&f.registry)
+        .arg(&range)
+        .output()
+        .expect("run dev/review-coverage from a subdirectory");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        want,
+        "from a subdirectory: the same. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn m_a_merge_taking_one_side_a_removal_and_an_octopus() {
+    let f = fixture("m");
+    let r = f.repo.as_path();
+    git(r, &["switch", "-q", "-c", "y"]);
+    change(r, 9, &[("a.txt", Some("p\ntwo\nthree\n"))], "y1 rewrites a");
+    git(r, &["switch", "-q", "main"]);
+    change(
+        r,
+        10,
+        &[("a.txt", Some("q\ntwo\nthree\n"))],
+        "c5 rewrites a",
+    );
+    assert!(!merge(r, 11, "y", "m3").success(), "a conflict");
+    git(r, &["checkout", "--ours", "a.txt"]);
+    git(r, &["add", "a.txt"]);
+    let m3 = commit(r, 11, "m3 takes ours");
+    let y1 = git(r, &["rev-parse", "y"]).trim().to_string();
+    let gone = change(r, 12, &[("d.txt", None)], "c6 removes d");
+    f.registry(&f.rows());
+    assert_eq!(
+        f.listing(&[&format!("{m3}^..{gone}")]),
+        [
+            "a.txt\n".to_string(),
+            entry(&y1, 1, 1, "uncovered", "y1 rewrites a"),
+            entry(&m3, 0, 4, "uncovered-merge", "m3 takes ours"),
+            "d.txt\n".to_string(),
+            entry(&gone, 0, 1, "uncovered", "c6 removes d"),
+            "review-coverage: 3 uncovered entries on 2 files; 0 clean merges covered through their parents\n"
+                .to_string(),
+        ]
+        .concat(),
+        "m3 differs from the re-merge where it dropped the conflict; c6 removes a line"
+    );
+
+    // An octopus merge has no re-merge, and is refused.
+    for (branch, file, n) in [("o1", "o1.txt", 13), ("o2", "o2.txt", 14)] {
+        git(r, &["switch", "-q", "-c", branch, &gone]);
+        change(r, n, &[(file, Some("o\n"))], branch);
+    }
+    git(r, &["switch", "-q", "main"]);
+    let date = "2026-01-01T00:15:00Z";
+    let out = hermetic(Path::new("git"), r)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .args(["merge", "-q", "--no-ff", "-m", "octopus", "o1", "o2"])
+        .output()
+        .expect("run git merge");
+    assert!(out.status.success(), "an octopus: {out:?}");
+    let out = f.run(&["HEAD^!"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("merges 3 parents"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn n_what_used_to_crash_is_refused_or_read() {
+    let f = fixture("n");
+    // A registry that is not UTF-8: refused, by its byte.
+    let mut text = HEADER.as_bytes().to_vec();
+    text.extend_from_slice(b"bad\t");
+    text.extend_from_slice(f.c1.as_bytes());
+    text.extend_from_slice(b"\t.\t\xff\n");
+    fs::write(&f.registry, text).expect("write the registry");
+    let out = f.run(&[&f.whole()]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("is not UTF-8"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // A repository whose log shows signatures: a signed commit's verdict is no line of the
+    // log the tool splits.
+    let key = f.repo.parent().expect("the scratch").join("key");
+    let made = Command::new("ssh-keygen")
+        .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+        .arg(&key)
+        .output()
+        .expect("run ssh-keygen");
+    assert!(made.status.success(), "a signing key: {made:?}");
+    write(&f.repo, "s.txt", "s\n");
+    git(&f.repo, &["add", "s.txt"]);
+    let date = "2026-01-01T00:20:00Z";
+    let out = hermetic(Path::new("git"), &f.repo)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .args(["-c", "gpg.format=ssh", "-c"])
+        .arg(format!("user.signingkey={}", key.display()))
+        .args(["commit", "-q", "-S", "-m", "signed"])
+        .output()
+        .expect("run git commit -S");
+    assert!(out.status.success(), "a signed commit: {out:?}");
+    let signed = git(&f.repo, &["rev-parse", "HEAD"]).trim().to_string();
+    git(&f.repo, &["config", "log.showSignature", "true"]);
+    f.registry(&f.rows());
+    assert_eq!(
+        f.listing(&[&format!("{signed}^!")]),
+        [
+            "s.txt\n".to_string(),
+            entry(&signed, 1, 0, "uncovered", "signed"),
+            "review-coverage: 1 uncovered entry on 1 file; 0 clean merges covered through their parents\n"
+                .to_string(),
+        ]
+        .concat()
+    );
+    git(&f.repo, &["config", "--unset", "log.showSignature"]);
+
+    // A merge of unrelated histories: judged against its re-merge like any other.
+    git(&f.repo, &["switch", "-q", "--orphan", "other"]);
+    change(
+        &f.repo,
+        21,
+        &[("u.txt", Some("u\n"))],
+        "u1 starts another history",
+    );
+    git(&f.repo, &["switch", "-q", "-f", "main"]);
+    let date = "2026-01-01T00:22:00Z";
+    let out = hermetic(Path::new("git"), &f.repo)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .args([
+            "merge",
+            "-q",
+            "--no-ff",
+            "--allow-unrelated-histories",
+            "-m",
+            "mu",
+            "other",
+        ])
+        .output()
+        .expect("run git merge");
+    assert!(
+        out.status.success(),
+        "a merge of unrelated histories: {out:?}"
+    );
+    assert_eq!(
+        f.listing(&["HEAD^!"]),
+        "review-coverage: 0 uncovered entries on 0 files; 1 clean merge covered through its parents\n",
+        "the merge is its re-merge: clean"
     );
 }

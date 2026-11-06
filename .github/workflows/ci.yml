@@ -134,6 +134,9 @@ jobs:
       # gitleaks, pinned, verified against the release's own checksum list, and run with
       # --redact so a finding never prints the value it found. `.gitleaks.toml` at the
       # repo root is picked up automatically and allowlists the one known false positive.
+      # --text --no-textconv --no-ext-diff: git prints a binary file's lines, and a file
+      # an attribute of the checkout marks binary or converts, as text, so no line hides
+      # (dev/hygiene-scan reads them the same way).
       - name: gitleaks
         env:
           GITLEAKS_VERSION: 8.30.1
@@ -147,7 +150,7 @@ jobs:
           grep " $tarball\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
           tar -xzf "$tarball" gitleaks
           cd "$GITHUB_WORKSPACE"
-          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-opts="$HYGIENE_RANGE" .
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-opts="--text --no-textconv --no-ext-diff $HYGIENE_RANGE" .
 
       # The denylist: private terms (names, hosts, ticket keys) that gitleaks has no rule
       # for. The list itself is the JIGC_DENYLIST secret and never a repo file, because a
