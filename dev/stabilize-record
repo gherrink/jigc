@@ -57,8 +57,10 @@
 #                                           what this script counts in the round: the runs
 #                                           of each item (result-set), the findings its
 #                                           triage left (triage-set), the attempts of a
-#                                           stage that reached their record, and the
-#                                           filed verdicts a record took (apply)
+#                                           stage that reached their record, the
+#                                           filed verdicts a record took (apply), and
+#                                           the findings a `fix` stage's entry left
+#                                           without a known regression (triage-set)
 #   r<N>/results.md                         one row per run of an item the round's scope
 #                                           selected                     (result-set)
 #   r<N>/gate.md                            the candidate's gate: what the full gate
@@ -198,7 +200,9 @@
 #                                  needs-bound (out of scope as triage reads it, under
 #                                  no declared bound: the finding goes to the human)
 #                      verify-real gives confirmed, regression (confirmed, and green on
-#                                  the previous release), refuted
+#                                  the previous release — or, by a filed verdict, on
+#                                  an earlier candidate of the run: verdict,
+#                                  `earlier`), refuted
 #                      human       gives any of them; ungraded has no grader
 #         bound        with out-of-scope and only with it: the declared bound it cites.
 #                      It is a row of bounds.md, or the whole batch is refused
@@ -352,9 +356,12 @@
 #       set is written ONCE: a second scope for the round is refused (exists).
 #       Prints {"scope", "included", "excluded"} — the path and the two counts.
 #
-#   dev/stabilize-record triage-set --run R --round N <entries.json
+#   dev/stabilize-record triage-set --run R --round N --stage test|fix <entries.json
 #       What the round's triage and the verifier established — one JSON object per
-#       finding, or an array of them:
+#       finding, or an array of them. --stage is the stage whose triage the entries are,
+#       and so WHICH BINARY THEIR VERDICTS WERE DRIVEN ON: a `test` stage's, the round's own
+#       candidate; a `fix` stage's, the round's tip, beyond that candidate (regression,
+#       below). It is required, so that no call says one by leaving it out:
 #         key          a row of the ledger (a finding is added before it is triaged)
 #         grade        triage's: breaks | unclear | no-break | out-of-scope | needs-bound
 #         bound        with out-of-scope and only with it: a row of bounds.md
@@ -384,8 +391,24 @@
 #                      is then `-` beside `confirmed`, the finding is graded confirmed and
 #                      routed as one, and `state` names it (regression_unknown): an
 #                      unknown fact is never written as `no`, and a door the previous
-#                      release does not have is not unknown. Anything else — another word,
-#                      a number — is refused (bad-value).
+#                      release does not have is not unknown. WHERE THE ENTRIES' DRIVE HAS AN
+#                      EARLIER CANDIDATE, `false` and "not-comparable" ARE WRITTEN `-` TOO
+#                      (the human's ruling (c) of 2026-10-27): a fact that is not a
+#                      regression needs the repro red on every earlier candidate of the
+#                      run, and an entry carries none of them (verdict: `earlier`). A
+#                      `test` stage's drive has one from round 2 on; a `fix` stage's, the
+#                      round's tip, has one in every round — the round's own candidate,
+#                      round 1's included. So the call prints {"unknown": {key:
+#                      "entry-no-earlier"}} for each such entry wherever the drive has an
+#                      earlier candidate; `true` stands. In a run without an order and in
+#                      one with a queue. AND IN A RUN WITH A QUEUE THE ROUND'S RECORD NAMES
+#                      EVERY FINDING A `fix` STAGE'S ENTRY LEFT `-` BESIDE `confirmed`
+#                      (round.md: `entry-no-earlier`, in the order the entries came; a key
+#                      another entry gives a verdict is named no more), so that `state`
+#                      can say why beside it in round 1, where the round alone cannot
+#                      (regression_unknown_why); a round no such entry reached holds no
+#                      such row. Anything else — another word, a number — is refused
+#                      (bad-value).
 #         fork         with a verdict and only with one: A FORK — the verifier found the
 #                      finding to contest a settled decision, so what is done about it is
 #                      the human's to rule and no fixer's. One object, all three named:
@@ -451,7 +474,9 @@
 #       <K>` or `<key> unverified <K>`), K being how many of the round's triage records IN
 #       A ROW have left it for that reason. A finding the record settles is named no more,
 #       and one that changes from ungraded to unverified starts at 1 (state: `awaits`).
-#       Prints {"triage", "ledger", "recorded"}.
+#       Prints {"triage", "ledger", "recorded"} — and, wherever the entries' drive has an
+#       earlier candidate (regression, above), "unknown": {key: "entry-no-earlier"} for each
+#       entry whose `no` or `not-comparable` it wrote `-`, {} where there was none.
 #
 #   dev/stabilize-record verdict --run R --round N --reporter verify-<KEY> --attempt A
 #                        [--scratch DIR]... <filing.json
@@ -470,7 +495,58 @@
 #         reason       beside undrivable, and required there: why, in a word
 #         regression   beside confirmed: true | false | "not-comparable" (triage-set:
 #                      regression), or not said where the verifier does not know
-#         previous     the sha256 of the previous release's binary, where it drove one
+#         previous     the sha256 of the previous release's binary, where it drove one —
+#                      a hash or nothing, at the filing and at every read (a file that
+#                      says anything else there is no filed verdict)
+#         earlier      beside confirmed only, and optional: THE REGRESSION BASE (the plan
+#                      before the opening's RB1; the human's ruling (c) of 2026-10-27,
+#                      sharpened: every earlier candidate of the run, newest first — green
+#                      on any of them is a regression). What the verifier found on the
+#                      run's earlier candidates: a list, NEWEST FIRST, one entry per
+#                      earlier candidate, each {round, binary, regression} — the round one
+#                      before this filing's, each once and in falling order; binary the
+#                      sha256 of the binary THAT ROUND'S RECORD NAMES (round-set: binary),
+#                      held at the filing and by every read, as `candidate` is (iv); and
+#                      regression true (green there), false (red there too) or
+#                      "not-comparable" (the door is not on that candidate) — a fact, never
+#                      null: an entry the verifier does not know is left out. Anything else
+#                      is refused (bad-value). THE REGRESSION OF THE RUN follows from the
+#                      filing, and it is what the state grades, routes and records by: TRUE
+#                      where the repro is green on the previous release or on ANY earlier
+#                      candidate the list names; else the previous release's fact as kept
+#                      below — but only where the list names EVERY earlier candidate of the
+#                      run. A list that leaves one out says nothing of it, and so does no
+#                      list: in round 2 or later a confirmed filing without the field, or
+#                      with a partial one, is UNKNOWN unless a regression is shown — the
+#                      call prints why (`unknown`: no-earlier, earlier-incomplete — and
+#                      earlier-unrecorded where an earlier round's record names no binary,
+#                      so that no entry can name that round and no list is ever complete),
+#                      the round's record writes `-`, and `state` names it
+#                      (regression_unknown). TWO DRIVES OF ONE BINARY THAT DISAGREE ARE A
+#                      FLAKE: the filing names a binary by its hash as `candidate` (red
+#                      there, as the verdict says), as `previous` where it says a fact
+#                      there, and as each entry's `binary` — and two rounds may drive one
+#                      binary, and a previous release may be one of the run's candidates.
+#                      Where any two of them are one hash and say different things —
+#                      green and red, a door there and a door not there — the fact is
+#                      UNKNOWN whatever else the filing says, a green previous release
+#                      included (`unknown`: drives-disagree) — never a regression. Where
+#                      they agree an entry counts towards the list as any does: an earlier
+#                      candidate that is the candidate's binary again, named `false`, is
+#                      the round that only tested again, and leaves the fact known. Every
+#                      read holds this as the filing does, and holds a previous release's
+#                      fact beside the candidate's own hash as no fact, as the filing
+#                      keeps none (iv).
+#                      A FILING IS A `test` STAGE'S, and round 1's test stage drives the
+#                      round's own candidate, which has no earlier candidate: an entry is
+#                      refused there, and without the field the fact is the previous
+#                      release's, as it always was. (A `fix` stage drives the round's tip,
+#                      whose earlier candidates include the round's own candidate in
+#                      round 1 too — its verdicts are triage entries, and triage-set
+#                      --stage fix holds them to that.) Only the record script's half is
+#                      built: NOTHING HANDS A
+#                      VERIFIER AN EARLIER CANDIDATE'S BINARY YET (decisions-pending.md:
+#                      wf-regression-base, due with the `fix` half's repair).
 #         contested    ONLY WHERE THE VERIFIER FOUND THE FINDING TO CONTEST A SETTLED
 #                      DECISION — beside whichever verdict it reached: THE BASIS, what is
 #                      contested and why, in the verifier's own words. The member IS the
@@ -504,7 +580,9 @@
 #               an attempt is launched (bad-value). A verifier's own report begins none.
 #         (iv)  THE BINARY IS THE ROUND'S: `candidate` is the hash the round's record names
 #               (round-set: binary), or the filing is refused (bad-value) — a verdict on
-#               another binary is no verdict. AND A REGRESSION IS A FACT ONLY WITH THE
+#               another binary is no verdict — AND EACH EARLIER CANDIDATE'S IS ITS ROUND'S:
+#               an entry of `earlier` whose binary is not the one its round's record names
+#               is refused the same way. AND A REGRESSION IS A FACT ONLY WITH THE
 #               PREVIOUS RELEASE'S BINARY BEHIND IT — and so is "not-comparable", which
 #               says what that binary lacks: without `previous`, or with the candidate's
 #               own hash there, the filing is taken and the fact is UNKNOWN — filed as not
@@ -578,23 +656,29 @@
 #       row's `handed_on`); it is what a stop's view counts the verifier of such a row from
 #       (state: view, `named`), and nothing is ranked, promoted or merged on it.
 #       THE FILE is JSON, its members in one order — key, reporter, round, attempt,
-#       verdict, refutation, reason, regression, contested: the basis as a cell would hold
-#       it, or null, candidate, previous, report: {file,
+#       verdict, refutation, reason, regression: the previous release's fact as kept,
+#       contested: the basis as a cell would hold it, or null, candidate, previous —
+#       then, ONLY WHERE THE FILING SAID IT, earlier: [{round, binary, regression}], so that
+#       a filing without it is the text it always was — report: {file,
 #       sha256}, hand_on: the opening's number as the filing found it, handed_on: [{key,
 #       proposed, place, beyond, doctype, source, door, clause, repro, kind, given, origin,
 #       code, site, evidence}] — and, last, sha256: THE SEAL, the hash of the text without
 #       it. A file that is not that text to the byte, under its own seal, is no filed
 #       verdict (vet; state: filed).
 #       Prints {"verdict": the path, "sha256": the hash of the file's bytes, "key", "word":
-#       the verdict, "regression": true | false | "not-comparable" | null, "unknown":
-#       why a regression that was said is not kept, or null, "contested": whether the
-#       filing says a basis,
+#       the verdict, "regression": THE REGRESSION OF THE RUN (`earlier`, above) — true |
+#       false | "not-comparable" | null, "unknown": why a regression that was said is not
+#       known — no-previous-hash, previous-is-the-candidate, no-earlier,
+#       earlier-incomplete, earlier-unrecorded, drives-disagree — or null where it is known,
+#       and where the filing said no regression and no two drives of one binary disagree
+#       (`state` says a reason for every unknown fact, those included:
+#       regression_unknown_why), "contested": whether the filing says a basis,
 #       "handed_on": [{key, proposed, kind, origin, beyond}], "leads": the keys of the
 #       items entered as a lead}.
 #
 #   dev/stabilize-record triage --run R --round N --reporter S --attempt A
 #                        [--scratch DIR]... [--] SOURCE=COUNT... <entries.json
-#   dev/stabilize-record triage … --from FILE [--] SOURCE=COUNT...
+#   dev/stabilize-record triage … --from FILE [--tools FILE] [--] SOURCE=COUNT...
 #       A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the build plan of the reshaped `test` stage,
 #       §5, K2: triage typed every entry twice — in its report, and again in its return —
 #       and what it returned grew with what it was handed). The entries on stdin — or, with
@@ -654,7 +738,9 @@
 #       ITS TEXT goes through the one write every writer's goes through (WHAT A WRITER DOES
 #       TO ITS TEXT, below): host paths replaced, the public-hygiene scan hard. A HIT
 #       REFUSES THE FILING AND NAMES THE ENTRY (hygiene) — by its place in the file, never
-#       by what matched — so that one entry is reworded and the file handed over again.
+#       by what matched — so that one entry is reworded and the file handed over again. A
+#       HOST PATH NO PLACEHOLDER REPLACES NAMES THE ENTRY AND ITS TEXT too (host-path), and
+#       says to reword it, never to pass another --scratch: the call is typed as it stands.
 #       THE RECORD IS COMPOSED FROM THIS FILE (the plan's K3), and the file is THE HOME OF
 #       WHO REPORTED A ROW (state: a row's `reporters`): the entries name the handed
 #       findings folded into each row, and nothing else writes that.
@@ -664,6 +750,33 @@
 #       ATTEMPT THAT IS BEGUN, as a verifier's report is (report): the rendering is a report
 #       under a reporter that is no finding's verifier, so under an attempt nobody began it
 #       would read as that attempt's marker — it is refused (bad-value), and writes nothing.
+#       WHAT THE TRIAGE SAYS UNDER **Tools** (the plan before the opening's task T0) comes
+#       from a file of its own, --tools FILE, and from nowhere else: the paragraph every
+#       definition carries has an agent say what it wrote or wished for under **Tools**, the
+#       last section of its report — and a triage under this writer writes no report, and its
+#       return is held to this call's line. The file is markdown and UTF-8, with no NUL in it
+#       (bad-value: not there, not UTF-8, a NUL — nothing is written); a leading byte-order
+#       mark is dropped; a CRLF is a line end `\n`, and so is every other character an
+#       entry's cell takes as a line break (a lone CR, VT, FF, FS, GS, RS, NEL, U+2028,
+#       U+2029 — where a cell writes `<br>`); every other C0 control character but the tab,
+#       and DEL, is a space, as a cell has them; a C1 character other than NEL stays as
+#       written, as in a cell — so the sealed rendering holds no `\r` a converting checkout
+#       could rewrite, and every line a refusal names is counted by `\n`, as markdown and
+#       the fences count one; then it says something (bad-value: blank, a
+#       mark alone included — nothing is written); its
+#       host paths are replaced as a report's are (host-path: one no placeholder replaces, by
+#       its line in the file, to be reworded — the call is typed as it stands, so no other
+#       --scratch can be passed), a line that would redden a fence is refused by its line in
+#       the file (fence), and its blank lines at either end — every line that holds nothing
+#       but whitespace — are dropped, every other character kept as it stands. EVERY REFUSAL OF IT
+#       NAMES --tools, or the text under **Tools**, AND SAYS WHAT TO CHANGE: the triage's
+#       definition has it correct its file where a refusal names it, and the text is
+#       optional, so no fault of it may cost the triage. It is A MEMBER OF THE DATA, `tools`,
+#       after the entries — and RENDERED AS THE REPORT'S LAST SECTION,
+#       `## Tools`, after the data block, which closes at its own fence: so it may hold fences
+#       of its own, and it is sealed with the rest. A HIT OF THE SCAN IN IT names the text
+#       under **Tools**, never what matched. A triage that names no such file renders as it
+#       did, with no member and no section.
 #       Prints ITS DIGEST, one line, with no text of an entry in it — what a triage's
 #       return is held to: {"triage": the path, "sha256": the hash of the file's bytes,
 #       "round", "reporter", "attempt", "handed": {source: count}, "findings": how many in
@@ -900,7 +1013,9 @@
 #                      with as many fix cycles on record as the round has now) and {ran,
 #                      awaiting, recorded} as this script counted them — and, ONLY WHERE
 #                      THE ROUND HOLDS IT, `verdicts`: the filed verdicts a record of the
-#                      round took, each as its file is named (`<reporter> a<A>`),
+#                      round took, each as its file is named (`<reporter> a<A>`), and
+#                      `entry-no-earlier`: the keys a `fix` stage's triage entry left
+#                      `-` beside `confirmed` (triage-set: regression),
 #                      results: [{item, attempt, commit, outcome,
 #                      reason, finding}] as result-set wrote them, in the order they were
 #                      recorded, reopened: the keys of the findings this
@@ -986,13 +1101,30 @@
 #         blockers     the keys routed fix
 #         regression_unknown  the keys of the findings a verifier CONFIRMED WITHOUT
 #                      KNOWING WHETHER EACH IS A REGRESSION (triage-set: regression absent
-#                      or null), for as long as the finding is not routed recorded. Such
+#                      or null, and an entry's `no` or `not-comparable` wherever its drive
+#                      has an earlier candidate; and a filed verdict of round 2 or later
+#                      that shows no regression and does not name every earlier candidate,
+#                      or in which two drives of one binary disagree — verdict:
+#                      `earlier`), for as long as the finding is not routed recorded. Such
 #                      a finding is routed by its grade and its door exactly as a
 #                      confirmed non-regression is — fix inside the test set, the human's
 #                      outside it — and is never fixed unasked as "a regression", which
 #                      nobody established. The missing fact forbids `close` no longer
 #                      than the finding itself does: it is an attribute of a finding,
 #                      not a missing verdict.
+#         regression_unknown_why  IN A RUN WITH A QUEUE: {key: why} for each key of
+#                      `regression_unknown`, in its order — WHY THE FACT IS UNKNOWN, where
+#                      the human decides: for a filed verdict, why_unknown's word, the one
+#                      definition the filing's print reads too — the word the filing
+#                      printed where it printed one (verdict: `unknown`); a filing that
+#                      said no regression and no two drives of one binary disagree printed
+#                      none, and is said here by the same definition: no-previous-hash,
+#                      previous-is-the-candidate or not-said; for a verdict a triage entry
+#                      gave, `entry-no-earlier` wherever the entry's drive had an earlier
+#                      candidate — from round 2 on, and for a `fix` stage's entry in round
+#                      1 too (round.md: `entry-no-earlier`) — and `not-said` for a round-1
+#                      `test` stage's. A run without an order has no such member: it
+#                      answers as it did.
 #         human_list   [{key, why}] — the findings routed human; and with `why:
 #                      contested`, `basis`: the verifier's own words, which the human reads
 #         human_stages [{stage, round, cycle, at, attempt, attempts, why}] — the stage
@@ -1040,7 +1172,9 @@
 #                        not-a-filing      not the text the writer left under that name,
 #                                          or not under its own seal
 #                        report-gone, report-changed   the report it was filed beside
-#                        another-binary    not the binary the round's record names
+#                        another-binary    not the binary the round's record names —
+#                                          of its own round, or of an earlier
+#                                          candidate it names (verdict: earlier)
 #                        no-such-row       its key is no row — of the ledger, or handed
 #                                          on by a filing that counts
 #                        second-filing     the round holds an earlier filing for the key
@@ -1094,9 +1228,11 @@
 #                                      row of the queue is of. `verified` adds up to
 #                                      `budget.spent`.
 #                        confirmed     {inside, outside}: each [{key, regression: true |
-#                                      false | "not-comparable" | null}] — the
-#                                      findings confirmed in this round, by whether the
-#                                      door is in its test set
+#                                      false | "not-comparable" | null, and beside null
+#                                      `unknown`: why, as regression_unknown_why says
+#                                      it}] — the findings confirmed in this round, by
+#                                      whether the door is in its test set; the view
+#                                      writes the word after the line
 #                        contested     [{key, verdict: as the record's cell says it, with
 #                                      its word, inside, by, basis}] — THE FINDINGS A
 #                                      VERIFIER CONTESTED AND NOBODY RULED, routed human
@@ -1774,6 +1910,7 @@
 #                                       route is sent as a route without its route line,
 #                                       and is the lead it was
 #                        triage-set     EVERY entry of it: its key, its grade, its bound
+#                                       — `--stage test`
 #                        round-set      the round's facts                         (words)
 #                        check-ledger   the entries' keys
 #                      A finding found again is no row; a red run's entry follows the
@@ -2375,6 +2512,14 @@ HELD = "held-"
 # the byte, or it is none.
 VERDICT_NAME = re.compile(r"(%s)\.a([1-9][0-9]{0,5})\.json" % SLUG.pattern)
 FILED_FIELDS = ("key", "reporter", "round", "attempt", "verdict", "refutation", "reason", "regression", "contested", "candidate", "previous", "report", "hand_on", "handed_on")
+# THE REGRESSION BASE (the plan before the opening's RB1; the human's ruling (c) of
+# 2026-10-27, sharpened: every earlier candidate of the run, newest first — green on any of
+# them is a regression): what a filing says of the earlier candidates, where it says it. A
+# file holds the member after `previous` ONLY WHERE ITS FILING SAID IT, so a filing without
+# it is the text it always was; and each entry's members in their order.
+EARLIER = "earlier"
+FILED_WITH_EARLIER = FILED_FIELDS[: FILED_FIELDS.index("previous") + 1] + (EARLIER,) + FILED_FIELDS[FILED_FIELDS.index("previous") + 1 :]
+EARLIER_FIELDS = ("round", "binary", "regression")
 HANDED_FIELDS = ("key", "proposed", "place", "beyond", "doctype", "source", "door", "clause", "repro", "kind", "given", "origin", "code", "site", "evidence")
 # What a verifier says of an item it hands on: what its ledger row needs, and its kind —
 # with the kind's evidence, the refusal's code and the site, as a row's class has them.
@@ -2412,6 +2557,13 @@ VERDICTS = ("confirmed", "refuted")
 # and it is known: the verifier drove that binary and saw the door missing. Each is said in
 # the round's triage record by its own cell, and `-` where nobody knows the fact.
 NOT_COMPARABLE = "not-comparable"
+# Why a confirmed finding's regression is unknown, beside the words of why_unknown: nobody said
+# a fact; a triage entry whose drive had an earlier candidate — in round 2 or later, or a
+# `fix` stage's in any round (triage-set: --stage) — and which carries none of them.
+NOT_SAID = "not-said"
+ENTRY_NO_EARLIER = "entry-no-earlier"
+# … and why_unknown's first word: two drives of one binary that disagree, a flake.
+DRIVES_DISAGREE = "drives-disagree"
 REGRESSION_CELLS = {True: "yes", False: "no", NOT_COMPARABLE: NOT_COMPARABLE}
 # How a grade cell cites its declared bound.
 OUT_OF_SCOPE = "out-of-scope: "
@@ -2524,7 +2676,7 @@ ITEM_READ = ("clause", "runs", "doors", "registries")
 LIST_BREAK = "<br>"
 ROUND_COLUMNS = ("fact", "value")
 # A round record's facts, in the order its table holds them.
-ROUND_FACTS = ("candidate", "base", "binary", "cycles", "outcome", "go", "granted", "reverify", "again", "cross-model", "cross-model-void", "ran", "awaiting", "recorded", "verdicts")
+ROUND_FACTS = ("candidate", "base", "binary", "cycles", "outcome", "go", "granted", "reverify", "again", "cross-model", "cross-model-void", "ran", "awaiting", "recorded", "verdicts", ENTRY_NO_EARLIER)
 # The facts that are lists of item ids, and how a list shares its cell.
 ROUND_LISTS = ("cross-model", "cross-model-void")
 ITEMS_BREAK = ", "
@@ -2543,14 +2695,20 @@ ATTEMPT = re.compile(r"(test|fix-c[1-9][0-9]{0,5}) a([1-9][0-9]{0,5})")
 # What the human grants, each a list the record adds to; what this script counts for
 # itself and takes from no caller; and how each list's entries are spelled.
 ROUND_GRANTS = ("granted", "reverify", "again")
-ROUND_COUNTED = ("ran", "awaiting", "recorded", "verdicts")
+ROUND_COUNTED = ("ran", "awaiting", "recorded", "verdicts", ENTRY_NO_EARLIER)
 ROUND_ENTRIES = {"granted": GRANT, "ran": GRANT, "reverify": REVERIFY, "awaiting": AWAITING, "again": ATTEMPT, "recorded": ATTEMPT, "verdicts": GRANT}
 # THE FILED VERDICTS A RECORD OF THE ROUND TOOK (the build plan of the reshaped `test` stage,
 # T3b), each as its file is named — `<reporter> a<A>`. A FACT ONLY WHERE THE ROUND HOLDS IT:
 # a round no record of which took a filed verdict — every round of a run without an order —
 # says the facts it always said, and no key more.
 TOOK = "verdicts"
-ROUND_HELD = (TOOK,)
+# THE FINDINGS A `fix` STAGE'S TRIAGE ENTRY LEFT WITHOUT A KNOWN REGRESSION FACT, in a run with
+# a queue (triage-set: --stage): its drive was the round's tip, whose earlier candidates
+# include the round's own candidate, and an entry carries none of them. Each key is the
+# finding's, in the order the entries named them. A FACT ONLY WHERE THE ROUND HOLDS IT, as
+# `verdicts` is: it is what lets the state say `entry-no-earlier` beside such a key in round
+# 1, where the round alone cannot say it (unknown_reasons).
+ROUND_HELD = (TOOK, ENTRY_NO_EARLIER)
 # The facts written once: a second, different value is refused.
 ROUND_ONCE = ("candidate", "base", "binary", "outcome")
 # How the record holds the human's go: the count of fix cycles it was given at.
@@ -2654,6 +2812,8 @@ SOURCE_NAMES = re.compile(r"`?(%s)(?![A-Za-z0-9_-])" % SLUG.pattern)
 # triage says: an instrument's own (`hunt`).
 TRIAGE_OPENS = "<!-- the entries a triage handed over, rendered by dev/stabilize-record and never written by hand -->"
 TRIAGED_FIELDS = ("round", "reporter", "attempt", "handed", "entries")
+# What a triage says under **Tools**: a member of the record only where it handed one over.
+TRIAGED_TOOLS = "tools"
 ENTRY_FIELDS = ("key", "found", "grade", "bound", "why", "folds", "doctype", "door", "clause", "repro", "kind", "given", "code", "site", "evidence")
 ENTRY_SAID = ("key", "found", "grade", "why", "folds")
 ENTRY_ROW = ("doctype", "door", "clause", "repro")
@@ -2792,6 +2952,7 @@ ROUND_TAKES = {
     "awaiting": "counted",
     "recorded": "counted",
     "verdicts": "counted",
+    ENTRY_NO_EARLIER: "counted",
 }
 RUN_TAKES = {
     "stop": "once",
@@ -2971,8 +3132,22 @@ def host_roots(scratch):
     return roots
 
 
-def public(text, scratch):
-    """`text` with every host path replaced by its public placeholder."""
+def undeclared_scratch(lines):
+    """What a writer is told of a session's scratch area its call did not declare."""
+    return "line %s still names this machine's home directory inside a path (a session's scratch area?) — pass that area's root as --scratch" % lines
+
+
+def reworded(what, name, again):
+    """What a writer whose call is TYPED AS IT STANDS — so that it can pass no other root —
+    is told of a host path no placeholder replaces in the text `name` of `what`: to reword
+    it out of that text, and then `again`; never a root to pass."""
+    return lambda lines: "%s: its `%s`, line %s, still names this machine's home directory inside a path (a session's scratch area?) — reword it out of that text, naming what you mean and never where it lay, and %s; nothing was written" % (what, name, lines, again)
+
+
+def public(text, scratch, left=undeclared_scratch):
+    """`text` with every host path replaced by its public placeholder. A host path no
+    placeholder could replace is refused (host-path) with what `left` says of its lines —
+    by default, what to pass; a text whose caller cannot pass another root says otherwise."""
     roots = host_roots(scratch)
     shared = {form for path in ANY_HOSTS_TMP for form in spellings(path)}
 
@@ -3008,7 +3183,7 @@ def public(text, scratch):
         flat = re.sub(r"[^A-Za-z0-9]", "-", home)
         lines = [str(n) for n, line in enumerate(text.split("\n"), 1) if flat in line]
         if len(flat) > 3 and lines:
-            refuse("host-path", "line %s still names this machine's home directory inside a path (a session's scratch area?) — pass that area's root as --scratch" % ", ".join(lines))
+            refuse("host-path", left(", ".join(lines)))
     return text
 
 
@@ -3022,11 +3197,16 @@ def scratch_roots(args):
 # --- the one write --------------------------------------------------------------
 
 
-def fence_check(text):
+def fence_check(text, whose=""):
+    """Refused (fence) where a line of `text` would redden a fence that reads the tree —
+    named by its line, in the text `whose` names where it is part of a larger file. A line
+    is what `\n` ends, as `public` counts one and as the fences read the tree — never what
+    `str.splitlines` also breaks at (a lone `\r`, U+2028, …), which would name a line no
+    other refusal of the same text names."""
     for name, what, reddens in FENCES:
-        lines = [str(n) for n, line in enumerate(text.splitlines(), 1) if reddens(line)]
+        lines = [str(n) for n, line in enumerate(text.split("\n"), 1) if reddens(line)]
         if lines:
-            refuse("fence", "line %s %s, which would redden %s — write the command inside a line" % (", ".join(lines), what, name))
+            refuse("fence", "%sline %s %s, which would redden %s — write the command inside a line" % (whose, ", ".join(lines), what, name))
 
 
 def did_not_run(why):
@@ -3319,10 +3499,20 @@ def flush(run_dir, batch=None):
 # --- tables ---------------------------------------------------------------------
 
 
+# WHAT A WRITER READS AS A LINE BREAK IN FREE TEXT — every character `str.splitlines` breaks at:
+# CR, LF, VT, FF, the separators FS, GS and RS, NEL, U+2028 and U+2029 — and what it reads as
+# A SPACE: every other C0 control character, and DEL — the tab too in a cell, which has no
+# columns to keep, and never in the text under **Tools**, which keeps its indentation. One
+# definition, which a cell (cell) and that text (tools_text) both read. (A C1 character
+# other than NEL is kept as written by both.)
+LINE_BREAK_CHARS = "\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+SPACED_CHARS = r"[\x00-\x1f\x7f]"
+
+
 def cell(text):
     """Free text as one table cell: no line break, no bare pipe, never empty."""
-    text = re.sub(r"\s*[\r\n\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]+\s*", "<br>", text.strip())
-    text = re.sub(r"[\x00-\x1f\x7f]", " ", text)
+    text = re.sub(r"\s*[" + LINE_BREAK_CHARS + r"]+\s*", "<br>", text.strip())
+    text = re.sub(SPACED_CHARS, " ", text)
     text = re.sub(r"\\+(?=\|)", lambda run: "&#92;" * len(run.group()), text)
     return text.replace("|", "\\|") or "-"
 
@@ -3429,15 +3619,15 @@ def fields(row, required, optional, what):
         refuse("bad-value", "%s lacks %s" % (what, ", ".join(missing)))
 
 
-def text_of(row, name, what, scratch):
+def text_of(row, name, what, scratch, left=undeclared_scratch):
     if not isinstance(row[name], str):
         refuse("bad-value", "%s: %s must be text, not %s" % (what, name, shown(row[name])))
-    return cell(public(row[name], scratch))
+    return cell(public(row[name], scratch, left))
 
 
-def said(row, name, what, scratch):
+def said(row, name, what, scratch, left=undeclared_scratch):
     """A cell that must say something."""
-    text = text_of(row, name, what, scratch)
+    text = text_of(row, name, what, scratch, left)
     if not row[name].strip():
         refuse("bad-value", "%s: %s says nothing" % (what, name))
     return text
@@ -3563,11 +3753,13 @@ LEDGER_REQUIRED = ("key", "doctype", "round", "source", "door", "clause", "repro
 LEDGER_SET = ("grade", "graded_by", "bound", "disposition", "detail")
 
 
-def ledger_row(row, scratch):
+def ledger_row(row, scratch, what=None):
     """(key, the row's cells, its class's cells or None). Of a class, where the item comes
-    from is still as the caller named it — an origin, or a parent: the writer settles it."""
-    fields(row, LEDGER_REQUIRED, LEDGER_SET + CLASS_FIELDS, "a ledger row")
-    what = "row %s" % shown(row["key"])
+    from is still as the caller named it — an origin, or a parent: the writer settles it.
+    Its refusals name `what` — the row by its key, unless the caller names what the row
+    comes from (a triage's entry)."""
+    fields(row, LEDGER_REQUIRED, LEDGER_SET + CLASS_FIELDS, what or "a ledger row")
+    what = what or "row %s" % shown(row["key"])
     key = slug(row["key"], "key")
     one_of(row["doctype"], DOCTYPES, what + ": doctype")
     if isinstance(row["round"], bool) or not isinstance(row["round"], int) or row["round"] < 0:
@@ -4031,12 +4223,15 @@ def ledger_add(args):
     say(json.dumps(printed))
 
 
-def hold_kinds(run_dir, given):
+def hold_kinds(run_dir, given, entries=None):
     """IN A RUN WITH AN ORDER EVERY ROW NAMES ITS KIND: the queue is ranked by a row's class,
     and a row takes its class when it is added and never later. `given` is rows as
     `ledger_row` read them — the rows of a `ledger-add`, and the new findings among the
-    entries a triage hands over (triage), which are the rows a record then adds."""
+    entries a triage hands over (triage), which are the rows a record then adds; for those,
+    `entries` names each row's entry by key, and the refusal names the entries."""
     bare = [key for key, _, made in given if made is None]
+    if bare and has_queue(run_dir) and entries is not None:
+        refuse("bad-value", "%s: a new finding names no `kind` (%s), and the run holds an order — it has a queue, which is ranked by a row's class: a new finding is handed over with its kind and, for a route or a behaviour, that kind's evidence. Nothing was written" % (", ".join(entries[key] for key in bare), ", ".join(KINDS)))
     if bare and has_queue(run_dir):
         refuse("bad-value", "row %s: it names no `kind` (%s), and the run holds an order — it has a queue, which is ranked by a row's class: in such a run every row is added with its kind, its kind's evidence, and where it comes from (`origin`, or `parent`), a finding found again too. Nothing was written" % (", ".join(bare), ", ".join(KINDS)))
 
@@ -4341,10 +4536,14 @@ def scope_set(args):
     for side in SIDES:
         if not isinstance(given[side], list) or not all(isinstance(door, dict) for door in given[side]):
             refuse("bad-value", "a scope's %s doors must be an array of JSON objects" % side)
-        for door in given[side]:
+        for n, door in enumerate(given[side], 1):
             fields(door, ("door", "registry", "derivation"), (), "a door")
-            what = "door %s" % shown(door["door"])
-            name, registry, derivation = [said(door, field, what, scratch) for field in ("door", "registry", "derivation")]
+            # THE SCOPE'S CALL IS TYPED AS IT STANDS (stabilize.js, the scope step), so it can
+            # pass no other root: a host path no placeholder replaces is reworded, and the
+            # refusal names the door BY ITS PLACE and its text — never a root to pass, and
+            # never the door's own words, which may be the very path refused.
+            what = "%s door %d" % (side, n)
+            name, registry, derivation = [said(door, field, what, scratch, reworded(what, field, "hand the scope over again")) for field in ("door", "registry", "derivation")]
             rows.append([name, side, registry, derivation])
     distinct([row[0] for row in rows], "door")
     one_writer(run_dir)
@@ -4645,6 +4844,116 @@ def a_regression_fact(value):
     return isinstance(value, bool) or value == NOT_COMPARABLE
 
 
+def an_earlier_list(value, round_number):
+    """Whether `value` is what a filing of round `round_number` may say of the run's earlier
+    candidates (the header: verdict, `earlier`): a list, NEWEST FIRST, of {round, binary,
+    regression}, in any order of its members — each round one before the filing's, each once, in falling order; the
+    binary a sha256; the regression a fact (a_regression_fact). A list may leave a round out:
+    it is then partial, and the fact it says nothing of is unknown (regression_of_the_run)."""
+    if not isinstance(value, list) or not all(isinstance(entry, dict) and sorted(entry) == sorted(EARLIER_FIELDS) for entry in value):
+        return False
+    rounds = [entry["round"] for entry in value]
+    return (
+        all(type(n) is int and 1 <= n < round_number for n in rounds)
+        and all(a > b for a, b in zip(rounds, rounds[1:]))
+        and all(isinstance(entry["binary"], str) and bool(SHA256.fullmatch(entry["binary"])) and a_regression_fact(entry["regression"]) for entry in value)
+    )
+
+
+def regression_of_the_run(record):
+    """A FILED VERDICT'S REGRESSION OF THE RUN — ITS ONE DEFINITION, which the call that files
+    it prints and every read of the state grades and routes by (the header: verdict,
+    `earlier`): None beside any verdict but `confirmed`; TRUE where the repro is green on the
+    previous release's binary, or on ANY earlier candidate's the filing names; else the
+    previous release's fact as the file keeps it — false, not comparable, or unknown — but
+    only where the filing names EVERY earlier candidate of the run: a list that leaves one
+    out, or none at all in round 2 or later, says nothing of it, and the fact is unknown.
+    A FACT OF THE CANDIDATE'S OWN BINARY IS NO FACT OF ANOTHER ONE, at the filing and at every
+    read alike: a previous release whose hash is the candidate's says nothing. AND TWO DRIVES OF
+    ONE BINARY THAT DISAGREE ARE A FLAKE, NEVER A REGRESSION: the fact is unknown, whatever
+    else the filing says, a green previous release included (drives_disagree)."""
+    if record["verdict"] != "confirmed":
+        return None
+    earlier = record.get(EARLIER) or []
+    if drives_disagree(record):
+        return None
+    previous = record["regression"] if record["previous"] not in (None, record["candidate"]) else None
+    if previous is True or any(entry["regression"] is True for entry in earlier):
+        return True
+    if len(earlier) < record["round"] - 1:
+        return None
+    return previous
+
+
+def drives_disagree(record):
+    """Whether a confirmed filing says two different things of one binary — ITS ONE DEFINITION,
+    which the filing and every read share (regression_of_the_run, why_unknown, the filing's
+    print). A filing names a binary by its hash in three places, and each says what the repro
+    did there: the candidate's (`candidate`), red, as the verdict says; the previous
+    release's (`previous`), where the filing names that hash and says a fact there
+    (`regression`); and each earlier candidate's (`earlier`, its `binary` and `regression`).
+    Any two of them, pairwise — the candidate and an earlier candidate, the previous release
+    and the candidate, the previous release and an earlier candidate, two earlier candidates
+    — may be one hash: two rounds may drive one binary, and a previous release may be one of
+    the run's candidates. Where they are, and say different things — green and red, a door
+    there and a door not there — the same bytes were driven twice with two results: a flake,
+    which no regression of the run is ever read from."""
+    said = {record["candidate"]: {False}}
+    if record["previous"] is not None and record["regression"] is not None:
+        said.setdefault(record["previous"], set()).add(record["regression"])
+    for entry in record.get(EARLIER) or []:
+        said.setdefault(entry["binary"], set()).add(entry["regression"])
+    return any(len(facts) > 1 for facts in said.values())
+
+
+def why_unknown(record, binaries):
+    """WHY A CONFIRMED FILING'S REGRESSION OF THE RUN IS UNKNOWN — ITS ONE DEFINITION, which the
+    call that files it prints and the state and the stop's view show beside the key (the
+    header: verdict, `unknown`; state, `regression_unknown_why`). `binaries` is each round's
+    recorded binary, by round. In the order the regression of the run is read: two drives of
+    one binary that disagree (drives_disagree); no previous release's binary behind a fact,
+    or the candidate's own; no fact said there; an earlier round that names no binary, so
+    no entry can name it; no list; a list that leaves a round out."""
+    if drives_disagree(record):
+        return DRIVES_DISAGREE
+    if record["previous"] is None:
+        return "no-previous-hash"
+    if record["previous"] == record["candidate"]:
+        return "previous-is-the-candidate"
+    if record["regression"] is None:
+        return NOT_SAID
+    if any(binaries.get(n) is None for n in range(1, record["round"])):
+        return "earlier-unrecorded"
+    return "no-earlier" if record.get(EARLIER) is None else "earlier-incomplete"
+
+
+def unknown_reasons(findings, filings, rounds):
+    """{key: why} for every row the state reads as CONFIRMED WITHOUT KNOWING WHETHER IT IS A
+    REGRESSION: where a `fix` stage's entry gave the row its verdict (the round's
+    `entry-no-earlier`: it drove the round's tip, beyond the round's own candidate),
+    `entry-no-earlier`; else, where a filed verdict that counts is behind the row's verdict
+    and reads so, why that filing does (why_unknown); else the verdict is a triage entry's —
+    which says nothing of the earlier candidates, so in round 2 or later it is
+    `entry-no-earlier` whatever it said, and in round 1 — a `test` stage's entry, whose drive
+    has no earlier candidate — it is `not-said`."""
+    binaries = {held["round"]: held["facts"].get("binary") for held in rounds}
+    left_unknown = {held["round"]: held["facts"].get(ENTRY_NO_EARLIER, []) for held in rounds}
+    filed = {(entry["round"], entry["key"]): entry["record"] for entry in filings if entry["counts"] and entry["record"] is not None}
+    why = {}
+    for finding in findings:
+        said_ = finding["triage"]
+        if said_ is None or said_["verdict"] != "confirmed" or said_["regression"] is not None:
+            continue
+        record = filed.get((said_["round"], finding["key"]))
+        if finding["key"] in left_unknown.get(said_["round"], []):
+            why[finding["key"]] = ENTRY_NO_EARLIER
+        elif record is not None and record["verdict"] == "confirmed" and regression_of_the_run(record) is None:
+            why[finding["key"]] = why_unknown(record, binaries)
+        else:
+            why[finding["key"]] = ENTRY_NO_EARLIER if said_["round"] >= 2 else NOT_SAID
+    return why
+
+
 def graded_by_the_row(row):
     """THE LEDGER'S GRADE AND ITS GRADER, AS THEY FOLLOW FROM A ROW OF A ROUND'S TRIAGE RECORD
     — ITS ONE DEFINITION for an entry's writer (the header: triage-set): the verdict where the
@@ -4721,7 +5030,22 @@ def triage_entry(entry):
 def triage_set(args):
     run_dir = open_run(args.run)
     round_number = number(args.round, "round")
+    stage = stage_of(args.stage)
     given = [triage_entry(entry) for entry in json_rows("triage entry")]
+    # THE REGRESSION BASE (ruling (c) of 2026-10-27): a fact that is not a regression is one
+    # only where the repro is red on every earlier candidate of the run — and an entry
+    # carries none of them. WHETHER THE ENTRIES' DRIVE HAS AN EARLIER CANDIDATE is the
+    # caller's stage and the round: a `test` stage drives the round's own candidate, which
+    # has one from round 2 on; a `fix` stage drives the round's tip, whose earlier
+    # candidates include the round's own candidate, in round 1 too. Where it has one, the
+    # entry's `no` and its `not-comparable` are written `-`, unknown, never `no`; its `yes`
+    # stands, as green on the previous release is a regression whatever came after. In a run
+    # without an order and in one with a queue.
+    has_earlier = int(round_number) >= 2 or stage == "fix"
+    downgraded = [key for key, cells in given if has_earlier and cells[1] == "confirmed" and cells[2] in (REGRESSION_CELLS[False], REGRESSION_CELLS[NOT_COMPARABLE])]
+    for key, cells in given:
+        if key in downgraded:
+            cells[2] = "-"
     distinct([key for key, _ in given], "finding")
     one_writer(run_dir)
     read = standing(run_dir, args.run)
@@ -4767,6 +5091,21 @@ def triage_set(args):
         row[6], row[7] = graded_by_the_row(entry)
     publish(run_dir, ["r" + round_number, "triage.md"], render_table(above, TRIAGE_COLUMNS, rows), replace=True)
     publish(run_dir, ["ledger.md"], render_table(ledger_above, LEDGER_COLUMNS, ledger_rows), replace=True)
+    # WHICH ROWS A `fix` STAGE'S ENTRY LEFT WITHOUT A KNOWN FACT, in a run with a queue (the
+    # round's `entry-no-earlier`): a key its row now holds `confirmed` beside `-` for is
+    # named, where a fix stage's entry said its verdict; a key whose verdict another entry
+    # said is named no more. An entry that says no verdict leaves the row's verdict, and the
+    # key's place here, as they stand.
+    if "queue" in read:
+        left_unknown = list(round_facts(*read_round(run_dir, round_number)[::2]).get(ENTRY_NO_EARLIER, []))
+        for key, cells in given:
+            if cells[1] == "-":
+                continue
+            if key in left_unknown:
+                left_unknown.remove(key)
+            if stage == "fix" and cells[1] == "confirmed" and cells[2] == "-":
+                left_unknown.append(key)
+        counted(run_dir, round_number, ENTRY_NO_EARLIER, left_unknown)
     # THE PASSES ARE COUNTED HERE, never by an invocation: every finding this record leaves
     # without a grade or a verdict is named in the round's own record, with how many of the
     # round's triage records in a row have left it so. A finding it settles is named no more.
@@ -4781,7 +5120,7 @@ def triage_set(args):
             why, passes = left.get(finding["key"], (None, 0))
             awaiting.append("%s %s %d" % (finding["key"], finding["awaits"]["why"], passes + 1 if why == finding["awaits"]["why"] else 1))
     counted(run_dir, round_number, "awaiting", awaiting)
-    say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _ in given]}))
+    say(json.dumps({"triage": rel, "ledger": ledger, "recorded": [key for key, _ in given], **({"unknown": {key: ENTRY_NO_EARLIER for key in downgraded}} if has_earlier else {})}))
 
 
 def verdict(args):
@@ -4796,7 +5135,7 @@ def verdict(args):
     given = json_stdin()
     if not isinstance(given, dict):
         refuse("bad-value", "stdin must be one filing as a JSON object: the finding's key, the verifier's verdict, the hash of the binary it drove, and what it hands on")
-    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", CONTESTED, "previous", "hands_on"), "a filing")
+    fields(given, ("key", "verdict", "candidate"), ("refutation", "reason", "regression", CONTESTED, "previous", EARLIER, "hands_on"), "a filing")
     key = slug(given["key"], "key")
     what = "the filing of %s" % key
     word = one_of(given["verdict"], VERDICTS + (UNDRIVABLE,), what + ": verdict")
@@ -4809,6 +5148,13 @@ def verdict(args):
     regression = given.get("regression")
     if regression is not None and (word != "confirmed" or not a_regression_fact(regression)):
         refuse("bad-value", "%s: a regression is the verifier's fact about a finding it confirmed — true, false, `%s`, or not said — not %s beside `%s`" % (what, NOT_COMPARABLE, shown(regression), word))
+    # THE EARLIER CANDIDATES (the regression base): beside `confirmed` only, newest first,
+    # each round one before this one; each binary is held to its round's record below.
+    earlier = given.get(EARLIER)
+    if earlier is not None and (word != "confirmed" or not an_earlier_list(earlier, int(round_number))):
+        refuse("bad-value", "%s: `%s` is what the verifier found on the run's earlier candidates, beside `confirmed` only — a list, newest first, of {round, binary, regression}: each round one before round %s, once, in falling order, the sha256 of the binary that round's record names, and true (green there), false (red there too) or `%s` — not %s beside `%s`; nothing was written" % (what, EARLIER, round_number, NOT_COMPARABLE, shown(earlier), word))
+    if earlier is not None:
+        earlier = [{name: entry[name] for name in EARLIER_FIELDS} for entry in earlier]
     # CONTESTED, WITH ITS BASIS (the header: verdict): what the finding contests, and why, in
     # the verifier's own words — beside whichever verdict it reached. The member IS the
     # basis: `true` says that a finding is contested and not what or why, and is refused.
@@ -4893,9 +5239,14 @@ def verdict(args):
     # previous release's binary behind it: else it is UNKNOWN, and never `no`.
     if candidate != binary:
         refuse("bad-value", "%s: it asserts the candidate's binary %s, and round %s's record names %s — a verdict on another binary is no verdict of this round; nothing was written" % (what, candidate, round_number, binary))
-    unknown = None
-    if regression is not None and previous in (None, candidate):
-        regression, unknown = None, "no-previous-hash" if previous is None else "previous-is-the-candidate"
+    # … AND EVERY EARLIER CANDIDATE IT NAMES IS THAT ROUND'S BINARY: a fact of another binary
+    # is no fact of the run's earlier candidate.
+    binaries = {held["round"]: held["facts"].get("binary") for held in read["rounds"]}
+    for entry in earlier or []:
+        if entry["binary"] != binaries.get(entry["round"]):
+            refuse("bad-value", "%s: it says of round %d's candidate that it drove the binary %s, and round %d's record names %s — an earlier candidate is the binary its round's record names; nothing was written" % (what, entry["round"], entry["binary"], entry["round"], binaries.get(entry["round"]) or "none"))
+    if previous in (None, candidate):
+        regression = None
     # WHAT IT HANDS ON: each item's key minted; the first N that carry their kind's evidence
     # are handed on — N the opening's number, and none where it wrote no number — and every
     # later one is kept as what it is, beyond the number, in no queue. A lead takes no place.
@@ -4912,10 +5263,18 @@ def verdict(args):
         places += item["kind"] != "lead"
         item.update(place=n, beyond=item["kind"] != "lead" and places > (allowed or 0), source=as_data(cell("handed on by `%s`, the verifier of `%s`, in round %s (attempt %s)" % (reporter, key, round_number, attempt))))
         handed.append({name: item[name] for name in HANDED_FIELDS})
-    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, basis, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)))
+    record = dict(zip(FILED_FIELDS, (key, reporter, int(round_number), int(attempt), word, refutation, reason if word == UNDRIVABLE else None, regression, basis, candidate, previous, {"file": report_rel, "sha256": report_digest}, allowed, handed)), **{EARLIER: earlier})
+    # THE REGRESSION OF THE RUN, as every read will grade it — and, where it is unknown and
+    # the filing said a fact or said two of one binary, why: two drives of one binary that
+    # disagree; the previous release's fact kept by nothing; or, where it was kept, the
+    # earlier candidates are not all named — and not all nameable, where an earlier round's
+    # record names no binary to hold one to. A filing that said nothing and no flake prints
+    # no reason; the state still says one beside its key (why_unknown).
+    fact = regression_of_the_run(record)
+    unknown = why_unknown(record, binaries) if fact is None and word == "confirmed" and (given.get("regression") is not None or drives_disagree(record)) else None
     text = filed_text(record)
     rel = publish(run_dir, filed_parts + ["%s.a%s.json" % (reporter, attempt)], text, replace=False, taken="a verdict is filed once per finding and round")
-    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": regression, "unknown": unknown, CONTESTED: basis is not None, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
+    say(json.dumps({"verdict": rel, "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "key": key, "word": word, "regression": fact, "unknown": unknown, CONTESTED: basis is not None, "handed_on": [{name: item[name] for name in ("key", "proposed", "kind", "origin", "beyond")} for item in handed], "leads": [item["key"] for item in handed if item["kind"] == "lead"]}))
 
 
 # --- the entries a triage hands over ------------------------------------------------------
@@ -4994,17 +5353,31 @@ def entry_of(n, entry, round_number, handed, scratch):
     grade by `triage_entry`, its row and its class by `ledger_row` — so a kind without its
     evidence is a lead here because it is one there. A FINDING FOUND AGAIN BRINGS NONE OF A
     ROW'S CELLS: the row keeps its own."""
-    fields(entry, ENTRY_SAID, ("bound",) + ENTRY_ROW + KIND_FIELDS, "an entry of a triage")
-    key = slug(entry["key"], "key")
+    # EVERY REFUSAL OF AN ENTRY NAMES THE ENTRY — by its place in the file, and by its key
+    # where it has one: the triage's definition has it correct its file where a refusal
+    # names an entry, and halt on any other (finding-triage.md). So the checks below, and
+    # the row's writers they reach, are asked under the entry's name, never a row's.
+    fields(entry, ENTRY_SAID, ("bound",) + ENTRY_ROW + KIND_FIELDS, "entry %d of the file" % n)
+    key = slug(entry["key"], "entry %d of the file: key" % n)
     what = "entry %d (%s)" % (n, key)
     found = one_of(entry["found"], FOUND, what + ": found")
-    _, graded = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
-    stored = dict.fromkeys(ENTRY_FIELDS)
-    stored.update(key=key, found=found, grade=entry["grade"], bound=entry.get("bound"), why=as_data(said(entry, "why", what, scratch)), folds=folds_of(entry, what, handed))
+    # A FINDING FOUND AGAIN BRINGS NONE OF A ROW'S CELLS — asked first, so that an entry
+    # that brings one is refused once, for that, and not first for a text of a cell it
+    # must not bring at all.
     if found == "again":
         cells = [name for name in ENTRY_ROW + KIND_FIELDS if name in entry]
         if cells:
             refuse("bad-value", "%s: it is found again, and says %s — a finding found again is the row its key names, and that row keeps its own cells: an entry for it says its key, `found`, its grade, why, and what it folds, and nothing of a row" % (what, ", ".join(cells)))
+    # A HOST PATH NO PLACEHOLDER REPLACES names the entry and its text, and is reworded: a
+    # triage's call is typed as it stands, so it can pass no other root. Asked here of each
+    # text as the entry holds it, before the row's writers ask it again.
+    for name in ("why", "bound") + ENTRY_ROW + KIND_FIELDS:
+        if isinstance(entry.get(name), str):
+            public(entry[name], scratch, left=reworded(what, name, "hand the file over again"))
+    _, graded = triage_entry({name: entry[name] for name in ("key", "grade", "bound") if name in entry})
+    stored = dict.fromkeys(ENTRY_FIELDS)
+    stored.update(key=key, found=found, grade=entry["grade"], bound=entry.get("bound"), why=as_data(said(entry, "why", what, scratch)), folds=folds_of(entry, what, handed))
+    if found == "again":
         return stored, None, graded[0]
     lacks = [name for name in ENTRY_ROW if name not in entry]
     if lacks:
@@ -5013,7 +5386,7 @@ def entry_of(n, entry, round_number, handed, scratch):
     row.update({name: entry[name] for name in ENTRY_ROW[1:] + KIND_FIELDS if name in entry})
     if "kind" in entry:
         row["origin"] = TRIAGED_ORIGIN
-    _, cells, made = ledger_row(row, scratch)
+    _, cells, made = ledger_row(row, scratch, what)
     stored.update(doctype=entry["doctype"], door=as_data(cells[4]), clause=as_data(cells[5]), repro=as_data(cells[9]))
     if made is not None:
         given = made[1][len(GIVEN):] if made[1].startswith(GIVEN) else None
@@ -5046,7 +5419,10 @@ def triage_text(record):
         grade = OUT_OF_SCOPE + entry["bound"] if entry["bound"] else entry["grade"]
         kind = "-" if entry["kind"] is None else GIVEN + entry["given"] if entry["given"] else entry["kind"]
         lines.append("| %d | %s | %s | %s | %s | %s |" % (n, tick(entry["key"]), "new" if entry["found"] == "new" else "found again", grade, kind, folds_said(entry["folds"])))
-    lines += ["", "## The entries, as data", "", "```json", json.dumps(record, indent=1, ensure_ascii=False), "```", "", REPORT_ENDS]
+    lines += ["", "## The entries, as data", "", "```json", json.dumps(record, indent=1, ensure_ascii=False), "```"]
+    if TRIAGED_TOOLS in record:
+        lines += ["", "## Tools", "", record[TRIAGED_TOOLS]]
+    lines += ["", REPORT_ENDS]
     return "\n".join(lines) + "\n"
 
 
@@ -5058,10 +5434,16 @@ def rendered(text):
     writer by nothing: who wrote a file is not holdable.)"""
     lines = text.split("\n")
     try:
-        record = json.loads("\n".join(lines[lines.index("```json") + 1 : len(lines) - 1 - lines[::-1].index("```")]))
+        # The data block closes at the first fence after it: no line of its JSON is one, and
+        # the text under **Tools** rendered after it may hold fences of its own.
+        opens = lines.index("```json") + 1
+        record = json.loads("\n".join(lines[opens : lines.index("```", opens)]))
         shaped = (
             isinstance(record, dict)
-            and tuple(record) == TRIAGED_FIELDS
+            and tuple(record) in (TRIAGED_FIELDS, TRIAGED_FIELDS + (TRIAGED_TOOLS,))
+            # A text under **Tools** only as the writer leaves one: it says something, and
+            # opens and closes with a line that does.
+            and (TRIAGED_TOOLS not in record or (isinstance(record[TRIAGED_TOOLS], str) and bool(record[TRIAGED_TOOLS]) and tools_trimmed(record[TRIAGED_TOOLS]) == record[TRIAGED_TOOLS]))
             and type(record["round"]) is int
             and type(record["attempt"]) is int
             and isinstance(record["reporter"], str)
@@ -5135,6 +5517,56 @@ def triaged_in(run_dir, numbers):
     return found
 
 
+def tools_trimmed(text):
+    """The text under **Tools** as the writer keeps it: its blank lines at either end — every
+    line that holds nothing but whitespace — dropped, and every other byte as it stands (the
+    first line that says something keeps its indentation, which markdown reads)."""
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
+def tools_text(path, scratch):
+    """WHAT A TRIAGE SAYS UNDER **Tools**, from the file it names (the header: triage): text
+    that says something, one kind of line end and no C0 control character but the tab in it,
+    its host paths replaced as a report's are and its blank lines at either end dropped —
+    or the refusal, before anything is written. EVERY REFUSAL OF IT
+    NAMES --tools AND SAYS WHAT TO CHANGE, by the file's own line where it is a line's: the
+    triage's definition has it correct its file where a refusal names that file, and halt on
+    any other — and this text is optional, so no fault of it may cost the triage."""
+    where = "--tools %s" % shown(path)
+    try:
+        with open(path, "rb") as file:
+            text = file.read().decode("utf-8")
+    except OSError as err:
+        refuse("bad-value", "%s cannot be read as a file (%s): write what you say under **Tools** to that file — or, with nothing to say there, make the call without --tools; nothing was written" % (where, " ".join(str(err).split())))
+    except ValueError:
+        refuse("bad-value", "%s is not UTF-8 text: write it again as UTF-8, and make the call again; nothing was written" % where)
+    if "\0" in text:
+        refuse("bad-value", "%s holds a NUL byte, so it is not text: write it again without one, and make the call again; nothing was written" % where)
+    # ONE TEXT, ONE KIND OF LINE: a leading byte-order mark dropped; every line ended by `\n`
+    # alone — a CRLF is one line end, and every other character a cell takes as a line break
+    # (LINE_BREAK_CHARS: a lone CR, VT, FF, FS, GS, RS, NEL, U+2028, U+2029) is one, where a
+    # cell, which has no lines, writes `<br>`; a `\r` kept in a committed rendering is what a
+    # converting checkout rewrites, which leaves a file its data no longer renders. And every
+    # other character a cell takes as a space (SPACED_CHARS: C0 but the tab, and DEL) is a
+    # space here too. The lines every refusal of it names are these lines, counted by `\n`.
+    text = text[1:] if text.startswith("\ufeff") else text
+    text = re.sub("[" + LINE_BREAK_CHARS + "]", "\n", text.replace("\r\n", "\n"))
+    text = re.sub(SPACED_CHARS, lambda char: char.group() if char.group() in "\t\n" else " ", text)
+    if not text.strip():
+        refuse("bad-value", "%s says nothing: a triage with nothing to say under **Tools** makes the call without --tools; nothing was written" % where)
+    # Asked of the file as it was written, so that a line is the file's line — the host-path
+    # check and the fence would otherwise ask it of the report it is rendered into, and name
+    # a line of that report and neither --tools nor a change the triage can make.
+    text = public(text, scratch, left=lambda lines: "%s: line %s of the file still names this machine's home directory inside a path (a session's scratch area?) — reword it out of what you say under **Tools**, naming the script and never where it lay, and make the call again; nothing was written" % (where, lines))
+    fence_check(text, "%s: in the file, " % where)
+    return tools_trimmed(text)
+
+
 def triage(args):
     """A TRIAGE HANDS ITS ENTRIES OVER, ONCE (the header: triage): one file of the round — its
     report, rendered from the entries, which holds them as data — and nothing of a table.
@@ -5154,6 +5586,7 @@ def triage(args):
         refuse("bad-value", "stdin must be the entries of a triage: a JSON array of objects, one an entry")
     held = [entry_of(n, entry, int(round_number), handed, scratch) for n, entry in enumerate(given, 1)]
     entries = [stored for stored, _, _ in held]
+    tools = None if args.tools is None else tools_text(args.tools, scratch)
     distinct([entry["key"] for entry in entries], "the entry under the key")
     partition(handed, entries)
     one_writer(run_dir)
@@ -5167,7 +5600,7 @@ def triage(args):
     # nobody began it would be read as that attempt's marker.
     hold_to_its_attempt(run_dir, args.run, parts[:-1], attempt, "the entries of round %s's triage, handed over as `%s`" % (round_number, reporter), "the entries a triage hands over begin none")
     # AS THE ROWS THEY WILL BE: a new finding names its kind, and a grade cites a listed bound.
-    hold_kinds(run_dir, [row for _, row, _ in held if row is not None])
+    hold_kinds(run_dir, [row for _, row, _ in held if row is not None], {stored["key"]: "entry %d (%s)" % (n, stored["key"]) for n, (stored, _, _) in enumerate(held, 1)})
     hold_to_the_list(run_dir, [("entry %d (%s)" % (n, stored["key"]), grade) for n, (stored, _, grade) in enumerate(held, 1)])
     # WHAT AN ENTRY SAYS OF ITS KEY, HELD TO THE LEDGER — the rows of the state: the ledger's,
     # and each item a filed verdict handed on — and to the key a red run of an item of the
@@ -5188,6 +5621,8 @@ def triage(args):
         else:
             refuse("no-such-row", "entry %d (%s): it says `again`, and the run holds no row under that key — the ledger has none, no filed verdict handed one on, and it is no red run's key of an item of the test set. A finding the ledger does not hold is `new`, and brings what its row needs. Nothing was written" % (n, key))
     record = dict(zip(TRIAGED_FIELDS, (int(round_number), reporter, int(attempt), handed, entries)))
+    if tools is not None:
+        record[TRIAGED_TOOLS] = tools
     text = triage_text(record)
     publish(run_dir, parts, text, replace=False, taken="a triage hands its entries over once an attempt, as a report is written once: a re-run passes the next attempt")
     try:
@@ -5198,14 +5633,18 @@ def triage(args):
         # A HIT REFUSES THE FILING AND NAMES THE ENTRY — by its place in the file, never by
         # what matched: each entry scanned as a text of its own. Where that names none — the
         # hit is in a name of the file's own — or cannot be asked, the first refusal stands.
+        # The text under **Tools** is scanned as a text of its own beside them, and named so.
         try:
-            hits = scan_hits([("entry-%d" % n, json.dumps(entry, indent=1, ensure_ascii=False) + "\n") for n, entry in enumerate(entries, 1)])
+            hits = scan_hits([("entry-%d" % n, json.dumps(entry, indent=1, ensure_ascii=False) + "\n") for n, entry in enumerate(entries, 1)] + ([(TRIAGED_TOOLS, tools + "\n")] if tools is not None else []))
         except Refusal:
             raise refusal
-        places = sorted(int(name[len("entry-"):]) for name in hits)
+        places = sorted(int(name[len("entry-"):]) for name in hits if name.startswith("entry-"))
+        if TRIAGED_TOOLS in hits and not places:
+            raise Refusal("hygiene", "what a triage says under **Tools** is stopped by the public-hygiene scan — by where, never by what: reword the file --tools names, and make the call again; nothing was written. What the scan said of the report it would have been: %s" % refusal.detail, refusal.where)
         if not places:
             raise
-        raise Refusal("hygiene", "the entries a triage handed over are stopped by the public-hygiene scan at %s of the file — by where, never by what: reword %s, and hand the file over again; nothing was written. What the scan said of the report it would have been: %s" % ("entry %d" % places[0] if len(places) == 1 else "the entries %s and %d" % (", ".join(str(n) for n in places[:-1]), places[-1]), "it" if len(places) == 1 else "them", refusal.detail), refusal.where)
+        tools_too = TRIAGED_TOOLS in hits
+        raise Refusal("hygiene", "the entries a triage handed over are stopped by the public-hygiene scan at %s of the file%s — by where, never by what: reword %s, and %s; nothing was written. What the scan said of the report it would have been: %s" % ("entry %d" % places[0] if len(places) == 1 else "the entries %s and %d" % (", ".join(str(n) for n in places[:-1]), places[-1]), ", and at what it says under **Tools**, in the file --tools names" if tools_too else "", "it" if len(places) == 1 and not tools_too else "them", "hand both files over again" if tools_too else "hand the file over again", refusal.detail), refusal.where)
     grades, counted_ = {}, {}
     for entry, word in zip(entries, classes):
         grades[entry["grade"]] = grades.get(entry["grade"], 0) + 1
@@ -5563,7 +6002,7 @@ def filed_text(record):
     """A filed verdict as it is written: its members in their order (FILED_FIELDS), and —
     the last one — the sha256 of the text without it. A file a hand changed does not bear
     its own seal, and is no filed verdict."""
-    body = {name: record[name] for name in FILED_FIELDS}
+    body = {name: record[name] for name in (FILED_FIELDS if record.get(EARLIER) is None else FILED_WITH_EARLIER)}
     seal = hashlib.sha256(json.dumps(body, indent=1, ensure_ascii=False).encode("utf-8")).hexdigest()
     return json.dumps(dict(body, sha256=seal), indent=1, ensure_ascii=False) + "\n"
 
@@ -5573,7 +6012,7 @@ def sealed(text):
     wrote: not that JSON to the byte, not under its own seal, or of another shape."""
     try:
         record = json.loads(text)
-        if not isinstance(record, dict) or tuple(record) != FILED_FIELDS + ("sha256",) or filed_text(record) != text:
+        if not isinstance(record, dict) or tuple(record) not in (FILED_FIELDS + ("sha256",), FILED_WITH_EARLIER + ("sha256",)) or filed_text(record) != text:
             return None
         report, items = record["report"], record["handed_on"]
         shaped = (
@@ -5586,9 +6025,11 @@ def sealed(text):
             and (record["verdict"] == "refuted") == (isinstance(record["refutation"], str) and record["refutation"] in REFUTATIONS)
             and (record["verdict"] == UNDRIVABLE) == isinstance(record["reason"], str)
             and (record["regression"] is None or (a_regression_fact(record["regression"]) and record["verdict"] == "confirmed"))
+            and (record.get(EARLIER) is None or (record["verdict"] == "confirmed" and an_earlier_list(record[EARLIER], record["round"]) and all(tuple(entry) == EARLIER_FIELDS for entry in record[EARLIER])))
             and (record[CONTESTED] is None or (isinstance(record[CONTESTED], str) and bool(record[CONTESTED].strip())))
             and isinstance(record["candidate"], str)
             and bool(SHA256.fullmatch(record["candidate"]))
+            and (record["previous"] is None or (isinstance(record["previous"], str) and bool(SHA256.fullmatch(record["previous"]))))
             and isinstance(report, dict)
             and tuple(report) == ("file", "sha256")
             and all(isinstance(report[name], str) for name in report)
@@ -5623,7 +6064,8 @@ def filing_of(run_dir, number_, name):
                                          disk among the round's `test` reports, and is the
                                          file whose sha256 the filing stored
       another-binary                (iv) the hash of the candidate's binary it asserted is
-                                         the one the round's record names
+                                         the one the round's record names, and so is
+                                         each earlier candidate's it names (`earlier`)
     What a file cannot say alone — that its key is a row, and that it is the round's one
     filing for it — is the state's (filed_in)."""
     shaped = VERDICT_NAME.fullmatch(name)
@@ -5647,6 +6089,9 @@ def filing_of(run_dir, number_, name):
             return record, digest, "report-changed"
     if record["candidate"] != round_facts(*read_round(run_dir, number_)[::2])["binary"]:
         return record, digest, "another-binary"
+    for entry in record.get(EARLIER) or []:
+        if entry["binary"] != round_facts(*read_round(run_dir, entry["round"])[::2])["binary"]:
+            return record, digest, "another-binary"
     return record, digest, None
 
 
@@ -5771,7 +6216,7 @@ def named_by(finding, reporters):
     return sorted({"r%d %s" % (finding["round"], found.group(1)) for found in opens if found and found.group(1) in reporters.get(finding["round"], ())})
 
 
-def stop_view(findings, number_, order, queue, reporters):
+def stop_view(findings, number_, order, queue, reporters, why):
     """WHAT A STOP SHOWS OF A ROUND, as data (the header: state, `view`) — a pure function of
     the rows as the state has them, the run's order, its queue and the reporters of its
     rounds; no number of it is a caller's:
@@ -5780,7 +6225,7 @@ def stop_view(findings, number_, order, queue, reporters):
                  classes in the order's own order, and after them each class a verdict of
                  the round, or a row of the queue, is of
       confirmed  the findings confirmed in this round, inside the round's test set and
-                 outside it
+                 outside it — and, where the fact is unknown, why (`why`, by key)
       contested  THE FINDINGS A VERIFIER CONTESTED AND NOBODY RULED — routed human, by that
                  word: each with its verdict as the record's cell says it, the side of its
                  door, who says so and the basis. Such a row is in this list and in no
@@ -5822,7 +6267,7 @@ def stop_view(findings, number_, order, queue, reporters):
             word = said_.get("refutation") or said_.get("reason")
             contested.append({"key": finding["key"], "verdict": said_["verdict"] + (": " + word if word else ""), "inside": said_["inside"], **said_[CONTESTED]})
         elif in_round(finding) and finding["triage"]["verdict"] == "confirmed":
-            confirmed["inside" if finding["triage"]["inside"] else "outside"].append({"key": finding["key"], "regression": finding["triage"]["regression"]})
+            confirmed["inside" if finding["triage"]["inside"] else "outside"].append({"key": finding["key"], "regression": finding["triage"]["regression"], **({"unknown": why[finding["key"]]} if finding["key"] in why else {})})
         elif finding["key"] in ranked:
             pass
         elif finding["route"] == LISTED and finding["why"] in kept:
@@ -5896,10 +6341,10 @@ def view_text(read):
     rows = [["%s %s" % (rate["kind"], rate["origin"])] + [str(n) for n in row] for rate, row in zip(shown["rates"], numbers)]
     rows.append(["all"] + [str(sum(column)) for column in zip(*numbers)])
     lines += header(columns) + ["| %s |" % " | ".join(row) for row in rows]
-    regression = {True: "a regression", False: "no regression: it is red on the previous release too", NOT_COMPARABLE: "not comparable: its door is one the previous release does not have", None: "whether it is a regression is not known"}
+    regression = {True: "a regression", False: "no regression: it is red on the previous release too, and green on no earlier candidate of the run", NOT_COMPARABLE: "not comparable: its door is one the previous release does not have, and it is green on no earlier candidate of the run", None: "whether it is a regression is not known"}
     for side, title in (("inside", "Confirmed inside the round's test set"), ("outside", "Confirmed outside it")):
         lines += ["", "## %s — %d" % (title, len(shown["confirmed"][side])), ""]
-        lines += ["- %s — %s" % (tick(row["key"]), regression[row["regression"]]) for row in shown["confirmed"][side]] or ["None."]
+        lines += ["- %s — %s%s" % (tick(row["key"]), regression[row["regression"]], " (`%s`)" % row["unknown"] if "unknown" in row else "") for row in shown["confirmed"][side]] or ["None."]
     # WHAT A VERIFIER CONTESTED, AND NOBODY RULED: by key, with the verifier's own basis — the
     # text stands behind the list's mark, the key and the verifier's name, and opens no line.
     lines += [
@@ -6629,7 +7074,7 @@ def read_state(run_dir, run):
             "grade": base and base["grade"],
             "bound": base and base["bound"],
             "verdict": record["verdict"],
-            "regression": record["regression"],
+            "regression": regression_of_the_run(record),
             "found_with": base["found_with"] if base else as_data(rows[key][8]),
             "fork": None,
             **({"refutation": record["refutation"]} if record["refutation"] else {}),
@@ -6667,7 +7112,7 @@ def read_state(run_dir, run):
             # A FILED VERDICT GRADES ITS ROW as a recorded one does: the verifier's word —
             # and nothing, where nobody could drive the finding: the grade it had stands.
             said_ = verified[key]["record"]
-            grade, bound, grader = ("regression" if said_["regression"] is True else said_["verdict"]), None, "verify-real"
+            grade, bound, grader = ("regression" if regression_of_the_run(said_) is True else said_["verdict"]), None, "verify-real"
         finding = {
             "key": key,
             "doctype": untick(row[1]),
@@ -6818,6 +7263,11 @@ def read_state(run_dir, run):
         **({} if queue is None else {"queue": queue, "budget": budget, "filed": [{name: value for name, value in entry.items() if name != "record"} for entry in filings]}),
     }
     if queue is not None:
+        # … AND WHY EACH IS UNKNOWN, beside its key, in the order `regression_unknown` names
+        # them — where the human decides, and in the stop's view below. Only a run with a
+        # queue says it: a run without an order holds the keys it held (A_STAGE_AS_IT_WAS).
+        why = unknown_reasons(findings, filings, rounds)
+        read["regression_unknown_why"] = {key: why[key] for key in read["regression_unknown"]}
         # … AND OF WHAT A STOP SHOWS (the plan's T4): the latest round's view, as data — and
         # where its file lies, the hash of the text this document renders, and how the file
         # on disk stands to that text. None before the run's first round. The text is a
@@ -6825,7 +7275,7 @@ def read_state(run_dir, run):
         # beside are one read.
         read["view"] = None
         if rounds:
-            read["view"] = stop_view(findings, rounds[-1]["round"], order, queue, reporters)
+            read["view"] = stop_view(findings, rounds[-1]["round"], order, queue, reporters, why)
             text = view_text(read)
             read["view"] = {
                 "round": rounds[-1]["round"],
@@ -7311,7 +7761,7 @@ def composed_calls(run_dir, run, round_number, attempt, held, scratch, read):
             rows = [entry_row(entry, int(round_number)) for entry in record["entries"] if entry["found"] == "new"]
             if rows:
                 calls.append({"argv": ["ledger-add", "--run", run] + within, "stdin": json.dumps(rows)})
-            calls.append({"argv": ["triage-set"] + stage, "stdin": json.dumps([{"key": entry["key"], "grade": entry["grade"], **({"bound": entry["bound"]} if entry["bound"] else {})} for entry in record["entries"]])})
+            calls.append({"argv": ["triage-set"] + stage + ["--stage", "test"], "stdin": json.dumps([{"key": entry["key"], "grade": entry["grade"], **({"bound": entry["bound"]} if entry["bound"] else {})} for entry in record["entries"]])})
     if held["facts"]:
         calls.append({"argv": ["round-set"] + stage, "stdin": json.dumps(held["facts"])})
     if rendering is not None:
@@ -7546,7 +7996,7 @@ def vet_files(run_dir, run, names, subject):
                 # its own seal, beside the report it was filed with, on the round's binary.
                 _, _, why = filing_of(run_dir, int(parts[0][1:]), parts[2])
                 if why:
-                    refuse("bad-value", "it is no verdict as this script files one (%s): %s" % (why, {"not-a-filing": "not the text the writer left under that name, or not under its own seal", "report-gone": "the report it was filed beside is gone", "report-changed": "the report it was filed beside is no longer the file whose hash it keeps", "another-binary": "the binary it asserts is not the one the round's record names"}[why]))
+                    refuse("bad-value", "it is no verdict as this script files one (%s): %s" % (why, {"not-a-filing": "not the text the writer left under that name, or not under its own seal", "report-gone": "the report it was filed beside is gone", "report-changed": "the report it was filed beside is no longer the file whose hash it keeps", "another-binary": "a binary it asserts — its own round's candidate's, or an earlier candidate's — is not the one that round's record names"}[why]))
         except Refusal as refusal:
             if refusal.kind in ("did-not-run", "usage"):
                 raise
@@ -7856,9 +8306,9 @@ def arguments(argv):
     command("check-ledger", check_ledger, [], names=True)
     command("bound-set", bound_set, [("bound", True), ("reach", False), ("ruling", False), ("pin", False)], writes=True)
     command("scope-set", scope_set, [("round", True), ("from", False)], writes=True)
-    command("triage-set", triage_set, [("round", True)])
+    command("triage-set", triage_set, [("round", True), ("stage", True)])
     command("verdict", verdict, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True)
-    command("triage", triage, [("round", True), ("reporter", True), ("attempt", True), ("from", False)], writes=True, names=True)
+    command("triage", triage, [("round", True), ("reporter", True), ("attempt", True), ("from", False), ("tools", False)], writes=True, names=True)
     command("item-set", item_set, [], writes=True)
     command("round-set", round_set, [("round", True)])
     command("run-set", run_set, [])

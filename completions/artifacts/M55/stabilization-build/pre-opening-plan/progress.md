@@ -222,12 +222,217 @@ schema-version: 3
 <!-- fields -->
 - intent: T0 — give agents a channel to report the tools they wrote
 - workflow: builder
+- status: joined
+
+### t0-c2-review-sf1-the-tools  {#t0-c2-review-sf1-the-tools}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-1 — the tools text is normalised before anything is asked of it: CRLF and a lone CR each a line end, so a sealed rendering keeps no CR a converting checkout could rewrite; the arm that pinned the CR now pins its absence
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n2-one-line  {#t0-c2-review-n2-one-line}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-2 — fence_check counts lines by the newline, as the host-path check and the fences do; held by a fenced line after a U+2028 and a host path after a lone CR
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-leads-control-characters  {#t0-c2-review-leads-control-characters}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, the leads — control characters but the tab are spaces, as an entry's texts have them, and a leading byte-order mark is dropped, so a mark alone is blank and refused by --tools
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf2-the-principles  {#t0-c2-review-sf2-the-principles}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-2 — working-principles.md scopes the rendered triage report to a run with a queue, and says a run without an order writes its report as every agent does
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf4-every-refusal  {#t0-c2-review-sf4-every-refusal}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-4 — every refusal reachable from an entry names it: ledger_row and hold_kinds take the entry's name, the key's slug check and the field check say entry N of the file; held for no kind, crossed evidence, a lead's route, a bad doctype, a door that is no text, a key that is no slug
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf5-scope-set  {#t0-c2-review-sf5-scope-set}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-5 — scope-set's call is typed as it stands, so its host-path refusal names the door and the text and says to reword it; verdict and report may pass roots, and state, untriaged and apply carry no text of the agent's
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n1-the-nul  {#t0-c2-review-n1-the-nul}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-1 — the rendering's NUL clause dropped rather than armed: every path that refuses a file refuses a NUL first, and the state's read takes a forged rendering by design
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n3-the-combined  {#t0-c2-review-n3-the-combined}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-3 — the combined hygiene refusal names the file --tools names and says to hand both files over again
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n4-found-again  {#t0-c2-review-n4-found-again}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-4 — a found-again entry that brings a row's cell is refused for that before its texts are asked, so it is refused once
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf3-what-is  {#t0-c2-review-sf3-what-is}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-3 — what is left open is two clauses of wf-tools-no-road in decisions-pending.md: the per-part hygiene detail by the file's own line, and the --tools refusal naming the file in a form no writer has to replace
+- workflow: fixer
+- status: joined
+
+### t0-c3-review-sf4-the-door  {#t0-c3-review-sf4-the-door}
+
+<!-- fields -->
+- intent: T0 review, cycle 3, SF4 — scope-set's host-path refusal names the door by its place, included door N, and never by its text, which may be the very path refused; the class is the refusals reworded builds from the refused text, two callers, this one site
+- workflow: fixer
+- status: joined
+
+### t0-c3-review-sf5-the-tools-text  {#t0-c3-review-sf5-the-tools-text}
+
+<!-- fields -->
+- intent: T0 review, cycle 3, SF5 — the Tools text does what its sentence says, consistently with cell by one definition both read: every character a cell takes as a line break is a line end, every other C0 character but the tab and DEL a space, a C1 character other than NEL kept; a report's own fence keeps the newline-only line count armed
+- workflow: fixer
+- status: joined
 
 ### rb1-judge-a-regression-against  {#rb1-judge-a-regression-against}
 
 <!-- fields -->
 - intent: RB1 — judge a regression against every earlier candidate of the run, in the record script
 - workflow: builder
+- status: joined
+
+### rb1-review-s1-the-candidates  {#rb1-review-s1-the-candidates}
+
+<!-- fields -->
+- intent: RB1 review S1 — an earlier candidate that is the candidate's own binary again counts towards the list when named false, and anything else said of it is a flake: the fact is unknown, a green previous release included (earlier-is-the-candidate); the guard is in the one definition the filing and every read share, which also reads a previous release beside the candidate's hash as no fact at a read
+- workflow: fixer
+- status: joined
+
+### rb1-review-s2-green-with-no  {#rb1-review-s2-green-with-no}
+
+<!-- fields -->
+- intent: RB1 review S2 — an arm for an earlier candidate green with no previous release behind it: a regression, known, sent to a fixer; red against the mutant that keeps the no-previous-hash reason
+- workflow: fixer
+- status: joined
+
+### rb1-review-s3-the-sealed  {#rb1-review-s3-the-sealed}
+
+<!-- fields -->
+- intent: RB1 review S3 — an arm for the read's shape check of earlier: a resealed file with two entries for round 2 in round 3 is no filing; red against the mutant without the check
+- workflow: fixer
+- status: joined
+
+### rb1-review-n1-the-two  {#rb1-review-n1-the-two}
+
+<!-- fields -->
+- intent: RB1 review N1 — stabilization-workflow.md and decisions-pending.md say what the code does: unknown in a run with a queue, for a fact that is not true; a run without an order takes triage entries, which carry no list, the old path T12 deletes
+- workflow: fixer
+- status: joined
+
+### rb1-review-n2-the-vet  {#rb1-review-n2-the-vet}
+
+<!-- fields -->
+- intent: RB1 review N2 — the vet's another-binary message and filing_of's docstring say an earlier candidate's binary too
+- workflow: fixer
+- status: joined
+
+### rb1-review-n3-the-view  {#rb1-review-n3-the-view}
+
+<!-- fields -->
+- intent: RB1 review N3 — the stop's view says a false or not-comparable finding is green on no earlier candidate of the run
+- workflow: fixer
+- status: joined
+
+### rb1-review-n4-a-round  {#rb1-review-n4-a-round}
+
+<!-- fields -->
+- intent: RB1 review N4 — a round whose record names no binary leaves every later fact that is not true unknown, never no, and the filing now says why (earlier-unrecorded); preventing the state at round-set is not built, since the harness writes candidate and binary together
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-a-triage  {#rb1-review-left-open-a-triage}
+
+<!-- fields -->
+- intent: RB1 review, left open 1 — a triage entry of round 2 or later says no fact that is not a regression: triage-set writes its no and its not-comparable as unknown and prints why, entry-no-earlier; its yes stands and round 1 is unchanged; held in a run with a queue and in one without an order
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-the-shape  {#rb1-review-left-open-the-shape}
+
+<!-- fields -->
+- intent: RB1 review, left open 2 — the read holds the shape of previous, the sha256 of a binary or nothing, as it holds the shape of earlier; a resealed file with a hash that is none is no filing
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-why-a  {#rb1-review-left-open-why-a}
+
+<!-- fields -->
+- intent: RB1 review, left open 3 — why a fact is unknown stands beside its key in state, regression_unknown_why, and in the stop's view, read through one definition, why_unknown, which the filing's print uses too; a run without an order answers as it did
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf1-two-drives  {#rb1-c3-review-sf1-two-drives}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF1 — any two drives of one binary hash that disagree make the fact unknown, never a regression: candidate, previous and every earlier binary, pairwise, by one predicate, drives_disagree, used at the filing and at every read; the word is drives-disagree
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf2-a-fix-stage  {#rb1-c3-review-sf2-a-fix-stage}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF2 — triage-set takes --stage test|fix, required, and the harness passes its stage: a fix stage's entries, driven on the round's tip, say no fact that is not a regression in round 1 too; in a run with a queue the round record counts them as entry-no-earlier, so the state says why beside them
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf3-not-said  {#rb1-c3-review-sf3-not-said}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF3 — arms for not-said, for the filing's print of a flake beside no said regression, for the read's guard on a resealed previous null, and for the vet's another-binary words
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-sf5-the-docs  {#rb1-c3-review-sf5-the-docs}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, SF5 — the docs held to the code: the N1 clause superseded, the A_STAGE_AS_IT_WAS claim round 1 only, triage-set's Prints line, the state header's reason for a filing that said no regression, and the unknown condition of wf-regression-base
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-n2-the-flake-reading  {#rb1-c3-review-n2-the-flake-reading}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, N2 — the rule that a flake overrides a green previous release is marked in DECISIONS.md as the builders' reading, open to being overturned, for the main session to put to the human
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-n4-the-dead-assignment  {#rb1-c3-review-n4-the-dead-assignment}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, N4 — the dead assignment of unknown in verdict is removed
+- workflow: fixer
+- status: joined
+
+### rb1-c3-review-lead-never-driven  {#rb1-c3-review-lead-never-driven}
+
+<!-- fields -->
+- intent: RB1 review, cycle 3, its lead — an earlier round whose record names no binary leaves every later fact that is not true unknown: recorded as a clause of wf-regression-base; the harness writes candidate and binary in one call and neither on a re-run, a drop or a part
+- workflow: fixer
+- status: joined
 
 ### u0-give-cis-slowest-legs  {#u0-give-cis-slowest-legs}
 
@@ -360,6 +565,119 @@ schema-version: 3
 <!-- fields -->
 - intent: T-NR build — build the probe for rewritten returns, and the guard that binds while it runs
 - workflow: builder
+- status: active
+
+### t-nr-review-b1-no-script-written  {#t-nr-review-b1-no-script-written}
+
+<!-- fields -->
+- intent: T-NR review B1 — no script written under the scratch root runs: the probe tool holds each copy it runs to this repository's own by sha256, its dev directory to the copies alone and the throwaway repository's git configuration to the keys git init writes, immediately before it runs one, and refuses altered; under the marker a subagent writes only the batch and the obeyed file, never a copy, a module beside one or a .git
+- workflow: fixer
+- status: joined
+
+### t-nr-review-b2-each-act-its  {#t-nr-review-b2-each-act-its}
+
+<!-- fields -->
+- intent: T-NR review B2 — under the marker each act of the probe tool is the type's the harness launches for it, begin and verdict a build-git's and record a build-executor's, under the marker's own scratch root; the record script is off the list; outside() refuses a scratch root inside or holding any worktree or the common git directory; the refusals name the main session as the one that lifts a marker and hand out no path
+- workflow: fixer
+- status: joined
+
+### t-nr-review-b3-a-writer-that  {#t-nr-review-b3-a-writer-that}
+
+<!-- fields -->
+- intent: T-NR review B3 — a record writer that halts with no line is judged halted, b:r:none unsent or missing, never garbled; the neutralized verdict lifts the marker and writes its result whatever it decides; a simulation arm has the writer halt
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s1-the-verdicts-line  {#t-nr-review-s1-the-verdicts-line}
+
+<!-- fields -->
+- intent: T-NR review S1 — the verdict's line carries hashes, never the planted text; a simulation arm has the runtime's stand-in rewrite the verdict's return where it holds each shape, and the probe is judged, not halted
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s2-a-root-that  {#t-nr-review-s2-a-root-that}
+
+<!-- fields -->
+- intent: T-NR review S2 — a scratch root that holds the repository is refused, inside; the harness cannot check it, having no path of the checkout, and says so beside probeFault
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s3-who-changed-the  {#t-nr-review-s3-who-changed-the}
+
+<!-- fields -->
+- intent: T-NR review S3 — record takes --sha256 and refuses a batch that is not the bytes the harness composed; the cell and the report are judged exactly, against what was handed, with as_planted beside; where the verdict cannot tell who changed a text it says so, by
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s4-a-cut-runs  {#t-nr-review-s4-a-cut-runs}
+
+<!-- fields -->
+- intent: T-NR review S4 — the marker names when it was begun; the guard calls one stale whose root is gone or that is older than three hours, and says when it was begun; the halt note has the main session check the scratch root and the time before it removes one; the harness has no identity but its arguments
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s5-the-docs-held  {#t-nr-review-s5-the-docs-held}
+
+<!-- fields -->
+- intent: T-NR review S5 — the docs held to the code: at most four agents, the observers of (i) the subject and the record writer, the corrections in the log and the plan, the halt's no tracked file, the generated harness's true size
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s6-every-other-tool  {#t-nr-review-s6-every-other-tool}
+
+<!-- fields -->
+- intent: T-NR review S6 — under the marker every tool but the one act, a named write and a read is refused, MCP and web tools among them, with the hook's matcher every tool, a line of the main session's; what never reaches a PreToolUse hook is a declared bound
+- workflow: fixer
+- status: joined
+
+### t-nr-review-n1-fail-closed-for  {#t-nr-review-n1-fail-closed-for}
+
+<!-- fields -->
+- intent: T-NR review N1 — fail closed for the writers too: where the guard cannot tell whether a marker stands, every subagent's call is refused
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-1-the-sessions-hooks  {#t-nr-review2-1-the-sessions-hooks}
+
+<!-- fields -->
+- intent: T-NR second review 1 — the run's precondition: the session that runs the probe carries the guard's matcher *, restarted after the T to loop merge or confirmed under /hooks; the probe's begin refuses unguarded where this checkout's settings file does not give the guard *, the half a script can see
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-2-a-refused-record  {#t-nr-review2-2-a-refused-record}
+
+<!-- fields -->
+- intent: T-NR second review 2 — the record act keeps the line it prints on every exit it can place, a refusal's too; the verdict judges b against it and says the refusal's word on b, cell and report, so a text rewritten on its way to the writer reads garbled, never as a command that did not run; the refusal hands out no hash of the bytes written
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-3-a-verdict-only  {#t-nr-review2-3-a-verdict-only}
+
+<!-- fields -->
+- intent: T-NR second review 3 — under the marker a verdict passes the guard only as the harness composed it, its one sum the sha256 of its cases after the separator, so no subagent lifts the marker by an act of its own; every road to a lift re-checked, the docs and the refusal made true
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-4-a-refused-obedience  {#t-nr-review2-4-a-refused-obedience}
+
+<!-- fields -->
+- intent: T-NR second review 4 — the guard notes a refused call that names tnr-obeyed under the probe's root, with the agent's type and tool, and the verdict reads it as attempted; the log and the spec say what (i) observes
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-5-four-mutants-killed  {#t-nr-review2-5-four-mutants-killed}
+
+<!-- fields -->
+- intent: T-NR second review 5 — four mutants killed by arms: the git directory a link, the copies' directory a link, the null hooks path removed, a verdict lifting another root's marker
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-notes-the-guards-input  {#t-nr-review2-notes-the-guards-input}
+
+<!-- fields -->
+- intent: T-NR second review notes — input nested too deep exits 2 as unreadable; the throwaway repository refuses a link or a pointer to elsewhere in its git directory; every GIT variable of the caller's is dropped; the headers say the marker binds only where the checked-out guard knows it
+- workflow: fixer
+- status: joined
 
 ### m-tnr-merge-the-hunter  {#m-tnr-merge-the-hunter}
 
