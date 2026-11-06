@@ -67,11 +67,151 @@ schema-version: 3
 - workflow: builder
 - status: joined
 
+### t0-c2-review-sf1-the-tools  {#t0-c2-review-sf1-the-tools}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-1 — the tools text is normalised before anything is asked of it: CRLF and a lone CR each a line end, so a sealed rendering keeps no CR a converting checkout could rewrite; the arm that pinned the CR now pins its absence
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n2-one-line  {#t0-c2-review-n2-one-line}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-2 — fence_check counts lines by the newline, as the host-path check and the fences do; held by a fenced line after a U+2028 and a host path after a lone CR
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-leads-control-characters  {#t0-c2-review-leads-control-characters}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, the leads — control characters but the tab are spaces, as an entry's texts have them, and a leading byte-order mark is dropped, so a mark alone is blank and refused by --tools
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf2-the-principles  {#t0-c2-review-sf2-the-principles}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-2 — working-principles.md scopes the rendered triage report to a run with a queue, and says a run without an order writes its report as every agent does
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf4-every-refusal  {#t0-c2-review-sf4-every-refusal}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-4 — every refusal reachable from an entry names it: ledger_row and hold_kinds take the entry's name, the key's slug check and the field check say entry N of the file; held for no kind, crossed evidence, a lead's route, a bad doctype, a door that is no text, a key that is no slug
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf5-scope-set  {#t0-c2-review-sf5-scope-set}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-5 — scope-set's call is typed as it stands, so its host-path refusal names the door and the text and says to reword it; verdict and report may pass roots, and state, untriaged and apply carry no text of the agent's
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n1-the-nul  {#t0-c2-review-n1-the-nul}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-1 — the rendering's NUL clause dropped rather than armed: every path that refuses a file refuses a NUL first, and the state's read takes a forged rendering by design
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n3-the-combined  {#t0-c2-review-n3-the-combined}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-3 — the combined hygiene refusal names the file --tools names and says to hand both files over again
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-n4-found-again  {#t0-c2-review-n4-found-again}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, N-4 — a found-again entry that brings a row's cell is refused for that before its texts are asked, so it is refused once
+- workflow: fixer
+- status: joined
+
+### t0-c2-review-sf3-what-is  {#t0-c2-review-sf3-what-is}
+
+<!-- fields -->
+- intent: T0 review, cycle 2, SF-3 — what is left open is two clauses of wf-tools-no-road in decisions-pending.md: the per-part hygiene detail by the file's own line, and the --tools refusal naming the file in a form no writer has to replace
+- workflow: fixer
+- status: joined
+
 ### rb1-judge-a-regression-against  {#rb1-judge-a-regression-against}
 
 <!-- fields -->
 - intent: RB1 — judge a regression against every earlier candidate of the run, in the record script
 - workflow: builder
+- status: joined
+
+### rb1-review-s1-the-candidates  {#rb1-review-s1-the-candidates}
+
+<!-- fields -->
+- intent: RB1 review S1 — an earlier candidate that is the candidate's own binary again counts towards the list when named false, and anything else said of it is a flake: the fact is unknown, a green previous release included (earlier-is-the-candidate); the guard is in the one definition the filing and every read share, which also reads a previous release beside the candidate's hash as no fact at a read
+- workflow: fixer
+- status: joined
+
+### rb1-review-s2-green-with-no  {#rb1-review-s2-green-with-no}
+
+<!-- fields -->
+- intent: RB1 review S2 — an arm for an earlier candidate green with no previous release behind it: a regression, known, sent to a fixer; red against the mutant that keeps the no-previous-hash reason
+- workflow: fixer
+- status: joined
+
+### rb1-review-s3-the-sealed  {#rb1-review-s3-the-sealed}
+
+<!-- fields -->
+- intent: RB1 review S3 — an arm for the read's shape check of earlier: a resealed file with two entries for round 2 in round 3 is no filing; red against the mutant without the check
+- workflow: fixer
+- status: joined
+
+### rb1-review-n1-the-two  {#rb1-review-n1-the-two}
+
+<!-- fields -->
+- intent: RB1 review N1 — stabilization-workflow.md and decisions-pending.md say what the code does: unknown in a run with a queue, for a fact that is not true; a run without an order takes triage entries, which carry no list, the old path T12 deletes
+- workflow: fixer
+- status: joined
+
+### rb1-review-n2-the-vet  {#rb1-review-n2-the-vet}
+
+<!-- fields -->
+- intent: RB1 review N2 — the vet's another-binary message and filing_of's docstring say an earlier candidate's binary too
+- workflow: fixer
+- status: joined
+
+### rb1-review-n3-the-view  {#rb1-review-n3-the-view}
+
+<!-- fields -->
+- intent: RB1 review N3 — the stop's view says a false or not-comparable finding is green on no earlier candidate of the run
+- workflow: fixer
+- status: joined
+
+### rb1-review-n4-a-round  {#rb1-review-n4-a-round}
+
+<!-- fields -->
+- intent: RB1 review N4 — a round whose record names no binary leaves every later fact that is not true unknown, never no, and the filing now says why (earlier-unrecorded); preventing the state at round-set is not built, since the harness writes candidate and binary together
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-a-triage  {#rb1-review-left-open-a-triage}
+
+<!-- fields -->
+- intent: RB1 review, left open 1 — a triage entry of round 2 or later says no fact that is not a regression: triage-set writes its no and its not-comparable as unknown and prints why, entry-no-earlier; its yes stands and round 1 is unchanged; held in a run with a queue and in one without an order
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-the-shape  {#rb1-review-left-open-the-shape}
+
+<!-- fields -->
+- intent: RB1 review, left open 2 — the read holds the shape of previous, the sha256 of a binary or nothing, as it holds the shape of earlier; a resealed file with a hash that is none is no filing
+- workflow: fixer
+- status: joined
+
+### rb1-review-left-open-why-a  {#rb1-review-left-open-why-a}
+
+<!-- fields -->
+- intent: RB1 review, left open 3 — why a fact is unknown stands beside its key in state, regression_unknown_why, and in the stop's view, read through one definition, why_unknown, which the filing's print uses too; a run without an order answers as it did
+- workflow: fixer
 - status: joined
 
 ### u0-give-cis-slowest-legs  {#u0-give-cis-slowest-legs}

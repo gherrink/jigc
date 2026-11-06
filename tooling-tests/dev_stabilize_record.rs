@@ -2522,14 +2522,24 @@ fn an_undeclared_scratch_area_is_refused_rather_than_half_replaced() {
         let before = rig.snapshot();
         let (seen, _) = (writer.call)(rig, &text, &[]);
         seen.refused(HOST_PATH, writer.name);
-        if writer.name == "triage (an entry's `why`)" {
-            // A TRIAGE'S CALL IS TYPED AS IT STANDS (the review of the plan's task `T0`): it
-            // can pass no other root, and its definition has it correct its file where a
-            // refusal names an entry and halt on any other — so the refusal names the entry
-            // and its text, and says to reword it, never to pass a root.
+        // A CALL TYPED AS IT STANDS can pass no other root (the review of the plan's task
+        // `T0`; of `5a10dbae`, SF-5: the scope step's call is one too) — so the refusal names
+        // what the text is of and the text, and says to reword it, never to pass a root.
+        let typed_as_it_stands = [
+            ("triage (an entry's `why`)", "entry 1 (audit-f3)", "`why`"),
+            (
+                "scope-set (a door's derivation)",
+                "door \"jigc setup\"",
+                "`derivation`",
+            ),
+        ];
+        if let Some((_, of, text)) = typed_as_it_stands
+            .iter()
+            .find(|(name, _, _)| *name == writer.name)
+        {
             assert!(
-                seen.stderr.contains("entry 1 (audit-f3)")
-                    && seen.stderr.contains("`why`")
+                seen.stderr.contains(of)
+                    && seen.stderr.contains(text)
                     && seen.stderr.contains("reword")
                     && !seen.stderr.contains("--scratch"),
                 "{}: the refusal names the entry and says to reword it: {}",
@@ -19124,7 +19134,7 @@ fn a_door_the_previous_release_does_not_have_is_not_comparable_from_the_filing_t
         at("fix", "inside"),
         "not-comparable",
         ["r-2"],
-        [{"key": "r-1", "regression": "not-comparable"}, {"key": "r-2", "regression": null}]
+        [{"key": "r-1", "regression": "not-comparable"}, {"key": "r-2", "regression": null, "unknown": "no-previous-hash"}]
     ]);
     assert_eq!(said_of(&read), expected, "{read}");
 
@@ -19162,7 +19172,7 @@ fn a_door_the_previous_release_does_not_have_is_not_comparable_from_the_filing_t
     let view = rig.read(&view_path("1"));
     assert!(
         view.contains(
-            "- `r-1` — not comparable: its door is one the previous release does not have"
+            "- `r-1` — not comparable: its door is one the previous release does not have, and it is green on no earlier candidate of the run"
         ),
         "{view}"
     );
@@ -19260,10 +19270,22 @@ fn driven_in(n: usize) -> String {
 /// own writers — and the latest round tested too, its hunt's `keys` each sent on by its one
 /// triage, and its attempt 1 begun on record.
 fn a_later_round(label: &str, rounds: usize, keys: &[&str]) -> Rig {
+    let binaries: Vec<Option<String>> = (2..=rounds).map(|n| Some(driven_in(n))).collect();
+    a_later_round_driven_as(label, &binaries, keys)
+}
+
+/// [`a_later_round`], with the binary each round after the first names given — `binaries`
+/// holds rounds 2, 3, … in order: a hash, which may be an earlier round's again, or none,
+/// where the round's record names no binary at all.
+fn a_later_round_driven_as(label: &str, binaries: &[Option<String>], keys: &[&str]) -> Rig {
     let rig = a_filing_run(label, Some(9), Some(2));
-    for n in 2..=rounds {
-        tested_round(&rig, n, true, &BOTH_GREEN, json!({"binary": driven_in(n)}));
+    for (n, binary) in (2..).zip(binaries) {
+        let facts = binary
+            .as_ref()
+            .map_or_else(|| json!({}), |binary| json!({"binary": binary}));
+        tested_round(&rig, n, true, &BOTH_GREEN, facts);
     }
+    let rounds = binaries.len() + 1;
     let round = rounds.to_string();
     let found: Vec<Value> = keys
         .iter()
@@ -19534,7 +19556,19 @@ fn in_round_two_a_confirmed_filing_without_earlier_is_unknown() {
             json!(["`r-5`", "confirmed", "no"])
         ]
     );
-    assert_eq!(rig.state()["regression_unknown"], json!(["r-1", "r-2"]));
+    let read = rig.state();
+    assert_eq!(read["regression_unknown"], json!(["r-1", "r-2"]));
+    // WHY EACH IS UNKNOWN stands beside its key in the state and in the stop's view, read
+    // back from the filing a record took.
+    assert_eq!(
+        read["regression_unknown_why"],
+        json!({"r-1": "no-earlier", "r-2": "no-earlier"})
+    );
+    let view = rig.read(&view_path("2"));
+    assert!(
+        view.contains("- `r-1` — whether it is a regression is not known (`no-earlier`)"),
+        "{view}"
+    );
     // A refutation carries no earlier candidates, as it carries no regression.
     refuted["key"] = json!("r-9");
     refuted["earlier"] = json!([on(1, json!(true))]);
@@ -19739,6 +19773,351 @@ fn round_one_has_no_earlier_candidate() {
         "and one that says it keeps what it said"
     );
     assert_eq!(rig.state()["regression_unknown"], json!([]));
+}
+
+/// Where round `n`'s filed verdict of the verifier of `key` lies (attempt 1).
+fn filed_in_path(n: usize, key: &str) -> String {
+    format!("completions/artifacts/{RUN}/r{n}/verdicts/verify-{key}.a1.json")
+}
+
+/// **An earlier candidate that is the candidate's binary again is no regression** (the
+/// review of `RB1`, S1). Two rounds may drive one binary — a round that only tests again,
+/// with nothing landed between, does. Green there and red on the candidate is the same bytes
+/// driven twice with two results: a flake, which is never routed as a regression, whatever
+/// else the filing says — the fact is unknown, the call prints why
+/// (`earlier-is-the-candidate`), and the finding is named among `regression_unknown`. Named
+/// `false`, the entry agrees with the verdict and counts towards the list: the round that
+/// only tests again leaves the fact known.
+#[test]
+fn an_earlier_candidate_that_is_the_candidates_binary_again_is_no_regression() {
+    let rig = a_later_round_driven_as(
+        "earlier-again",
+        &[Some(driven())],
+        &["r-1", "r-2", "r-3", "r-4"],
+    );
+    let again = |key: &str, previous: Value, there: Value| json!({"key": key, "verdict": "confirmed", "candidate": driven(), "previous": sha256('d'), "regression": previous, "earlier": [on(1, there)]});
+    let unknown = json!([null, "earlier-is-the-candidate"]);
+    assert_eq!(
+        said_in(&rig, 2, &again("r-1", json!(false), json!(true))),
+        unknown,
+        "red on the previous release, green on the candidate's own bytes"
+    );
+    assert_eq!(
+        said_in(&rig, 2, &again("r-2", json!(true), json!(true))),
+        unknown,
+        "green on the previous release too: the flake still reads as no regression"
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            2,
+            &again("r-3", json!(false), json!("not-comparable"))
+        ),
+        unknown,
+        "a door the candidate's own bytes are said to lack"
+    );
+    assert_eq!(
+        said_in(&rig, 2, &again("r-4", json!(false), json!(false))),
+        json!([false, null]),
+        "red on its own bytes again: the list is complete, and the fact known"
+    );
+    let said_of = |read: &Value| {
+        json!([
+            read["regression_unknown"],
+            finding(read, "r-1")["grade"],
+            routed(read, "r-1"),
+            finding(read, "r-2")["grade"],
+            finding(read, "r-4")["triage"]["regression"]
+        ])
+    };
+    let expected = json!([
+        ["r-1", "r-2", "r-3"],
+        "confirmed",
+        at("fix", "inside"),
+        "confirmed",
+        false
+    ]);
+    assert_eq!(
+        said_of(&rig.state()),
+        expected,
+        "before any record holds it"
+    );
+    recorded_in(&rig, 2, &["r-1", "r-2", "r-3", "r-4"]).must(OK, "the record");
+    assert_eq!(
+        regression_cells(&rig, 2),
+        [
+            json!(["`r-1`", "confirmed", "-"]),
+            json!(["`r-2`", "confirmed", "-"]),
+            json!(["`r-3`", "confirmed", "-"]),
+            json!(["`r-4`", "confirmed", "no"])
+        ]
+    );
+    assert_eq!(said_of(&rig.state()), expected, "read back from the record");
+    assert_eq!(
+        rig.state()["regression_unknown_why"],
+        json!({"r-1": "earlier-is-the-candidate", "r-2": "earlier-is-the-candidate", "r-3": "earlier-is-the-candidate"})
+    );
+    let view = rig.read(&view_path("2"));
+    assert!(
+        view.contains("- `r-1` — whether it is a regression is not known (`earlier-is-the-candidate`)")
+            && view.contains("- `r-4` — no regression: it is red on the previous release too, and green on no earlier candidate of the run\n"),
+        "{view}"
+    );
+}
+
+/// **A previous release whose hash is the candidate's says nothing at any read** — the
+/// sibling of the arm above on the previous release's side. The filing already keeps no
+/// fact there (`previous-is-the-candidate`); a file resealed by a hand to say one is read by
+/// the one definition as the filing would have kept it: unknown, never a regression.
+#[test]
+fn a_previous_release_that_is_the_candidate_says_nothing_at_a_read() {
+    let rig = a_later_round("previous-again", 2, &["r-1"]);
+    let mut given = confirmed_in(2, "r-1", json!(false), Some(json!([on(1, json!(false))])));
+    given["previous"] = json!(driven_in(2));
+    assert_eq!(
+        said_in(&rig, 2, &given),
+        json!([null, "previous-is-the-candidate"])
+    );
+    let path = filed_in_path(2, "r-1");
+    let text = rig.read(&path);
+    fs::write(
+        rig.root.join(&path),
+        resealed(&text, r#""regression": null"#, r#""regression": true"#),
+    )
+    .expect("a filing resealed by a hand");
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            filed(&read),
+            finding(&read, "r-1")["grade"],
+            read["regression_unknown"]
+        ]),
+        json!([[["r-1", true, null]], "confirmed", ["r-1"]]),
+        "{read}"
+    );
+}
+
+/// **Green on an earlier candidate is a regression with no previous release behind it**
+/// (the review of `RB1`, S2; the builder's first reading: completeness is what a *no*
+/// needs, and only a *no*). A filing that names no previous release's binary keeps no fact
+/// there, and a green earlier candidate is a regression all the same — known, so the call
+/// prints no reason (`unknown` null), and the finding goes to a fixer.
+#[test]
+fn green_on_an_earlier_candidate_is_a_regression_with_no_previous_release_behind_it() {
+    let rig = a_later_round("earlier-no-previous", 2, &["r-1"]);
+    let mut given = confirmed_in(2, "r-1", json!(false), Some(json!([on(1, json!(true))])));
+    given.as_object_mut().expect("a filing").remove("previous");
+    assert_eq!(said_in(&rig, 2, &given), json!([true, null]));
+    let read = rig.state();
+    assert_eq!(
+        json!([
+            finding(&read, "r-1")["grade"],
+            routed(&read, "r-1"),
+            read["regression_unknown"]
+        ]),
+        json!(["regression", at("fix", "regression"), []]),
+        "{read}"
+    );
+}
+
+/// **An `earlier` list of another shape in a resealed file is no filing** (the review of
+/// `RB1`, S3). The seal is a plain hash a hand can recompute, so the shape of `earlier` is
+/// held again by every read (`sealed`): two entries for round 2 in round 3, each with round
+/// 2's binary, would pass the binary check and the count of the list, and read as a known
+/// `no` — the read takes the file for no filing, and the finding awaits its verdict again.
+#[test]
+fn a_resealed_earlier_list_of_another_shape_is_no_filing() {
+    let rig = a_later_round("earlier-resealed", 3, &["r-1"]);
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(
+                3,
+                "r-1",
+                json!(false),
+                Some(json!([on(2, json!(false)), on(1, json!(false))]))
+            )
+        ),
+        json!([false, null])
+    );
+    assert_eq!(filed(&rig.state()), [json!(["r-1", true, null])]);
+    let path = filed_in_path(3, "r-1");
+    let text = rig.read(&path);
+    let was = format!("\"round\": 1,\n   \"binary\": \"{}\"", driven());
+    let now = format!("\"round\": 2,\n   \"binary\": \"{}\"", driven_in(2));
+    fs::write(rig.root.join(&path), resealed(&text, &was, &now))
+        .expect("a filing resealed by a hand");
+    let read = rig.state();
+    assert_eq!(
+        json!([filed(&read), finding(&read, "r-1")["grade"]]),
+        json!([[[null, false, "not-a-filing"]], "breaks"]),
+        "{read}"
+    );
+}
+
+/// **An earlier round whose record names no binary leaves the fact unknown, and the call
+/// says why** (the review of `RB1`, N4). An entry is held to the binary its round's record
+/// names, so a round that names none can be named by no entry, and no list is complete:
+/// a fact that is not `true` stays unknown — never `no` — and the call prints
+/// `earlier-unrecorded`, not the `earlier-incomplete` a verifier could have avoided. Green on
+/// a candidate that can be named is a regression all the same.
+#[test]
+fn an_earlier_round_that_names_no_binary_leaves_the_fact_unknown_and_says_why() {
+    let rig = a_later_round_driven_as(
+        "earlier-unrecorded",
+        &[None, Some(driven_in(3))],
+        &["r-1", "r-2", "r-3"],
+    );
+    reported_in(&rig, 3, "r-3");
+    let before = rig.snapshot();
+    let seen = file_in(
+        &rig,
+        3,
+        &confirmed_in(
+            3,
+            "r-3",
+            json!(false),
+            Some(json!([on(2, json!(false)), on(1, json!(false))])),
+        ),
+    );
+    seen.refused(BAD_VALUE, "an entry for a round that names no binary");
+    assert!(seen.stderr.contains("names none"), "{}", seen.stderr);
+    assert_eq!(rig.snapshot(), before, "nothing was written");
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-1", json!(false), Some(json!([on(1, json!(false))])))
+        ),
+        json!([null, "earlier-unrecorded"])
+    );
+    assert_eq!(
+        said_in(
+            &rig,
+            3,
+            &confirmed_in(3, "r-2", json!(false), Some(json!([on(1, json!(true))])))
+        ),
+        json!([true, null]),
+        "green on one earlier candidate is enough"
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([read["regression_unknown"], read["regression_unknown_why"]]),
+        json!([["r-1"], {"r-1": "earlier-unrecorded"}])
+    );
+}
+
+/// **A `previous` of another shape in a resealed file is no filing** (the review of `RB1`,
+/// its left-open items): the read holds the shape of `previous` as it holds the shape of
+/// `earlier` — the sha256 of a binary, or nothing — so a hand that reseals a file with a
+/// hash that is none leaves no verdict.
+#[test]
+fn a_resealed_previous_of_another_shape_is_no_filing() {
+    let rig = a_later_round("previous-resealed-shape", 2, &["r-1"]);
+    said_in(
+        &rig,
+        2,
+        &confirmed_in(2, "r-1", json!(false), Some(json!([on(1, json!(false))]))),
+    );
+    assert_eq!(filed(&rig.state()), [json!(["r-1", true, null])]);
+    let path = filed_in_path(2, "r-1");
+    let text = rig.read(&path);
+    let was = format!("\"previous\": \"{}\"", sha256('d'));
+    fs::write(
+        rig.root.join(&path),
+        resealed(&text, &was, "\"previous\": \"the-previous-release\""),
+    )
+    .expect("a filing resealed by a hand");
+    let read = rig.state();
+    assert_eq!(
+        json!([filed(&read), finding(&read, "r-1")["grade"]]),
+        json!([[[null, false, "not-a-filing"]], "breaks"]),
+        "{read}"
+    );
+}
+
+/// **A triage entry of round 2 or later says no fact that is not a regression** (ruling (c)
+/// of 2026-10-27: a fact of *no regression* needs the repro red on every earlier candidate
+/// of the run, and an entry carries none of them). Its `no` and its `not-comparable` are
+/// written `-`, the call names why (`entry-no-earlier`), and the state and the stop's view
+/// say it beside the key; its `yes` stands. In a run with a queue — where an entry may say
+/// the verdict of a finding nobody filed one for — and in a run without an order alike.
+/// Round 1 has no earlier candidate, and its entries keep their fact.
+#[test]
+fn a_triage_entry_of_a_later_round_says_no_fact_that_is_not_a_regression() {
+    let rig = a_later_round("entry-later", 2, &["r-1", "r-2", "r-3"]);
+    let said = |key: &str, regression: Value| json!({"key": key, "grade": "breaks", "verdict": "confirmed", "regression": regression});
+    let seen = rig.run(
+        &triage_set(RUN, "2"),
+        &json!([
+            said("r-1", json!(false)),
+            said("r-2", json!("not-comparable")),
+            said("r-3", json!(true))
+        ])
+        .to_string(),
+    );
+    seen.must(OK, "round 2's triage entries with verdicts");
+    assert_eq!(
+        seen.json()["unknown"],
+        json!({"r-1": "entry-no-earlier", "r-2": "entry-no-earlier"})
+    );
+    assert_eq!(
+        regression_cells(&rig, 2),
+        [
+            json!(["`r-1`", "confirmed", "-"]),
+            json!(["`r-2`", "confirmed", "-"]),
+            json!(["`r-3`", "confirmed", "yes"])
+        ]
+    );
+    let read = rig.state();
+    assert_eq!(
+        json!([read["regression_unknown"], read["regression_unknown_why"]]),
+        json!([["r-1", "r-2"], {"r-1": "entry-no-earlier", "r-2": "entry-no-earlier"}]),
+        "{read}"
+    );
+
+    // A RUN WITHOUT AN ORDER, in round 2: the same.
+    let plain = Rig::new("entry-later-no-order");
+    plain.seed_rows(&["a-1", "a-2"]);
+    plain
+        .run(
+            &scope_set(RUN, "1"),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "round 1's scope");
+    for (facts, what) in [
+        (json!({"candidate": sha('c')}), "round 1's candidate"),
+        (
+            json!({"outcome": "dropped"}),
+            "the human's exit from round 1",
+        ),
+    ] {
+        plain
+            .run(&round_set(RUN, "1"), &facts.to_string())
+            .must(OK, what);
+    }
+    plain
+        .run(
+            &scope_set(RUN, "2"),
+            &scope(&[INSIDE], &[EXCLUDED]).to_string(),
+        )
+        .must(OK, "round 2's scope");
+    let seen = plain.run(
+        &triage_set(RUN, "2"),
+        &json!([said("a-1", json!(false)), said("a-2", json!(true))]).to_string(),
+    );
+    seen.must(OK, "round 2's triage in a run without an order");
+    assert_eq!(seen.json()["unknown"], json!({"a-1": "entry-no-earlier"}));
+    assert_eq!(
+        regression_cells(&plain, 2),
+        [
+            json!(["`a-1`", "confirmed", "-"]),
+            json!(["`a-2`", "confirmed", "yes"])
+        ]
+    );
+    let read = plain.state();
+    assert_eq!(read["regression_unknown"], json!(["a-1"]), "{read}");
 }
 
 /// **A filed verdict counts before any record holds it** (`T3a`; ruling 4 of 2026-10-10: *a
@@ -21973,11 +22352,11 @@ The round's `test` stage has spent 8 of its budget of 9 verdicts: 1 is left. A v
 ## Confirmed inside the round's test set — 2
 
 - `r-in` — a regression
-- `s-done` — no regression: it is red on the previous release too
+- `s-done` — no regression: it is red on the previous release too, and green on no earlier candidate of the run
 
 ## Confirmed outside it — 1
 
-- `r-out` — whether it is a regression is not known
+- `r-out` — whether it is a regression is not known (`no-previous-hash`)
 
 ## Contested by its verifier, and the human's to rule — 0
 
@@ -22375,7 +22754,7 @@ fn the_four_lists_hold_every_row_once_or_say_why_not() {
         ]),
         json!([
             [{"key": "r-in", "regression": true}, {"key": "s-done", "regression": false}],
-            [{"key": "r-out", "regression": null}],
+            [{"key": "r-out", "regression": null, "unknown": "no-previous-hash"}],
             [{"key": "first", "kind": "route", "origin": "under-confirmed"},
              {"key": "r-wait", "kind": "route", "origin": "hunt"},
              {"key": "b-wait", "kind": "behaviour", "origin": "hunt"}]
@@ -22455,9 +22834,9 @@ fn the_four_lists_hold_every_row_once_or_say_why_not() {
     for line in [
         "## Confirmed inside the round's test set — 2",
         "- `r-in` — a regression",
-        "- `s-done` — no regression: it is red on the previous release too",
+        "- `s-done` — no regression: it is red on the previous release too, and green on no earlier candidate of the run",
         "## Confirmed outside it — 1",
-        "- `r-out` — whether it is a regression is not known",
+        "- `r-out` — whether it is a regression is not known (`no-previous-hash`)",
         "## In the queue, and no verdict yet — 3: route 2, behaviour 1",
         "- route (2): `first`, `r-wait`",
         "- behaviour (1): `b-wait`",
@@ -23414,8 +23793,10 @@ fn triage_hands_over_its_entries_once_and_its_report_is_rendered_from_them() {
 /// **An entry is held as the row it will be** (`K2`; `T1`: *a kind without its evidence is a
 /// lead*; `T2a`: *in a run with an order a row without a kind is refused*) — by the ledger's
 /// own functions and no second check: a new entry's kind without its evidence is entered as
-/// a lead, and the call says so; a new entry that names no kind is refused in the words the
-/// ledger refuses a row with; the evidence of another kind, a grade outside triage's five and
+/// a lead, and the call says so; a new entry that names no kind is refused, and EVERY SUCH
+/// REFUSAL NAMES THE ENTRY, never the row it would be (the review of `5a10dbae`, SF-4: the
+/// triage's definition corrects its file where a refusal names an entry, and halts on any
+/// other); the evidence of another kind, a grade outside triage's five and
 /// a bound off the list are refused. AND WHAT AN ENTRY SAYS OF ITS KEY IS HELD TO THE LEDGER:
 /// `new` under a key the run holds, and `again` under a key that is no row, are refused — a
 /// finding found again is the row it names, and brings none of that row's cells.
@@ -23432,19 +23813,65 @@ fn an_entry_is_held_as_the_row_it_will_be() {
     let seen = hand_over(&rig, "1", &one, &json!([bare]));
     seen.refused(BAD_VALUE, "a new entry that names no kind");
     assert!(
-        seen.stderr.contains("it names no `kind`") && seen.stderr.contains("no-kind"),
-        "refused in the ledger's own words: {}",
+        seen.stderr
+            .contains("entry 1 (no-kind): a new finding names no `kind`")
+            && !seen.stderr.contains("row "),
+        "refused by the entry's name: {}",
         seen.stderr
     );
 
-    // The evidence of the other kind, and evidence beside a lead.
+    // The evidence of the other kind, evidence beside a lead, a doctype that is none, a
+    // door that is no text, and a key that is no slug: each refusal names the entry.
     let mut crossed = new_entry("crossed", "route", "breaks", folds());
     crossed["commands"] = json!("jigc setup");
-    hand_over(&rig, "1", &one, &json!([crossed]))
-        .refused(BAD_VALUE, "a route item with a behaviour item's evidence");
     let mut led = new_entry("led", "lead", "breaks", folds());
     led["route"] = json!("Run: jigc setup");
-    hand_over(&rig, "1", &one, &json!([led])).refused(BAD_VALUE, "a lead that quotes a route");
+    let mut undocked = new_entry("undocked", "lead", "breaks", folds());
+    undocked["doctype"] = json!("memo");
+    let mut doorless = new_entry("doorless", "lead", "breaks", folds());
+    doorless["door"] = json!(7);
+    let mut unslugged = new_entry("unslugged", "lead", "breaks", folds());
+    unslugged["key"] = json!("Not A Slug");
+    for (entry, code, named, what) in [
+        (
+            crossed,
+            BAD_VALUE,
+            "entry 1 (crossed)",
+            "a route item with a behaviour item's evidence",
+        ),
+        (
+            led,
+            BAD_VALUE,
+            "entry 1 (led)",
+            "a lead that quotes a route",
+        ),
+        (
+            undocked,
+            BAD_VALUE,
+            "entry 1 (undocked)",
+            "a doctype that is none",
+        ),
+        (
+            doorless,
+            BAD_VALUE,
+            "entry 1 (doorless)",
+            "a door that is no text",
+        ),
+        (
+            unslugged,
+            BAD_ID,
+            "entry 1 of the file",
+            "a key that is no slug",
+        ),
+    ] {
+        let seen = hand_over(&rig, "1", &one, &json!([entry]));
+        seen.refused(code, what);
+        assert!(
+            seen.stderr.contains(named) && !seen.stderr.contains("row "),
+            "{what}: the refusal names the entry: {}",
+            seen.stderr
+        );
+    }
 
     // Triage's grade, and the bound an out-of-scope grade cites.
     for (grade, bound, code, what) in [
@@ -24177,6 +24604,20 @@ fn a_host_path_in_any_text_of_an_entry_names_the_entry_and_that_text() {
         );
         assert_eq!(rig.snapshot(), before, "{field}: nothing written");
     }
+    // A FINDING FOUND AGAIN THAT BRINGS A ROW'S CELL is refused once, for bringing it — not
+    // first for a host path in the text of a cell it must not bring at all (the review of
+    // `5a10dbae`, N-4).
+    let mut entries = two_entries();
+    entries[1]["repro"] = json!(format!("{undeclared}/fin1/routes.sh"));
+    let seen = hand_over(&rig, "1", &TWO_SOURCES, &entries);
+    seen.refused(BAD_VALUE, "a finding found again that brings a repro");
+    assert!(
+        seen.stderr
+            .contains("entry 2 (seeded): it is found again, and says repro"),
+        "{}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing written");
 }
 
 /// **A hit of the scan in an entry and in the text under *Tools* names both** (the review of
@@ -24210,7 +24651,9 @@ fn a_hit_in_an_entry_and_in_the_tools_text_names_both() {
         seen.stderr.contains("entry 2")
             && !seen.stderr.contains("entry 1")
             && seen.stderr.contains("under **Tools**")
+            && seen.stderr.contains("--tools")
             && seen.stderr.contains("reword them")
+            && seen.stderr.contains("hand both files over again")
             && !seen.stderr.to_lowercase().contains(DENY_TERM),
         "both are named, by where and never by what: {}",
         seen.stderr
@@ -24219,10 +24662,11 @@ fn a_hit_in_an_entry_and_in_the_tools_text_names_both() {
 }
 
 /// **The text under *Tools* drops the blank lines at either end — every line that holds
-/// nothing but whitespace — and keeps every other byte** (the review of the plan's task `T0`,
-/// `N3`): a line of spaces, or the `\r` a CRLF file ends its blank lines with, is a blank
-/// line; the indentation of the first line that says something is not, since markdown reads
-/// it.
+/// nothing but whitespace — and keeps every other character** (the review of the plan's task
+/// `T0`, `N3`): a line of spaces is a blank line; the indentation of the first line that
+/// says something is not, since markdown reads it. AND A CRLF IS A LINE END, NO MORE (the
+/// review of `5a10dbae`, SF-1): no `\r` is kept, so the sealed rendering holds none a
+/// converting checkout could rewrite on its way into a commit.
 #[test]
 fn the_tools_text_drops_its_blank_lines_at_either_end_and_nothing_else() {
     let rig = a_triage_run("triage-tools-blank-ends");
@@ -24250,11 +24694,80 @@ fn the_tools_text_drops_its_blank_lines_at_either_end_and_nothing_else() {
     let text = rig.read(&report_path("1", TRIAGE, "1"));
     assert_eq!(
         data_of(&text)["tools"],
-        json!("    folds.py --count entries.json\n\nIt ran twice.\r"),
-        "the blank lines at either end dropped, and nothing else: {text}"
+        json!("    folds.py --count entries.json\n\nIt ran twice."),
+        "the blank lines at either end dropped, the CR with them, and nothing else: {text}"
     );
     assert!(
-        text.ends_with("## Tools\n\n    folds.py --count entries.json\n\nIt ran twice.\r\n\n<!-- end of report -->\n"),
+        text.ends_with("## Tools\n\n    folds.py --count entries.json\n\nIt ran twice.\n\n<!-- end of report -->\n")
+            && !text.contains('\r'),
+        "{text}"
+    );
+}
+
+/// **The text under *Tools* has one kind of line end, no control character but the tab, and
+/// no byte-order mark** (the review of `5a10dbae`, SF-1, N-2 and its leads): a lone CR is a
+/// line end as a CRLF is; ESC, BS and DEL are spaces, as an entry's texts have them; a
+/// leading mark is dropped, so a file that holds a mark alone says nothing and is refused
+/// by `--tools`. AND EVERY LINE A REFUSAL NAMES IS COUNTED BY `\n`, the one count: a line
+/// break `str.splitlines` would see in U+2028 is none, for the fence as for a host path.
+#[test]
+fn the_tools_text_has_one_kind_of_line_end_and_no_control_character() {
+    let rig = a_triage_run("triage-tools-one-line-end");
+    let path = rig.tmp.join("tools.md");
+    let tools_call = || {
+        rig.run(
+            &triage_args(
+                RUN,
+                "1",
+                TRIAGE,
+                "1",
+                &[format!("--tools={}", path.display())],
+                &TWO_SOURCES,
+            ),
+            &two_entries().to_string(),
+        )
+    };
+    let before = rig.snapshot();
+    fs::write(&path, "\u{feff}\n").expect("a mark alone");
+    let seen = tools_call();
+    seen.refused(BAD_VALUE, "a file that holds a byte-order mark alone");
+    assert!(
+        seen.stderr.contains("--tools") && seen.stderr.contains("says nothing"),
+        "{}",
+        seen.stderr
+    );
+    fs::write(&path, "one\u{2028}two\ncargo install jigc\n").expect("a fenced line");
+    let seen = tools_call();
+    seen.refused(FENCE, "a fenced line after a U+2028");
+    assert!(
+        seen.stderr.contains("--tools") && seen.stderr.contains("line 2 "),
+        "the fence counts lines by `\\n`: {}",
+        seen.stderr
+    );
+    let undeclared = format!(
+        "{}/agent-501/{}-projects-jigc/0a1b/scratchpad",
+        rig.tmp.display(),
+        flattened(&rig.home)
+    );
+    fs::write(&path, format!("one\rtwo\r\n{undeclared}/probe.py\n")).expect("a host path");
+    let seen = tools_call();
+    seen.refused(HOST_PATH, "a host path after a lone CR and a CRLF");
+    assert!(
+        seen.stderr.contains("--tools") && seen.stderr.contains("line 3 "),
+        "a lone CR ends a line as a CRLF does: {}",
+        seen.stderr
+    );
+    assert_eq!(rig.snapshot(), before, "nothing written");
+    fs::write(
+        &path,
+        "\u{feff}folds.py\rran twice\r\nesc\u{1b}bs\u{8}del\u{7f}\tend\n",
+    )
+    .expect("the tools text");
+    tools_call().must(OK, "a text with a mark, CRs and control characters");
+    let text = rig.read(&report_path("1", TRIAGE, "1"));
+    assert_eq!(
+        data_of(&text)["tools"],
+        json!("folds.py\nran twice\nesc bs del \tend"),
         "{text}"
     );
 }
@@ -26932,7 +27445,7 @@ fn a_stop_shows_a_contested_finding_by_its_key_with_its_verifiers_basis() {
                 entry("r-meant", "refuted: intended", true),
                 entry("r-out", "confirmed", false)
             ],
-            {"inside": [{"key": "r-plain", "regression": null}], "outside": []},
+            {"inside": [{"key": "r-plain", "regression": null, "unknown": "no-previous-hash"}], "outside": []},
             []
         ]),
         "contested, and in no other list; the uncontested one where a fixer's findings stand: {read}"
@@ -26951,7 +27464,7 @@ fn a_stop_shows_a_contested_finding_by_its_key_with_its_verifiers_basis() {
     assert_eq!(view["on_disk"], "written", "{read}");
     for line in [
         "## Confirmed inside the round's test set — 1".to_owned(),
-        "- `r-plain` — whether it is a regression is not known".to_owned(),
+        "- `r-plain` — whether it is a regression is not known (`no-previous-hash`)".to_owned(),
         "## Confirmed outside it — 0".to_owned(),
         "## Contested by its verifier, and the human's to rule — 3".to_owned(),
         format!("- `r-in` — confirmed, inside the round's test set — `verify-r-in`: {BASIS}"),
