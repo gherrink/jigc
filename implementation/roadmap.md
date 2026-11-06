@@ -3095,7 +3095,7 @@ Beside them run the reviews of everything no review has read yet. Putting two la
   - If it is cut, its marker stays.
   - The write guard then refuses every command except the probe's own — so no gate and no commit — until the main session removes the marker.
 
-**Hours.** The hours are machine time, estimated from the plan's pricing, not measured. A step's figure is its longest lane. The whole is 102 to 218 hours, about one to three weeks with breaks. That total is not the sum of the steps, because the lanes overlap and the review's fixes run past step 14. The time estimate is redone after step 1 and after the catalog's second family.
+**Hours.** The hours are machine time, estimated from the plan's pricing, not measured. A step's figure is its longest lane. The whole is 112 to 218 hours, about one to three weeks with breaks *(redone 2026-11-06 after step 1's code count: the dynamic sites owe 139 tests, more than priced, so the low end, which is the catalog lane's, rose from 102 hours; the high end did not move — the plan's §4)*. That total is not the sum of the steps, because the lanes overlap and the review's fixes run past step 14. The time estimate is redone after step 1 and after the catalog's second family.
 
 **Step 1 — The records, and four branches.** About 4–6 hours.
 - What it gives: the human's rulings of the last three days written down; the pending decisions due before the opening brought up to date; the four lanes' branches cut from one commit.

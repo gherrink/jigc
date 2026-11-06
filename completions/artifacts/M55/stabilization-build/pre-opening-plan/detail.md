@@ -615,6 +615,15 @@ When U2 lands, its tell goes with the next stop: it turns CI red when GitHub cha
 
 ## 4. Price, with the arithmetic
 
+**[Re-priced 2026-11-06 after PC]** — PC's record ([dynamic-site-codes.md](dynamic-site-codes.md) → Total) counts 139 dynamic units owed, against the 93–133 priced below, so P's units are 125 + 139 = **264**, against 218–258. The figures after this note are the plan's as reviewed; where they depend on the units, these replace them:
+- **The C-tasks:** 264 × 14 = 3,696 min = **62 h**, up to 264 × 19 = 5,016 min = **84 h**; with their fixes, unchanged at 9–17 h (8.7–17.4), **70–101 h**.
+- **P** = 70 + 29 + 0 = **99 h**, up to 101 + 51 + 8 = **160 h** (was 89–158).
+- **The critical path:** low 4 + max(99, 85) + 9 = **112 h** (P; was 102); high 6 + max(160, 184) + 28 = **218 h**, unchanged — the T chain.
+- **The calendar:** 112 h at 20 hours a day = 5.6 days; 218 h at 12 = 18.2 days; with the human stops **7–21 days, still 1–3 weeks**.
+- **The gate time, measured:** the six full gates of 2026-11-05/06 in this machine's gate logs took 27–29 minutes each (1,640–1,714 s of steps), on a loaded machine, against the 20–30 the gate-time line assumes. At 27–29 minutes the 127–206 gates are **57–100 h** of gate time, not 42–103. The count of 127–206 gates is not re-derived here.
+- **Not re-measured:** the 14–19 minutes a unit, which include the gates of the days they were measured on.
+- **Still owed:** the re-price after C2.
+
 **Units of work in P** (derived): 125 static sites, plus 73 `MINTED_AT` codes, plus an estimated 20–60 codes of uncatalogued prefixes. Total **218–258, about 220–260**. PC fixes the number.
 
 **Wall time per unit:**
