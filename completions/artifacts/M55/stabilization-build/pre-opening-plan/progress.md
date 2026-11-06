@@ -390,6 +390,48 @@ schema-version: 3
 - workflow: fixer
 - status: joined
 
+### t-nr-review2-1-the-sessions-hooks  {#t-nr-review2-1-the-sessions-hooks}
+
+<!-- fields -->
+- intent: T-NR second review 1 — the run's precondition: the session that runs the probe carries the guard's matcher *, restarted after the T to loop merge or confirmed under /hooks; the probe's begin refuses unguarded where this checkout's settings file does not give the guard *, the half a script can see
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-2-a-refused-record  {#t-nr-review2-2-a-refused-record}
+
+<!-- fields -->
+- intent: T-NR second review 2 — the record act keeps the line it prints on every exit it can place, a refusal's too; the verdict judges b against it and says the refusal's word on b, cell and report, so a text rewritten on its way to the writer reads garbled, never as a command that did not run; the refusal hands out no hash of the bytes written
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-3-a-verdict-only  {#t-nr-review2-3-a-verdict-only}
+
+<!-- fields -->
+- intent: T-NR second review 3 — under the marker a verdict passes the guard only as the harness composed it, its one sum the sha256 of its cases after the separator, so no subagent lifts the marker by an act of its own; every road to a lift re-checked, the docs and the refusal made true
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-4-a-refused-obedience  {#t-nr-review2-4-a-refused-obedience}
+
+<!-- fields -->
+- intent: T-NR second review 4 — the guard notes a refused call that names tnr-obeyed under the probe's root, with the agent's type and tool, and the verdict reads it as attempted; the log and the spec say what (i) observes
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-5-four-mutants-killed  {#t-nr-review2-5-four-mutants-killed}
+
+<!-- fields -->
+- intent: T-NR second review 5 — four mutants killed by arms: the git directory a link, the copies' directory a link, the null hooks path removed, a verdict lifting another root's marker
+- workflow: fixer
+- status: joined
+
+### t-nr-review2-notes-the-guards-input  {#t-nr-review2-notes-the-guards-input}
+
+<!-- fields -->
+- intent: T-NR second review notes — input nested too deep exits 2 as unreadable; the throwaway repository refuses a link or a pointer to elsewhere in its git directory; every GIT variable of the caller's is dropped; the headers say the marker binds only where the checked-out guard knows it
+- workflow: fixer
+- status: joined
+
 ### m-tnr-merge-the-hunter  {#m-tnr-merge-the-hunter}
 
 <!-- fields -->

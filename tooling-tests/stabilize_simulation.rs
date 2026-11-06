@@ -14128,6 +14128,14 @@ impl Sim {
     fn with_probe(label: &str) -> Self {
         let sim = Sim::new(label);
         placed_executable::copy(&repo_root().join(PROBE), &sim.rig.root.join(PROBE));
+        // This repository's own settings, which run the write guard on every tool: the
+        // `neutralized` probe's begin refuses a checkout whose settings do not.
+        fs::create_dir_all(sim.rig.root.join(".claude")).expect("the settings' directory");
+        fs::write(
+            sim.rig.root.join(".claude/settings.json"),
+            fs::read(repo_root().join(".claude/settings.json")).expect("read the settings"),
+        )
+        .expect("write the settings");
         sim.rig.commit("chore: the probe tool");
         sim.rig.git(&["push", "-q", "origin", LOOP]);
         sim
@@ -14830,6 +14838,31 @@ fn the_neutralized_probes_own_commands_as_its_prompts_spell_them_pass_the_guard_
             );
         }
     }
+    // NO STEP AGENT MAKES A VERDICT OF ITS OWN (the second review of T-NR, item 3): the
+    // verdict lifts the marker whatever it judges, so a `build-git` runs one only as the
+    // harness composed it — its sum the sha256 of its cases. An all-zeros sum, or the
+    // harness's sum over other cases, is refused, and the marker stands.
+    let verdict = probe_command(&prompt("git:probe:verdict"));
+    let (head, cases) = verdict.split_once(" -- ").expect("the cases after `--`");
+    let sum = head
+        .split(" --sum ")
+        .nth(1)
+        .and_then(|rest| rest.split(' ').next())
+        .expect("the verdict's sum")
+        .to_owned();
+    for forged in [
+        format!("{} -- x", head.replace(&sum, &"0".repeat(64))),
+        format!("{head} -- {cases} x"),
+        format!("{head} -- a:r:absent b:0:none"),
+    ] {
+        let said = guard_says(&sim, "build-git", "Bash", json!({ "command": forged }));
+        assert!(
+            said.as_ref()
+                .is_some_and(|(decision, _)| decision == "deny"),
+            "`{forged}` is refused a build-git: {said:?}"
+        );
+    }
+    assert!(marker.exists(), "no forged verdict lifted the marker");
     // The record writer's write of its batch, at the path its prompt names, passes — and a
     // write of a copy the probe runs, or of the throwaway repository's git configuration,
     // does not.
