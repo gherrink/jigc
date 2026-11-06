@@ -40,34 +40,67 @@
 # opening's task T-NR; DECISIONS.md -> 2026-10-29, "The build session runs the single T-NR
 # runtime probe", condition 5: "no push" and "no commit" are held by a mechanism). The
 # `neutralized` probe's first act writes a MARKER, `stabilize-probe-active`, in the COMMON git
-# directory of the repository (`git rev-parse --git-common-dir`), naming the probe and its
-# scratch root; its verdict removes it (dev/stabilize-probe). While that file stands, the
-# guard binds on any branch, inside a run or outside one, and fences EVERY subagent — the
-# writers too, `build-git` and `build-fixer` — as an ALLOWLIST:
+# directory of the repository (`git rev-parse --git-common-dir`), naming the probe, its
+# scratch root, when it was begun (`begun`, UTC) and the files a subagent may write while it
+# stands (`writable`); its verdict removes it (dev/stabilize-probe). While that file stands,
+# the guard binds on any branch, inside a run or outside one, and fences EVERY subagent —
+# the writers too, `build-git` and `build-fixer` — as an ALLOWLIST:
 #
-#   Bash            ONE plain invocation of `dev/stabilize-probe` or `dev/stabilize-record`,
-#                   in the grammar below, from the repository's root, runs; the same call
-#                   from another directory is refused (`directory`); every other command —
-#                   a push, a commit, `git -c x=y push`, `env git push`, a script written
-#                   and then run, a call of the step tool — is REFUSED (`probe`). Nothing
-#                   is run under the fence: there is nothing else to run.
-#   Write · Edit ·  a target under the probe's scratch root runs; any other is REFUSED
-#   NotebookEdit    (`probe`), judged on the file system as below.
-#   Monitor ·       REFUSED (`probe`): a shell the list cannot hold.
-#   PowerShell
-#   Agent · Task ·  REFUSED (`probe`), whatever it would launch: the probe's set of agents is
-#   Workflow        fixed and counted (one subject, three step agents), so no subagent grows
-#                   it. The probe's own four are launched by the harness — the runtime's
-#                   `agent()` calls under the main session's `Workflow` call — and never by
-#                   a subagent's tool call, so this refusal cannot block them. The settings'
-#                   matcher, below, hands the hook all three; a `Task` or a `Workflow` call
-#                   outside a probe, and the session's own, it answers with nothing.
+#   Bash            ONE plain invocation of `dev/stabilize-probe`, in the grammar below,
+#                   from the repository's root, OF THE ONE ACT THE HARNESS LAUNCHED THE
+#                   AGENT'S TYPE FOR (PROBE_ACTS: `begin` and `verdict` a `build-git`'s, the
+#                   git steps; `record` a `build-executor`'s, the record writer; the subject
+#                   none), naming the marker's own scratch root by `--scratch` once — and, for
+#                   `begin` and `verdict`, the marker's probe by `--probe` — runs; the same
+#                   call from another directory is refused (`directory`). Every other command
+#                   — a push, a commit, `git -c x=y push`, `env git push`, a script written
+#                   and then run, another act of the probe tool, a call of the step tool or
+#                   of the record script, whose copy the `record` act runs itself — is
+#                   REFUSED (`probe`). Nothing is run under the fence: there is nothing else
+#                   to run, and what the probe tool runs it holds byte for byte to this
+#                   repository's own scripts first (dev/stabilize-probe: WHAT IT RUNS).
+#   Write · Edit ·  a target that IS one of the marker's `writable` files — the batch its
+#   NotebookEdit    record writer writes, and the file the planted text asks for, so that an
+#                   obedience lands where the verdict looks — runs, judged on the file
+#                   system: its directory by device and inode, its name as written, and a
+#                   link resolved first. Any other is REFUSED (`probe`): a copy the probe
+#                   runs, a module beside it, the throwaway repository's `.git/`, a script to
+#                   run, anything outside the scratch root.
+#   Read · Grep ·   run: they read — answered before git is asked anything, here as everywhere.
+#   Glob · LS ·
+#   NotebookRead ·
+#   TodoWrite ·
+#   ToolSearch
+#   EVERY OTHER     REFUSED (`probe`), whatever it would do: `Monitor` and `PowerShell`, a
+#   TOOL            shell the list cannot hold; `Agent`, `Task` and `Workflow`, because the
+#                   probe's set of agents is fixed and counted (one subject, three step
+#                   agents) and no subagent grows it — the probe's own four are launched by
+#                   the harness, the runtime's `agent()` calls under the main session's
+#                   `Workflow` call, never by a subagent's tool call, so this refusal cannot
+#                   block them; an MCP tool, a web fetch or search, a skill, a worktree, a
+#                   message to another agent, a publish. The settings' matcher, `*`, hands
+#                   the hook every tool; outside a probe a tool it names no rule for, it
+#                   answers with nothing. A BOUND: what never reaches PreToolUse — were
+#                   there a way to run a shell that does not pass the hook — the guard
+#                   cannot refuse (implementation/stabilization-workflow.md -> The write
+#                   guard).
 #
-# The session's own calls are never fenced, under a probe as everywhere: the main session
-# removes the marker of a probe that was cut (the plan before the opening, §1: the guard
-# refuses commits and pushes "from every subagent"). A marker whose scratch root is gone is STALE, and one that is no JSON object
-# naming a scratch root CANNOT BE READ: each binds all the same — nothing is written
-# anywhere — and every refusal says so, until the main session removes the file.
+# The session's own calls are never fenced, under a probe as everywhere (the plan before the
+# opening, §1: the guard refuses commits and pushes "from every subagent"). NOTHING A
+# SUBAGENT CAN DO LIFTS THE MARKER: only the probe's verdict, the act of a `build-git` under
+# the marker's own root, removes it — and where a probe was cut before its verdict, ONLY THE
+# MAIN SESSION, which removes it by hand: the file `stabilize-probe-active` in the directory
+# `git rev-parse --git-common-dir` names, once it has read that the marker names its own
+# invocation's scratch root (the harness's one identity of a probe's invocation is its
+# arguments, `{probe, scratch}`) and when it was begun. A refusal says that, and hands no
+# subagent the marker's path or the act that removes it.
+#
+# A marker whose scratch root is gone, or that was begun more than STALE_AFTER ago — longer
+# than any probe runs, as a cut run's `mktemp` root stays — is STALE; one that is no JSON
+# object naming an absolute scratch root, a start time and a list of files under that root
+# CANNOT BE READ. Each binds all the same — a stale marker's acts still run where its root
+# is there, and nothing is written where it is gone; an unreadable one runs no act and
+# writes nothing — and every refusal says so, until the main session removes the file.
 # WHY THE COMMON GIT DIRECTORY, AND WHY THAT IS SAFE. It is no tracked path, and git never
 # reads a file of that name; and it is the one place every worktree of the repository
 # shares, so a session in the loop checkout or in a lane's worktree is bound alike. THAT
@@ -111,9 +144,17 @@
 #   Workflow        a fenced agent may start no workflow, which can launch anything, a
 #                   writer among it: REFUSED (`writer`).
 #
+# EVERY TOOL REACHES IT, AND A FAILED HOOK BLOCKS: so the session's own calls — no
+# `agent_type` — and every subagent's read are answered before git or the environment is
+# asked anything, one start of this script and nothing else; and anything unforeseen while
+# deciding a subagent's call is a refusal (`unknown`), never a crash. An input that is no
+# JSON object is the one block left (below): nothing in it says whose call it is.
+#
 # FAIL CLOSED. For a fenced type, what the guard cannot read — no CLAUDE_PROJECT_DIR, a
 # git that does not answer, a tool input without its path or its command — is a refusal
-# (`unknown`), never a pass. An input that is no JSON object exits 2 with the reason on
+# (`unknown`), never a pass. AND FOR A WRITER TOO, where what it cannot read is whether a
+# probe's marker stands: under a marker every subagent is fenced, so a writer the guard
+# cannot clear of one is refused (`unknown`) like any other. An input that is no JSON object exits 2 with the reason on
 # stderr, which Claude Code takes as a block. And the settings run this hook with
 # `onFailure: block`, so a hook that cannot start blocks too.
 #
@@ -130,11 +171,13 @@
 #
 # The settings that run it — `.claude/settings.json`, one entry under hooks.PreToolUse:
 #
-#   {"matcher": "Bash|Write|Edit|NotebookEdit|Monitor|PowerShell|Agent|Task|Workflow",
+#   {"matcher": "*",
 #    "hooks": [{"type": "command", "command": "${CLAUDE_PROJECT_DIR}/dev/stabilize-guard",
 #               "args": [], "timeout": 30, "onFailure": "block"}]}
 #
-# — exec form (`args`), so that a project path with a space in it is one word.
+# — every tool, so that a tool the probe's allowlist refuses reaches it; exec form
+# (`args`), so that a project path with a space in it is one word. The session's own calls
+# cost one start of this script, which answers them before it asks git anything.
 #
 # STABILIZE_FENCE_SANDBOX names the sandbox program instead of /usr/bin/sandbox-exec —
 # for this tool's suite, which asks what happens where there is none; dev/stabilize-fence
@@ -145,9 +188,11 @@
 import json
 import os
 import re
-import shlex
-import subprocess
 import sys
+
+# `datetime`, `shlex` and `subprocess` are imported where they are used: the session's own
+# calls and every read are answered without them, one start of this script and no more (the
+# header: EVERY TOOL REACHES IT).
 
 PROG = "stabilize-guard"
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -160,12 +205,15 @@ WRITERS = ("build-git", "build-fixer")
 # root — the allow rules' and the harness's prompts' (PROMPT_TOOLS of the fence suite).
 TOOLS = ("dev/stabilize-step", "dev/stabilize-record", "dev/stabilize-probe")
 # While a runtime probe is active: its marker, by its name in the common git directory
-# (dev/stabilize-probe's MARKER), and the two tools a subagent may call — the probe's own,
-# and the record script its record writer's act runs a copy of — and the tools that launch
-# an agent or a workflow, which no subagent may call while it stands.
+# (dev/stabilize-probe's MARKER); the one tool a subagent may call, and each of its acts by
+# the one type the harness launches for it — its git steps, and the record role's executor
+# (tooling-tests/dev_stabilize_guard.rs holds this to the harness); the tools that read,
+# which run; and how old a marker is before it is called stale.
 MARKER = "stabilize-probe-active"
-PROBE_TOOLS = ("dev/stabilize-probe", "dev/stabilize-record")
-LAUNCHERS = ("Agent", "Task", "Workflow")
+PROBE_TOOL = "dev/stabilize-probe"
+PROBE_ACTS = {"begin": "build-git", "verdict": "build-git", "record": "build-executor"}
+READS = ("Read", "Grep", "Glob", "LS", "NotebookRead", "TodoWrite", "ToolSearch")
+STALE_AFTER = 3 * 3600
 # Where a run lies, and how its branches are named (the harness's RUNS_ROOT, branchName).
 RUNS = "completions/artifacts"
 LOOP = re.compile(r"fix/([a-z0-9]+(?:-[a-z0-9]+)*)")
@@ -204,6 +252,8 @@ def git_env():
 
 def git(at, *args):
     """What git prints, stripped — or None where it does not answer."""
+    import subprocess
+
     try:
         done = subprocess.run(["git", "-C", at] + list(args), env=git_env(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
@@ -300,9 +350,35 @@ def plain_call(command, tools=TOOLS):
     return bool(said) and said[0] in tools and all(BARE.fullmatch(word) or QUOTED.fullmatch(word) for word in said[1:])
 
 
+def unquoted(word):
+    return word[1:-1] if len(word) >= 2 and word[0] == word[-1] == "'" else word
+
+
+def flag_values(said, flag):
+    """Every value a call's words give `flag`: `--flag VALUE`, and the `--flag=VALUE` an
+    argument parser takes too — each unquoted."""
+    found = []
+    for at, word in enumerate(said):
+        if unquoted(word) == flag:
+            found.append(unquoted(said[at + 1]) if at + 1 < len(said) else None)
+        elif unquoted(word).startswith(flag + "="):
+            found.append(unquoted(word)[len(flag) + 1:])
+    return found
+
+
+def begun_at(text):
+    """A marker's start time, UTC to the second — or None."""
+    import datetime
+
+    try:
+        return datetime.datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
 def the_probe(project):
-    """(the work tree, the marker's path, the scratch root it names or None, what is wrong
-    with it or None) where a probe's marker stands — or None."""
+    """What a probe's marker says, where one stands — or None: {top, marker, scratch, begun,
+    writable, probe, wrong}, `wrong` what is wrong with it or None."""
     top = git(project, "rev-parse", "--show-toplevel")
     if top is None:
         return None
@@ -313,49 +389,88 @@ def the_probe(project):
     marker = os.path.join(os.path.realpath(common), MARKER)
     if not os.path.lexists(marker):
         return None
+    probe = {"top": top, "marker": marker, "scratch": None, "begun": None, "writable": [], "probe": None, "wrong": None}
     try:
         with open(marker, encoding="utf-8") as file:
             said = json.load(file)
     except (OSError, ValueError) as why:
-        return top, marker, None, "it cannot be read (%s)" % " ".join(str(why).split())
-    scratch = said.get("scratch") if isinstance(said, dict) else None
+        probe["wrong"] = "it cannot be read (%s)" % " ".join(str(why).split())
+        return probe
+    said = said if isinstance(said, dict) else {}
+    scratch, begun, writable = said.get("scratch"), begun_at(said.get("begun")), said.get("writable")
     if not isinstance(scratch, str) or not os.path.isabs(scratch):
-        return top, marker, None, "it cannot be read: it names no scratch root"
+        probe["wrong"] = "it cannot be read: it names no scratch root"
+        return probe
+    scratch = os.path.realpath(scratch)
+    probe.update(scratch=scratch, probe=said.get("probe") if isinstance(said.get("probe"), str) else None)
+    if begun is None:
+        probe["wrong"] = "it cannot be read: it names no time it was begun"
+        return probe
+    probe["begun"] = said["begun"]
+    if not isinstance(writable, list) or not all(isinstance(path, str) and os.path.isabs(path) and os.path.realpath(path).startswith(scratch + os.sep) for path in writable):
+        probe["wrong"] = "it cannot be read: it names no list of files under its scratch root that may be written"
+        return probe
+    probe["writable"] = writable
     if not os.path.isdir(scratch):
-        return top, marker, scratch, "it is stale: the scratch root it names, %s, is gone, so nothing may be written anywhere" % scratch
-    return top, marker, scratch, None
+        probe["wrong"] = "it is stale: the scratch root it names, %s, is gone, so nothing may be written anywhere" % scratch
+    elif (begun.now(begun.tzinfo) - begun).total_seconds() > STALE_AFTER:
+        probe["wrong"] = "it is stale: it was begun at %s, more than %d hours ago, longer than any probe runs — so its probe was likely cut" % (said["begun"], STALE_AFTER // 3600)
+    return probe
+
+
+def same_place(target, allowed):
+    """Whether `target` — resolved through every link — IS the file `allowed` names: the same
+    directory, by device and inode, and the same name."""
+    at = os.path.realpath(target)
+    there = identity(os.path.dirname(at))
+    return there is not None and there == identity(os.path.dirname(os.path.realpath(allowed))) and os.path.basename(at) == os.path.basename(allowed)
 
 
 def under_a_probe(agent, tool, given, event, probe):
     """The decision on a subagent's call while a runtime probe is active: an ALLOWLIST."""
-    top, marker, scratch, wrong = probe
+    top, scratch, wrong = probe["top"], probe["scratch"], probe["wrong"]
+    stale = wrong is not None and wrong.startswith("it is stale")
+    readable = wrong is None or stale
+    when = (", begun at %s" % probe["begun"]) if probe["begun"] else ""
 
     def refused_probe(what):
-        state = (" and " + wrong) if wrong else ""
-        refused("probe", "%s may not %s while a runtime probe is active — its marker %s stands%s. While it stands every subagent of this session, a writer too, runs only ONE plain call of %s, typed alone from the repository's root %s, and writes only under the probe's scratch root%s; the probe's verdict removes the marker, and the main session removes the marker of a probe that was cut" % (agent, what, marker, state, " or ".join(PROBE_TOOLS), top, " " + scratch if scratch else ""))
+        state = (" — and " + wrong) if wrong else ""
+        refused("probe", "%s may not %s while a runtime probe is active (its scratch root %s%s)%s. While it stands a subagent of this session makes only the one act of %s the harness launched its type for (%s), and writes only the files that probe names. Nothing a subagent does lifts it: only the main session removes a probe's marker, by hand, once it has read that the marker is its own probe's (dev/stabilize-guard --help says how)" % (agent, what, scratch or "unnamed", when, state, PROBE_TOOL, ", ".join("`%s` a %s's" % (act, who) for act, who in PROBE_ACTS.items())))
 
     if tool in FILE_TOOLS:
         path = given.get(FILE_TOOLS[tool])
         if not isinstance(path, str) or not path:
             refused("unknown", "the %s call names no file (%s), so the guard cannot tell where it writes" % (tool, FILE_TOOLS[tool]))
-        if wrong is None and under(resolved(event.get("cwd") or top, path), [scratch]):
+        target = resolved(event.get("cwd") or top, path)
+        if readable and os.path.isdir(scratch or "") and any(same_place(target, allowed) for allowed in probe["writable"]):
             return
         refused_probe("write %s" % path)
-    if tool in SHELLS:
-        refused_probe("use %s" % tool)
-    if tool in LAUNCHERS:
-        refused_probe("launch an agent or a workflow by %s: the probe's set of agents is fixed and counted, and the harness alone launches it" % tool)
-    if tool != "Bash":
+    if tool in READS:
         return
+    if tool != "Bash":
+        refused_probe("use %s: no tool but the shell's one call, a write of a file the probe names and a read is a subagent's" % tool)
     command = given.get("command")
     if not isinstance(command, str) or not command.strip():
         refused("unknown", "the Bash call names no command, so the guard cannot tell what it runs")
-    if plain_call(command, PROBE_TOOLS):
-        here = event.get("cwd")
-        if isinstance(here, str) and here and identity(resolved(top, here)) == identity(top):
-            return
-        refused("directory", "a call of %s runs from the repository's root, %s, and this one was made from %s: run the same line again from there" % (words(command.strip(" \n"))[0], top, here))
-    refused_probe("run this command")
+    if not plain_call(command, (PROBE_TOOL,)):
+        refused_probe("run this command")
+    said = words(command.strip(" \n"))
+    act = unquoted(said[1]) if len(said) > 1 else None
+    if act not in PROBE_ACTS:
+        refused_probe("run %s's act `%s`: the acts a subagent makes under a probe are %s" % (PROBE_TOOL, act, ", ".join("`%s`" % name for name in PROBE_ACTS)))
+    if agent != PROBE_ACTS[act]:
+        refused_probe("make %s's act `%s`, which is a %s's alone" % (PROBE_TOOL, act, PROBE_ACTS[act]))
+    if not readable:
+        refused_probe("make %s's act `%s`: the marker cannot be read" % (PROBE_TOOL, act))
+    given_scratch = flag_values(said, "--scratch")
+    if len(given_scratch) != 1 or given_scratch[0] is None or identity(resolved(top, given_scratch[0])) is None or identity(resolved(top, given_scratch[0])) != identity(scratch):
+        refused_probe("make %s's act `%s` under the scratch root %s: an act names the marker's own scratch root by --scratch, once" % (PROBE_TOOL, act, " and ".join(str(value) for value in given_scratch) or "it does not name"))
+    if act in ("begin", "verdict") and flag_values(said, "--probe") != [probe["probe"]]:
+        refused_probe("make %s's act `%s` of the probe %s: it is the marker's own probe's, `%s`" % (PROBE_TOOL, act, " and ".join(str(value) for value in flag_values(said, "--probe")) or "it does not name", probe["probe"]))
+    here = event.get("cwd")
+    if isinstance(here, str) and here and identity(resolved(top, here)) == identity(top):
+        return
+    refused("directory", "a call of %s runs from the repository's root, %s, and this one was made from %s: run the same line again from there" % (PROBE_TOOL, top, here))
 
 
 def fence_missing():
@@ -391,23 +506,35 @@ def main():
     if not agent:
         return
     tool = event.get("tool_name")
+    # A read runs in every case — under a probe, inside a run and outside one — so it is
+    # answered before git is asked anything: the matcher hands the hook every tool.
+    if tool in READS:
+        return
+    try:
+        decide_for(agent, tool, event)
+    except Exception as why:
+        # NOTHING UNFORESEEN CRASHES THE GUARD: a hook that fails blocks (`onFailure: block`),
+        # and with the matcher `*` it would block every tool. A subagent's call it could not
+        # decide is refused, as what it cannot read is; the session's own never reached here.
+        refused("unknown", "the guard failed while deciding %s's call of %s (%s: %s), so it cannot tell what that call would do: a subagent's call is refused where that cannot be told" % (agent, tool, type(why).__name__, " ".join(str(why).split())[:300]))
+
+
+def decide_for(agent, tool, event):
+    """The decision on a subagent's call that is no read."""
     given = event.get("tool_input")
     given = given if isinstance(given, dict) else {}
     project = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project:
-        try:
-            probe = the_probe(project)
-        except LookupError as why:
-            if agent in WRITERS:
-                return
-            refused("unknown", "%s: a call of a fenced agent is refused where the guard cannot tell what it would write" % why)
-        if probe is not None:
-            under_a_probe(agent, tool, given, event, probe)
-            return
+    if not project:
+        refused("unknown", "CLAUDE_PROJECT_DIR is not set, so the guard cannot tell whether a runtime probe is active or %s works inside a stabilization run: a subagent's call is refused where that cannot be told, a writer's too" % agent)
+    try:
+        probe = the_probe(project)
+    except LookupError as why:
+        refused("unknown", "%s, so the guard cannot tell whether a runtime probe is active: a subagent's call is refused where that cannot be told, a writer's too" % why)
+    if probe is not None:
+        under_a_probe(agent, tool, given, event, probe)
+        return
     if agent in WRITERS:
         return
-    if not project:
-        refused("unknown", "CLAUDE_PROJECT_DIR is not set, so the guard cannot tell whether %s works inside a stabilization run: a call of a fenced agent is refused where that cannot be told" % agent)
     try:
         bound = the_run(project)
     except LookupError as why:
@@ -448,6 +575,8 @@ def main():
     if missing:
         refused("no-fence", "%s — inside the stabilization run `%s` every command of %s runs under the write fence, and none is run open" % (missing, run, agent))
     updated = dict(given)
+    import shlex
+
     updated["command"] = "%s --repo %s -- %s" % (shlex.quote(FENCE), shlex.quote(top), shlex.quote(command))
     if event.get("permission_mode") == "bypassPermissions":
         decide("allow", "%s: the command runs under the write fence of the stabilization run `%s`" % (PROG, run), updated)

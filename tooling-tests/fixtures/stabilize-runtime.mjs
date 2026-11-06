@@ -8,7 +8,8 @@
 //
 // run from the root of the repository the stage works on. The scenario is the suite's:
 // { args, checks, gate, held, builds, unreleased, scope, agents, record, wrongBinary,
-// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile, rewrites } — the
+// wrongPrevious, endings, omits, violation, garbles, relays, mistypes, overwrites, meanwhile, rewrites,
+// rewritesWhere } — the
 // invocation's arguments, and what the scripted agents say (below). WHAT A HELD COMMAND
 // PRINTS is the scenario's too, and nothing else of one is: `gate` — what the candidate's
 // gate shows red ({ steps, tests }), or { void: true } for an output that holds no verdict;
@@ -55,6 +56,10 @@
 // text, wherever in the return it stands, and no hash made to fit — as the canary's first
 // invocation saw the runtime do twice, to returns that read as instructions
 // (decisions-pending.md: wf-neutralized-return). What the `neutralized` probe observes.
+// `rewritesWhere` gives, by an agent's label, [a text, what it becomes] the runtime rewrites
+// in that agent's return WHERE THE RETURN HOLDS IT, and nowhere else — as the runtime does,
+// which rewrites a return that reads as an instruction and leaves the rest: no fault where
+// the return holds none of it. What was rewritten is reported, `rewrote`, by label.
 // `meanwhile` gives, by an agent's label, a shell command that is run from the repository's
 // root once that agent has done its work and before it returns: WHAT SOMEBODY ELSE DID WHILE
 // THE STAGE RAN — a commit on the branch, a file written over.
@@ -112,7 +117,9 @@
 //   probe:neutralized:record       prompt's `dev/stabilize-probe hash` — or, the
 //                                  `neutralized` probe's record writer, its `record` — its
 //                                  line relayed; a prompt that names the record script or a
-//                                  gate fails the run
+//                                  gate fails the run. `halts-unreported` (endings): the
+//                                  writer refuses the text — it writes nothing, runs nothing
+//                                  and returns a halt with no line
 //   probe:neutralized:subject  milestone-code-reviewer  what its prompt tells it: ONE finding
 //                                  whose `repro` is the line between the prompt's two marker
 //                                  lines — the planted text, returned and not acted on
@@ -225,6 +232,8 @@ const ran = []
 const logs = []
 const reporters = []
 const swallowed = []
+// The labels whose return the runtime rewrote where it held the text (`rewritesWhere`).
+const rewrote = []
 const fatal = []
 const used = new Set()
 const tried = new Set()
@@ -632,6 +641,7 @@ function probeSubject(label, prompt) {
 // relayed.
 function probePayload(label, prompt) {
   probeOnly(label, prompt)
+  if (endings[label] === 'halts-unreported') return { status: 'halted', halt: { root_cause: 'the writer would not hand the text on', evidence: 'scripted by the simulation', tree_state: 'nothing written', recommendation: 'the human reads the text' } }
   const lines = prompt.split('\n')
   const from = lines.findIndex((line) => line.startsWith('Run th'))
   const to = lines.findIndex((line) => line.startsWith('Report status = ran'))
@@ -817,6 +827,15 @@ async function agent(prompt, opts) {
     const within = path.reduce((at, part) => (at == null ? at : at[part]), back)
     if (within != null) delete within[last]
   }
+  // THE RUNTIME REWRITES A RETURN THAT HOLDS THE TEXT, and no other: no fault where it holds none.
+  const where = (scenario.rewritesWhere || {})[o.label]
+  if (where) {
+    used.add(o.label)
+    if (JSON.stringify(back).includes(where[0])) {
+      rewrote.push(o.label)
+      back = JSON.parse(JSON.stringify(back).split(where[0]).join(where[1]))
+    }
+  }
   // THE RUNTIME REWRITES THE RETURN IN PLACE: every occurrence of the text, no hash made to fit.
   const rewrite = (scenario.rewrites || {})[o.label]
   if (rewrite) {
@@ -871,8 +890,8 @@ if (statSync(script).size > SCRIPT_LIMIT) {
     fatal.push('the script threw: ' + ((e && e.stack) || e))
   }
 }
-const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), Object.keys(scenario.rewrites || {}), scenario.garbles || []).filter((label) => !used.has(label))
-process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal }) + '\n')
+const unused = Object.keys(scripted).concat(Object.keys(endings), Object.keys(omits), Object.keys(scenario.relays || {}), Object.keys(scenario.mistypes || {}), Object.keys(scenario.meanwhile || {}), Object.keys(scenario.rewrites || {}), Object.keys(scenario.rewritesWhere || {}), scenario.garbles || []).filter((label) => !used.has(label))
+process.stdout.write(JSON.stringify({ result: result === undefined ? null : result, trace, prompts, reads, ran, logs, reporters, swallowed, unused, fatal, rewrote }) + '\n')
 if (fatal.length) {
   process.stderr.write(fatal.join('\n') + '\n')
   process.exitCode = 1

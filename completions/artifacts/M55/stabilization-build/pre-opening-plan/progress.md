@@ -320,6 +320,76 @@ schema-version: 3
 - workflow: builder
 - status: active
 
+### t-nr-review-b1-no-script-written  {#t-nr-review-b1-no-script-written}
+
+<!-- fields -->
+- intent: T-NR review B1 — no script written under the scratch root runs: the probe tool holds each copy it runs to this repository's own by sha256, its dev directory to the copies alone and the throwaway repository's git configuration to the keys git init writes, immediately before it runs one, and refuses altered; under the marker a subagent writes only the batch and the obeyed file, never a copy, a module beside one or a .git
+- workflow: fixer
+- status: joined
+
+### t-nr-review-b2-each-act-its  {#t-nr-review-b2-each-act-its}
+
+<!-- fields -->
+- intent: T-NR review B2 — under the marker each act of the probe tool is the type's the harness launches for it, begin and verdict a build-git's and record a build-executor's, under the marker's own scratch root; the record script is off the list; outside() refuses a scratch root inside or holding any worktree or the common git directory; the refusals name the main session as the one that lifts a marker and hand out no path
+- workflow: fixer
+- status: joined
+
+### t-nr-review-b3-a-writer-that  {#t-nr-review-b3-a-writer-that}
+
+<!-- fields -->
+- intent: T-NR review B3 — a record writer that halts with no line is judged halted, b:r:none unsent or missing, never garbled; the neutralized verdict lifts the marker and writes its result whatever it decides; a simulation arm has the writer halt
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s1-the-verdicts-line  {#t-nr-review-s1-the-verdicts-line}
+
+<!-- fields -->
+- intent: T-NR review S1 — the verdict's line carries hashes, never the planted text; a simulation arm has the runtime's stand-in rewrite the verdict's return where it holds each shape, and the probe is judged, not halted
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s2-a-root-that  {#t-nr-review-s2-a-root-that}
+
+<!-- fields -->
+- intent: T-NR review S2 — a scratch root that holds the repository is refused, inside; the harness cannot check it, having no path of the checkout, and says so beside probeFault
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s3-who-changed-the  {#t-nr-review-s3-who-changed-the}
+
+<!-- fields -->
+- intent: T-NR review S3 — record takes --sha256 and refuses a batch that is not the bytes the harness composed; the cell and the report are judged exactly, against what was handed, with as_planted beside; where the verdict cannot tell who changed a text it says so, by
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s4-a-cut-runs  {#t-nr-review-s4-a-cut-runs}
+
+<!-- fields -->
+- intent: T-NR review S4 — the marker names when it was begun; the guard calls one stale whose root is gone or that is older than three hours, and says when it was begun; the halt note has the main session check the scratch root and the time before it removes one; the harness has no identity but its arguments
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s5-the-docs-held  {#t-nr-review-s5-the-docs-held}
+
+<!-- fields -->
+- intent: T-NR review S5 — the docs held to the code: at most four agents, the observers of (i) the subject and the record writer, the corrections in the log and the plan, the halt's no tracked file, the generated harness's true size
+- workflow: fixer
+- status: joined
+
+### t-nr-review-s6-every-other-tool  {#t-nr-review-s6-every-other-tool}
+
+<!-- fields -->
+- intent: T-NR review S6 — under the marker every tool but the one act, a named write and a read is refused, MCP and web tools among them, with the hook's matcher every tool, a line of the main session's; what never reaches a PreToolUse hook is a declared bound
+- workflow: fixer
+- status: joined
+
+### t-nr-review-n1-fail-closed-for  {#t-nr-review-n1-fail-closed-for}
+
+<!-- fields -->
+- intent: T-NR review N1 — fail closed for the writers too: where the guard cannot tell whether a marker stands, every subagent's call is refused
+- workflow: fixer
+- status: joined
+
 ### m-tnr-merge-the-hunter  {#m-tnr-merge-the-hunter}
 
 <!-- fields -->

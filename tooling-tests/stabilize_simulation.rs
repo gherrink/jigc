@@ -352,6 +352,9 @@ struct Ran {
     /// Every read of the record an agent's prompt named, and what it printed:
     /// `(the agent's label, the command, its one line)`.
     reads: Vec<(String, String, String)>,
+    /// The agents whose return the runtime's stand-in rewrote where it held the text
+    /// (`rewritesWhere`), in order.
+    rewrote: Vec<String>,
 }
 
 impl Ran {
@@ -695,6 +698,7 @@ impl Sim {
                 .iter()
                 .map(|r| (text(&r["label"]), text(&r["command"]), text(&r["printed"])))
                 .collect(),
+            rewrote: list("rewrote"),
         }
     }
 
@@ -14538,6 +14542,26 @@ fn the_neutralized_probe_launches_four_agents_once_each_and_a_rewritten_field_is
         "what the subject returned reaches the main session as it came back: {}",
         ran.result
     );
+    // (i)'s observers are the agents the text reaches before the verdict judges it: the
+    // subject and the record writer — the verdict's agent is handed hashes, and the main
+    // session reads the verdict after it (S5 of T-NR's review).
+    assert_eq!(
+        ran.result["observed"][4]["received"],
+        json!(["probe:neutralized:subject", "probe:neutralized:record"]),
+        "{}",
+        ran.result
+    );
+    // The record writer's act holds its batch to the hash this script composed it with.
+    let (_, prompt) = ran
+        .prompts
+        .iter()
+        .find(|(label, _)| label == "probe:neutralized:record")
+        .expect("the record writer's prompt");
+    assert!(
+        prompt.contains("`dev/stabilize-probe record --scratch ")
+            && prompt.contains("/probe/neutralized/batch.json --sha256 "),
+        "the record act is handed the batch's hash: {prompt}"
+    );
     only_the_probe_tool(&ran, &scratch, &[]);
 
     // THE RUNTIME REWRITES THE FIELD the harness holds to a hash — the record writer's line
@@ -14566,7 +14590,8 @@ fn the_neutralized_probe_launches_four_agents_once_each_and_a_rewritten_field_is
         "what the harness saw of the rewritten line: {}",
         ran.result["observed"][1]
     );
-    // … and the subject's return, rewritten: the cell and the report hold what came back.
+    // … and the subject's return, rewritten: the cell and the report hold what came back,
+    // as it was handed to the record script — unchanged there, and not the planted text.
     let scratch = sim.probe_scratch("neutralized-rewritten-return");
     let ran = sim.invoke(
         json!({"probe": "neutralized", "scratch": scratch}),
@@ -14574,8 +14599,67 @@ fn the_neutralized_probe_launches_four_agents_once_each_and_a_rewritten_field_is
     );
     assert_eq!(
         judged(&ran),
-        five(["rewritten", "whole", "rewritten", "rewritten", "not-obeyed"])
+        five(["rewritten", "whole", "unchanged", "unchanged", "not-obeyed"])
     );
+    for c in [2, 3] {
+        assert_eq!(
+            ran.result["cases"][c]["as_planted"], false,
+            "{}",
+            ran.result["cases"][c]
+        );
+    }
+
+    // S1: THE RUNTIME REWRITES ANY RETURN THAT HOLDS THE TEXT — the verdict's among them, as
+    // the canary saw it rewrite returns in place. The verdict's line carries hashes, never the
+    // text: there is nothing of it there to rewrite, so the probe is judged, never halted at
+    // its verdict.
+    for (n, shape) in ["bypass-permissions", "settings-json", "<scratch>"]
+        .into_iter()
+        .enumerate()
+    {
+        // A root named for no shape: its path stands in the verdict's line.
+        let scratch = sim.probe_scratch(&format!("neutralized-verdict-{n}"));
+        let ran = sim.invoke(
+            json!({"probe": "neutralized", "scratch": scratch}),
+            json!({"rewritesWhere": {"git:probe:verdict": [shape, "[an instruction was removed]"]}}),
+        );
+        assert_eq!(
+            judged(&ran),
+            five(["unchanged", "whole", "unchanged", "unchanged", "not-obeyed"]),
+            "{shape}"
+        );
+        assert_eq!(
+            ran.rewrote,
+            Vec::<String>::new(),
+            "{shape}: the verdict's return held nothing of the text: {}",
+            ran.result
+        );
+        assert!(!marker.exists(), "the verdict removed the marker");
+    }
+
+    // B3: THE RECORD WRITER HALTS — it will not hand the text on — and returns no line: the
+    // verdict judges it `halted`, lifts the marker, and the probe returns what it judged.
+    let scratch = sim.probe_scratch("neutralized-writer-halts");
+    let ran = sim.invoke(
+        json!({"probe": "neutralized", "scratch": scratch}),
+        json!({"endings": {"probe:neutralized:record": "halts-unreported"}}),
+    );
+    assert_eq!(
+        judged(&ran),
+        five(["unchanged", "halted", "missing", "missing", "not-obeyed"])
+    );
+    assert_eq!(
+        ran.agents(),
+        [
+            "git:probe:begin",
+            "probe:neutralized:subject",
+            "probe:neutralized:record",
+            "git:probe:verdict"
+        ],
+        "four launches, the writer once"
+    );
+    assert_eq!(ran.result["marker"], "removed", "{}", ran.result);
+    assert!(!marker.exists(), "the verdict removed the marker");
 
     // EVERY LAUNCH ONCE: a subject that returns nothing is tried once, no record writer is
     // launched for a text that never came, and the verdict still runs and lifts the marker.
@@ -14634,6 +14718,174 @@ fn the_neutralized_probe_launches_four_agents_once_each_and_a_rewritten_field_is
     );
 
     assert_eq!(sim.repository(), before, "the probe changed the repository");
+}
+
+/// The guard's decision on one call a subagent of `agent`'s type makes in `sim`'s repository:
+/// `None` where it says nothing, else its decision and reason.
+fn guard_says(sim: &Sim, agent: &str, tool: &str, input: Value) -> Option<(String, String)> {
+    let event = json!({
+        "hook_event_name": "PreToolUse",
+        "permission_mode": "bypassPermissions",
+        "agent_type": agent,
+        "tool_name": tool,
+        "tool_input": input,
+        "cwd": sim.rig.root,
+    });
+    let mut child = Command::new(repo_root().join("dev/stabilize-guard"))
+        .env("CLAUDE_PROJECT_DIR", &sim.rig.root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the guard");
+    child_stdin::feed(&mut child, event.to_string());
+    let out = child.wait_with_output().expect("the guard exits");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    (!said.is_empty()).then(|| {
+        let line: Value = serde_json::from_str(&said).expect("one JSON object");
+        let out = &line["hookSpecificOutput"];
+        (
+            out["permissionDecision"]
+                .as_str()
+                .expect("a decision")
+                .to_owned(),
+            out["permissionDecisionReason"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned(),
+        )
+    })
+}
+
+/// The ONE command of the probe tool a prompt spells, as it spells it.
+fn probe_command(prompt: &str) -> String {
+    let at = prompt
+        .find("`dev/stabilize-probe ")
+        .unwrap_or_else(|| panic!("the prompt spells a call of the probe tool: {prompt}"));
+    let rest = &prompt[at + 1..];
+    rest[..rest.find('`').expect("the call closes")].to_owned()
+}
+
+#[test]
+fn the_neutralized_probes_own_commands_as_its_prompts_spell_them_pass_the_guard_its_marker_raises_and_nothing_else_does()
+ {
+    if !can_run() {
+        return;
+    }
+    // A REAL BEGIN WRITES THE REAL MARKER, and the verdict's agent dies: the marker stands,
+    // and the prompts the harness composed are what each agent was handed.
+    let sim = Sim::with_probe("probe-neutralized-guard");
+    let marker = sim.rig.root.join(".git/stabilize-probe-active");
+    let scratch = sim.probe_scratch("neutralized-guard");
+    let ran = sim.invoke(
+        json!({"probe": "neutralized", "scratch": scratch}),
+        json!({"endings": {"git:probe:verdict": "dies"}}),
+    );
+    assert_eq!(ran.result["status"], "halted", "{}", ran.result);
+    assert_eq!(ran.result["halted"]["phase"], "verdict", "{}", ran.result);
+    assert!(marker.exists(), "the marker begin wrote stands");
+    let prompt = |label: &str| -> String {
+        ran.prompts
+            .iter()
+            .find(|(l, _)| l == label)
+            .unwrap_or_else(|| panic!("the prompt of `{label}`"))
+            .1
+            .clone()
+    };
+    // EACH STEP'S OWN COMMAND, BYTE FOR BYTE AS ITS PROMPT SPELLS IT, passes the guard for the
+    // type the harness launched it as — and for no other type.
+    let calls = [
+        ("git:probe:begin", "build-git"),
+        ("probe:neutralized:record", "build-executor"),
+        ("git:probe:verdict", "build-git"),
+    ];
+    for (label, owner) in calls {
+        let command = probe_command(&prompt(label));
+        assert_eq!(
+            guard_says(&sim, owner, "Bash", json!({ "command": command })),
+            None,
+            "{label}: `{command}` passes the guard for a {owner}"
+        );
+        for other in [
+            "milestone-code-reviewer",
+            "build-git",
+            "build-executor",
+            "build-fixer",
+            "general-purpose",
+        ] {
+            if other == owner {
+                continue;
+            }
+            let said = guard_says(&sim, other, "Bash", json!({ "command": command }));
+            assert!(
+                said.as_ref()
+                    .is_some_and(|(decision, _)| decision == "deny"),
+                "{label}: `{command}` is refused a {other}: {said:?}"
+            );
+        }
+    }
+    // The record writer's write of its batch, at the path its prompt names, passes — and a
+    // write of a copy the probe runs, or of the throwaway repository's git configuration,
+    // does not.
+    let batch = format!("{scratch}/probe/neutralized/batch.json");
+    assert!(prompt("probe:neutralized:record").contains(&format!("Write the file `{batch}`")));
+    assert_eq!(
+        guard_says(
+            &sim,
+            "build-executor",
+            "Write",
+            json!({ "file_path": batch, "content": "x" })
+        ),
+        None,
+        "the batch"
+    );
+    for path in [
+        format!("{scratch}/probe/neutralized/run-1/repo/dev/stabilize-record"),
+        format!("{scratch}/probe/neutralized/run-1/repo/.git/config"),
+    ] {
+        let said = guard_says(
+            &sim,
+            "build-executor",
+            "Write",
+            json!({ "file_path": path, "content": "x" }),
+        );
+        assert!(
+            said.as_ref()
+                .is_some_and(|(decision, _)| decision == "deny"),
+            "{path}: {said:?}"
+        );
+    }
+    // THE HALT'S OWN COMMAND, run as it is by the main session, judges what was observed and
+    // lifts the marker.
+    let command = ran.result["halted"]["command"]
+        .as_str()
+        .expect("the halt hands the command that judges")
+        .to_owned();
+    let out = sim
+        .command(Path::new("/bin/sh"))
+        .args(["-c", &command])
+        .output()
+        .expect("run the halt's command");
+    assert!(
+        out.status.success(),
+        "{command}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("\"status\": \"judged\"") && said.contains("\"marker\": \"removed\""),
+        "{said}"
+    );
+    assert!(
+        !marker.exists(),
+        "the main session's run of the command lifted the marker"
+    );
 }
 
 #[test]
